@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # 从环境变量中加载VPN代理的配置URL
 vpn_proxy_url="$VPN_PROXY_URL"
 # 检查是否成功加载
@@ -47,3 +48,4 @@ done
 wait
 echo "所有文件已成功下载到指定目录"
 streamlit run ./webui/Main.py --browser.serverAddress="0.0.0.0" --server.enableCORS=True --browser.gatherUsageStats=False
+
