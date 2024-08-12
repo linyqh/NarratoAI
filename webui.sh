@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # 从环境变量中加载VPN代理的配置URL
 vpn_proxy_url="$VPN_PROXY_URL"
 # 检查是否成功加载
@@ -10,7 +9,6 @@ fi
 # 使用VPN代理进行一些操作，比如通过代理下载文件
 export http_proxy="$vpn_proxy_url"
 export https_proxy="$vpn_proxy_url"
-
 # 创建链接和路径的数组
 declare -A urls_paths=(
     ["https://zenodo.org/records/13293144/files/MicrosoftYaHeiBold.ttc"]="./resource/fonts"
@@ -32,7 +30,6 @@ declare -A urls_paths=(
     ["https://zenodo.org/records/13293150/files/output010.mp3"]="./resource/songs"
     # 添加更多链接及其对应的路径
 )
-
 # 循环下载所有文件并保存到指定路径
 for url in "${!urls_paths[@]}"; do
     output_dir="${urls_paths[$url]}"
@@ -42,15 +39,11 @@ for url in "${!urls_paths[@]}"; do
     filename=$(basename "$url")
 
     # 下载文件，避免重复下载
-    wget -P "$output_dir" -nc "$url" &> /dev/null || {
+    wget -P "$output_dir" -nc "$url" || {
         echo "下载失败: $url" >&2
     }
 done
-
 # 等待所有后台任务完成
 wait
-
 echo "所有文件已成功下载到指定目录"
-
-
 streamlit run ./webui/Main.py --browser.serverAddress="0.0.0.0" --server.enableCORS=True --browser.gatherUsageStats=False
