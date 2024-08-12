@@ -2,6 +2,7 @@ import sys
 import os
 import glob
 import json
+import time
 import datetime
 
 # 将项目的根目录添加到系统路径中，以允许从项目导入模块
@@ -38,8 +39,10 @@ from app.models.schema import VideoClipParams, VideoAspect, VideoConcatMode
 from app.services import task as tm, llm, voice, material
 from app.utils import utils
 
-os.environ["HTTP_PROXY"] = config.proxy.get("http", "") or os.getenv("VPN_PROXY_URL", "")
-os.environ["HTTPS_PROXY"] = config.proxy.get("https", "") or os.getenv("VPN_PROXY_URL", "")
+proxy_url_http = config.proxy.get("http", "") or os.getenv("VPN_PROXY_URL", "")
+proxy_url_https = config.proxy.get("https", "") or os.getenv("VPN_PROXY_URL", "")
+os.environ["HTTP_PROXY"] = proxy_url_http
+os.environ["HTTPS_PROXY"] = proxy_url_https
 
 hide_streamlit_style = """
 <style>#root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 6px; padding-bottom: 10px; padding-left: 20px; padding-right: 20px;}</style>
@@ -50,11 +53,7 @@ support_locales = [
     "zh-CN",
     "zh-HK",
     "zh-TW",
-    "de-DE",
     "en-US",
-    "fr-FR",
-    "vi-VN",
-    "th-TH",
 ]
 font_dir = os.path.join(root_dir, "resource", "fonts")
 song_dir = os.path.join(root_dir, "resource", "songs")
@@ -183,6 +182,9 @@ with st.expander(tr("Basic Settings"), expanded=False):
             st.session_state['ui_language'] = code
             config.ui['language'] = code
 
+        HTTP_PROXY = st.text_input(tr("HTTP_PROXY"), value=proxy_url_http)
+        HTTPs_PROXY = st.text_input(tr("HTTPs_PROXY"), value=proxy_url_https)
+
     with middle_config_panel:
         #   openai
         #   moonshot (月之暗面)
@@ -192,7 +194,8 @@ with st.expander(tr("Basic Settings"), expanded=False):
         #   qwen (通义千问)
         #   gemini
         #   ollama
-        llm_providers = ['OpenAI', 'Moonshot', 'Azure', 'Qwen', 'Gemini', 'Ollama', 'G4f', 'OneAPI', "Cloudflare"]
+        # llm_providers = ['Gemini', 'OpenAI', 'Moonshot', 'Azure', 'Qwen', 'Ollama', 'G4f', 'OneAPI', "Cloudflare"]
+        llm_providers = ['Gemini']
         saved_llm_provider = config.app.get("llm_provider", "OpenAI").lower()
         saved_llm_provider_index = 0
         for i, provider in enumerate(llm_providers):
@@ -283,10 +286,12 @@ with left_panel:
         params.video_clip_json = script_path[selected_json2][1]
         video_json_file = params.video_clip_json
 
-        # 视频文件
-        suffix = "*.mp4"
-        song_dir = utils.video_dir()
-        files = glob.glob(os.path.join(song_dir, suffix))
+        # 视频文件处理
+        files = []
+        for suffix in ["*.mp4", "*.mov", "*.avi", "*.mkv"]:
+            files.extend(glob.glob(os.path.join(utils.video_dir(), suffix)))
+        files = files[::-1]
+
         video_list = []
         for file in files:
             video_list.append({
@@ -295,7 +300,7 @@ with left_panel:
                 "file": file,
             })
 
-        video_path = [(tr("None"), ""), ]
+        video_path = [("None", ""), (tr("Upload Local Files"), "local")]
         for code in [file['file'] for file in video_list]:
             video_path.append((code, code))
 
@@ -305,6 +310,33 @@ with left_panel:
                                        format_func=lambda x: video_path[x][0]  # 显示给用户的是标签
                                        )
         params.video_origin_path = video_path[selected_index2][1]
+        config.app["video_origin_path"] = params.video_origin_path
+
+        # 从本地上传 mp4 文件
+        if params.video_origin_path == "local":
+            _supported_types = FILE_TYPE_VIDEOS
+            uploaded_file = st.file_uploader(
+                tr("Upload Local Files"),
+                type=["mp4", "mov", "avi", "flv", "mkv"],
+                accept_multiple_files=False,
+            )
+            if uploaded_file is not None:
+                # 构造保存路径
+                video_file_path = os.path.join(utils.video_dir(), uploaded_file.name)
+                file_name, file_extension = os.path.splitext(uploaded_file.name)
+                # 检查文件是否存在，如果存在则添加时间戳
+                if os.path.exists(video_file_path):
+                    timestamp = time.strftime("%Y%m%d%H%M%S")
+                    file_name_with_timestamp = f"{file_name}_{timestamp}"
+                    video_file_path = os.path.join(utils.video_dir(), file_name_with_timestamp + file_extension)
+                # 将文件保存到指定目录
+                with open(video_file_path, "wb") as f:
+                    f.write(uploaded_file.read())
+                    st.success(tr("File Uploaded Successfully"))
+                    time.sleep(1)
+                    st.rerun()
+            # params.video_origin_path = video_path[selected_index2][1]
+            # config.app["video_origin_path"] = params.video_origin_path
 
         # 剧情内容
         video_plot = st.text_area(
