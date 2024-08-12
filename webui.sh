@@ -41,15 +41,13 @@ for url in "${!urls_paths[@]}"; do
     # 提取文件名
     filename=$(basename "$url")
 
-    # 检查文件是否已经存在
-    if [ -f "$output_dir/$filename" ]; then
-        echo "文件 $filename 已经存在，跳过下载"
-    else
-        wget -P "$output_dir" "$url" &
-    fi
+    # 下载文件，避免重复下载
+    wget -P "$output_dir" -nc "$url" &> /dev/null || {
+        echo "下载失败: $url" >&2
+    }
 done
 
-# 等待所有下载完成
+# 等待所有后台任务完成
 wait
 
 echo "所有文件已成功下载到指定目录"
