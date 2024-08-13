@@ -1,10 +1,13 @@
-<div align="center">
-<h1 align="center" style="font-size: 2cm;"> NarratoAI 😎 </h1>
-<h3 align="center">All-in-One AI-Powered Video Narration + Automated Editing Tool🎬</h3>
 
-<h3> 📖 English | <a href="README-cn.md">简体中文</a> </h3>
 <div align="center">
-  <a href="https://trendshift.io/repositories/8731" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8731" alt="harry0703%2FNarratoAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+<h1 align="center" style="font-size: 2cm;"> NarratoAI 😎📽️ </h1>
+<h3 align="center">An all-in-one AI-powered tool for film commentary and automated video editing.🎬🎞️ </h3>
+
+
+<h3>📖 <a href="README-en.md">English</a> | 简体中文 </h3>
+<div align="center">
+
+[//]: # (  <a href="https://trendshift.io/repositories/8731" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8731" alt="harry0703%2FNarratoAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>)
 </div>
 <br>
 NarratoAI is an automated video narration tool that provides an all-in-one solution for script writing, automated video editing, voice-over, and subtitle generation, powered by LLM to enhance efficient content creation.
