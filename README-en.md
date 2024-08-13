@@ -2,7 +2,7 @@
 <h1 align="center" style="font-size: 2cm;"> NarratoAI 😎 </h1>
 <h3 align="center">All-in-One AI-Powered Video Narration + Automated Editing Tool🎬</h3>
 
-<h3> 📖 <a href="README.md">Simplified Chinese</a> | English </h3>
+<h3> 📖 English | <a href="README-cn.md">简体中文</a> </h3>
 <div align="center">
   <a href="https://trendshift.io/repositories/8731" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8731" alt="harry0703%2FNarratoAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </div>
@@ -14,7 +14,7 @@ NarratoAI is an automated video narration tool that provides an all-in-one solut
 [![GitHub license](https://img.shields.io/github/license/linyqh/NarratoAI?style=for-the-badge)](https://github.com/linyqh/NarratoAI/blob/main/LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/linyqh/NarratoAI?style=for-the-badge)](https://github.com/linyqh/NarratoAI/issues)
 [![GitHub stars](https://img.shields.io/github/stars/linyqh/NarratoAI?style=for-the-badge)](https://github.com/linyqh/NarratoAI/stargazers)
-[![Discord](https://img.shields.io/discord/1134848537704804432?style=for-the-badge)](https://dsc.gg/fuji-community)
+[![Discord](https://img.shields.io/discord/1134848537704804432?style=for-the-badge)](https://discord.gg/WBKChhmZ)
 
 <h3>Home</h3>
 
