@@ -4,7 +4,7 @@
 <h3 align="center">一站式 AI 影视解说+自动化剪辑工具🎬🎞️ </h3>
 
 
-<h3>📖 <a href="README-en.md">English</a> | 简体中文 </h3>
+<h3>📖 <a href="README.md">English</a> | 简体中文 </h3>
 <div align="center">
 
 [//]: # (  <a href="https://trendshift.io/repositories/8731" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8731" alt="harry0703%2FNarratoAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>)
