@@ -4,6 +4,7 @@ import glob
 import json
 import time
 import datetime
+import traceback
 
 # 将项目的根目录添加到系统路径中，以允许从项目导入模块
 root_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -252,7 +253,7 @@ with left_panel:
         video_languages = [
             (tr("Auto Detect"), ""),
         ]
-        for code in ["zh-CN", "zh-TW", "de-DE", "en-US", "vi-VN"]:
+        for code in ["zh-CN", "en-US", "zh-TW"]:
             video_languages.append((code, code))
 
         selected_index = st.selectbox(tr("Script Language"),
@@ -351,7 +352,8 @@ with left_panel:
                     script = llm.gemini_video2json(
                         video_origin_name=params.video_origin_path.split("\\")[-1],
                         video_origin_path=params.video_origin_path,
-                        video_plot=video_plot
+                        video_plot=video_plot,
+                        language=params.video_language,
                     )
                     st.session_state['video_clip_json'] = script
                     cleaned_string = script.strip("```json").strip("```")
@@ -376,19 +378,21 @@ with left_panel:
                     st.error(tr("请输入视频脚本"))
                     st.stop()
 
-                with st.spinner(tr("保存脚本")):
+                with st.spinner(tr("Save Script")):
                     script_dir = utils.script_dir()
                     # 获取当前时间戳，形如 2024-0618-171820
                     timestamp = datetime.datetime.now().strftime("%Y-%m%d-%H%M%S")
                     save_path = os.path.join(script_dir, f"{timestamp}.json")
 
                     # 尝试解析输入的 JSON 数据
-                    input_json = str(video_clip_json_details).replace("'", '"')
+                    # input_json = str(video_clip_json_details).replace("'", '"')
+                    input_json = str(video_clip_json_details)
+                    logger.error(input_json)
                     input_json = input_json.strip('```json').strip('```')
                     try:
                         data = json.loads(input_json)
-                    except:
-                        raise ValueError("视频脚本格式错误，请检查脚本是否符合 JSON 格式")
+                    except Exception as err:
+                        raise ValueError(f"视频脚本格式错误，请检查脚本是否符合 JSON 格式；{err} \n\n{traceback.format_exc()}")
 
                     # 检查是否是一个列表
                     if not isinstance(data, list):
@@ -682,7 +686,7 @@ with right_panel:
             params.stroke_width = st.slider(tr("Stroke Width"), 0.0, 10.0, 1.5)
 
 # 视频编辑面板
-with st.expander(tr("视频审查"), expanded=False):
+with st.expander(tr("Video Check"), expanded=False):
     try:
         video_list = st.session_state['video_script_list']
     except KeyError as e:
@@ -714,13 +718,13 @@ with st.expander(tr("视频审查"), expanded=False):
                         # 可编辑的输入框
                         text_panels = st.columns(2)
                         with text_panels[0]:
-                            text1 = st.text_area("时间戳", value=initial_timestamp, height=20)
+                            text1 = st.text_area(tr("timestamp"), value=initial_timestamp, height=20)
                         with text_panels[1]:
-                            text2 = st.text_area("画面描述", value=initial_picture, height=20)
-                        text3 = st.text_area("解说旁白", value=initial_narration, height=100)
+                            text2 = st.text_area(tr("Picture description"), value=initial_picture, height=20)
+                        text3 = st.text_area(tr("Narration"), value=initial_narration, height=100)
 
                         # 清空文本框按钮
-                        if st.button("重新生成", key=f"button_{index}"):
+                        if st.button(tr("Rebuild"), key=f"button_{index}"):
                             print(123123)
                             # with st.spinner(tr("大模型生成中...")):
 

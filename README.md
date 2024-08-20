@@ -1,7 +1,7 @@
 
 <div align="center">
 <h1 align="center" style="font-size: 2cm;"> NarratoAI 😎📽️ </h1>
-<h3 align="center">一站式 AI 影视解说+自动化剪辑工具🎬🎞️ </h3>
+<h3 align="center">An all-in-one AI-powered tool for film commentary and automated video editing.🎬🎞️ </h3>
 
 
 <h3>📖 <a href="README-en.md">English</a> | 简体中文 </h3>
@@ -10,7 +10,7 @@
 [//]: # (  <a href="https://trendshift.io/repositories/8731" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8731" alt="harry0703%2FNarratoAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>)
 </div>
 <br>
-NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、自动化视频剪辑、配音和字幕生成的一站式流程，助力高效内容创作。
+NarratoAI is an automated video narration tool that provides an all-in-one solution for script writing, automated video editing, voice-over, and subtitle generation, powered by LLM to enhance efficient content creation.
 <br>
 
 [![madewithlove](https://img.shields.io/badge/made_with-%E2%9D%A4-red?style=for-the-badge&labelColor=orange)](https://github.com/linyqh/NarratoAI)
@@ -19,37 +19,37 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 [![GitHub stars](https://img.shields.io/github/stars/linyqh/NarratoAI?style=for-the-badge)](https://github.com/linyqh/NarratoAI/stargazers)
 [![Discord](https://img.shields.io/discord/1134848537704804432?style=for-the-badge)](https://discord.gg/WBKChhmZ)
 
+<h3>Home</h3>
 
-<h3>首页</h3>
+![](docs/index-en.png)
 
-![](docs/index.png)
+<h3>Video Review Interface</h3>
 
-<h3>视频审查界面</h3>
-
-![](docs/check.png)
+![](docs/check-en.png)
 
 </div>
 
-## 配置要求 📦
+## System Requirements 📦
 
-- 建议最低 CPU 4核或以上，内存 8G 或以上，显卡非必须
-- Windows 10 或 MacOS 11.0 以上系统
+- Recommended minimum: CPU with 4 cores or more, 8GB RAM or more, GPU is not required
+- Windows 10 or MacOS 11.0 or above
 
-## 快速开始 🚀
-### 申请 Google AI studio 账号
-1. 访问 https://aistudio.google.com/app/prompts/new_chat 申请账号
-2. 点击 `Get API Key` 申请 API Key
-3. 申请的 API Key 填入 `config.example.toml` 文件中的 `gemini_api_key` 配置
+## Quick Start 🚀
+### Apply for Google AI Studio Account
+1. Visit https://aistudio.google.com/app/prompts/new_chat to apply for an account.
+2. Click `Get API Key` to request an API Key.
+3. Enter the obtained API Key into the `gemini_api_key` setting in the `config.example.toml` file.
 
-### 配置 proxy VPN
-> 配置vpn的方法不限，只要能正常访问 Google 网络即可，本文采用的是 chash
-1. 记住 clash 服务的端口，一般为 `http://127.0.0.1:7890`
-2. 若端口不为 `7890`，请修改 `docker-compose.yml` 文件中的 `VPN_PROXY_URL` 为你的代理地址
+### Configure Proxy VPN
+> The method to configure VPN is not restricted, as long as you can access Google's network. Here, `clash` is used as an example.
+1. Note the port of the clash service, usually `http://127.0.0.1:7890`.
+2. If the port is not `7890`, modify the `VPN_PROXY_URL` in the `docker-compose.yml` file to your proxy address.
    ```yaml
    environment:
-     - "VPN_PROXY_URL=http://host.docker.internal:7890" # 修改为你的代理端口；host.docker.internal表示物理机的IP
-   ```
-3. (可选)或者修改 `config.example.toml` 文件中的 `proxy` 配置
+     - "VPN_PROXY_URL=http://host.docker.internal:7890" # Change to your proxy port; host.docker.internal represents the IP of the physical machine.
+    ```
+
+3. (Optional) Or modify the `proxy` settings in the `config.example.toml` file.
    ```toml
    [proxy]
     ### Use a proxy to access the Pexels API
@@ -60,76 +60,76 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
     http = "http://xx.xx.xx.xx:7890"
     https = "http://xx.xx.xx.xx:7890"
    ```
-### docker部署🐳
-#### ① 垃取项目，启动Docker
+
+### Docker Deployment 🐳
+#### ① clone project, Start Docker
 ```shell
 git clone https://github.com/linyqh/NarratoAI.git
 cd NarratoAI
 docker-compose up
 ```
-#### ② 访问Web界面
+#### ② Access the Web Interface
 
-打开浏览器，访问 http://127.0.0.1:8501
+Open your browser and go to http://127.0.0.1:8501
 
-#### ③ 访问API文档
+#### ③ Access the API Documentation
 
-打开浏览器，访问 http://127.0.0.1:8080/docs 或者 http://127.0.0.1:8080/redoc
+Open your browser and go to http://127.0.0.1:8080/docs or http://127.0.0.1:8080/redoc
 
-## 使用方法
-#### 1. 基础配置，选择模型，填入APIKey，选择模型
-> 目前暂时只支持 `Gemini` 模型，其他模式待后续更新，欢迎大家提交 [PR](https://github.com/linyqh/NarratoAI/pulls)，参与开发 🎉🎉🎉
+## Usage
+#### 1. Basic Configuration, Select Model, Enter API Key, and Choose Model
+> Currently, only the `Gemini` model is supported. Other modes will be added in future updates. Contributions are welcome via [PR](https://github.com/linyqh/NarratoAI/pulls) to join in the development 🎉🎉🎉
 <div align="center">
-  <img src="docs/img001.png" alt="001" width="1000"/>
+  <img src="docs/img001-en.png" alt="001" width="1000"/>
 </div>
 
-#### 2. 选择需要解说的视频，点击生成视频脚本
-> 平台内置了一个演示视频，若要使用自己的视频，将mp4文件放在 `resource/videos` 目录下，刷新浏览器即可，
-> 注意：文件名随意，但文件名不能包含中文，特殊字符，空格，反斜杠等
+#### 2. Select the Video for Narration and Click to Generate Video Script
+> A demo video is included in the platform. To use your own video, place the mp4 file in the `resource/videos` directory and refresh your browser.
+> Note: The filename can be anything, but it must not contain Chinese characters, special characters, spaces, backslashes, etc.
 <div align="center">
-  <img src="docs/img002.png" alt="002" width="400"/>
+  <img src="docs/img002-en.png" alt="002" width="400"/>
 </div>
 
-#### 3. 保存脚本，开始剪辑
-> 保存脚本后，刷新浏览器，在脚本文件的下拉框就会有新生成的 `.json` 脚本文件，选择json文件和视频就可以开始剪辑了。
+#### 3. Save the Script and Start Editing
+> After saving the script, refresh the browser, and the newly generated `.json` script file will appear in the script file dropdown. Select the json file and video to start editing.
 <div align="center">
-  <img src="docs/img003.png" alt="003" width="400"/>
+  <img src="docs/img003-en.png" alt="003" width="400"/>
 </div>
 
-#### 4. 检查视频，若视频存在不符合规则的片段，可以点击重新生成或者手动编辑
+#### 4. Review the Video; if there are segments that don't meet the rules, click to regenerate or manually edit them.
 <div align="center">
-  <img src="docs/img004.png" alt="003" width="1000"/>
+  <img src="docs/img004-en.png" alt="003" width="1000"/>
 </div>
 
-#### 5. 配置视频基本参数
+#### 5. Configure Basic Video Parameters
 <div align="center">
-  <img src="docs/img005.png" alt="003" width="700"/>
+  <img src="docs/img005-en.png" alt="003" width="700"/>
 </div>
 
-#### 6. 开始生成
+#### 6. Start Generating
 <div align="center">
-  <img src="docs/img006.png" alt="003" width="1000"/>
+  <img src="docs/img006-en.png" alt="003" width="1000"/>
 </div>
 
-#### 7. 视频生成完成
+#### 7. Video Generation Complete
 <div align="center">
-  <img src="docs/img007.png" alt="003" width="1000"/>
+  <img src="docs/img007-en.png" alt="003" width="1000"/>
 </div>
 
-## 开发 💻
-1. 安装依赖
+## Development 💻
+1. Install Dependencies
 ```shell
 conda create -n narratoai python=3.10
 conda activate narratoai
 cd narratoai
 pip install -r requirements.txt
 ```
-
-2. 安装 ImageMagick
+2. Install ImageMagick
 ###### Windows:
 
-- 下载 https://imagemagick.org/archive/binaries/ImageMagick-7.1.1-36-Q16-x64-static.exe
-- 安装下载好的 ImageMagick，注意不要修改安装路径
-- 修改 `配置文件 config.toml` 中的 `imagemagick_path` 为你的实际安装路径（一般在 `C:\Program Files\ImageMagick-7.1.1-Q16\magick.exe`）
+- Download https://imagemagick.org/archive/binaries/ImageMagick-7.1.1-36-Q16-x64-static.exe
+- Install the downloaded ImageMagick, ensuring you do not change the installation path
+- Update `imagemagick_path` in the `config.toml` file to your actual installation path (typically `C:\Program Files\ImageMagick-7.1.1-Q16\magick.exe`)
 
 ###### MacOS:
 
@@ -148,28 +148,27 @@ sudo apt-get install imagemagick
 ```shell
 sudo yum install ImageMagick
 ```
-3. 启动 webui
+
+3. initiate webui
 ```shell
 streamlit run ./webui/Main.py --browser.serverAddress=127.0.0.1 --server.enableCORS=True --browser.gatherUsageStats=False
 ```
-4. 访问 http://127.0.0.1:8501
+4. Access http://127.0.0.1:8501
 
+## Feedback & Suggestions 📢
 
-## 反馈建议 📢
+### 👏👏👏 You can submit [issues](https://github.com/linyqh/NarratoAI/issues) or [pull requests](https://github.com/linyqh/NarratoAI/pulls) 🎉🎉🎉
 
-### 👏👏👏 可以提交 [issue](https://github.com/linyqh/NarratoAI/issues)或者 [pull request](https://github.com/linyqh/NarratoAI/pulls) 🎉🎉🎉
-
-## 参考项目 📚
+## Reference Projects 📚
 - https://github.com/FujiwaraChoki/MoneyPrinter
 - https://github.com/harry0703/MoneyPrinterTurbo
 
-该项目基于以上项目重构而来，增加了影视解说功能，感谢大佬的开源精神 🥳🥳🥳 
+This project was refactored based on the above projects with the addition of video narration features. Thanks to the original authors for their open-source spirit 🥳🥳🥳 
 
-## 许可证 📝
+## License 📝
 
-点击查看 [`LICENSE`](LICENSE) 文件
+Click to view the [`LICENSE`](LICENSE) file
 
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=linyqh/NarratoAI&type=Date)](https://star-history.com/#linyqh/NarratoAI&Date)
-
