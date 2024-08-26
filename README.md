@@ -17,7 +17,7 @@ NarratoAI is an automated video narration tool that provides an all-in-one solut
 [![GitHub license](https://img.shields.io/github/license/linyqh/NarratoAI?style=for-the-badge)](https://github.com/linyqh/NarratoAI/blob/main/LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/linyqh/NarratoAI?style=for-the-badge)](https://github.com/linyqh/NarratoAI/issues)
 [![GitHub stars](https://img.shields.io/github/stars/linyqh/NarratoAI?style=for-the-badge)](https://github.com/linyqh/NarratoAI/stargazers)
-[![Discord](https://img.shields.io/discord/1134848537704804432?style=for-the-badge)](https://discord.gg/WBKChhmZ)
+[![Discord](https://img.shields.io/discord/1134848537704804432?style=for-the-badge)](https://discord.gg/ajjy8d3g)
 
 <h3>Home</h3>
 
