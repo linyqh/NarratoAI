@@ -732,7 +732,11 @@ start_button = st.button(tr("Generate Video"), use_container_width=True, type="p
 if start_button:
     config.save_config()
     task_id = st.session_state.get('task_id')
-    params.video_clip_json = st.session_state['video_clip_json_path']
+    if st.session_state.get('video_script_json_path') is not None:
+        params.video_clip_json = st.session_state.get('video_script_json_path')
+
+    logger.debug(f"当前的脚本为：{params.video_clip_json}")
+
     if not task_id:
         st.error(tr("请先裁剪视频"))
         scroll_to_bottom()

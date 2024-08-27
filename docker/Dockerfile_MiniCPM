@@ -1,0 +1,31 @@
+ARG BASE=nvidia/cuda:12.1.0-devel-ubuntu22.04
+FROM ${BASE}
+
+# 设置环境变量
+ENV http_proxy=http://host.docker.internal:7890
+ENV https_proxy=http://host.docker.internal:7890
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ make git python3 python3-dev python3-pip python3-venv python3-wheel \
+    espeak-ng libsndfile1-dev nano vim unzip wget xz-utils && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# 设置工作目录
+WORKDIR /root/MiniCPM-V/
+
+# 安装 Python 依赖
+RUN git clone https://github.com/OpenBMB/MiniCPM-V.git && \
+    cd MiniCPM-V && \
+    pip3 install decord && \
+    pip3 install --no-cache-dir -r requirements.txt && \
+    pip3 install flash_attn
+
+# 清理代理环境变量
+ENV http_proxy=""
+ENV https_proxy=""
+
+# 设置 PYTHONPATH
+ENV PYTHONPATH="/root/MiniCPM-V/"

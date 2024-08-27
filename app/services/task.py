@@ -433,7 +433,7 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
 
         final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
 
-        logger.info(f"\n\n## 6. 生成视频: {index} => {final_video_path}")
+        logger.info(f"\n\n## 6. 最后一步: {index} => {final_video_path}")
         # 把所有东西合到在一起
         video.generate_video(video_path=combined_video_path,
                              audio_path=audio_file,
