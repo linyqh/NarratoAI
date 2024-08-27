@@ -339,9 +339,6 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
     max_clip_duration = params.video_clip_duration
 
     logger.info("\n\n## 1. 读取json")
-    # video_script = params.video_script.strip()
-    # 搜索 ../storage 目录下 名称为 video_subject 的docx文件,并读出所有字符串
-    # video_script_path = path.join('E:\\Projects\\linyq\\MoneyPrinterLin\\txt.txt\\txt2.json')
     video_script_path = path.join(params.video_clip_json)
     # 判断json文件是否存在
     if path.exists(video_script_path):
@@ -356,7 +353,6 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
             logger.debug(f"原json时间戳: \n{time_list}")
 
     else:
-        print("#@#@#@", params.video_clip_json)
         raise ValueError("解说文案不存在！检查文案名称是否正确。")
 
     # video_script = llm.text_polishing(context=video_script, language=params.video_language)

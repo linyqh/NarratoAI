@@ -385,9 +385,8 @@ with left_panel:
                     save_path = os.path.join(script_dir, f"{timestamp}.json")
 
                     # 尝试解析输入的 JSON 数据
-                    # input_json = str(video_clip_json_details).replace("'", '"')
                     input_json = str(video_clip_json_details)
-                    logger.error(input_json)
+                    # 去掉json的头尾标识
                     input_json = input_json.strip('```json').strip('```')
                     try:
                         data = json.loads(input_json)
@@ -411,8 +410,9 @@ with left_panel:
                         json.dump(data, file, ensure_ascii=False, indent=4)
                         # 将data的值存储到 session_state 中，类似缓存
                         st.session_state['video_script_list'] = data
-
-                    logger.debug(f"脚本内容已成功保存到 {save_path}")
+                        st.session_state['video_clip_json_path'] = save_path
+                        # 刷新页面
+                        st.rerun()
 
         with button_columns[1]:
             if st.button(tr("Crop Video"), key="auto_crop_video", use_container_width=True):
@@ -731,7 +731,12 @@ with st.expander(tr("Video Check"), expanded=False):
 start_button = st.button(tr("Generate Video"), use_container_width=True, type="primary")
 if start_button:
     config.save_config()
-    task_id = st.session_state['task_id']
+    task_id = st.session_state.get('task_id')
+    params.video_clip_json = st.session_state['video_clip_json_path']
+    if not task_id:
+        st.error(tr("请先裁剪视频"))
+        scroll_to_bottom()
+        st.stop()
     if not params.video_clip_json:
         st.error(tr("脚本文件不能为空"))
         scroll_to_bottom()
