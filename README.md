@@ -28,7 +28,7 @@ NarratoAI is an automated video narration tool that provides an all-in-one solut
 
 ![](docs/check-en.png)
 
-</>
+</div>
 
 ## System Requirements 📦
 
@@ -159,6 +159,16 @@ streamlit run ./webui/Main.py --browser.serverAddress=127.0.0.1 --server.enableC
 ## Feedback & Suggestions 📢
 
 ### 👏👏👏 You can submit [issues](https://github.com/linyqh/NarratoAI/issues) or [pull requests](https://github.com/linyqh/NarratoAI/pulls) 🎉🎉🎉
+
+### 💬Join the open source community exchange group
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/a8a5e676-e57e-4a66-9de7-63ba3db82458" alt="003" width="300"/>
+</div>
+
+### 💬Add a mini-assistant
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/266471b3-3bba-401e-984a-22791bdd9a08" alt="003" width="300"/>
+</div>
 
 ## Reference Projects 📚
 - https://github.com/FujiwaraChoki/MoneyPrinter

@@ -159,6 +159,16 @@ streamlit run ./webui/Main.py --browser.serverAddress=127.0.0.1 --server.enableC
 
 ### 👏👏👏 可以提交 [issue](https://github.com/linyqh/NarratoAI/issues)或者 [pull request](https://github.com/linyqh/NarratoAI/pulls) 🎉🎉🎉
 
+### 💬加入开源社区交流群
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/a8a5e676-e57e-4a66-9de7-63ba3db82458" alt="003" width="300"/>
+</div>
+
+### 💬添加小助手
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/266471b3-3bba-401e-984a-22791bdd9a08" alt="003" width="300"/>
+</div>
+
 ## 参考项目 📚
 - https://github.com/FujiwaraChoki/MoneyPrinter
 - https://github.com/harry0703/MoneyPrinterTurbo
