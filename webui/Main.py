@@ -31,7 +31,7 @@ st.set_page_config(
     menu_items={
         "Report a bug": "https://github.com/linyqh/NarratoAI/issues",
         'About': f"# NarratoAI:sunglasses: 📽️ \n #### Version: v{config.project_version} \n "
-                                f"自动化影视解说视频详情请移步：https://github.com/linyqh/NarratoAI"
+                 f"自动化影视解说视频详情请移步：https://github.com/linyqh/NarratoAI"
     },
 )
 
@@ -391,7 +391,8 @@ with left_panel:
                     try:
                         data = json.loads(input_json)
                     except Exception as err:
-                        raise ValueError(f"视频脚本格式错误，请检查脚本是否符合 JSON 格式；{err} \n\n{traceback.format_exc()}")
+                        raise ValueError(
+                            f"视频脚本格式错误，请检查脚本是否符合 JSON 格式；{err} \n\n{traceback.format_exc()}")
 
                     # 检查是否是一个列表
                     if not isinstance(data, list):
@@ -414,31 +415,36 @@ with left_panel:
                         # 刷新页面
                         st.rerun()
 
+
+        def caijian():
+            with st.spinner(tr("裁剪视频中...")):
+                st.session_state['task_id'] = str(uuid4())
+
+            if st.session_state.get('video_script_list', None) is not None:
+                video_script_list = st.session_state.video_script_list
+                time_list = [i['timestamp'] for i in video_script_list]
+                subclip_videos = material.clip_videos(
+                    task_id=st.session_state['task_id'],
+                    timestamp_terms=time_list,
+                    origin_video=params.video_origin_path
+                )
+                if subclip_videos is None:
+                    st.error(tr("裁剪视频失败"))
+                    st.stop()
+                st.session_state['subclip_videos'] = subclip_videos
+                for video_script in video_script_list:
+                    try:
+                        video_script['path'] = subclip_videos[video_script['timestamp']]
+                    except KeyError as e:
+                        st.error(f"裁剪视频失败")
+                # logger.debug(f"当前的脚本为：{st.session_state.video_script_list}")
+            else:
+                st.error(tr("请先生成视频脚本"))
+
+
         with button_columns[1]:
             if st.button(tr("Crop Video"), key="auto_crop_video", use_container_width=True):
-                with st.spinner(tr("裁剪视频中...")):
-                    st.session_state['task_id'] = str(uuid4())
-
-                    if st.session_state.get('video_script_list', None) is not None:
-                        video_script_list = st.session_state.video_script_list
-                        time_list = [i['timestamp'] for i in video_script_list]
-                        subclip_videos = material.clip_videos(
-                            task_id=st.session_state['task_id'],
-                            timestamp_terms=time_list,
-                            origin_video=params.video_origin_path
-                        )
-                        if subclip_videos is None:
-                            st.error(tr("裁剪视频失败"))
-                            st.stop()
-                        st.session_state['subclip_videos'] = subclip_videos
-                        for video_script in video_script_list:
-                            try:
-                                video_script['path'] = subclip_videos[video_script['timestamp']]
-                            except KeyError as e:
-                                st.error(f"裁剪视频失败")
-                        # logger.debug(f"当前的脚本为：{st.session_state.video_script_list}")
-                    else:
-                        st.error(tr("请先生成视频脚本"))
+                caijian()
 
 # 新中间面板
 with middle_panel:
@@ -528,8 +534,8 @@ with middle_panel:
         else:
             for i, v in enumerate(voices):
                 if (
-                    v.lower().startswith(st.session_state["ui_language"].lower())
-                    and "V2" not in v
+                        v.lower().startswith(st.session_state["ui_language"].lower())
+                        and "V2" not in v
                 ):
                     saved_voice_name_index = i
                     break
@@ -723,17 +729,30 @@ with st.expander(tr("Video Check"), expanded=False):
                             text2 = st.text_area(tr("Picture description"), value=initial_picture, height=20)
                         text3 = st.text_area(tr("Narration"), value=initial_narration, height=100)
 
-                        # 清空文本框按钮
+                        # 重新生成按钮
                         if st.button(tr("Rebuild"), key=f"button_{index}"):
-                            print(123123)
-                            # with st.spinner(tr("大模型生成中...")):
+                            # 更新video_list中的对应项
+                            video_list[index]['timestamp'] = text1
+                            video_list[index]['picture'] = text2
+                            video_list[index]['narration'] = text3
+
+                            for video in video_list:
+                                if 'path' in video:
+                                    del video['path']
+                                    # 更新session_state以确保更改被保存
+                            st.session_state['video_clip_json'] = utils.to_json(video_list)
+                            # 替换原JSON 文件
+                            with open(video_json_file, 'w', encoding='utf-8') as file:
+                                json.dump(video_list, file, ensure_ascii=False, indent=4)
+                            caijian()
+                            st.rerun()
 
 start_button = st.button(tr("Generate Video"), use_container_width=True, type="primary")
 if start_button:
     config.save_config()
     task_id = st.session_state.get('task_id')
     if st.session_state.get('video_script_json_path') is not None:
-        params.video_clip_json = st.session_state.get('video_script_json_path')
+        params.video_clip_json = st.session_state.get('video_clip_json')
 
     logger.debug(f"当前的脚本为：{params.video_clip_json}")
 
