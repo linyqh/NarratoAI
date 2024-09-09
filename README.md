@@ -30,6 +30,21 @@ NarratoAI is an automated video narration tool that provides an all-in-one solut
 
 </div>
 
+## Modpack 📥 
+NarratoAI Modpack v0.1.2 is released 🚀 
+
+Hurry up and follow the WeChat public account [NarratoAI助手] and reply to the keyword [整合包] to get the latest download link! Give it a try! 
+
+Note: 
+- Currently only available for Windows, Mac version is in development, Linux version will be available in a future release.
+
+## Future Plans 🥳 
+- [x] Windows Integration Pack Release
+- [ ] Optimized the story generation process and improved the generation effect 
+- [ ] Support local large model MiniCPM-V 
+- [ ] Support local large model Qwen2-VL 
+- [ ] ...
+
 ## System Requirements 📦
 
 - Recommended minimum: CPU with 4 cores or more, 8GB RAM or more, GPU is not required
