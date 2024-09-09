@@ -184,7 +184,12 @@ with st.expander(tr("Basic Settings"), expanded=False):
             config.ui['language'] = code
 
         HTTP_PROXY = st.text_input(tr("HTTP_PROXY"), value=proxy_url_http)
-        HTTPs_PROXY = st.text_input(tr("HTTPs_PROXY"), value=proxy_url_https)
+        HTTPS_PROXY = st.text_input(tr("HTTPs_PROXY"), value=proxy_url_https)
+        if HTTP_PROXY:
+            config.proxy["http"] = HTTP_PROXY
+        if HTTPS_PROXY:
+            config.proxy["https"] = HTTPS_PROXY
+
 
     with middle_config_panel:
         #   openai
