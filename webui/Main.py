@@ -354,6 +354,7 @@ with left_panel:
         if st.button(tr("Video Script Generate"), key="auto_generate_script"):
             with st.spinner(tr("Video Script Generate")):
                 if video_json_file == "" and params.video_origin_path != "":
+                    # 使用大模型生成视频脚本
                     script = llm.gemini_video2json(
                         video_origin_name=params.video_origin_path.split("\\")[-1],
                         video_origin_path=params.video_origin_path,
@@ -732,6 +733,7 @@ with st.expander(tr("Video Check"), expanded=False):
                             text1 = st.text_area(tr("timestamp"), value=initial_timestamp, height=20)
                         with text_panels[1]:
                             text2 = st.text_area(tr("Picture description"), value=initial_picture, height=20)
+                        logger.debug(initial_narration)
                         text3 = st.text_area(tr("Narration"), value=initial_narration, height=100)
 
                         # 重新生成按钮

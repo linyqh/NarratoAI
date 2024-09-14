@@ -57,7 +57,7 @@ Note:
 3. Enter the obtained API Key into the `gemini_api_key` setting in the `config.example.toml` file.
 
 ### Configure Proxy VPN
-> The method to configure VPN is not restricted, as long as you can access Google's network. Here, `clash` is used as an example.
+> The method to configure VPN is not restricted, as long as you can access Google's network. Here, [clash](https://github.com/Z-Siqi/Clash-for-Windows_Chinese) is used as an example.
 1. Note the port of the clash service, usually `http://127.0.0.1:7890`.
 2. If the port is not `7890`, modify the `VPN_PROXY_URL` in the `docker-compose.yml` file to your proxy address.
    ```yaml

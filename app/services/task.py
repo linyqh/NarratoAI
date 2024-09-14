@@ -346,6 +346,7 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
         with open(video_script_path, "r", encoding="utf-8") as f:
             list_script = json.load(f)
             video_list = [i['narration'] for i in list_script]
+            video_ost = [i['OST'] for i in list_script]
             time_list = [i['timestamp'] for i in list_script]
 
             video_script = " ".join(video_list)
@@ -421,12 +422,14 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
         index = i + 1
         combined_video_path = path.join(utils.task_dir(task_id), f"combined-{index}.mp4")
         logger.info(f"\n\n## 5. 合并视频: {index} => {combined_video_path}")
-        video.combine_clip_videos(combined_video_path=combined_video_path,
-                             video_paths=subclip_videos,
-                             video_script_list=video_list,
-                             audio_file=audio_file,
-                             video_aspect=params.video_aspect,
-                             threads=n_threads)
+        video.combine_clip_videos(
+            combined_video_path=combined_video_path,
+            video_paths=subclip_videos,
+            video_ost_list=video_ost,
+            audio_file=audio_file,
+            video_aspect=params.video_aspect,
+            threads=n_threads
+        )
 
         _progress += 50 / params.video_count / 2
         sm.state.update_task(task_id, progress=_progress)

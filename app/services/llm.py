@@ -405,44 +405,49 @@ def gemini_video2json(video_origin_name: str, video_origin_path: str, video_plot
     model = gemini.GenerativeModel(model_name=model_name)
 
     prompt = """
-# 角色设定：
-你是一位影视解说专家，擅长根据剧情描述视频的画面和故事生成一段有趣且吸引人的解说文案。你特别熟悉 tiktok/抖音 风格的影视解说文案创作。
+**角色设定：**  
+你是一位影视解说专家，擅长根据剧情生成引人入胜的短视频解说文案，特别熟悉适用于TikTok/抖音风格的快速、抓人视频解说。
 
-# 任务目标：
-1.	根据给定的剧情描述，详细描述视频画面并展开叙述，尤其是对重要画面进行细致刻画。
-2.	生成风格符合 tiktok/抖音 的影视解说文案，使其节奏快、内容抓人。
-3.	最终结果以 JSON 格式输出，字段包含：
-  • "picture"：画面描述
-  • "timestamp"：时间戳（表示画面出现的时间-画面结束的时间）
-  • "narration"：对应的解说文案
+**任务目标：**  
+1. 根据给定剧情，详细描述画面，重点突出重要场景和情节。  
+2. 生成符合TikTok/抖音风格的解说，节奏紧凑，语言简洁，吸引观众。  
+3. 解说的时候需要解说一段播放一段原视频，原视频一般为有台词的片段，原视频的控制有 OST 字段控制。
+4. 结果输出为JSON格式，包含字段：  
+   - "picture"：画面描述  
+   - "timestamp"：画面出现的时间范围  
+   - "narration"：解说内容
+   - "OST": 是否开启原声（true / false）
 
-# 输入示例：
-```text
-在一个黑暗的小巷中，主角缓慢走进，四周静谧无声，只有远处隐隐传来猫的叫声。突然，背后出现一个神秘的身影。
-```
+**输入示例：**  
+```text  
+在一个黑暗的小巷中，主角缓慢走进，四周静谧无声，只有远处隐隐传来猫的叫声。突然，背后出现一个神秘的身影。  
+```  
 
-# 输出格式：
-```json
-[
-    {
-        "picture": "黑暗的小巷中，主角缓慢走进，四周静谧无声，远处有模糊的猫叫声。",
-        "timestamp": "00:00-00:17",
-        "narration": "昏暗的小巷里，他独自前行，空气中透着一丝不安，隐约中能听到远处的猫叫声。 "
-    },
-    {
-        "picture": "主角背后突然出现一个神秘的身影，气氛骤然紧张。",
-        "timestamp": "00:17-00:39",
-        "narration": "就在他以为安全时，一个身影悄无声息地出现在他身后，危险一步步逼近！ "
-    }
-    ...
-]
-```
-# 提示：
-  - 生成的解说文案应简洁有力，符合短视频平台用户的偏好。
-  - 叙述中应有强烈的代入感和悬念，以吸引观众持续观看。
-  - 文案语言为：%s
-  - 剧情内容如下：%s (若为空则忽略)
-  
+**输出格式：**  
+```json  
+[  
+    {  
+        "picture": "黑暗的小巷，主角缓慢走入，四周安静，远处传来猫叫声。",  
+        "timestamp": "00:00-00:17",  
+        "narration": "静谧的小巷里，主角步步前行，气氛渐渐变得压抑。"  
+        "OST": False  
+    },  
+    {  
+        "picture": "神秘身影突然出现，紧张气氛加剧。",  
+        "timestamp": "00:17-00:39",  
+        "narration": "原声播放"  
+        "OST": True  
+    }  
+]  
+```  
+
+**提示：**  
+- 文案要简短有力，契合短视频平台用户的观赏习惯。  
+- 保持强烈的悬念和情感代入，吸引观众继续观看。  
+- 解说一段后播放一段原声，原声内容尽量和解说匹配。
+- 文案语言为：%s  
+- 剧情内容：%s (为空则忽略)  
+
 """ % (language, video_plot)
 
     logger.debug(f"视频名称: {video_origin_name}")
@@ -472,59 +477,46 @@ def gemini_video2json(video_origin_name: str, video_origin_path: str, video_plot
 
 
 if __name__ == "__main__":
-    video_subject = "摔跤吧！爸爸 Dangal"
-    video_path = "/NarratoAI/resource/videos/test.mp4"
-    video_plot = '''
-马哈维亚（阿米尔·汗 Aamir Khan 饰）曾经是一名前途无量的摔跤运动员，在放弃了职业生涯后，他最大的遗憾就是没有能够替国家赢得金牌。马哈维亚将这份希望寄托在了尚未出生的儿子身上，哪知道妻子接连给他生了两个女儿，取名吉塔（法缇玛·萨那·纱卡 Fatima Sana Shaikh 饰）和巴比塔（桑亚·玛荷塔 Sanya Malhotra 饰）。让马哈维亚没有想到的是，两个姑娘展现出了杰出的摔跤天赋，让他幡然醒悟，就算是女孩，也能够昂首挺胸的站在比赛场上，为了国家和她们自己赢得荣誉。
-就这样，在马哈维亚的指导下，吉塔和巴比塔开始了艰苦的训练，两人进步神速，很快就因为在比赛中连连获胜而成为了当地的名人。为了获得更多的机会，吉塔进入了国家体育学院学习，在那里，她将面对更大的诱惑和更多的选择。
-'''
+    """
+    File API 可让您为每个项目存储最多 20 GB 的文件，每个项目使用 每个文件的大小上限为 2 GB。文件会存储 48 小时。
+    它们可以是 在此期间使用您的 API 密钥访问，但无法下载 使用任何 API。它已在使用 Gemini 的所有地区免费提供 API 可用。
+    """
+    import os
+    import sys
+    import requests
+    from app.utils.utils import get_current_country
+
+    # # 添加当前目录到系统路径
+    # sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    #
+    video_subject = "卖菜大妈竟是皇嫂"
+    video_path = "/NarratoAI/resource/videos/demoyasuo.mp4"
+
+    video_plot = ''' '''
     language = "zh-CN"
     res = gemini_video2json(video_subject, video_path, video_plot, language)
     print(res)
 
-    # video_subject = "生命的意义是什么"
-    # script = generate_script(
-    #     video_subject=video_subject, language="zh-CN", paragraph_number=1
-    # )
-    # print("######################")
-    # print(script)
-    # search_terms = generate_terms(
-    #     video_subject=video_subject, video_script=script, amount=5
-    # )
-    # print("######################")
-    # print(search_terms)
-    #     prompt = """
-    # # Role: 影视解说专家
+    # get_current_country()
+    # api_key = config.app.get("gemini_api_key")
+    # model_name = config.app.get("gemini_model_name")
+    # gemini.configure(api_key=api_key)
+    # model = gemini.GenerativeModel(model_name=model_name)
+    # # 卖菜大妈竟是皇嫂 测试视频
+    # video_name = "files/y3npkshvldsd"
+    # video_file = gemini.get_file(video_name)
+    # logger.debug(f"视频当前状态(ACTIVE才可用): {video_file.state.name}")
     #
-    # ## Background:
-    # 擅长根据剧情描述视频的画面和故事，能够生成一段非常有趣的解说文案。
+    # # 转录视频并提供视觉说明
+    # prompt = "Transcribe the audio, giving timestamps. Also provide visual descriptions. use ZH-CN ONLY"
+    # # Make the LLM request.
+    # print("发出 LLM 推理请求...")
+    # streams = model.generate_content([prompt, video_file],
+    #                                   request_options={"timeout": 600},
+    #                                   stream=True)
+    # response = []
+    # for chunk in streams:
+    #     response.append(chunk.text)
     #
-    # ## Goals:
-    # 1. 根据剧情描述视频的画面和故事，并对重要的画面进行展开叙述
-    # 2. 根据剧情内容，生成符合 tiktok/抖音 风格的影视解说文案
-    # 3. 将结果直接以json格式输出给用户，需要包含字段： picture 画面描述， timestamp 时间戳， narration 解说文案
-    # 4. 剧情内容如下：{%s}
-    #
-    # ## Skills
-    # - 精通 tiktok/抖音 等短视频影视解说文案撰写
-    # - 能够理解视频中的故事和画面表现
-    # - 能精准匹配视频中的画面和时间戳
-    # - 能精准把控旁白和时长
-    # - 精通中文
-    # - 精通JSON数据格式
-    #
-    # ## Constrains
-    # - 解说文案的时长要和时间戳的时长尽量匹配
-    # - 忽略视频中关于广告的内容
-    # - 忽略视频中片头和片尾
-    # - 不得在脚本中包含任何类型的 Markdown 或格式
-    #
-    # ## Format
-    # - 对应JSON的key为：picture， timestamp， narration
-    #
-    # # Initialization:
-    # - video subject: {video_subject}
-    # - number of paragraphs: {paragraph_number}
-    # """.strip()
-    #     if language:
-    #         prompt += f"\n- language: {language}"
+    # response = "".join(response)
+    # logger.success(f"llm response: \n{response}")

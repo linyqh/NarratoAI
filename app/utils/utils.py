@@ -1,6 +1,6 @@
 import locale
 import os
-import platform
+import requests
 import threading
 from typing import Any
 from loguru import logger
@@ -269,3 +269,27 @@ def reduce_video_time(txt: str, duration: float = 0.21531):
     # 返回结果四舍五入为整数
     duration = len(txt) * duration
     return int(duration)
+
+
+def get_current_country():
+    """
+    判断当前网络IP地址所在的国家
+    """
+    try:
+        # 使用ipapi.co的免费API获取IP地址信息
+        response = requests.get('https://ipapi.co/json/')
+        data = response.json()
+
+        # 获取国家名称
+        country = data.get('country_name')
+
+        if country:
+            logger.debug(f"当前网络IP地址位于：{country}")
+            return country
+        else:
+            logger.debug("无法确定当前网络IP地址所在的国家")
+            return None
+
+    except requests.RequestException:
+        logger.error("获取IP地址信息时发生错误，请检查网络连接")
+        return None

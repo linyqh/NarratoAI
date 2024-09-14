@@ -352,7 +352,7 @@ def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
 
 def combine_clip_videos(combined_video_path: str,
                         video_paths: List[str],
-                        video_script_list: List[str],
+                        video_ost_list: List[str],
                         audio_file: str,
                         video_aspect: VideoAspect = VideoAspect.portrait,
                         threads: int = 2,
@@ -385,8 +385,12 @@ def combine_clip_videos(combined_video_path: str,
     video_duration = 0
     # 一遍又一遍地添加下载的剪辑，直到达到音频的持续时间 （max_duration）
     while video_duration < audio_duration:
-        for video_path, video_script in zip(video_paths, video_script_list):
-            clip = VideoFileClip(video_path).without_audio()
+        for video_path, video_ost in zip(video_paths, video_ost_list):
+            clip = VideoFileClip(video_path)
+            if video_ost:
+                clip = clip.set_audio(audio_clip)
+            else:
+                clip = clip.set_audio(audio_clip).without_audio()
             # 检查剪辑是否比剩余音频长
             if (audio_duration - video_duration) < clip.duration:
                 clip = clip.subclip(0, (audio_duration - video_duration))

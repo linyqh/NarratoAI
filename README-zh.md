@@ -56,8 +56,9 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 2. 点击 `Get API Key` 申请 API Key
 3. 申请的 API Key 填入 `config.example.toml` 文件中的 `gemini_api_key` 配置
 
-### 配置 proxy VPN
-> 配置vpn的方法不限，只要能正常访问 Google 网络即可，本文采用的是 chash
+### 配置 proxy VPN 😑
+> 配置vpn的方法不限，只要能正常访问 Google 网络即可，本文采用的是 [clash](https://github.com/Z-Siqi/Clash-for-Windows_Chinese) \
+> 最近发现 clash 非常不稳定，在对比后发现 [v2rayN](https://github.com/2dust/v2rayN) 要好用一些 👍
 1. 记住 clash 服务的端口，一般为 `http://127.0.0.1:7890`
 2. 若端口不为 `7890`，请修改 `docker-compose.yml` 文件中的 `VPN_PROXY_URL` 为你的代理地址
    ```yaml
