@@ -1,12 +1,15 @@
-import asyncio
 import os
 import re
+import json
+import traceback
+
+import edge_tts
+import asyncio
+from loguru import logger
+from typing import List
 from datetime import datetime
 from xml.sax.saxutils import unescape
-from edge_tts.submaker import mktimestamp
-from loguru import logger
 from edge_tts import submaker, SubMaker
-import edge_tts
 from moviepy.video.tools import subtitles
 
 from app.config import config
@@ -1184,94 +1187,107 @@ def _format_text(text: str) -> str:
     return text
 
 
-def create_subtitle(sub_maker: submaker.SubMaker, text: str, subtitle_file: str):
+def create_subtitle_from_multiple(text: str, sub_maker_list: List[SubMaker], list_script: List[dict], 
+                                  subtitle_file: str):
     """
-    优化字幕文件
-    1. 将字幕文件按照标点符号分割成多行
-    2. 逐行匹配字幕文件中的文本
-    3. 生成新的字幕文件
+    根据多个 SubMaker 对象、完整文本和原始脚本创建优化的字幕文件
+    1. 使用原始脚本中的时间戳
+    2. 跳过 OST 为 true 的部分
+    3. 将字幕文件按照标点符号分割成多行
+    4. 根据完整文本分段，保持原文的语句结构
+    5. 生成新的字幕文件，时间戳包含小时单位
     """
-
     text = _format_text(text)
+    sentences = utils.split_string_by_punctuations(text)
 
-    def formatter(idx: int, start_time: float, end_time: float, sub_text: str) -> str:
-        """
-        1
-        00:00:00,000 --> 00:00:02,360
-        跑步是一项简单易行的运动
-        """
-        start_t = mktimestamp(start_time).replace(".", ",")
-        end_t = mktimestamp(end_time).replace(".", ",")
-        return f"{idx}\n" f"{start_t} --> {end_t}\n" f"{sub_text}\n"
+    def formatter(idx: int, start_time: str, end_time: str, sub_text: str) -> str:
+        return f"{idx}\n{start_time.replace('.', ',')} --> {end_time.replace('.', ',')}\n{sub_text}\n"
 
-    start_time = -1.0
     sub_items = []
     sub_index = 0
-
-    script_lines = utils.split_string_by_punctuations(text)
-
-    def match_line(_sub_line: str, _sub_index: int):
-        if len(script_lines) <= _sub_index:
-            return ""
-
-        _line = script_lines[_sub_index]
-        if _sub_line == _line:
-            return script_lines[_sub_index].strip()
-
-        _sub_line_ = re.sub(r"[^\w\s]", "", _sub_line)
-        _line_ = re.sub(r"[^\w\s]", "", _line)
-        if _sub_line_ == _line_:
-            return _line_.strip()
-
-        _sub_line_ = re.sub(r"\W+", "", _sub_line)
-        _line_ = re.sub(r"\W+", "", _line)
-        if _sub_line_ == _line_:
-            return _line.strip()
-
-        return ""
-
-    sub_line = ""
+    sentence_index = 0
 
     try:
-        for _, (offset, sub) in enumerate(zip(sub_maker.offset, sub_maker.subs)):
-            _start_time, end_time = offset
-            if start_time < 0:
-                start_time = _start_time
+        sub_maker_index = 0
+        for script_item in list_script:
+            if script_item['OST']:
+                continue
 
-            sub = unescape(sub)
-            sub_line += sub
-            sub_text = match_line(sub_line, sub_index)
-            if sub_text:
+            start_time, end_time = script_item['timestamp'].split('-')
+            if sub_maker_index >= len(sub_maker_list):
+                logger.error(f"Sub maker list index out of range: {sub_maker_index}")
+                break
+            sub_maker = sub_maker_list[sub_maker_index]
+            sub_maker_index += 1
+
+            script_duration = utils.time_to_seconds(end_time) - utils.time_to_seconds(start_time)
+            audio_duration = get_audio_duration(sub_maker)
+            time_ratio = script_duration / audio_duration if audio_duration > 0 else 1
+
+            current_sub = ""
+            current_start = None
+            current_end = None
+
+            for offset, sub in zip(sub_maker.offset, sub_maker.subs):
+                sub = unescape(sub).strip()
+                sub_start = utils.seconds_to_time(utils.time_to_seconds(start_time) + offset[0] / 10000000 * time_ratio)
+                sub_end = utils.seconds_to_time(utils.time_to_seconds(start_time) + offset[1] / 10000000 * time_ratio)
+                
+                if current_start is None:
+                    current_start = sub_start
+                current_end = sub_end
+                
+                current_sub += sub
+                
+                # 检查当前累积的字幕是否匹配下一个句子
+                while sentence_index < len(sentences) and sentences[sentence_index] in current_sub:
+                    sub_index += 1
+                    line = formatter(
+                        idx=sub_index,
+                        start_time=current_start,
+                        end_time=current_end,
+                        sub_text=sentences[sentence_index].strip(),
+                    )
+                    sub_items.append(line)
+                    current_sub = current_sub.replace(sentences[sentence_index], "", 1).strip()
+                    current_start = current_end
+                    sentence_index += 1
+
+                # 如果当前字幕长度超过15个字符，也生成一个新的字幕项
+                if len(current_sub) > 15:
+                    sub_index += 1
+                    line = formatter(
+                        idx=sub_index,
+                        start_time=current_start,
+                        end_time=current_end,
+                        sub_text=current_sub.strip(),
+                    )
+                    sub_items.append(line)
+                    current_sub = ""
+                    current_start = current_end
+
+            # 处理剩余的文本
+            if current_sub.strip():
                 sub_index += 1
                 line = formatter(
                     idx=sub_index,
-                    start_time=start_time,
-                    end_time=end_time,
-                    sub_text=sub_text,
+                    start_time=current_start,
+                    end_time=current_end,
+                    sub_text=current_sub.strip(),
                 )
                 sub_items.append(line)
-                start_time = -1.0
-                sub_line = ""
 
-        if len(sub_items) == len(script_lines):
-            with open(subtitle_file, "w", encoding="utf-8") as file:
-                file.write("\n".join(sub_items) + "\n")
-            try:
-                sbs = subtitles.file_to_subtitles(subtitle_file, encoding="utf-8")
-                duration = max([tb for ((ta, tb), txt) in sbs])
-                logger.info(
-                    f"completed, subtitle file created: {subtitle_file}, duration: {duration}"
-                )
-            except Exception as e:
-                logger.error(f"failed, error: {str(e)}")
-                os.remove(subtitle_file)
-        else:
-            logger.warning(
-                f"failed, sub_items len: {len(sub_items)}, script_lines len: {len(script_lines)}"
-            )
+        if len(sub_items) == 0:
+            logger.error("No subtitle items generated")
+            return
 
+        with open(subtitle_file, "w", encoding="utf-8") as file:
+            file.write("\n".join(sub_items))
+
+        logger.info(f"completed, subtitle file created: {subtitle_file}")
     except Exception as e:
         logger.error(f"failed, error: {str(e)}")
+        traceback.print_exc()
 
 
 def get_audio_duration(sub_maker: submaker.SubMaker):
@@ -1283,73 +1299,72 @@ def get_audio_duration(sub_maker: submaker.SubMaker):
     return sub_maker.offset[-1][1] / 10000000
 
 
-if __name__ == "__main__":
-    voice_name = "zh-CN-XiaoxiaoMultilingualNeural-V2-Female"
+def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: float, force_regenerate: bool = True):
+    """
+    根据JSON文件中的多段文本进行TTS转换
+    
+    :param task_id: 任务ID
+    :param list_script: 脚本列表
+    :param voice_name: 语音名称
+    :param voice_rate: 语音速率
+    :param force_regenerate: 是否强制重新生成已存在的音频文件
+    :return: 生成的音频文件列表
+    """
     voice_name = parse_voice_name(voice_name)
-    voice_name = is_azure_v2_voice(voice_name)
-    print(voice_name)
-    a = tts("预计未来3天深圳冷空气活动频繁, 等待5个字，，，，，，5个字结束", "zh-CN-YunyangNeural", 1.2, "/NarratoAI/test123.mp3")
-    print(a)
-    # voices = get_all_azure_voices()
-    # print(len(voices))
+    output_dir = utils.task_dir(task_id)
+    audio_files = []
+    sub_maker_list = []
 
-#     async def _do():
-#         temp_dir = utils.storage_dir("temp")
-#
-#         voice_names = [
-#             "zh-CN-XiaoxiaoMultilingualNeural",
-#             # 女性
-#             "zh-CN-XiaoxiaoNeural",
-#             "zh-CN-XiaoyiNeural",
-#             # 男性
-#             "zh-CN-YunyangNeural",
-#             "zh-CN-YunxiNeural",
-#         ]
-#         text = """
-#         静夜思是唐代诗人李白创作的一首五言古诗。这首诗描绘了诗人在寂静的夜晚，看到窗前的明月，不禁想起远方的家乡和亲人，表达了他对家乡和亲人的深深思念之情。全诗内容是：“床前明月光，疑是地上霜。举头望明月，低头思故乡。”在这短短的四句诗中，诗人通过“明月”和“思故乡”的意象，巧妙地表达了离乡背井人的孤独与哀愁。首句“床前明月光”设景立意，通过明亮的月光引出诗人的遐想；“疑是地上霜”增添了夜晚的寒冷感，加深了诗人的孤寂之情；“举头望明月”和“低头思故乡”则是情感的升华，展现了诗人内心深处的乡愁和对家的渴望。这首诗简洁明快，情感真挚，是中国古典诗歌中非常著名的一首，也深受后人喜爱和推崇。
-#             """
-#
-#         text = """
-#         What is the meaning of life? This question has puzzled philosophers, scientists, and thinkers of all kinds for centuries. Throughout history, various cultures and individuals have come up with their interpretations and beliefs around the purpose of life. Some say it's to seek happiness and self-fulfillment, while others believe it's about contributing to the welfare of others and making a positive impact in the world. Despite the myriad of perspectives, one thing remains clear: the meaning of life is a deeply personal concept that varies from one person to another. It's an existential inquiry that encourages us to reflect on our values, desires, and the essence of our existence.
-#         """
-#
-#         text = """
-#                预计未来3天深圳冷空气活动频繁，未来两天持续阴天有小雨，出门带好雨具；
-#                10-11日持续阴天有小雨，日温差小，气温在13-17℃之间，体感阴凉；
-#                12日天气短暂好转，早晚清凉；
-#                    """
-#
-#         text = "[Opening scene: A sunny day in a suburban neighborhood. A young boy named Alex, around 8 years old, is playing in his front yard with his loyal dog, Buddy.]\n\n[Camera zooms in on Alex as he throws a ball for Buddy to fetch. Buddy excitedly runs after it and brings it back to Alex.]\n\nAlex: Good boy, Buddy! You're the best dog ever!\n\n[Buddy barks happily and wags his tail.]\n\n[As Alex and Buddy continue playing, a series of potential dangers loom nearby, such as a stray dog approaching, a ball rolling towards the street, and a suspicious-looking stranger walking by.]\n\nAlex: Uh oh, Buddy, look out!\n\n[Buddy senses the danger and immediately springs into action. He barks loudly at the stray dog, scaring it away. Then, he rushes to retrieve the ball before it reaches the street and gently nudges it back towards Alex. Finally, he stands protectively between Alex and the stranger, growling softly to warn them away.]\n\nAlex: Wow, Buddy, you're like my superhero!\n\n[Just as Alex and Buddy are about to head inside, they hear a loud crash from a nearby construction site. They rush over to investigate and find a pile of rubble blocking the path of a kitten trapped underneath.]\n\nAlex: Oh no, Buddy, we have to help!\n\n[Buddy barks in agreement and together they work to carefully move the rubble aside, allowing the kitten to escape unharmed. The kitten gratefully nuzzles against Buddy, who responds with a friendly lick.]\n\nAlex: We did it, Buddy! We saved the day again!\n\n[As Alex and Buddy walk home together, the sun begins to set, casting a warm glow over the neighborhood.]\n\nAlex: Thanks for always being there to watch over me, Buddy. You're not just my dog, you're my best friend.\n\n[Buddy barks happily and nuzzles against Alex as they disappear into the sunset, ready to face whatever adventures tomorrow may bring.]\n\n[End scene.]"
-#
-#         text = "大家好，我是乔哥，一个想帮你把信用卡全部还清的家伙！\n今天我们要聊的是信用卡的取现功能。\n你是不是也曾经因为一时的资金紧张，而拿着信用卡到ATM机取现？如果是，那你得好好看看这个视频了。\n现在都2024年了，我以为现在不会再有人用信用卡取现功能了。前几天一个粉丝发来一张图片，取现1万。\n信用卡取现有三个弊端。\n一，信用卡取现功能代价可不小。会先收取一个取现手续费，比如这个粉丝，取现1万，按2.5%收取手续费，收取了250元。\n二，信用卡正常消费有最长56天的免息期，但取现不享受免息期。从取现那一天开始，每天按照万5收取利息，这个粉丝用了11天，收取了55元利息。\n三，频繁的取现行为，银行会认为你资金紧张，会被标记为高风险用户，影响你的综合评分和额度。\n那么，如果你资金紧张了，该怎么办呢？\n乔哥给你支一招，用破思机摩擦信用卡，只需要少量的手续费，而且还可以享受最长56天的免息期。\n最后，如果你对玩卡感兴趣，可以找乔哥领取一本《卡神秘籍》，用卡过程中遇到任何疑惑，也欢迎找乔哥交流。\n别忘了，关注乔哥，回复用卡技巧，免费领取《2024用卡技巧》，让我们一起成为用卡高手！"
-#
-#         text = """
-#         2023全年业绩速览
-# 公司全年累计实现营业收入1476.94亿元，同比增长19.01%，归母净利润747.34亿元，同比增长19.16%。EPS达到59.49元。第四季度单季，营业收入444.25亿元，同比增长20.26%，环比增长31.86%；归母净利润218.58亿元，同比增长19.33%，环比增长29.37%。这一阶段
-# 的业绩表现不仅突显了公司的增长动力和盈利能力，也反映出公司在竞争激烈的市场环境中保持了良好的发展势头。
-# 2023年Q4业绩速览
-# 第四季度，营业收入贡献主要增长点；销售费用高增致盈利能力承压；税金同比上升27%，扰动净利率表现。
-# 业绩解读
-# 利润方面，2023全年贵州茅台，>归母净利润增速为19%，其中营业收入正贡献18%，营业成本正贡献百分之一，管理费用正贡献百分之一点四。(注：归母净利润增速值=营业收入增速+各科目贡献，展示贡献/拖累的前四名科目，且要求贡献值/净利润增速>15%)
-# """
-#         text = "静夜思是唐代诗人李白创作的一首五言古诗。这首诗描绘了诗人在寂静的夜晚，看到窗前的明月，不禁想起远方的家乡和亲人"
-#
-#         text = _format_text(text)
-#         lines = utils.split_string_by_punctuations(text)
-#         print(lines)
-#
-#         for voice_name in voice_names:
-#             voice_file = f"{temp_dir}/tts-{voice_name}.mp3"
-#             subtitle_file = f"{temp_dir}/tts.mp3.srt"
-#             sub_maker = azure_tts_v2(
-#                 text=text, voice_name=voice_name, voice_file=voice_file
-#             )
-#             create_subtitle(sub_maker=sub_maker, text=text, subtitle_file=subtitle_file)
-#             audio_duration = get_audio_duration(sub_maker)
-#             print(f"voice: {voice_name}, audio duration: {audio_duration}s")
-#
-#     loop = asyncio.get_event_loop_policy().get_event_loop()
-#     try:
-#         loop.run_until_complete(_do())
-#     finally:
-#         loop.close()
+    for item in list_script:
+        if not item['OST']:
+            timestamp = item['timestamp'].replace(':', '-')
+            audio_file = os.path.join(output_dir, f"audio_{timestamp}.mp3")
+            
+            # 检查文件是否已存在，如存在且不强制重新生成，则跳过
+            if os.path.exists(audio_file) and not force_regenerate:
+                logger.info(f"音频文件已存在，跳过生成: {audio_file}")
+                audio_files.append(audio_file)
+                continue
+
+            text = item['narration']
+
+            sub_maker = tts(
+                text=text,
+                voice_name=voice_name,
+                voice_rate=voice_rate,
+                voice_file=audio_file
+            )
+
+            if sub_maker is None:
+                logger.error(f"无法为时间戳 {timestamp} 生成音频; "
+                             f"如果您在中国，请使用VPN。或者手动选择 zh-CN-YunyangNeural 等角色；"
+                             f"或者使用其他 tts 引擎")
+                continue
+
+            audio_files.append(audio_file)
+            sub_maker_list.append(sub_maker)
+            logger.info(f"已生成音频文件: {audio_file}")
+
+    return audio_files, sub_maker_list
+
+
+if __name__ == "__main__":
+    voice_name = "zh-CN-YunyangNeural"
+    # voice_name = "af-ZA-AdriNeural"
+    voice_name = parse_voice_name(voice_name)
+    print(voice_name)
+
+    with open("../../resource/scripts/2024-0913-040147.json", 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    audio_files, sub_maker_list = tts_multiple(task_id="12312312", list_script=data, voice_name=voice_name, voice_rate=1)
+
+    full_text = " ".join([item['narration'] for item in data if not item['OST']])
+    subtitle_file = os.path.join(utils.task_dir("12312312"), "subtitle_multiple.srt")
+    create_subtitle_from_multiple(full_text, sub_maker_list, data, subtitle_file)
+    print(f"生成的音频文件列表: {audio_files}")
+    print(f"生成的字幕文件: {subtitle_file}")
+
+    # text = " ".join([item['narration'] for item in data])
+    # sub_marks = tts(text=text, voice_name=voice_name, voice_rate=1, voice_file="../../storage/tasks/12312312/aaa.mp3")
+    # create_subtitle(text=text, sub_maker=sub_marks, subtitle_file="../../storage/tasks/12312312/subtitle_123.srt")

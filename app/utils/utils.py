@@ -293,3 +293,102 @@ def get_current_country():
     except requests.RequestException:
         logger.error("获取IP地址信息时发生错误，请检查网络连接")
         return None
+
+
+def time_to_seconds(time_str: str) -> float:
+    parts = time_str.split(':')
+    if len(parts) == 2:
+        m, s = map(float, parts)
+        return m * 60 + s
+    elif len(parts) == 3:
+        h, m, s = map(float, parts)
+        return h * 3600 + m * 60 + s
+    else:
+        raise ValueError(f"Invalid time format: {time_str}")
+
+
+def seconds_to_time(seconds: float) -> str:
+    h, remainder = divmod(seconds, 3600)
+    m, s = divmod(remainder, 60)
+    return f"{int(h):02d}:{int(m):02d}:{s:06.3f}"
+
+
+def load_locales(i18n_dir):
+    _locales = {}
+    for root, dirs, files in os.walk(i18n_dir):
+        for file in files:
+            if file.endswith(".json"):
+                lang = file.split(".")[0]
+                with open(os.path.join(root, file), "r", encoding="utf-8") as f:
+                    _locales[lang] = json.loads(f.read())
+    return _locales
+
+
+def parse_extension(filename):
+    return os.path.splitext(filename)[1].strip().lower().replace(".", "")
+
+
+def script_dir(sub_dir: str = ""):
+    d = resource_dir(f"scripts")
+    if sub_dir:
+        d = os.path.join(d, sub_dir)
+    if not os.path.exists(d):
+        os.makedirs(d)
+    return d
+
+
+def video_dir(sub_dir: str = ""):
+    d = resource_dir(f"videos")
+    if sub_dir:
+        d = os.path.join(d, sub_dir)
+    if not os.path.exists(d):
+        os.makedirs(d)
+    return d
+
+
+def split_timestamp(timestamp):
+    """
+    拆分时间戳
+    """
+    start, end = timestamp.split('-')
+    start_hour, start_minute = map(int, start.split(':'))
+    end_hour, end_minute = map(int, end.split(':'))
+
+    start_time = '00:{:02d}:{:02d}'.format(start_hour, start_minute)
+    end_time = '00:{:02d}:{:02d}'.format(end_hour, end_minute)
+
+    return start_time, end_time
+
+
+def reduce_video_time(txt: str, duration: float = 0.21531):
+    """
+    按照字数缩减视频时长，一个字耗时约 0.21531 s,
+    Returns:
+    """
+    # 返回结果四舍五入为整数
+    duration = len(txt) * duration
+    return int(duration)
+
+
+def get_current_country():
+    """
+    判断当前网络IP地址所在的国家
+    """
+    try:
+        # 使用ipapi.co的免费API获取IP地址信息
+        response = requests.get('https://ipapi.co/json/')
+        data = response.json()
+
+        # 获取国家名称
+        country = data.get('country_name')
+
+        if country:
+            logger.debug(f"当前网络IP地址位于：{country}")
+            return country
+        else:
+            logger.debug("无法确定当前网络IP地址所在的国家")
+            return None
+
+    except requests.RequestException:
+        logger.error("获取IP地址信息时发生错误，请检查网络连接")
+        return None

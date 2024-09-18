@@ -3,8 +3,6 @@ import json
 import os.path
 import re
 from os import path
-
-from edge_tts import SubMaker
 from loguru import logger
 
 from app.config import config
@@ -333,45 +331,44 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=5)
 
     voice_name = voice.parse_voice_name(params.voice_name)
-    # voice_name = 'zh-CN-XiaoyiNeural'
     paragraph_number = params.paragraph_number
     n_threads = params.n_threads
     max_clip_duration = params.video_clip_duration
 
-    logger.info("\n\n## 1. 读取json")
+    logger.info("\n\n## 1. 读取视频json脚本")
     video_script_path = path.join(params.video_clip_json)
     # 判断json文件是否存在
     if path.exists(video_script_path):
-        # 读取json文件内容，并转为dict
-        with open(video_script_path, "r", encoding="utf-8") as f:
-            list_script = json.load(f)
-            video_list = [i['narration'] for i in list_script]
-            video_ost = [i['OST'] for i in list_script]
-            time_list = [i['timestamp'] for i in list_script]
+        try:
+            with open(video_script_path, "r", encoding="utf-8") as f:
+                list_script = json.load(f)
+                video_list = [i['narration'] for i in list_script]
+                video_ost = [i['OST'] for i in list_script]
+                time_list = [i['timestamp'] for i in list_script]
 
-            video_script = " ".join(video_list)
-            logger.debug(f"原json脚本: \n{video_script}")
-            logger.debug(f"原json时间戳: \n{time_list}")
-
+                video_script = " ".join(video_list)
+                logger.debug(f"解说完整脚本: \n{video_script}")
+                logger.debug(f"解说 OST 列表: \n{video_ost}")
+                logger.debug(f"解说时间戳列表: \n{time_list}")
+        except Exception as e:
+            logger.error(f"无法读取视频json脚本，请检查配置是否正确。{e}")
+            raise ValueError("无法读取视频json脚本，请检查配置是否正确")
     else:
-        raise ValueError("解说文案不存在！检查文案名称是否正确。")
+        raise ValueError("解说脚本不存在！请检查配置是否正确。")
 
-    # video_script = llm.text_polishing(context=video_script, language=params.video_language)
-    # logger.debug(f"润色后的视频脚本: \n{video_script}")
-    # sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=10)
-
-    logger.info("\n\n## 2. 生成音频")
-    audio_file = path.join(utils.task_dir(task_id), f"audio.mp3")
-    sub_maker = voice.tts(text=video_script, voice_name=voice_name, voice_file=audio_file, voice_rate=params.voice_rate)
-    if sub_maker is None:
+    logger.info("\n\n## 2. 生成音频列表")
+    audio_files, sub_maker_list = voice.tts_multiple(
+        task_id=task_id,
+        list_script=list_script,
+        voice_name=voice_name,
+        voice_rate=params.voice_rate,
+        force_regenerate=True
+    )
+    if audio_files is None:
         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
         logger.error(
-            "无法生成音频，可能是网络不可用。如果您在中国，请使用VPN。或者手动选择 zh-CN-Yunjian-男性 音频")
+            "音频文件为空，可能是网络不可用。如果您在中国，请使用VPN。或者手动选择 zh-CN-Yunjian-男性 音频")
         return
-
-    audio_duration = voice.get_audio_duration(sub_maker)
-    audio_duration = math.ceil(audio_duration)
-
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=30)
 
     subtitle_path = ""
@@ -379,17 +376,22 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
         subtitle_path = path.join(utils.task_dir(task_id), f"subtitle.srt")
         subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
         logger.info(f"\n\n## 3. 生成字幕、提供程序是: {subtitle_provider}")
-        subtitle_fallback = False
+        # subtitle_fallback = False
         if subtitle_provider == "edge":
-            voice.create_subtitle(text=video_script, sub_maker=sub_maker, subtitle_file=subtitle_path)
-            if not os.path.exists(subtitle_path):
-                subtitle_fallback = True
-                logger.warning("找不到字幕文件，回退到whisper")
-
-        if subtitle_provider == "whisper" or subtitle_fallback:
-            subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
-            logger.info("\n\n## 更正字幕")
-            subtitle.correct(subtitle_file=subtitle_path, video_script=video_script)
+            voice.create_subtitle_from_multiple(
+                text=video_script,
+                sub_maker_list=sub_maker_list,
+                list_script=list_script,
+                subtitle_file=subtitle_path
+            )
+        #     if not os.path.exists(subtitle_path):
+        #         subtitle_fallback = True
+        #         logger.warning("找不到字幕文件，回退到whisper")
+        #
+        # if subtitle_provider == "whisper" or subtitle_fallback:
+        #     subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
+        #     logger.info("\n\n## 更正字幕")
+        #     subtitle.correct(subtitle_file=subtitle_path, video_script=video_script)
 
         subtitle_lines = subtitle.file_to_subtitles(subtitle_path)
         if not subtitle_lines:
