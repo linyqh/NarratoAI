@@ -428,7 +428,7 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
             combined_video_path=combined_video_path,
             video_paths=subclip_videos,
             video_ost_list=video_ost,
-            audio_file=audio_file,
+            list_script=list_script,
             video_aspect=params.video_aspect,
             threads=n_threads
         )

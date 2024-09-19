@@ -1354,7 +1354,7 @@ if __name__ == "__main__":
     voice_name = parse_voice_name(voice_name)
     print(voice_name)
 
-    with open("../../resource/scripts/2024-0913-040147.json", 'r', encoding='utf-8') as f:
+    with open("../../resource/scripts/test.json", 'r', encoding='utf-8') as f:
         data = json.load(f)
 
     audio_files, sub_maker_list = tts_multiple(task_id="12312312", list_script=data, voice_name=voice_name, voice_rate=1)
