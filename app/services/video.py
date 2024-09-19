@@ -1,4 +1,5 @@
 import re
+import os
 import glob
 import random
 from typing import List
@@ -369,10 +370,17 @@ def generate_video_v2(
         return _clip
 
     video_clip = VideoFileClip(video_path)
+    original_audio = video_clip.audio  # 保存原始视频的音轨
+    video_duration = video_clip.duration
 
     # 处理多个音频文件
     audio_clips = []
     for audio_path in audio_paths:
+        # 确保每个音频文件路径是正确的
+        if not os.path.exists(audio_path):
+            logger.warning(f"音频文件不存在: {audio_path}")
+            continue
+
         # 从文件名中提取时间信息
         match = re.search(r'audio_(\d{2}-\d{2}-\d{2}-\d{2})\.mp3', os.path.basename(audio_path))
         if match:
@@ -382,28 +390,53 @@ def generate_video_v2(
             end_time = sum(int(x) * 60 ** i for i, x in enumerate(reversed(end)))
 
             audio_clip = AudioFileClip(audio_path).volumex(params.voice_volume)
-            audio_clip = audio_clip.set_start(start_time).set_end(end_time)
+            
+            # 确保结束时间不超过音频实际长度
+            actual_end_time = min(end_time - start_time, audio_clip.duration)
+            
+            audio_clip = audio_clip.subclip(0, actual_end_time)
+            audio_clip = audio_clip.set_start(start_time).set_end(start_time + actual_end_time)
             audio_clips.append(audio_clip)
         else:
             logger.warning(f"无法从文件名解析时间信息: {audio_path}")
 
-    # 合并所有音频剪辑
+    # 合并所有音频剪辑，包括原始音轨
     if audio_clips:
+        audio_clips.insert(0, original_audio)  # 将原始音轨添加到音频剪辑列表的开头
         audio_clip = CompositeAudioClip(audio_clips)
     else:
-        logger.warning("没有有效的音频文件")
-        audio_clip = AudioClip(lambda t: 0, duration=video_clip.duration)
+        logger.warning("没有有效的音频文件，使用原始音轨")
+        audio_clip = original_audio
 
-    # 字幕处理部分保持不变
+    # 字幕处理部分
     if subtitle_path and os.path.exists(subtitle_path):
         sub = SubtitlesClip(subtitles=subtitle_path, encoding="utf-8")
         text_clips = []
+        
         for item in sub.subtitles:
             clip = create_text_clip(subtitle_item=item)
+            
+            # 确保字幕的开始时间不早于视频开始
+            start_time = max(clip.start, 0)
+            
+            # 如果字幕的开始时间晚于视频结束时间，则跳过此字幕
+            if start_time >= video_duration:
+                continue
+            
+            # 调整字幕的结束时间，但不要超过视频长度
+            end_time = min(clip.end, video_duration)
+            
+            # 调整字幕的时间范围
+            clip = clip.set_start(start_time).set_end(end_time)
+            
             text_clips.append(clip)
+        
+        logger.info(f"处理了 {len(text_clips)} 段字幕")
+        
+        # 创建一个新的视频剪辑，包含所有字幕
         video_clip = CompositeVideoClip([video_clip, *text_clips])
 
-    # 背景音乐处理部分保持不变
+    # 背景音乐处理部分
     bgm_file = get_bgm_file(bgm_type=params.bgm_type, bgm_file=params.bgm_file)
     if bgm_file:
         try:
@@ -573,39 +606,43 @@ def combine_clip_videos(combined_video_path: str,
 
 
 if __name__ == "__main__":
-    combined_video_path = "../../storage/tasks/12312312/com123.mp4"
-
-    video_paths = ['../../storage/cache_videos/vid-00_00-00_03.mp4',
-                   '../../storage/cache_videos/vid-00_03-00_07.mp4',
-                   '../../storage/cache_videos/vid-00_12-00_17.mp4',
-                   '../../storage/cache_videos/vid-00_26-00_31.mp4']
-    video_ost_list = [False, True, False, True]
-    list_script = [
-        {
-            "picture": "夜晚，一个小孩在树林里奔跑，后面有人拿着火把在追赶",
-            "timestamp": "00:00-00:03",
-            "narration": "夜黑风高的树林，一个小孩在拼命奔跑，后面的人穷追不舍！",
-            "OST": False
-        },
-        {
-            "picture": "追赶的人命令抓住小孩",
-            "timestamp": "00:03-00:07",
-            "narration": "原声播放1",
-            "OST": True
-        },
-        {
-            "picture": "小孩躲在草丛里，黑衣人用脚踢了踢他",
-            "timestamp": "00:12-00:17",
-            "narration": "小孩脱下外套，跑进树林, 一路奔跑，直到第二天清晨",
-            "OST": False
-        },
-        {
-            "picture": "小孩跑到车前，慌慌张张地对女人说有人要杀他",
-            "timestamp": "00:26-00:31",
-            "narration": "原声播放2",
-            "OST": True
-        }
-    ]
+    # combined_video_path = "../../storage/tasks/12312312/com123.mp4"
+    #
+    # video_paths = ['../../storage/cache_videos/vid-00_00-00_03.mp4',
+    #                '../../storage/cache_videos/vid-00_03-00_07.mp4',
+    #                '../../storage/cache_videos/vid-00_12-00_17.mp4',
+    #                '../../storage/cache_videos/vid-00_26-00_31.mp4']
+    # video_ost_list = [False, True, False, True]
+    # list_script = [
+    #     {
+    #         "picture": "夜晚，一个小孩在树林里奔跑，后面有人拿着火把在追赶",
+    #         "timestamp": "00:00-00:03",
+    #         "narration": "夜黑风高的树林，一个小孩在拼命奔跑，后面的人穷追不舍！",
+    #         "OST": False,
+    #         "new_timestamp": "00:00-00:03"
+    #     },
+    #     {
+    #         "picture": "追赶的人命令抓住小孩",
+    #         "timestamp": "00:03-00:07",
+    #         "narration": "原声播放1",
+    #         "OST": True,
+    #         "new_timestamp": "00:03-00:07"
+    #     },
+    #     {
+    #         "picture": "小孩躲在草丛里，黑衣人用脚踢了踢他",
+    #         "timestamp": "00:12-00:17",
+    #         "narration": "小孩脱下外套，跑进树林, 一路奔跑，直到第二天清晨",
+    #         "OST": False,
+    #         "new_timestamp": "00:07-00:12"
+    #     },
+    #     {
+    #         "picture": "小孩跑到车前，慌慌张张地对女人说有人要杀他",
+    #         "timestamp": "00:26-00:31",
+    #         "narration": "原声播放2",
+    #         "OST": True,
+    #         "new_timestamp": "00:12-00:17"
+    #     }
+    # ]
     # combine_clip_videos(combined_video_path=combined_video_path, video_paths=video_paths, video_ost_list=video_ost_list, list_script=list_script)
 
     cfg = VideoClipParams()
@@ -633,14 +670,18 @@ if __name__ == "__main__":
     #                params=cfg
     #                )
 
-    video_path = "../../storage/tasks/12312312/com123.mp4"
+    video_path = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/combined-1.mp4"
 
-    audio_paths = ['../../storage/tasks/12312312/audio_00-00-00-03.mp3',
-                   '../../storage/tasks/12312312/audio_00-12-00-17.mp3']
+    audio_paths = ['../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-00-00-07.mp3',
+                   '../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-14-00-17.mp3',
+                   '../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-17-00-22.mp3',
+                   '../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-34-00-45.mp3',
+                   '../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-59-01-09.mp3',
+                   ]
 
-    subtitle_path = "../../storage/tasks/12312312/subtitle_multiple.srt"
+    subtitle_path = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa\subtitle.srt"
 
-    output_file = "../../storage/tasks/12312312/out123.mp4"
+    output_file = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/final-123.mp4"
 
     generate_video_v2(video_path=video_path,
                        audio_paths=audio_paths,

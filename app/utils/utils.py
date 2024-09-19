@@ -7,7 +7,7 @@ from loguru import logger
 import json
 from uuid import uuid4
 import urllib3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.models import const
 
@@ -326,3 +326,42 @@ def calculate_total_duration(scenes):
         total_seconds += duration.total_seconds()
     
     return total_seconds
+
+
+def add_new_timestamps(scenes):
+    """
+    新增新视频的时间戳，并为"原生播放"的narration添加唯一标识符
+    Args:
+        scenes: 场景列表
+
+    Returns:
+        更新后的场景列表
+    """
+    current_time = timedelta()
+    updated_scenes = []
+
+    for scene in scenes:
+        new_scene = scene.copy()  # 创建场景的副本，以保留原始数据
+        start, end = new_scene['timestamp'].split('-')
+        start_time = datetime.strptime(start, '%M:%S')
+        end_time = datetime.strptime(end, '%M:%S')
+        duration = end_time - start_time
+
+        new_start = current_time
+        current_time += duration
+        new_end = current_time
+
+        # 将 timedelta 转换为分钟和秒
+        new_start_str = f"{int(new_start.total_seconds() // 60):02d}:{int(new_start.total_seconds() % 60):02d}"
+        new_end_str = f"{int(new_end.total_seconds() // 60):02d}:{int(new_end.total_seconds() % 60):02d}"
+
+        new_scene['new_timestamp'] = f"{new_start_str}-{new_end_str}"
+
+        # 为"原生播放"的narration添加唯一标识符
+        if new_scene.get('narration') == "原声播放":
+            unique_id = str(uuid4())[:8]  # 使用UUID的前8个字符作为唯一标识符
+            new_scene['narration'] = f"原声播放_{unique_id}"
+
+        updated_scenes.append(new_scene)
+
+    return updated_scenes

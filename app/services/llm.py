@@ -451,19 +451,19 @@ def gemini_video2json(video_origin_name: str, video_origin_path: str, video_plot
 """ % (language, video_plot)
 
     logger.debug(f"视频名称: {video_origin_name}")
-    try:
-        gemini_video_file = gemini.upload_file(video_origin_path)
-        logger.debug(f"上传视频至 Google cloud 成功: {gemini_video_file.name}")
-        while gemini_video_file.state.name == "PROCESSING":
-            import time
-            time.sleep(1)
-            gemini_video_file = gemini.get_file(gemini_video_file.name)
-            logger.debug(f"视频当前状态(ACTIVE才可用): {gemini_video_file.state.name}")
-        if gemini_video_file.state.name == "FAILED":
-            raise ValueError(gemini_video_file.state.name)
-    except Exception as err:
-        logger.error(f"上传视频至 Google cloud 失败, 请检查 VPN 配置和 APIKey 是否正确 \n{traceback.format_exc()}")
-        raise TimeoutError(f"上传视频至 Google cloud 失败, 请检查 VPN 配置和 APIKey 是否正确; {err}")
+    # try:
+    gemini_video_file = gemini.upload_file(video_origin_path)
+    logger.debug(f"上传视频至 Google cloud 成功: {gemini_video_file.name}")
+    while gemini_video_file.state.name == "PROCESSING":
+        import time
+        time.sleep(1)
+        gemini_video_file = gemini.get_file(gemini_video_file.name)
+        logger.debug(f"视频当前状态(ACTIVE才可用): {gemini_video_file.state.name}")
+    if gemini_video_file.state.name == "FAILED":
+        raise ValueError(gemini_video_file.state.name)
+    # except Exception as err:
+    #     logger.error(f"上传视频至 Google cloud 失败, 请检查 VPN 配置和 APIKey 是否正确 \n{traceback.format_exc()}")
+    #     raise TimeoutError(f"上传视频至 Google cloud 失败, 请检查 VPN 配置和 APIKey 是否正确; {err}")
 
     streams = model.generate_content([prompt, gemini_video_file], stream=True)
     response = []
@@ -490,7 +490,7 @@ if __name__ == "__main__":
     # sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     #
     video_subject = "卖菜大妈竟是皇嫂"
-    video_path = "/NarratoAI/resource/videos/demoyasuo.mp4"
+    video_path = "../../resource/videos/demoyasuo.mp4"
 
     video_plot = ''' '''
     language = "zh-CN"

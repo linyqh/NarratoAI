@@ -395,7 +395,7 @@ with left_panel:
                     # 去掉json的头尾标识
                     input_json = input_json.strip('```json').strip('```')
                     try:
-                        data = json.loads(input_json)
+                        data = utils.add_new_timestamps(json.loads(input_json))
                     except Exception as err:
                         raise ValueError(
                             f"视频脚本格式错误，请检查脚本是否符合 JSON 格式；{err} \n\n{traceback.format_exc()}")

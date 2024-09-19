@@ -1213,7 +1213,7 @@ def create_subtitle_from_multiple(text: str, sub_maker_list: List[SubMaker], lis
             if script_item['OST']:
                 continue
 
-            start_time, end_time = script_item['timestamp'].split('-')
+            start_time, end_time = script_item['new_timestamp'].split('-')
             if sub_maker_index >= len(sub_maker_list):
                 logger.error(f"Sub maker list index out of range: {sub_maker_index}")
                 break
@@ -1317,7 +1317,7 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
 
     for item in list_script:
         if not item['OST']:
-            timestamp = item['timestamp'].replace(':', '-')
+            timestamp = item['new_timestamp'].replace(':', '-')
             audio_file = os.path.join(output_dir, f"audio_{timestamp}.mp3")
             
             # 检查文件是否已存在，如存在且不强制重新生成，则跳过

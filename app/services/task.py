@@ -440,12 +440,13 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
 
         logger.info(f"\n\n## 6. 最后一步: {index} => {final_video_path}")
         # 把所有东西合到在一起
-        video.generate_video(video_path=combined_video_path,
-                             audio_path=audio_file,
-                             subtitle_path=subtitle_path,
-                             output_file=final_video_path,
-                             params=params,
-                             )
+        video.generate_video_v2(
+            video_path=combined_video_path,
+            audio_paths=audio_files,
+            subtitle_path=subtitle_path,
+            output_file=final_video_path,
+            params=params,
+        )
 
         _progress += 50 / params.video_count / 2
         sm.state.update_task(task_id, progress=_progress)
