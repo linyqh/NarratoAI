@@ -8,10 +8,100 @@ from openai import OpenAI
 from openai import AzureOpenAI
 from openai.types.chat import ChatCompletion
 import google.generativeai as gemini
+from googleapiclient.errors import ResumableUploadError
+from google.api_core.exceptions import FailedPrecondition
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 from app.config import config
 
 _max_retries = 5
+
+Method = """
+重要提示：每一部剧的文案，前几句必须吸引人
+首先我们在看完看懂电影后，大脑里面要先有一个大概的轮廓，也就是一个类似于作文的大纲，电影主题线在哪里，首先要找到。
+一般将文案分为开头、内容、结尾
+## 开头部分
+文案开头三句话，是留住用户的关键！
+
+### 方式一：开头概括总结
+文案的前三句，是整部电影的概括总结，2-3句介绍后，开始叙述故事剧情！
+推荐新手（新号）做：（盘点型）
+盘点全球最恐怖的10部电影
+盘点全球最科幻的10部电影
+盘点全球最悲惨的10部电影
+盘点全球最值得看的10部灾难电影
+盘点全球最值得看的10部励志电影
+
+下面的示例就是最简单的解说文案开头：
+1.这是XXX国20年来最大尺度的一部剧，极度烧脑，却让99%的人看得心潮澎湃、无法自拔，故事开始……
+2.这是有史以来电影院唯一一部全程开灯放完的电影，期间无数人尖叫昏厥，他被成为勇敢者的专属，因为99%的人都不敢看到结局，许多人看完它从此不愿再碰手机，他就是大名鼎鼎的暗黑神作《XXX》……
+3.这到底是一部什么样的电影，能被55个国家公开抵制，它甚至为了上映，不惜删减掉整整47分钟的剧情……
+4.是什么样的一个人，被豆瓣网友称之为史上最牛P的老太太，都70岁了还要去贩毒……
+5.他是M国历史上最NB/惨/猖狂/冤枉……的囚犯/抢劫犯/……
+6.这到底是一部什么样的影片，他一个人就拿了4个顶级奖项，第一季8.7分，第二季直接干到9.5分，11万人给出5星好评，一共也就6集，却斩获26项国际大奖，看过的人都说，他是近年来最好的xxx剧，几乎成为了近年来xxx剧的标杆。故事发生在……
+7.他是国产电影的巅峰佳作，更是许多80-90后的青春启蒙，曾入选《时代》周刊，获得年度佳片第一，可在国内却被尘封多年，至今为止都无法在各大视频网站看到完整资源，他就是《xxxxxx》
+8.这是一部让所有人看得荷尔蒙飙升的爽片……
+9.他被成为世界上最虐心绝望的电影，至今无人敢看第二遍，很难想象，他是根据真实事件改编而来……
+10.这大概是有史以来最令人不寒而栗的电影，当年一经放映，就点燃了无数人的怒火，不少观众不等影片放完，就愤然离场，它比《xxx》更让人绝望，比比《xxx》更让人xxx，能坚持看完全片的人，更是万中无一，包括我。甚至观影结束后，有无数人抵制投诉这部电影，认为影片的导演玩弄了他们的情感！他就是顶级神作《xxxx》……
+11.这是X国有史以来最高赞的一部悬疑电影，然而却因为某些原因，国内90%的人，没能看过这部片子，他就是《xxx》……
+12.有这样一部电影，这辈子，你绝对不想再看第二遍，并不是它剧情烂俗，而是它的结局你根本承受不起/想象不到……甚至有80%的观众在观影途中情绪崩溃中途离场，更让许多同行都不想解说这部电影，他就是大名鼎鼎的暗黑神作《xxx》…
+13.它被誉为史上最牛悬疑片，无数人在看完它时候，一个月不敢照镜子，这样一部仅适合部分年龄段观看的影片，究竟有什么样的魅力，竟然获得某瓣8.2的高分，很多人说这部电影到处都是看点，他就是《xxx》….
+14.这是一部在某瓣上被70万人打出9.3分的高分的电影……到底是一部什么样的电影，能够在某瓣上被70万人打出9.3分的高分……
+15.这是一部细思极恐的科幻大片，整部电影颠覆你的三观，它的名字叫……
+16.史上最震撼的灾难片，每一点都不舍得快进的电影，他叫……
+17.今天给大家带来一部基于真实事件改编的（主题介绍一句……）的故事片，这是一部连环悬疑剧，如果不看到最后绝对想不到结局竟然是这样的反转……
+
+### 方式二：情景式、假设性开头
+1.他叫……你以为他是……的吗？不。他是来……然后开始叙述
+2.你知道……吗？原来……然后开始叙述
+3.如果给你….，你会怎么样？
+4.如果你是….，你会怎么样？
+
+### 方式三：以国家为开头！简单明了。话语不需要多，但是需要讲解透彻！
+1.这是一部韩国最新灾难片，你一定没有看过……
+2.这是一部印度高分悬疑片，
+3.这部电影原在日本因为……而被下架，
+4.这是韩国最恐怖的犯罪片，
+5.这是最近国产片评分最高的悬疑片
+以上均按照影片国家来区分，然后简单介绍下主题。就可以开始直接叙述作品。也是一个很不错的方法！
+
+### 方式四：如何自由发挥
+正常情况下，每一部电影都有非常关键的一个大纲，这部电影的主题其实是可以用一句话、两句话概括的。只要看懂电影，就能找到这个主题大纲。
+我们提前把这个主题大纲给放到影视最前面，作为我们的前三句的文案，将会非常吸引人！
+
+例如：
+1.这不是电影，这是真实故事。两个女人和一个男人被关在可桑拿室。喊破喉咙也没有一丝回音。窒息感和热度让人抓狂，故事就是从这里开始！ 
+2.如果你男朋友出轨了，他不爱你了，还对你家暴，怎么办？接下来这部电影就会教你如何让老公服服帖帖的呆在你身边！女主是一个……开始叙述了。 
+3.他力大无穷，双眼放光，这不是拯救地球的超人吗？然而不是。今天给大家推荐的这部电影叫……
+
+以上是需要看完影片，看懂影片，然后从里面提炼出精彩的几句话,当然是比较难的，当你不会自己去总结前三句的经典的话。可以用前面方式一二三！
+实在想不出来如何去提炼，可以去搜索这部剧，对这部电影的影评，也会给你带过来很多灵感的！
+
+
+## 内容部分
+开头有了，剩下的就是开始叙述正文了。主题介绍是根据影片内容来介绍，如果实在自己想不出来。可以参考其他平台中对这部电影的精彩介绍，提取2-3句也可以！
+正常情况下，我们叙述的时候其实是非常简单的，把整部电影主题线，叙述下来，其实文案就是加些修饰词把电影重点内容叙述下来。加上一些修饰词。
+
+以悬疑剧为例：
+竟然，突然，原来，但是，但，可是，结果，直到，如果，而，果然，发现，只是，出奇，之后，没错，不止，更是，当然，因为，所以……等！
+以上是比较常用的，当然还有很多，需要靠平时思考和阅读的积累！因悬疑剧会有多处反转剧情。所以需要用到反转的修饰词比较多，只有用到这些词。才能体现出各种反转剧情！
+建议大家在刚开始做的时候，做8分钟内的，不要太长，分成三段。每段也是不超过三分钟，这样时间刚好。可以比较好的完成完播率！
+
+
+## 结尾部分
+最后故事的结局，除了反转，可以来点人生的道理！如果刚开始不会，可以不写。
+后面水平越来越高的时候，可以进行人生道理的讲评。
+
+比如：这部电影告诉我们……
+类似于哲理性质的，作为一个总结！
+也可以把最后的影视反转，原生放出来，留下悬念。
+
+比如：也可以总结下这部短片如何的好，推荐/值得大家去观看之类的话语。
+其实就是给我们的作品来一个总结，总结我们所做的三个视频，有开始就要有结束。这个结束不一定是固定的模版。但是视频一定要有结尾。让人感觉有头有尾才最舒服！
+做解说是一个比较浪费脑细胞的活，虽然刚开始比较难一点，但是当你正常做三部剧之后。所有自己的思路都会被打开！以后的基本就可以独立完成来操作来。
+做解说第一次，可能会做两天。第二次可能就需要一天了。慢慢的。时间缩短到8个小时之内是我们平常的制作全部时间！
+
+"""
 
 
 def _generate_response(prompt: str) -> str:
@@ -476,26 +566,200 @@ def gemini_video2json(video_origin_name: str, video_origin_path: str, video_plot
     return response
 
 
+def gemini_video_transcription(video_origin_name: str, video_origin_path: str, language: str):
+    '''
+    使用 gemini-1.5-xxx 进行视频画面转录
+    '''
+    api_key = config.app.get("gemini_api_key")
+    model_name = config.app.get("gemini_model_name")
+
+    gemini.configure(api_key=api_key)
+    model = gemini.GenerativeModel(model_name=model_name)
+
+    prompt = """
+    Please transcribe the audio, include timestamps, and provide visual descriptions, then output in JSON format，use %s ONLY.
+
+    Use this JSON schema:
+
+    Graphics = {"timestamp": "MM:SS-MM:SS", "picture": "str", "quotes": "str"(If no one says anything, use an empty string instead.)}
+    Return: list[Graphics]
+    """ % language
+
+    logger.debug(f"视频名称: {video_origin_name}")
+    try:
+        gemini_video_file = gemini.upload_file(video_origin_path)
+        # gemini_video_file = gemini.get_file("files/uxo6r9n80s84")
+        logger.debug(f"上传视频至 Google cloud 成功: {gemini_video_file.name}")
+        while gemini_video_file.state.name == "PROCESSING":
+            import time
+            time.sleep(1)
+            gemini_video_file = gemini.get_file(gemini_video_file.name)
+            logger.debug(f"视频当前状态(ACTIVE才可用): {gemini_video_file.state.name}")
+        if gemini_video_file.state.name == "FAILED":
+            raise ValueError(gemini_video_file.state.name)
+    except ResumableUploadError as err:
+        logger.error(f"上传视频至 Google cloud 失败, 用户的位置信息不支持用于该API; \n{traceback.format_exc()}")
+        return ""
+    except FailedPrecondition as err:
+        logger.error(f"400 用户位置不支持 Google API 使用。\n{traceback.format_exc()}")
+        return ""
+
+    response = model.generate_content(
+        [prompt, gemini_video_file],
+        safety_settings={
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+    )
+    logger.success(f"llm 视频转录: \n{response.text}")
+    return response.text
+
+
+def video_copy_writing(video_plot, video_name):
+    """
+    影视解说（电影解说）
+    """
+    api_key = config.app.get("gemini_api_key")
+    model_name = config.app.get("gemini_model_name")
+
+    gemini.configure(api_key=api_key)
+    model = gemini.GenerativeModel(model_name)
+
+    prompt = f"""
+    **角色设定：**  
+    你是一名有10年经验的影视解说文案的创作者，
+    下面是关于如何写解说文案的方法 {Method}，请认真阅读它，之后我会给你一部影视作品的名称，然后让你写一篇文案
+    请根据方法撰写 《{video_name}》的影视解说文案，文案要符合以下要求:
+    
+    **任务目标：**  
+    1. 文案字数在 1500字左右，严格要求字数，最低不得少于 1000字。
+    2. 避免使用 markdown 格式输出文案。  
+    3. 仅输出解说文案，不输出任何其他内容。
+    4. 不要包含小标题，每个段落以 \n 进行分隔。
+    """
+    response = model.generate_content(
+        prompt,
+        generation_config=gemini.types.GenerationConfig(
+            candidate_count=1,
+            temperature=1.3,
+        ),
+        safety_settings={
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+    )
+    print(response.text)
+    print("字数：", len(response.text))
+
+
+def short_play_commentary(video_plot: str, video_name: str):
+    """
+    影视解说（短剧解说）
+    """
+    api_key = config.app.get("gemini_api_key")
+    model_name = config.app.get("gemini_model_name")
+
+    gemini.configure(api_key=api_key)
+    model = gemini.GenerativeModel(model_name)
+
+    if not video_plot:
+        raise ValueError("短剧的简介不能为空")
+    if not video_name:
+        raise ValueError("短剧名称不能为空")
+
+    prompt = f"""
+    **角色设定：**  
+    你是一名有10年经验的短剧解说文案的创作者，
+    下面是关于如何写解说文案的方法 {Method}，请认真阅读它，之后我会给你一部短剧作品的简介，然后让你写一篇解说文案
+    请根据方法撰写 《{video_name}》的解说文案，《{video_name}》的大致剧情如下: {video_plot}
+    文案要符合以下要求:
+
+    **任务目标：**  
+    1. 文案字数在 800字左右，严格要求字数，最低不得少于 500字。
+    2. 避免使用 markdown 格式输出文案。
+    3. 仅输出解说文案，不输出任何其他内容。
+    4. 不要包含小标题，每个段落以 \n 进行分隔。
+    """
+    response = model.generate_content(
+        prompt,
+        generation_config=gemini.types.GenerationConfig(
+            candidate_count=1,
+            temperature=1.0,
+        ),
+        safety_settings={
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+    )
+    print(response.text)
+    print("字数：", len(response.text))
+
+
 if __name__ == "__main__":
     """
     File API 可让您为每个项目存储最多 20 GB 的文件，每个项目使用 每个文件的大小上限为 2 GB。文件会存储 48 小时。
     它们可以是 在此期间使用您的 API 密钥访问，但无法下载 使用任何 API。它已在使用 Gemini 的所有地区免费提供 API 可用。
     """
-    import os
-    import sys
-    import requests
-    from app.utils.utils import get_current_country
+    # video_copy_writing("", "阿甘正传")
 
-    # # 添加当前目录到系统路径
-    # sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    video_plot = """
+    ## 短剧《卖菜大妈竟是皇嫂》分析
+
+**主要剧情:**
+
+短剧《卖菜大妈竟是皇嫂》讲述了农妇刘桂花在逃荒途中意外救助了一名孩童，这个孩童正是当时的五皇子。然而，在救五皇子的过程中，刘桂花失去了自己的儿子志洲。二十年后，五皇子长大成人，并与刘桂花重逢。刘桂花在得知真相后，面对着皇室的权势和自己的过往，最终选择勇敢地面对命运，并最终收获了幸福。
+
+**内容:**
+
+短剧以古装仙侠为题材，融合了穿越、宫廷、爱情等元素，展现了主角刘桂花从一个平凡的卖菜大妈成长为皇室成员的传奇故事。剧中展现了刘桂花善良、勇敢、坚韧的性格，以及她与五皇子之间错综复杂的情感纠葛。
+
+**核心信息:**
+
+这部短剧的核心信息是“命运的安排，无法改变，但我们可以选择如何面对”。刘桂花在经历了失去儿子的痛苦和与五皇子重逢的惊喜后，最终选择了勇敢地面对命运，并最终获得了幸福。这体现了人性的善良、勇敢和坚韧，也展现了对美好生活的追求和对命运的掌控。
+
+**人物:**
+
+* **刘桂花:**  短剧的主角，一位善良、勇敢、坚韧的农妇。她经历了失去儿子的痛苦，却依然保持着善良的本性，最终获得了幸福。
+* **五皇子:** 皇室成员，与刘桂花有着特殊的缘分。他善良、正直、勇敢，最终与刘桂花相爱。
+
+**思考:**
+
+这部短剧带给我们的思考是，面对命运的安排，我们应该保持勇敢和坚韧，积极地面对生活，追求美好的生活，而不是一味地沉溺于痛苦之中。同时，短剧也提醒我们，人性的善良和勇敢，是战胜困难、获得幸福的关键。
+
+**总结:**
+
+《卖菜大妈竟是皇嫂》是一部以女性视角展开的古装仙侠题材作品，讲述了主角刘桂花从一个平凡的卖菜大妈成长为皇室成员的传奇故事。剧中展现了刘桂花善良、勇敢、坚韧的性格，以及她与五皇子之间错综复杂的情感纠葛。这部短剧的核心信息是“命运的安排，无法改变，但我们可以选择如何面对”，它鼓励人们在面对困难时，保持勇敢和坚韧，积极地面对生活，最终获得幸福。
+    """
+    short_play_commentary(video_plot, "卖菜大妈竟是皇嫂")
+
+    # import os
+    # import sys
+    # import requests
+    # from app.utils.utils import get_current_country
     #
-    video_subject = "卖菜大妈竟是皇嫂"
-    video_path = "../../resource/videos/demoyasuo.mp4"
-
-    video_plot = ''' '''
-    language = "zh-CN"
-    res = gemini_video2json(video_subject, video_path, video_plot, language)
-    print(res)
+    # # # 添加当前目录到系统路径
+    # # sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    # # proxy_url_http = "http://127.0.0.1:7890"
+    # # os.environ["HTTP_PROXY"] = proxy_url_http
+    # # os.environ["HTTPS_PROXY"] = proxy_url_http
+    #
+    # video_subject = "卖菜大妈竟是皇嫂"
+    # video_path = "../../resource/videos/demoyasuo.mp4"
+    # # video_path = "../../resource/videos/庆余年2-1-1.mp4"
+    #
+    # video_plot = ''' '''
+    # language = "zh-CN"
+    # # res = gemini_video2json(video_subject, video_path, video_plot, language)
+    # script = gemini_video_transcription(video_subject, video_path, language)
+    # cleaned_string = script.strip("```json").strip("```")
+    # res = json.loads(cleaned_string)
+    # print(res)
 
     # get_current_country()
     # api_key = config.app.get("gemini_api_key")
@@ -520,3 +784,89 @@ if __name__ == "__main__":
     #
     # response = "".join(response)
     # logger.success(f"llm response: \n{response}")
+    wenan = """
+重要提示：每一部剧的文案，前几句必须吸引人
+首先我们在看完看懂电影后，大脑里面要先有一个大概的轮廓，也就是一个类似于作文的大纲，电影主题线在哪里，首先要找到。
+一般将文案分为开头、内容、结尾
+## 开头部分
+文案开头三句话，是留住用户的关键！
+
+### 方式一：开头概括总结
+文案的前三句，是整部电影的概括总结，2-3句介绍后，开始叙述故事剧情！
+推荐新手（新号）做：（盘点型）
+盘点全球最恐怖的10部电影
+盘点全球最科幻的10部电影
+盘点全球最悲惨的10部电影
+盘点全球最值得看的10部灾难电影
+盘点全球最值得看的10部励志电影
+
+下面的示例就是最简单的解说文案开头：
+1.这是XXX国20年来最大尺度的一部剧，极度烧脑，却让99%的人看得心潮澎湃、无法自拔，故事开始……
+2.这是有史以来电影院唯一一部全程开灯放完的电影，期间无数人尖叫昏厥，他被成为勇敢者的专属，因为99%的人都不敢看到结局，许多人看完它从此不愿再碰手机，他就是大名鼎鼎的暗黑神作《XXX》……
+3.这到底是一部什么样的电影，能被55个国家公开抵制，它甚至为了上映，不惜删减掉整整47分钟的剧情……
+4.是什么样的一个人，被豆瓣网友称之为史上最牛P的老太太，都70岁了还要去贩毒……
+5.他是M国历史上最NB/惨/猖狂/冤枉……的囚犯/抢劫犯/……
+6.这到底是一部什么样的影片，他一个人就拿了4个顶级奖项，第一季8.7分，第二季直接干到9.5分，11万人给出5星好评，一共也就6集，却斩获26项国际大奖，看过的人都说，他是近年来最好的xxx剧，几乎成为了近年来xxx剧的标杆。故事发生在……
+7.他是国产电影的巅峰佳作，更是许多80-90后的青春启蒙，曾入选《时代》周刊，获得年度佳片第一，可在国内却被尘封多年，至今为止都无法在各大视频网站看到完整资源，他就是《xxxxxx》
+8.这是一部让所有人看得荷尔蒙飙升的爽片……
+9.他被成为世界上最虐心绝望的电影，至今无人敢看第二遍，很难想象，他是根据真实事件改编而来……
+10.这大概是有史以来最令人不寒而栗的电影，当年一经放映，就点燃了无数人的怒火，不少观众不等影片放完，就愤然离场，它比《xxx》更让人绝望，比比《xxx》更让人xxx，能坚持看完全片的人，更是万中无一，包括我。甚至观影结束后，有无数人抵制投诉这部电影，认为影片的导演玩弄了他们的情感！他就是顶级神作《xxxx》……
+11.这是X国有史以来最高赞的一部悬疑电影，然而却因为某些原因，国内90%的人，没能看过这部片子，他就是《xxx》……
+12.有这样一部电影，这辈子，你绝对不想再看第二遍，并不是它剧情烂俗，而是它的结局你根本承受不起/想象不到……甚至有80%的观众在观影途中情绪崩溃中途离场，更让许多同行都不想解说这部电影，他就是大名鼎鼎的暗黑神作《xxx》…
+13.它被誉为史上最牛悬疑片，无数人在看完它时候，一个月不敢照镜子，这样一部仅适合部分年龄段观看的影片，究竟有什么样的魅力，竟然获得某瓣8.2的高分，很多人说这部电影到处都是看点，他就是《xxx》….
+14.这是一部在某瓣上被70万人打出9.3分的高分的电影……到底是一部什么样的电影，能够在某瓣上被70万人打出9.3分的高分……
+15.这是一部细思极恐的科幻大片，整部电影颠覆你的三观，它的名字叫……
+16.史上最震撼的灾难片，每一点都不舍得快进的电影，他叫……
+17.今天给大家带来一部基于真实事件改编的（主题介绍一句……）的故事片，这是一部连环悬疑剧，如果不看到最后绝对想不到结局竟然是这样的反转……
+
+### 方式二：情景式、假设性开头
+1.他叫……你以为他是……的吗？不。他是来……然后开始叙述
+2.你知道……吗？原来……然后开始叙述
+3.如果给你….，你会怎么样？
+4.如果你是….，你会怎么样？
+ 
+### 方式三：以国家为开头！简单明了。话语不需要多，但是需要讲解透彻！
+1.这是一部韩国最新灾难片，你一定没有看过……
+2.这是一部印度高分悬疑片，
+3.这部电影原在日本因为……而被下架，
+4.这是韩国最恐怖的犯罪片，
+5.这是最近国产片评分最高的悬疑片
+以上均按照影片国家来区分，然后简单介绍下主题。就可以开始直接叙述作品。也是一个很不错的方法！
+
+### 方式四：如何自由发挥
+正常情况下，每一部电影都有非常关键的一个大纲，这部电影的主题其实是可以用一句话、两句话概括的。只要看懂电影，就能找到这个主题大纲。
+我们提前把这个主题大纲给放到影视最前面，作为我们的前三句的文案，将会非常吸引人！
+
+例如：
+1.这不是电影，这是真实故事。两个女人和一个男人被关在可桑拿室。喊破喉咙也没有一丝回音。窒息感和热度让人抓狂，故事就是从这里开始！ 
+2.如果你男朋友出轨了，他不爱你了，还对你家暴，怎么办？接下来这部电影就会教你如何让老公服服帖帖的呆在你身边！女主是一个……开始叙述了。 
+3.他力大无穷，双眼放光，这不是拯救地球的超人吗？然而不是。今天给大家推荐的这部电影叫……
+
+以上是需要看完影片，看懂影片，然后从里面提炼出精彩的几句话,当然是比较难的，当你不会自己去总结前三句的经典的话。可以用前面方式一二三！
+实在想不出来如何去提炼，可以去搜索这部剧，对这部电影的影评，也会给你带过来很多灵感的！
+
+
+## 内容部分
+开头有了，剩下的就是开始叙述正文了。主题介绍是根据影片内容来介绍，如果实在自己想不出来。可以参考其他平台中对这部电影的精彩介绍，提取2-3句也可以！
+正常情况下，我们叙述的时候其实是非常简单的，把整部电影主题线，叙述下来，其实文案就是加些修饰词把电影重点内容叙述下来。加上一些修饰词。
+
+以悬疑剧为例：
+竟然，突然，原来，但是，但，可是，结果，直到，如果，而，果然，发现，只是，出奇，之后，没错，不止，更是，当然，因为，所以……等！
+以上是比较常用的，当然还有很多，需要靠平时思考和阅读的积累！因悬疑剧会有多处反转剧情。所以需要用到反转的修饰词比较多，只有用到这些词。才能体现出各种反转剧情！
+建议大家在刚开始做的时候，做8分钟内的，不要太长，分成三段。每段也是不超过三分钟，这样时间刚好。可以比较好的完成完播率！
+
+
+## 结尾部分
+最后故事的结局，除了反转，可以来点人生的道理！如果刚开始不会，可以不写。
+后面水平越来越高的时候，可以进行人生道理的讲评。
+
+比如：这部电影告诉我们……
+类似于哲理性质的，作为一个总结！
+也可以把最后的影视反转，原生放出来，留下悬念。
+
+比如：也可以总结下这部短片如何的好，推荐/值得大家去观看之类的话语。
+其实就是给我们的作品来一个总结，总结我们所做的三个视频，有开始就要有结束。这个结束不一定是固定的模版。但是视频一定要有结尾。让人感觉有头有尾才最舒服！
+做解说是一个比较浪费脑细胞的活，虽然刚开始比较难一点，但是当你正常做三部剧之后。所有自己的思路都会被打开！以后的基本就可以独立完成来操作来。
+做解说第一次，可能会做两天。第二次可能就需要一天了。慢慢的。时间缩短到8个小时之内是我们平常的制作全部时间！
+
+    """
