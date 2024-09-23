@@ -181,6 +181,12 @@ streamlit run ./webui/Main.py --browser.serverAddress=127.0.0.1 --server.enableC
 
 该项目基于以上项目重构而来，增加了影视解说功能，感谢大佬的开源精神 🥳🥳🥳 
 
+## 请作者喝一杯咖啡 ☕️
+<div style="display: flex; justify-content: space-between;">
+  <img src="https://github.com/user-attachments/assets/eedb7b52-16da-4421-bb1b-2a8881245c50" alt="Image 1" style="width: 350px; height: 350px; margin: auto;"/>
+  <img src="https://github.com/user-attachments/assets/edc52aff-3baa-4022-af8c-1ea619de999f" alt="Image 2" style="width: 350px; height: 350px; margin: auto;"/>
+</div>
+
 ## 许可证 📝
 
 点击查看 [`LICENSE`](LICENSE) 文件
