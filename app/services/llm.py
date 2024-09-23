@@ -617,7 +617,7 @@ def gemini_video_transcription(video_origin_name: str, video_origin_path: str, l
     return response.text
 
 
-def video_copy_writing(video_plot, video_name):
+def writing_movie(video_plot, video_name):
     """
     影视解说（电影解说）
     """
@@ -656,7 +656,7 @@ def video_copy_writing(video_plot, video_name):
     print("字数：", len(response.text))
 
 
-def short_play_commentary(video_plot: str, video_name: str):
+def writing_short_play(video_plot: str, video_name: str):
     """
     影视解说（短剧解说）
     """
@@ -679,10 +679,10 @@ def short_play_commentary(video_plot: str, video_name: str):
     文案要符合以下要求:
 
     **任务目标：**  
-    1. 文案字数在 800字左右，严格要求字数，最低不得少于 500字。
+    1. 文案字数在 800字左右，严格要求字数，最低不得少于 600字。
     2. 避免使用 markdown 格式输出文案。
     3. 仅输出解说文案，不输出任何其他内容。
-    4. 不要包含小标题，每个段落以 \n 进行分隔。
+    4. 不要包含小标题，每个段落以 \\n 进行分隔。
     """
     response = model.generate_content(
         prompt,
@@ -701,42 +701,90 @@ def short_play_commentary(video_plot: str, video_name: str):
     print("字数：", len(response.text))
 
 
+def screen_matching(huamian: str, wenan: str):
+    """
+    画面匹配
+    """
+    api_key = config.app.get("gemini_api_key")
+    model_name = config.app.get("gemini_model_name")
+
+    gemini.configure(api_key=api_key)
+    model = gemini.GenerativeModel(model_name)
+
+    if not huamian:
+        raise ValueError("画面不能为空")
+    if not wenan:
+        raise ValueError("文案不能为空")
+
+    prompt = """
+    你是一名有10年经验的影视解说创作者，
+    你的任务是根据画面描述文本和解说文案，匹配出每段解说文案对应的画面时间戳, 结果以 json 格式输出。
+    
+    画面描述文本和文案（由 XML 标记<SOURCE_TEXT><SOURCE_TEXT>和 <COPYWRITER><COPYWRITER>分隔）如下所示：
+    <SOURCE_TEXT>
+    %s
+    </SOURCE_TEXT>
+    
+    <COPYWRITER>
+    %s
+    </COPYWRITER>
+
+    Use this JSON schema:
+    script = {'picture': str, 'timestamp': str, "narration": str, "OST": bool}
+    Return: list[script]
+    """ % (huamian, wenan)
+
+    logger.info(prompt)
+
+    response = model.generate_content(
+        prompt,
+        generation_config=gemini.types.GenerationConfig(
+            candidate_count=1,
+            temperature=1.0,
+        ),
+        safety_settings={
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+    )
+    print(response.text)
+    print("字数：", len(response.text))
+
+
+
 if __name__ == "__main__":
+    # 1. 视频转录
+    # video_subject = "第二十条之无罪释放"
+    # video_path = "../../resource/videos/test01.mp4"
+    # language = "zh-CN"
+    # gemini_video_transcription(video_subject, video_path, language)
+
+    # 2. 解说文案
+    # video_plot = """
+    #     李自忠拿着儿子李牧名下的存折，去银行取钱给儿子救命，却被要求证明“你儿子是你儿子”。
+    # 走投无路时碰到银行被抢劫，劫匪给了他两沓钱救命，李自忠却因此被银行以抢劫罪起诉，并顶格判处20年有期徒刑。
+    # 苏醒后的李牧坚决为父亲做无罪辩护，面对银行的顶级律师团队，他一个法学院大一学生，能否力挽狂澜，创作奇迹？挥法律之利剑 ，持正义之天平！
+    # """
+    # print(video_plot)
+    # res = writing_short_play(video_plot, "第二十条之无罪释放")
+
+    wenan = """
+    这到底是一部什么样的电影，能让银行经理在法庭上公然下跪，能让无数网友为之愤怒，更能让无数人为之动容？\n
+他叫李自忠，为了给儿子筹集医药费，他来到了银行，想取出儿子名下的存款，却被银行告知，要证明“你儿子是你儿子”，走投无路之下，他却被卷入了一场银行抢劫案，阴差阳错之下，劫匪给了他两沓钱，让他救儿子，本以为是希望，没想到却是绝望的开始，他因此被认定为抢劫犯，被判处20年有期徒刑。\n
+然而，天无绝人之路，昏迷的儿子醒了，苏醒后的儿子，怎么也不敢相信，自己的父亲竟然被判为抢劫犯，为了给父亲讨回公道，他做出了一个决定，他要为父亲做无罪辩护，要知道，他只是一个法学院的大一学生，面对银行的顶级律师团队，他能成功吗？\n
+面对种种不利证据，他一次次败诉，又一次次上诉，就像一只打不死的小强，为了找到有利的证据，他四处奔波，走访调查，甚至不惜以身犯险，只为还原事实真相，然而，真相真的会到来吗？\n
+正义或许会迟到，但永远不会缺席，随着案件的审理，越来越多的疑点浮出水面，案情也发生了惊天大逆转，他究竟发现了什么？最后的真相又是什么？本案改编自真实事件，究竟是人性的扭曲，还是道德的沦丧？\n
+想知道案件的最终结果吗？让我们一起走进这部电影，寻找最终的真相吧！
     """
-    File API 可让您为每个项目存储最多 20 GB 的文件，每个项目使用 每个文件的大小上限为 2 GB。文件会存储 48 小时。
-    它们可以是 在此期间使用您的 API 密钥访问，但无法下载 使用任何 API。它已在使用 Gemini 的所有地区免费提供 API 可用。
-    """
-    # video_copy_writing("", "阿甘正传")
+    # 读取指定目录下的 json 文件
+    with open("../../resource/scripts/zhuanlu.json", "r", encoding="utf-8") as f:
+        huamian = json.load(f)
 
-    video_plot = """
-    ## 短剧《卖菜大妈竟是皇嫂》分析
+    screen_matching(huamian, wenan)
 
-**主要剧情:**
 
-短剧《卖菜大妈竟是皇嫂》讲述了农妇刘桂花在逃荒途中意外救助了一名孩童，这个孩童正是当时的五皇子。然而，在救五皇子的过程中，刘桂花失去了自己的儿子志洲。二十年后，五皇子长大成人，并与刘桂花重逢。刘桂花在得知真相后，面对着皇室的权势和自己的过往，最终选择勇敢地面对命运，并最终收获了幸福。
-
-**内容:**
-
-短剧以古装仙侠为题材，融合了穿越、宫廷、爱情等元素，展现了主角刘桂花从一个平凡的卖菜大妈成长为皇室成员的传奇故事。剧中展现了刘桂花善良、勇敢、坚韧的性格，以及她与五皇子之间错综复杂的情感纠葛。
-
-**核心信息:**
-
-这部短剧的核心信息是“命运的安排，无法改变，但我们可以选择如何面对”。刘桂花在经历了失去儿子的痛苦和与五皇子重逢的惊喜后，最终选择了勇敢地面对命运，并最终获得了幸福。这体现了人性的善良、勇敢和坚韧，也展现了对美好生活的追求和对命运的掌控。
-
-**人物:**
-
-* **刘桂花:**  短剧的主角，一位善良、勇敢、坚韧的农妇。她经历了失去儿子的痛苦，却依然保持着善良的本性，最终获得了幸福。
-* **五皇子:** 皇室成员，与刘桂花有着特殊的缘分。他善良、正直、勇敢，最终与刘桂花相爱。
-
-**思考:**
-
-这部短剧带给我们的思考是，面对命运的安排，我们应该保持勇敢和坚韧，积极地面对生活，追求美好的生活，而不是一味地沉溺于痛苦之中。同时，短剧也提醒我们，人性的善良和勇敢，是战胜困难、获得幸福的关键。
-
-**总结:**
-
-《卖菜大妈竟是皇嫂》是一部以女性视角展开的古装仙侠题材作品，讲述了主角刘桂花从一个平凡的卖菜大妈成长为皇室成员的传奇故事。剧中展现了刘桂花善良、勇敢、坚韧的性格，以及她与五皇子之间错综复杂的情感纠葛。这部短剧的核心信息是“命运的安排，无法改变，但我们可以选择如何面对”，它鼓励人们在面对困难时，保持勇敢和坚韧，积极地面对生活，最终获得幸福。
-    """
-    short_play_commentary(video_plot, "卖菜大妈竟是皇嫂")
 
     # import os
     # import sys
