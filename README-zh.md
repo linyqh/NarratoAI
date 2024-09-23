@@ -4,7 +4,7 @@
 <h3 align="center">一站式 AI 影视解说+自动化剪辑工具🎬🎞️ </h3>
 
 
-<h3>📖 <a href="README.md">English</a> | 简体中文 </h3>
+<h3>📖 <a href="README-cn.md">English</a> | 简体中文 </h3>
 <div align="center">
 
 [//]: # (  <a href="https://trendshift.io/repositories/8731" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8731" alt="harry0703%2FNarratoAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>)
@@ -30,14 +30,6 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 
 </div>
 
-## 整合包 📥
-**NarratoAI 整合包 v0.1.2 发布啦** 🎉🎉🎉
-
-关注微信公众号【NarratoAI助手】，回复关键词【整合包】即可获取最新下载链接！快来试试吧！
-
-注意事项：
-   - 当前仅提供 Windows 版本，Mac 版本正在开发中，Linux 版本将在后续版本中提供。
-
 ## 未来计划 🥳
 - [x] windows 整合包发布
 - [ ] 优化剧情生成流程，提升生成效果
@@ -51,12 +43,12 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 - Windows 10 或 MacOS 11.0 以上系统
 
 ## 快速开始 🚀
-### 申请 Google AI studio 账号
+### 1. 申请 Google AI studio 账号
 1. 访问 https://aistudio.google.com/app/prompts/new_chat 申请账号
 2. 点击 `Get API Key` 申请 API Key
 3. 申请的 API Key 填入 `config.example.toml` 文件中的 `gemini_api_key` 配置
 
-### 配置 proxy VPN
+### 2. 配置 proxy VPN
 > 配置vpn的方法不限，只要能正常访问 Google 网络即可，本文采用的是 chash
 1. 记住 clash 服务的端口，一般为 `http://127.0.0.1:7890`
 2. 若端口不为 `7890`，请修改 `docker-compose.yml` 文件中的 `VPN_PROXY_URL` 为你的代理地址
@@ -67,15 +59,20 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 3. (可选)或者修改 `config.example.toml` 文件中的 `proxy` 配置
    ```toml
    [proxy]
-    ### Use a proxy to access the Pexels API
-    ### Format: "http://<username>:<password>@<proxy>:<port>"
-    ### Example: "http://user:pass@proxy:1234"
-    ### Doc: https://requests.readthedocs.io/en/latest/user/advanced/#proxies
-
     http = "http://xx.xx.xx.xx:7890"
     https = "http://xx.xx.xx.xx:7890"
    ```
-### docker部署🐳
+
+### 3. 使用【整合包】开始 📥 (适用与 Windows 用户)
+**NarratoAI 整合包 v0.1.2 发布啦** 🎉🎉🎉
+
+关注微信公众号【NarratoAI助手】，回复关键词【整合包】即可获取最新下载链接！快来试试吧！
+
+注意事项：
+   - 当前仅提供 Windows 版本，Mac和Linux用户请使用 docker 启动。
+
+
+### 4. 使用【docker】开始🐳 (适用与 Mac 和 Linux 用户)
 #### ① 拉取项目，启动Docker
 ```shell
 git clone https://github.com/linyqh/NarratoAI.git
@@ -90,7 +87,7 @@ docker-compose up
 
 打开浏览器，访问 http://127.0.0.1:8080/docs 或者 http://127.0.0.1:8080/redoc
 
-## 使用方法
+## 使用方法 🛠️
 #### 1. 基础配置，选择模型，填入APIKey，选择模型
 > 目前暂时只支持 `Gemini` 模型，其他模式待后续更新，欢迎大家提交 [PR](https://github.com/linyqh/NarratoAI/pulls)，参与开发 🎉🎉🎉
 <div align="center">
@@ -142,7 +139,7 @@ pip install -r requirements.txt
 2. 安装 ImageMagick
 ###### Windows:
 
-- 下载 https://imagemagick.org/archive/binaries/ImageMagick-7.1.1-36-Q16-x64-static.exe
+- 下载 https://imagemagick.org/archive/binaries/ImageMagick-7.1.1-38-Q16-x64-static.exe
 - 安装下载好的 ImageMagick，注意不要修改安装路径
 - 修改 `配置文件 config.toml` 中的 `imagemagick_path` 为你的实际安装路径（一般在 `C:\Program Files\ImageMagick-7.1.1-Q16\magick.exe`）
 
@@ -172,17 +169,11 @@ streamlit run ./webui/Main.py --browser.serverAddress=127.0.0.1 --server.enableC
 
 ## 反馈建议 📢
 
-### 👏👏👏 可以提交 [issue](https://github.com/linyqh/NarratoAI/issues)或者 [pull request](https://github.com/linyqh/NarratoAI/pulls) 🎉🎉🎉
+### 👏 1. 可以提交 [issue](https://github.com/linyqh/NarratoAI/issues)或者 [pull request](https://github.com/linyqh/NarratoAI/pulls)
 
-### 💬加入开源社区交流群
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/a8a5e676-e57e-4a66-9de7-63ba3db82458" alt="003" width="300"/>
-</div>
+### 💬 2. [加入开源社区交流群](https://github.com/linyqh/NarratoAI/wiki)
 
-### 💬添加小助手
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/266471b3-3bba-401e-984a-22791bdd9a08" alt="003" width="300"/>
-</div>
+### 👉 3. [常见问题](https://thread-marsupial-df8.notion.site/105866888dab80988650fa063b1df4eb)
 
 ## 参考项目 📚
 - https://github.com/FujiwaraChoki/MoneyPrinter

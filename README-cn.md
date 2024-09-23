@@ -4,7 +4,7 @@
 <h3 align="center">An all-in-one AI-powered tool for film commentary and automated video editing.🎬🎞️ </h3>
 
 
-<h3>📖 English | <a href="README-zh.md">简体中文</a> </h3>
+<h3>📖 English | <a href="README.md">简体中文</a> </h3>
 <div align="center">
 
 [//]: # (  <a href="https://trendshift.io/repositories/8731" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8731" alt="harry0703%2FNarratoAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>)
@@ -30,14 +30,6 @@ NarratoAI is an automated video narration tool that provides an all-in-one solut
 
 </div>
 
-## Modpack 📥 
-NarratoAI Modpack v0.1.2 is released 🚀 
-
-Hurry up and follow the WeChat public account [NarratoAI助手] and reply to the keyword [整合包] to get the latest download link! Give it a try! 
-
-Note: 
-- Currently only available for Windows, Mac version is in development, Linux version will be available in a future release.
-
 ## Future Plans 🥳 
 - [x] Windows Integration Pack Release
 - [ ] Optimized the story generation process and improved the generation effect 
@@ -51,12 +43,12 @@ Note:
 - Windows 10 or MacOS 11.0 or above
 
 ## Quick Start 🚀
-### Apply for Google AI Studio Account
+### 1. Apply for Google AI Studio Account
 1. Visit https://aistudio.google.com/app/prompts/new_chat to apply for an account.
 2. Click `Get API Key` to request an API Key.
 3. Enter the obtained API Key into the `gemini_api_key` setting in the `config.example.toml` file.
 
-### Configure Proxy VPN
+### 2. Configure Proxy VPN
 > The method to configure VPN is not restricted, as long as you can access Google's network. Here, `clash` is used as an example.
 1. Note the port of the clash service, usually `http://127.0.0.1:7890`.
 2. If the port is not `7890`, modify the `VPN_PROXY_URL` in the `docker-compose.yml` file to your proxy address.
@@ -77,7 +69,18 @@ Note:
     https = "http://xx.xx.xx.xx:7890"
    ```
 
-### Docker Deployment 🐳
+
+### 3. Get Started 📥 with the Modpack (for Windows users)
+NarratoAI Modpack v0.1.2 is released 🚀 
+
+Hurry up and follow the WeChat public account [NarratoAI助手] and reply to the keyword [整合包] to get the latest download link! Give it a try! 
+
+Note: 
+- Currently only available for Windows, Mac version is in development, Linux version will be available in a future release.
+
+
+
+### 4. Get started 🐳 with docker (for Mac and Linux users)
 #### ① clone project, Start Docker
 ```shell
 git clone https://github.com/linyqh/NarratoAI.git
@@ -143,7 +146,7 @@ pip install -r requirements.txt
 2. Install ImageMagick
 ###### Windows:
 
-- Download https://imagemagick.org/archive/binaries/ImageMagick-7.1.1-36-Q16-x64-static.exe
+- Download https://imagemagick.org/archive/binaries/ImageMagick-7.1.1-38-Q16-x64-static.exe
 - Install the downloaded ImageMagick, ensuring you do not change the installation path
 - Update `imagemagick_path` in the `config.toml` file to your actual installation path (typically `C:\Program Files\ImageMagick-7.1.1-Q16\magick.exe`)
 
@@ -173,17 +176,11 @@ streamlit run ./webui/Main.py --browser.serverAddress=127.0.0.1 --server.enableC
 
 ## Feedback & Suggestions 📢
 
-### 👏👏👏 You can submit [issues](https://github.com/linyqh/NarratoAI/issues) or [pull requests](https://github.com/linyqh/NarratoAI/pulls) 🎉🎉🎉
+### 👏 1. You can submit [issues](https://github.com/linyqh/NarratoAI/issues) or [pull requests](https://github.com/linyqh/NarratoAI/pulls) 
 
-### 💬Join the open source community exchange group
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/a8a5e676-e57e-4a66-9de7-63ba3db82458" alt="003" width="300"/>
-</div>
+### 💬 2. [Join the open source community exchange group]((https://github.com/linyqh/NarratoAI/wiki))
 
-### 💬Add a mini-assistant
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/266471b3-3bba-401e-984a-22791bdd9a08" alt="003" width="300"/>
-</div>
+### 👉 3. [frequently asked questions](https://thread-marsupial-df8.notion.site/105866888dab80988650fa063b1df4eb)
 
 ## Reference Projects 📚
 - https://github.com/FujiwaraChoki/MoneyPrinter
