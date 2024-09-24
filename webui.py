@@ -5,23 +5,25 @@ import json
 import time
 import datetime
 import traceback
+import streamlit as st
+from uuid import uuid4
+import platform
+import streamlit.components.v1 as components
+from loguru import logger
 
-# 将项目的根目录添加到系统路径中，以允许从项目导入模块
-root_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+from app.config import config
+from app.models.const import FILE_TYPE_VIDEOS
+from app.models.schema import VideoClipParams, VideoAspect, VideoConcatMode
+from app.services import task as tm, llm, voice, material
+from app.utils import utils
+
+# # 将项目的根目录添加到系统路径中，以允许从项目导入模块
+root_dir = os.path.dirname(os.path.realpath(__file__))
 if root_dir not in sys.path:
     sys.path.append(root_dir)
     print("******** sys.path ********")
     print(sys.path)
     print("")
-
-import streamlit as st
-
-import os
-from uuid import uuid4
-import platform
-import streamlit.components.v1 as components
-from loguru import logger
-from app.config import config
 
 st.set_page_config(
     page_title="NarratoAI",
@@ -34,11 +36,6 @@ st.set_page_config(
                  f"自动化影视解说视频详情请移步：https://github.com/linyqh/NarratoAI"
     },
 )
-
-from app.models.const import FILE_TYPE_IMAGES, FILE_TYPE_VIDEOS
-from app.models.schema import VideoClipParams, VideoAspect, VideoConcatMode
-from app.services import task as tm, llm, voice, material
-from app.utils import utils
 
 proxy_url_http = config.proxy.get("http", "") or os.getenv("VPN_PROXY_URL", "")
 proxy_url_https = config.proxy.get("https", "") or os.getenv("VPN_PROXY_URL", "")
@@ -278,18 +275,23 @@ with left_panel:
                 "name": os.path.basename(file),
                 "size": os.path.getsize(file),
                 "file": file,
+                "ctime": os.path.getctime(file)  # 获取文件创建时间
             })
 
-        script_path = [(tr("Auto Generate"), ""), ]
-        for code in [file['file'] for file in script_list]:
-            script_path.append((code, code))
+        # 按创建时间降序排序
+        script_list.sort(key=lambda x: x["ctime"], reverse=True)
 
-        selected_json2 = st.selectbox(tr("Script Files"),
-                                      index=0,
-                                      options=range(len(script_path)),  # 使用索引作为内部选项值
-                                      format_func=lambda x: script_path[x][0]  # 显示给用户的是标签
-                                      )
-        params.video_clip_json = script_path[selected_json2][1]
+        # 脚本文件 下拉框
+        script_path = [(tr("Auto Generate"), ""), ]
+        for file in script_list:
+            display_name = file['file'].replace(root_dir, "")
+            script_path.append((display_name, file['file']))
+        selected_script_index = st.selectbox(tr("Script Files"),
+                                             index=0,
+                                             options=range(len(script_path)),  # 使用索引作为内部选项值
+                                             format_func=lambda x: script_path[x][0]  # 显示给用户的是标签
+                                             )
+        params.video_clip_json = script_path[selected_script_index][1]
         video_json_file = params.video_clip_json
 
         # 视频文件处理
@@ -310,12 +312,12 @@ with left_panel:
         for code in [file['file'] for file in video_list]:
             video_path.append((code, code))
 
-        selected_index2 = st.selectbox(tr("Video File"),
-                                       index=0,
-                                       options=range(len(video_path)),  # 使用索引作为内部选项值
-                                       format_func=lambda x: video_path[x][0]  # 显示给用户的是标签
-                                       )
-        params.video_origin_path = video_path[selected_index2][1]
+        selected_video_index = st.selectbox(tr("Video File"),
+                                            index=0,
+                                            options=range(len(video_path)),  # 使用索引作为内部选项值
+                                            format_func=lambda x: video_path[x][0]  # 显示给用户的是标签
+                                            )
+        params.video_origin_path = video_path[selected_video_index][1]
         config.app["video_origin_path"] = params.video_origin_path
 
         # 从本地上传 mp4 文件
@@ -341,8 +343,6 @@ with left_panel:
                     st.success(tr("File Uploaded Successfully"))
                     time.sleep(1)
                     st.rerun()
-            # params.video_origin_path = video_path[selected_index2][1]
-            # config.app["video_origin_path"] = params.video_origin_path
 
         # 剧情内容
         video_plot = st.text_area(
@@ -351,12 +351,13 @@ with left_panel:
             height=180
         )
 
+        # 生成视频脚本
         if st.button(tr("Video Script Generate"), key="auto_generate_script"):
             with st.spinner(tr("Video Script Generate")):
                 if video_json_file == "" and params.video_origin_path != "":
                     # 使用大模型生成视频脚本
                     script = llm.gemini_video2json(
-                        video_origin_name=params.video_origin_path.split("\\")[-1],
+                        video_origin_name=os.path.basename(params.video_origin_path),
                         video_origin_path=params.video_origin_path,
                         video_plot=video_plot,
                         language=params.video_language,
@@ -371,12 +372,14 @@ with left_panel:
                         cleaned_string = script.strip("```json").strip("```")
                         st.session_state['video_script_list'] = json.loads(cleaned_string)
 
+        # 视频脚本
         video_clip_json_details = st.text_area(
             tr("Video Script"),
             value=st.session_state['video_clip_json'],
             height=180
         )
 
+        # 保存脚本
         button_columns = st.columns(2)
         with button_columns[0]:
             if st.button(tr("Save Script"), key="auto_generate_terms", use_container_width=True):
@@ -397,20 +400,23 @@ with left_panel:
                     try:
                         data = utils.add_new_timestamps(json.loads(input_json))
                     except Exception as err:
-                        raise ValueError(
-                            f"视频脚本格式错误，请检查脚本是否符合 JSON 格式；{err} \n\n{traceback.format_exc()}")
+                        st.error(f"视频脚本格式错误，请检查脚本是否符合 JSON 格式；{err} \n\n{traceback.format_exc()}")
+                        st.stop()
 
                     # 检查是否是一个列表
                     if not isinstance(data, list):
-                        raise ValueError("JSON is not a list")
+                        st.error("JSON is not a list")
+                        st.stop()
 
                     # 检查列表中的每个元素是否包含所需的键
                     required_keys = {"picture", "timestamp", "narration"}
                     for item in data:
                         if not isinstance(item, dict):
-                            raise ValueError("List 元素不是字典")
+                            st.error("List 元素不是字典")
+                            st.stop()
                         if not required_keys.issubset(item.keys()):
-                            raise ValueError("Dict 元素不包含必需的键")
+                            st.error("Dict 元素不包含必需的键")
+                            st.stop()
 
                     # 存储为新的 JSON 文件
                     with open(save_path, 'w', encoding='utf-8') as file:
@@ -441,13 +447,13 @@ with left_panel:
                 for video_script in video_script_list:
                     try:
                         video_script['path'] = subclip_videos[video_script['timestamp']]
-                    except KeyError as e:
-                        st.error(f"裁剪视频失败")
+                    except KeyError as err:
+                        st.error(f"裁剪视频失败 {err}")
                 # logger.debug(f"当前的脚本为：{st.session_state.video_script_list}")
             else:
                 st.error(tr("请先生成视频脚本"))
 
-
+        # 裁剪视频
         with button_columns[1]:
             if st.button(tr("Crop Video"), key="auto_crop_video", use_container_width=True):
                 caijian()
@@ -456,10 +462,10 @@ with left_panel:
 with middle_panel:
     with st.container(border=True):
         st.write(tr("Video Settings"))
-        video_concat_modes = [
-            (tr("Sequential"), "sequential"),
-            (tr("Random"), "random"),
-        ]
+        # video_concat_modes = [
+        #     (tr("Sequential"), "sequential"),
+        #     (tr("Random"), "random"),
+        # ]
         # video_sources = [
         #     (tr("Pexels"), "pexels"),
         #     (tr("Pixabay"), "pixabay"),
@@ -491,16 +497,17 @@ with middle_panel:
         #         accept_multiple_files=True,
         #     )
 
-        selected_index = st.selectbox(
-            tr("Video Concat Mode"),
-            index=1,
-            options=range(len(video_concat_modes)),  # 使用索引作为内部选项值
-            format_func=lambda x: video_concat_modes[x][0],  # 显示给用户的是标签
-        )
-        params.video_concat_mode = VideoConcatMode(
-            video_concat_modes[selected_index][1]
-        )
+        # selected_index = st.selectbox(
+        #     tr("Video Concat Mode"),
+        #     index=1,
+        #     options=range(len(video_concat_modes)),  # 使用索引作为内部选项值
+        #     format_func=lambda x: video_concat_modes[x][0],  # 显示给用户的是标签
+        # )
+        # params.video_concat_mode = VideoConcatMode(
+        #     video_concat_modes[selected_index][1]
+        # )
 
+        # 视频比例
         video_aspect_ratios = [
             (tr("Portrait"), VideoAspect.portrait.value),
             (tr("Landscape"), VideoAspect.landscape.value),
@@ -512,14 +519,14 @@ with middle_panel:
         )
         params.video_aspect = VideoAspect(video_aspect_ratios[selected_index][1])
 
-        params.video_clip_duration = st.selectbox(
-            tr("Clip Duration"), options=[2, 3, 4, 5, 6, 7, 8, 9, 10], index=1
-        )
-        params.video_count = st.selectbox(
-            tr("Number of Videos Generated Simultaneously"),
-            options=[1, 2, 3, 4, 5],
-            index=0,
-        )
+        # params.video_clip_duration = st.selectbox(
+        #     tr("Clip Duration"), options=[2, 3, 4, 5, 6, 7, 8, 9, 10], index=1
+        # )
+        # params.video_count = st.selectbox(
+        #     tr("Number of Videos Generated Simultaneously"),
+        #     options=[1, 2, 3, 4, 5],
+        #     index=0,
+        # )
     with st.container(border=True):
         st.write(tr("Audio Settings"))
 
@@ -638,7 +645,7 @@ with middle_panel:
             index=2,
         )
 
-# 新右侧面板
+# 新侧面板
 with right_panel:
     with st.container(border=True):
         st.write(tr("Subtitle Settings"))
@@ -676,6 +683,7 @@ with right_panel:
                 if params.custom_position < 0 or params.custom_position > 100:
                     st.error(tr("Please enter a value between 0 and 100"))
             except ValueError:
+                logger.error(f"输入的值无效: {traceback.format_exc()}")
                 st.error(tr("Please enter a valid number"))
 
         font_cols = st.columns([0.3, 0.7])

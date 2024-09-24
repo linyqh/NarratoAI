@@ -167,7 +167,7 @@ sudo yum install ImageMagick
 
 3. initiate webui
 ```shell
-streamlit run ./webui/Main.py --browser.serverAddress=127.0.0.1 --server.enableCORS=True --browser.gatherUsageStats=False
+streamlit run ./webui/webui.py --browser.serverAddress=127.0.0.1 --server.enableCORS=True --browser.gatherUsageStats=False
 ```
 4. Access http://127.0.0.1:8501
 

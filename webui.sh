@@ -47,4 +47,4 @@ done
 # 等待所有后台任务完成
 wait
 echo "所有文件已成功下载到指定目录"
-streamlit run ./webui/Main.py --browser.serverAddress="0.0.0.0" --server.enableCORS=True  --server.maxUploadSize=2048 --browser.gatherUsageStats=False
+streamlit run webui.py --browser.serverAddress="0.0.0.0" --server.enableCORS=True  --server.maxUploadSize=2048 --browser.gatherUsageStats=False

@@ -339,7 +339,7 @@ class VideoClipParams(BaseModel):
     video_count: Optional[int] = 1      # 视频片段数量
     video_source: Optional[str] = "local"
     video_language: Optional[str] = ""  # 自动检测
-    video_concat_mode: Optional[VideoConcatMode] = VideoConcatMode.random.value
+    # video_concat_mode: Optional[VideoConcatMode] = VideoConcatMode.random.value
 
     # # 女性
     # "zh-CN-XiaoxiaoNeural",
@@ -366,5 +366,6 @@ class VideoClipParams(BaseModel):
     font_size: int = 60     # 文字大小
     stroke_color: Optional[str] = "#000000"     # 文字描边颜色
     stroke_width: float = 1.5       # 文字描边宽度
+    custom_position: float = 70.0   # 自定义位置
     n_threads: Optional[int] = 2    # 线程数
     paragraph_number: Optional[int] = 1     # 段落数量

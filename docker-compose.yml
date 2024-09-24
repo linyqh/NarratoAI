@@ -20,7 +20,9 @@ services:
       dockerfile: Dockerfile
     container_name: "api"
     ports:
-      - "8502:8080"
-    command: [ "python3", "main.py" ]
+      - "8502:22"
+    command: [ "sleep", "48h" ]
     volumes: *common-volumes
+    environment:
+      - "VPN_PROXY_URL=http://host.docker.internal:7890"
     restart: always
