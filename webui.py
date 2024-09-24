@@ -23,7 +23,7 @@ if root_dir not in sys.path:
     sys.path.append(root_dir)
     print("******** sys.path ********")
     print(sys.path)
-    print("")
+    print("*" * 20)
 
 st.set_page_config(
     page_title="NarratoAI",
@@ -67,6 +67,8 @@ if 'video_plot' not in st.session_state:
     st.session_state['video_plot'] = ''
 if 'ui_language' not in st.session_state:
     st.session_state['ui_language'] = config.ui.get("language", system_locale)
+if 'script_generation_status' not in st.session_state:
+    st.session_state['script_generation_status'] = ""
 
 
 def get_all_fonts():
@@ -197,7 +199,6 @@ with st.expander(tr("Basic Settings"), expanded=False):
         #   qwen (通义千问)
         #   gemini
         #   ollama
-        # llm_providers = ['Gemini', 'OpenAI', 'Moonshot', 'Azure', 'Qwen', 'Ollama', 'G4f', 'OneAPI', "Cloudflare"]
         llm_providers = ['Gemini']
         saved_llm_provider = config.app.get("llm_provider", "OpenAI").lower()
         saved_llm_provider_index = 0
@@ -295,27 +296,30 @@ with left_panel:
         video_json_file = params.video_clip_json
 
         # 视频文件处理
-        files = []
+        video_files = []
         for suffix in ["*.mp4", "*.mov", "*.avi", "*.mkv"]:
-            files.extend(glob.glob(os.path.join(utils.video_dir(), suffix)))
-        files = files[::-1]
+            video_files.extend(glob.glob(os.path.join(utils.video_dir(), suffix)))
+        video_files = video_files[::-1]
 
         video_list = []
-        for file in files:
+        for video_file in video_files:
             video_list.append({
-                "name": os.path.basename(file),
-                "size": os.path.getsize(file),
-                "file": file,
+                "name": os.path.basename(video_file),
+                "size": os.path.getsize(video_file),
+                "file": video_file,
+                "ctime": os.path.getctime(video_file)  # 获取文件创建时间
             })
-
+        # 按创建时间降序排序
+        video_list.sort(key=lambda x: x["ctime"], reverse=True)
         video_path = [("None", ""), (tr("Upload Local Files"), "local")]
         for code in [file['file'] for file in video_list]:
             video_path.append((code, code))
 
+        # 视频文件
         selected_video_index = st.selectbox(tr("Video File"),
                                             index=0,
                                             options=range(len(video_path)),  # 使用索引作为内部选项值
-                                            format_func=lambda x: video_path[x][0]  # 显示给用户的是标签
+                                            format_func=lambda x: video_path[x][0]  # 显示给用户的是标
                                             )
         params.video_origin_path = video_path[selected_video_index][1]
         config.app["video_origin_path"] = params.video_origin_path
@@ -343,7 +347,8 @@ with left_panel:
                     st.success(tr("File Uploaded Successfully"))
                     time.sleep(1)
                     st.rerun()
-
+        # 视频名称
+        video_name = st.text_input(tr("Video Name"))
         # 剧情内容
         video_plot = st.text_area(
             tr("Plot Description"),
@@ -352,16 +357,26 @@ with left_panel:
         )
 
         # 生成视频脚本
+        st.session_state['script_generation_status'] = "开始生成视频脚本"
         if st.button(tr("Video Script Generate"), key="auto_generate_script"):
-            with st.spinner(tr("Video Script Generate")):
+            with st.spinner("正在生成脚本..."):
+                # 这里可以用 st.empty() 来动态更新文本
+                progress_text = st.empty()
+                progress_text.text("正在处理...")
+
                 if video_json_file == "" and params.video_origin_path != "":
+                    progress_text.text("开始压缩...")
                     # 使用大模型生成视频脚本
-                    script = llm.gemini_video2json(
-                        video_origin_name=os.path.basename(params.video_origin_path),
-                        video_origin_path=params.video_origin_path,
+                    script = llm.generate_script(
+                        video_path=params.video_origin_path,
                         video_plot=video_plot,
+                        video_name=video_name,
                         language=params.video_language,
+                        progress_text=progress_text
                     )
+                    if script is None:
+                        st.error("生成脚本失败，请检查日志")
+                        st.stop()
                     st.session_state['video_clip_json'] = script
                     cleaned_string = script.strip("```json").strip("```")
                     st.session_state['video_script_list'] = json.loads(cleaned_string)
@@ -434,6 +449,8 @@ with left_panel:
 
             if st.session_state.get('video_script_list', None) is not None:
                 video_script_list = st.session_state.video_script_list
+                print(video_script_list)
+                print(type(video_script_list))
                 time_list = [i['timestamp'] for i in video_script_list]
                 subclip_videos = material.clip_videos(
                     task_id=st.session_state['task_id'],

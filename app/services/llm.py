@@ -1,7 +1,8 @@
-import logging
+import os
 import re
 import json
 import traceback
+import streamlit as st
 from typing import List
 from loguru import logger
 from openai import OpenAI
@@ -11,6 +12,7 @@ import google.generativeai as gemini
 from googleapiclient.errors import ResumableUploadError
 from google.api_core.exceptions import FailedPrecondition
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
+import subprocess
 
 from app.config import config
 
@@ -29,29 +31,29 @@ Method = """
 盘点全球最恐怖的10部电影
 盘点全球最科幻的10部电影
 盘点全球最悲惨的10部电影
-盘点全球最值得看的10部灾难电影
+盘全球最值得看的10部灾难电影
 盘点全球最值得看的10部励志电影
 
 下面的示例就是最简单的解说文案开头：
 1.这是XXX国20年来最大尺度的一部剧，极度烧脑，却让99%的人看得心潮澎湃、无法自拔，故事开始……
 2.这是有史以来电影院唯一一部全程开灯放完的电影，期间无数人尖叫昏厥，他被成为勇敢者的专属，因为99%的人都不敢看到结局，许多人看完它从此不愿再碰手机，他就是大名鼎鼎的暗黑神作《XXX》……
 3.这到底是一部什么样的电影，能被55个国家公开抵制，它甚至为了上映，不惜删减掉整整47分钟的剧情……
-4.是什么样的一个人，被豆瓣网友称之为史上最牛P的老太太，都70岁了还要去贩毒……
+4.是什么样的一个人被豆瓣网友称之为史上最牛P的老太太，都70岁了还要去贩毒……
 5.他是M国历史上最NB/惨/猖狂/冤枉……的囚犯/抢劫犯/……
 6.这到底是一部什么样的影片，他一个人就拿了4个顶级奖项，第一季8.7分，第二季直接干到9.5分，11万人给出5星好评，一共也就6集，却斩获26项国际大奖，看过的人都说，他是近年来最好的xxx剧，几乎成为了近年来xxx剧的标杆。故事发生在……
 7.他是国产电影的巅峰佳作，更是许多80-90后的青春启蒙，曾入选《时代》周刊，获得年度佳片第一，可在国内却被尘封多年，至今为止都无法在各大视频网站看到完整资源，他就是《xxxxxx》
 8.这是一部让所有人看得荷尔蒙飙升的爽片……
 9.他被成为世界上最虐心绝望的电影，至今无人敢看第二遍，很难想象，他是根据真实事件改编而来……
-10.这大概是有史以来最令人不寒而栗的电影，当年一经放映，就点燃了无数人的怒火，不少观众不等影片放完，就愤然离场，它比《xxx》更让人绝望，比比《xxx》更让人xxx，能坚持看完全片的人，更是万中无一，包括我。甚至观影结束后，有无数人抵制投诉这部电影，认为影片的导演玩弄了他们的情感！他就是顶级神作《xxxx》……
+10.这大概是有史以来最令人不寒而栗的电影，当年一经放映，就点燃了无数人的怒火，不少观众不等影片放完，就愤然离场，它比《xxx》更让人绝望，比比《xxx》更让人xxx，能坚持看完全片的人，更是万中无一，包括我。甚至观影结束后，有无数人抵制投诉这部电影，认为影片的导演玩弄了他们的情感！他是顶级神作《xxxx》……
 11.这是X国有史以来最高赞的一部悬疑电影，然而却因为某些原因，国内90%的人，没能看过这部片子，他就是《xxx》……
 12.有这样一部电影，这辈子，你绝对不想再看第二遍，并不是它剧情烂俗，而是它的结局你根本承受不起/想象不到……甚至有80%的观众在观影途中情绪崩溃中途离场，更让许多同行都不想解说这部电影，他就是大名鼎鼎的暗黑神作《xxx》…
-13.它被誉为史上最牛悬疑片，无数人在看完它时候，一个月不敢照镜子，这样一部仅适合部分年龄段观看的影片，究竟有什么样的魅力，竟然获得某瓣8.2的高分，很多人说这部电影到处都是看点，他就是《xxx》….
+13.它被誉为史上最牛悬疑片无数人在看完它时候，一个月不敢照镜子，这样一部仅适合部分年龄段观看的影片，究竟有什么样的魅力，竟然获得某瓣8.2的高分，很多人说这部电影到处都是看点，他就是《xxx》….
 14.这是一部在某瓣上被70万人打出9.3分的高分的电影……到底是一部什么样的电影，能够在某瓣上被70万人打出9.3分的高分……
 15.这是一部细思极恐的科幻大片，整部电影颠覆你的三观，它的名字叫……
 16.史上最震撼的灾难片，每一点都不舍得快进的电影，他叫……
 17.今天给大家带来一部基于真实事件改编的（主题介绍一句……）的故事片，这是一部连环悬疑剧，如果不看到最后绝对想不到结局竟然是这样的反转……
 
-### 方式二：情景式、假设性开头
+### 方式：情景式、假设性开头
 1.他叫……你以为他是……的吗？不。他是来……然后开始叙述
 2.你知道……吗？原来……然后开始叙述
 3.如果给你….，你会怎么样？
@@ -71,7 +73,7 @@ Method = """
 
 例如：
 1.这不是电影，这是真实故事。两个女人和一个男人被关在可桑拿室。喊破喉咙也没有一丝回音。窒息感和热度让人抓狂，故事就是从这里开始！ 
-2.如果你男朋友出轨了，他不爱你了，还对你家暴，怎么办？接下来这部电影就会教你如何让老公服服帖帖的呆在你身边！女主是一个……开始叙述了。 
+2.如果你男朋友出轨了，他不爱你了，还你家暴，怎么办？接下来这部电影就会教你如何让老公服服帖帖的呆在你身边！女主是一个……开始叙述了。 
 3.他力大无穷，双眼放光，这不是拯救地球的超人吗？然而不是。今天给大家推荐的这部电影叫……
 
 以上是需要看完影片，看懂影片，然后从里面提炼出精彩的几句话,当然是比较难的，当你不会自己去总结前三句的经典的话。可以用前面方式一二三！
@@ -98,8 +100,7 @@ Method = """
 
 比如：也可以总结下这部短片如何的好，推荐/值得大家去观看之类的话语。
 其实就是给我们的作品来一个总结，总结我们所做的三个视频，有开始就要有结束。这个结束不一定是固定的模版。但是视频一定要有结尾。让人感觉有头有尾才最舒服！
-做解说是一个比较浪费脑细胞的活，虽然刚开始比较难一点，但是当你正常做三部剧之后。所有自己的思路都会被打开！以后的基本就可以独立完成来操作来。
-做解说第一次，可能会做两天。第二次可能就需要一天了。慢慢的。时间缩短到8个小时之内是我们平常的制作全部时间！
+做解说第一次，可能会做两天。第二次可能就需要一天了。慢慢的。时间缩短到8个小时之内是我们平的制作全部时间！
 
 """
 
@@ -344,76 +345,73 @@ def _generate_response(prompt: str) -> str:
     return content.replace("\n", "")
 
 
+def compress_video(input_path: str, output_path: str):
+    """
+    压缩视频文件
+    Args:
+        input_path: 输入视频文件路径
+        output_path: 输出压缩后的视频文件路径
+    """
+    ffmpeg_path = "E:\\projects\\NarratoAI_v0.1.2\\lib\\ffmpeg\\ffmpeg-7.0-essentials_build\\ffmpeg.exe"  # 指定 ffmpeg 的完整路径
+
+    # 如果压缩后的视频文件已经存在，则直接使用
+    if os.path.exists(output_path):
+        logger.info(f"压缩视频文件已存在: {output_path}")
+        return
+
+    try:
+        command = [
+            ffmpeg_path,
+            "-i", input_path,
+            "-c:v", "h264",
+            "-b:v", "500k",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            output_path
+        ]
+        subprocess.run(command, check=True)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"视频压缩失败: {e}")
+        raise
+
+
 def generate_script(
-    video_subject: str, language: str = "", paragraph_number: int = 1
+    video_path: str, video_plot: str, video_name: str, language: str = "zh-CN", progress_text: st.empty = st.empty()
 ) -> str:
-    prompt = f"""
-# Role: Video Script Generator
+    """
+    生成视频剪辑脚本
+    Args:
+        video_path: 视频文件路径
+        video_plot: 视频剧情内容
+        video_name: 视频名称
+        language: 语言
 
-## Goals:
-Generate a script for a video, depending on the subject of the video.
+    Returns:
+        str: 生成的脚本
+    """
+    # 1. 压缩视频
+    progress_text.text("压缩视频中...")
+    compressed_video_path = f"{os.path.splitext(video_path)[0]}_compressed.mp4"
+    compress_video(video_path, compressed_video_path)
 
-## Constrains:
-1. the script is to be returned as a string with the specified number of paragraphs.
-2. do not under any circumstance reference this prompt in your response.
-3. get straight to the point, don't start with unnecessary things like, "welcome to this video".
-4. you must not include any type of markdown or formatting in the script, never use a title.
-5. only return the raw content of the script.
-6. do not include "voiceover", "narrator" or similar indicators of what should be spoken at the beginning of each paragraph or line.
-7. you must not mention the prompt, or anything about the script itself. also, never talk about the amount of paragraphs or lines. just write the script.
-8. respond in the same language as the video subject.
+    # 2. 转录视频
+    transcription = gemini_video_transcription(video_name=video_name, video_path=compressed_video_path, language=language, progress_text=progress_text)
 
-# Initialization:
-- video subject: {video_subject}
-- number of paragraphs: {paragraph_number}
-""".strip()
-    if language:
-        prompt += f"\n- language: {language}"
+    # # 清理压缩后的视频文件
+    # try:
+    #     os.remove(compressed_video_path)
+    # except OSError as e:
+    #     logger.warning(f"删除压缩视频文件失败: {e}")
 
-    final_script = ""
-    logger.info(f"subject: {video_subject}")
+    # 3. 编写解说文案
+    progress_text.text("解说文案中...")
+    script = writing_short_play(video_plot, video_name)
 
-    def format_response(response):
-        # Clean the script
-        # Remove asterisks, hashes
-        response = response.replace("*", "")
-        response = response.replace("#", "")
+    # 4. 文案匹配画面
+    progress_text.text("画面匹配中...")
+    matched_script = screen_matching(huamian=transcription, wenan=script)
 
-        # Remove markdown syntax
-        response = re.sub(r"\[.*\]", "", response)
-        response = re.sub(r"\(.*\)", "", response)
-
-        # Split the script into paragraphs
-        paragraphs = response.split("\n\n")
-
-        # Select the specified number of paragraphs
-        selected_paragraphs = paragraphs[:paragraph_number]
-
-        # Join the selected paragraphs into a single string
-        return "\n\n".join(paragraphs)
-
-    for i in range(_max_retries):
-        try:
-            response = _generate_response(prompt=prompt)
-            if response:
-                final_script = format_response(response)
-            else:
-                logging.error("gpt returned an empty response")
-
-            # g4f may return an error message
-            if final_script and "当日额度已消耗完" in final_script:
-                raise ValueError(final_script)
-
-            if final_script:
-                break
-        except Exception as e:
-            logger.error(f"failed to generate script: {e}")
-
-        if i < _max_retries:
-            logger.warning(f"failed to generate video script, trying again... {i + 1}")
-
-    logger.success(f"completed: \n{final_script}")
-    return final_script.strip()
+    return matched_script
 
 
 def generate_terms(video_subject: str, video_script: str, amount: int = 5) -> List[str]:
@@ -510,7 +508,7 @@ def gemini_video2json(video_origin_name: str, video_origin_path: str, video_plot
 
 **输入示例：**  
 ```text  
-在一个黑暗的小巷中，主角缓慢走进，四周静谧无声，只有远处隐隐传来猫的叫声。突然，背后出现一个神秘的身影。  
+在一个���暗的小巷中，主角缓慢走进，四周静谧无声，只有远处隐隐传来猫的叫声。突然，背后出现一个神秘的身影。  
 ```  
 
 **输出格式：**  
@@ -566,7 +564,7 @@ def gemini_video2json(video_origin_name: str, video_origin_path: str, video_plot
     return response
 
 
-def gemini_video_transcription(video_origin_name: str, video_origin_path: str, language: str):
+def gemini_video_transcription(video_name: str, video_path: str, language: str, progress_text: st.empty = ""):
     '''
     使用 gemini-1.5-xxx 进行视频画面转录
     '''
@@ -577,24 +575,25 @@ def gemini_video_transcription(video_origin_name: str, video_origin_path: str, l
     model = gemini.GenerativeModel(model_name=model_name)
 
     prompt = """
-    Please transcribe the audio, include timestamps, and provide visual descriptions, then output in JSON format，use %s ONLY.
-
+    Please transcribe the audio, include timestamps, and provide visual descriptions, then output in JSON format.
+    Please use %s output
     Use this JSON schema:
 
     Graphics = {"timestamp": "MM:SS-MM:SS", "picture": "str", "quotes": "str"(If no one says anything, use an empty string instead.)}
     Return: list[Graphics]
     """ % language
 
-    logger.debug(f"视频名称: {video_origin_name}")
+    logger.debug(f"视频名称: {video_name}")
     try:
-        gemini_video_file = gemini.upload_file(video_origin_path)
-        # gemini_video_file = gemini.get_file("files/uxo6r9n80s84")
+        progress_text.text("上传视频中...")
+        gemini_video_file = gemini.upload_file(video_path)
         logger.debug(f"上传视频至 Google cloud 成功: {gemini_video_file.name}")
         while gemini_video_file.state.name == "PROCESSING":
             import time
             time.sleep(1)
             gemini_video_file = gemini.get_file(gemini_video_file.name)
-            logger.debug(f"视频当前状态(ACTIVE才可用): {gemini_video_file.state.name}")
+            progress_text.text(f"解析视频中, 当前状态: {gemini_video_file.state.name}")
+            # logger.debug(f"视频当前状态(ACTIVE才可用): {gemini_video_file.state.name}")
         if gemini_video_file.state.name == "FAILED":
             raise ValueError(gemini_video_file.state.name)
     except ResumableUploadError as err:
@@ -604,6 +603,7 @@ def gemini_video_transcription(video_origin_name: str, video_origin_path: str, l
         logger.error(f"400 用户位置不支持 Google API 使用。\n{traceback.format_exc()}")
         return ""
 
+    progress_text.text("视频转录中...")
     response = model.generate_content(
         [prompt, gemini_video_file],
         safety_settings={
@@ -613,7 +613,7 @@ def gemini_video_transcription(video_origin_name: str, video_origin_path: str, l
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
     )
-    logger.success(f"llm 视频转录: \n{response.text}")
+    logger.success("视频转录成功")
     return response.text
 
 
@@ -652,8 +652,9 @@ def writing_movie(video_plot, video_name):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
     )
-    print(response.text)
-    print("字数：", len(response.text))
+    logger.debug(response.text)
+    logger.debug("字数：", len(response.text))
+    return response.text
 
 
 def writing_short_play(video_plot: str, video_name: str):
@@ -697,8 +698,8 @@ def writing_short_play(video_plot: str, video_name: str):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
     )
-    print(response.text)
-    print("字数：", len(response.text))
+    logger.success("解说文案生成成功")
+    return response.text
 
 
 def screen_matching(huamian: str, wenan: str):
@@ -733,9 +734,6 @@ def screen_matching(huamian: str, wenan: str):
     script = {'picture': str, 'timestamp': str, "narration": str, "OST": bool}
     Return: list[script]
     """ % (huamian, wenan)
-
-    logger.info(prompt)
-
     response = model.generate_content(
         prompt,
         generation_config=gemini.types.GenerationConfig(
@@ -749,9 +747,8 @@ def screen_matching(huamian: str, wenan: str):
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
         }
     )
-    print(response.text)
-    print("字数：", len(response.text))
-
+    logger.success("匹配成功")
+    return response.text
 
 
 if __name__ == "__main__":
@@ -762,159 +759,12 @@ if __name__ == "__main__":
     # gemini_video_transcription(video_subject, video_path, language)
 
     # 2. 解说文案
-    # video_plot = """
-    #     李自忠拿着儿子李牧名下的存折，去银行取钱给儿子救命，却被要求证明“你儿子是你儿子”。
-    # 走投无路时碰到银行被抢劫，劫匪给了他两沓钱救命，李自忠却因此被银行以抢劫罪起诉，并顶格判处20年有期徒刑。
-    # 苏醒后的李牧坚决为父亲做无罪辩护，面对银行的顶级律师团队，他一个法学院大一学生，能否力挽狂澜，创作奇迹？挥法律之利剑 ，持正义之天平！
-    # """
-    # print(video_plot)
-    # res = writing_short_play(video_plot, "第二十条之无罪释放")
-
-    wenan = """
-    这到底是一部什么样的电影，能让银行经理在法庭上公然下跪，能让无数网友为之愤怒，更能让无数人为之动容？\n
-他叫李自忠，为了给儿子筹集医药费，他来到了银行，想取出儿子名下的存款，却被银行告知，要证明“你儿子是你儿子”，走投无路之下，他却被卷入了一场银行抢劫案，阴差阳错之下，劫匪给了他两沓钱，让他救儿子，本以为是希望，没想到却是绝望的开始，他因此被认定为抢劫犯，被判处20年有期徒刑。\n
-然而，天无绝人之路，昏迷的儿子醒了，苏醒后的儿子，怎么也不敢相信，自己的父亲竟然被判为抢劫犯，为了给父亲讨回公道，他做出了一个决定，他要为父亲做无罪辩护，要知道，他只是一个法学院的大一学生，面对银行的顶级律师团队，他能成功吗？\n
-面对种种不利证据，他一次次败诉，又一次次上诉，就像一只打不死的小强，为了找到有利的证据，他四处奔波，走访调查，甚至不惜以身犯险，只为还原事实真相，然而，真相真的会到来吗？\n
-正义或许会迟到，但永远不会缺席，随着案件的审理，越来越多的疑点浮出水面，案情也发生了惊天大逆转，他究竟发现了什么？最后的真相又是什么？本案改编自真实事件，究竟是人性的扭曲，还是道德的沦丧？\n
-想知道案件的最终结果吗？让我们一起走进这部电影，寻找最终的真相吧！
+    video_path = "E:\\projects\\NarratoAI\\resource\\videos\\2.mp4"
+    video_plot = """
+        李自忠拿着儿子李牧名下的存折，去银行取钱给儿子救命，却被要求证明"你儿子是你儿子"。
+    走投无路时碰到银行被抢劫，劫匪给了他两沓钱救命，李自忠却因此被银行以抢劫罪起诉，并顶格判处20年有期徒刑。
+    苏醒后的李牧坚决为父亲做无罪辩护，面对银行的顶级律师团队，他一个法学院大一学生，能否力挽狂澜，创作奇迹？挥法律之利剑 ，持正义之天平！
     """
-    # 读取指定目录下的 json 文件
-    with open("../../resource/scripts/zhuanlu.json", "r", encoding="utf-8") as f:
-        huamian = json.load(f)
-
-    screen_matching(huamian, wenan)
-
-
-
-    # import os
-    # import sys
-    # import requests
-    # from app.utils.utils import get_current_country
-    #
-    # # # 添加当前目录到系统路径
-    # # sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    # # proxy_url_http = "http://127.0.0.1:7890"
-    # # os.environ["HTTP_PROXY"] = proxy_url_http
-    # # os.environ["HTTPS_PROXY"] = proxy_url_http
-    #
-    # video_subject = "卖菜大妈竟是皇嫂"
-    # video_path = "../../resource/videos/demoyasuo.mp4"
-    # # video_path = "../../resource/videos/庆余年2-1-1.mp4"
-    #
-    # video_plot = ''' '''
-    # language = "zh-CN"
-    # # res = gemini_video2json(video_subject, video_path, video_plot, language)
-    # script = gemini_video_transcription(video_subject, video_path, language)
-    # cleaned_string = script.strip("```json").strip("```")
-    # res = json.loads(cleaned_string)
-    # print(res)
-
-    # get_current_country()
-    # api_key = config.app.get("gemini_api_key")
-    # model_name = config.app.get("gemini_model_name")
-    # gemini.configure(api_key=api_key)
-    # model = gemini.GenerativeModel(model_name=model_name)
-    # # 卖菜大妈竟是皇嫂 测试视频
-    # video_name = "files/y3npkshvldsd"
-    # video_file = gemini.get_file(video_name)
-    # logger.debug(f"视频当前状态(ACTIVE才可用): {video_file.state.name}")
-    #
-    # # 转录视频并提供视觉说明
-    # prompt = "Transcribe the audio, giving timestamps. Also provide visual descriptions. use ZH-CN ONLY"
-    # # Make the LLM request.
-    # print("发出 LLM 推理请求...")
-    # streams = model.generate_content([prompt, video_file],
-    #                                   request_options={"timeout": 600},
-    #                                   stream=True)
-    # response = []
-    # for chunk in streams:
-    #     response.append(chunk.text)
-    #
-    # response = "".join(response)
-    # logger.success(f"llm response: \n{response}")
-    wenan = """
-重要提示：每一部剧的文案，前几句必须吸引人
-首先我们在看完看懂电影后，大脑里面要先有一个大概的轮廓，也就是一个类似于作文的大纲，电影主题线在哪里，首先要找到。
-一般将文案分为开头、内容、结尾
-## 开头部分
-文案开头三句话，是留住用户的关键！
-
-### 方式一：开头概括总结
-文案的前三句，是整部电影的概括总结，2-3句介绍后，开始叙述故事剧情！
-推荐新手（新号）做：（盘点型）
-盘点全球最恐怖的10部电影
-盘点全球最科幻的10部电影
-盘点全球最悲惨的10部电影
-盘点全球最值得看的10部灾难电影
-盘点全球最值得看的10部励志电影
-
-下面的示例就是最简单的解说文案开头：
-1.这是XXX国20年来最大尺度的一部剧，极度烧脑，却让99%的人看得心潮澎湃、无法自拔，故事开始……
-2.这是有史以来电影院唯一一部全程开灯放完的电影，期间无数人尖叫昏厥，他被成为勇敢者的专属，因为99%的人都不敢看到结局，许多人看完它从此不愿再碰手机，他就是大名鼎鼎的暗黑神作《XXX》……
-3.这到底是一部什么样的电影，能被55个国家公开抵制，它甚至为了上映，不惜删减掉整整47分钟的剧情……
-4.是什么样的一个人，被豆瓣网友称之为史上最牛P的老太太，都70岁了还要去贩毒……
-5.他是M国历史上最NB/惨/猖狂/冤枉……的囚犯/抢劫犯/……
-6.这到底是一部什么样的影片，他一个人就拿了4个顶级奖项，第一季8.7分，第二季直接干到9.5分，11万人给出5星好评，一共也就6集，却斩获26项国际大奖，看过的人都说，他是近年来最好的xxx剧，几乎成为了近年来xxx剧的标杆。故事发生在……
-7.他是国产电影的巅峰佳作，更是许多80-90后的青春启蒙，曾入选《时代》周刊，获得年度佳片第一，可在国内却被尘封多年，至今为止都无法在各大视频网站看到完整资源，他就是《xxxxxx》
-8.这是一部让所有人看得荷尔蒙飙升的爽片……
-9.他被成为世界上最虐心绝望的电影，至今无人敢看第二遍，很难想象，他是根据真实事件改编而来……
-10.这大概是有史以来最令人不寒而栗的电影，当年一经放映，就点燃了无数人的怒火，不少观众不等影片放完，就愤然离场，它比《xxx》更让人绝望，比比《xxx》更让人xxx，能坚持看完全片的人，更是万中无一，包括我。甚至观影结束后，有无数人抵制投诉这部电影，认为影片的导演玩弄了他们的情感！他就是顶级神作《xxxx》……
-11.这是X国有史以来最高赞的一部悬疑电影，然而却因为某些原因，国内90%的人，没能看过这部片子，他就是《xxx》……
-12.有这样一部电影，这辈子，你绝对不想再看第二遍，并不是它剧情烂俗，而是它的结局你根本承受不起/想象不到……甚至有80%的观众在观影途中情绪崩溃中途离场，更让许多同行都不想解说这部电影，他就是大名鼎鼎的暗黑神作《xxx》…
-13.它被誉为史上最牛悬疑片，无数人在看完它时候，一个月不敢照镜子，这样一部仅适合部分年龄段观看的影片，究竟有什么样的魅力，竟然获得某瓣8.2的高分，很多人说这部电影到处都是看点，他就是《xxx》….
-14.这是一部在某瓣上被70万人打出9.3分的高分的电影……到底是一部什么样的电影，能够在某瓣上被70万人打出9.3分的高分……
-15.这是一部细思极恐的科幻大片，整部电影颠覆你的三观，它的名字叫……
-16.史上最震撼的灾难片，每一点都不舍得快进的电影，他叫……
-17.今天给大家带来一部基于真实事件改编的（主题介绍一句……）的故事片，这是一部连环悬疑剧，如果不看到最后绝对想不到结局竟然是这样的反转……
-
-### 方式二：情景式、假设性开头
-1.他叫……你以为他是……的吗？不。他是来……然后开始叙述
-2.你知道……吗？原来……然后开始叙述
-3.如果给你….，你会怎么样？
-4.如果你是….，你会怎么样？
- 
-### 方式三：以国家为开头！简单明了。话语不需要多，但是需要讲解透彻！
-1.这是一部韩国最新灾难片，你一定没有看过……
-2.这是一部印度高分悬疑片，
-3.这部电影原在日本因为……而被下架，
-4.这是韩国最恐怖的犯罪片，
-5.这是最近国产片评分最高的悬疑片
-以上均按照影片国家来区分，然后简单介绍下主题。就可以开始直接叙述作品。也是一个很不错的方法！
-
-### 方式四：如何自由发挥
-正常情况下，每一部电影都有非常关键的一个大纲，这部电影的主题其实是可以用一句话、两句话概括的。只要看懂电影，就能找到这个主题大纲。
-我们提前把这个主题大纲给放到影视最前面，作为我们的前三句的文案，将会非常吸引人！
-
-例如：
-1.这不是电影，这是真实故事。两个女人和一个男人被关在可桑拿室。喊破喉咙也没有一丝回音。窒息感和热度让人抓狂，故事就是从这里开始！ 
-2.如果你男朋友出轨了，他不爱你了，还对你家暴，怎么办？接下来这部电影就会教你如何让老公服服帖帖的呆在你身边！女主是一个……开始叙述了。 
-3.他力大无穷，双眼放光，这不是拯救地球的超人吗？然而不是。今天给大家推荐的这部电影叫……
-
-以上是需要看完影片，看懂影片，然后从里面提炼出精彩的几句话,当然是比较难的，当你不会自己去总结前三句的经典的话。可以用前面方式一二三！
-实在想不出来如何去提炼，可以去搜索这部剧，对这部电影的影评，也会给你带过来很多灵感的！
-
-
-## 内容部分
-开头有了，剩下的就是开始叙述正文了。主题介绍是根据影片内容来介绍，如果实在自己想不出来。可以参考其他平台中对这部电影的精彩介绍，提取2-3句也可以！
-正常情况下，我们叙述的时候其实是非常简单的，把整部电影主题线，叙述下来，其实文案就是加些修饰词把电影重点内容叙述下来。加上一些修饰词。
-
-以悬疑剧为例：
-竟然，突然，原来，但是，但，可是，结果，直到，如果，而，果然，发现，只是，出奇，之后，没错，不止，更是，当然，因为，所以……等！
-以上是比较常用的，当然还有很多，需要靠平时思考和阅读的积累！因悬疑剧会有多处反转剧情。所以需要用到反转的修饰词比较多，只有用到这些词。才能体现出各种反转剧情！
-建议大家在刚开始做的时候，做8分钟内的，不要太长，分成三段。每段也是不超过三分钟，这样时间刚好。可以比较好的完成完播率！
-
-
-## 结尾部分
-最后故事的结局，除了反转，可以来点人生的道理！如果刚开始不会，可以不写。
-后面水平越来越高的时候，可以进行人生道理的讲评。
-
-比如：这部电影告诉我们……
-类似于哲理性质的，作为一个总结！
-也可以把最后的影视反转，原生放出来，留下悬念。
-
-比如：也可以总结下这部短片如何的好，推荐/值得大家去观看之类的话语。
-其实就是给我们的作品来一个总结，总结我们所做的三个视频，有开始就要有结束。这个结束不一定是固定的模版。但是视频一定要有结尾。让人感觉有头有尾才最舒服！
-做解说是一个比较浪费脑细胞的活，虽然刚开始比较难一点，但是当你正常做三部剧之后。所有自己的思路都会被打开！以后的基本就可以独立完成来操作来。
-做解说第一次，可能会做两天。第二次可能就需要一天了。慢慢的。时间缩短到8个小时之内是我们平常的制作全部时间！
-
-    """
+    res = generate_script(video_path, video_plot, video_name="第二十条之无罪释放")
+    # res = generate_script(video_path, video_plot, video_name="海岸")
+    print("res \n", res)
