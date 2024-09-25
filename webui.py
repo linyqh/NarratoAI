@@ -1,29 +1,5 @@
-import sys
-import os
-import glob
-import json
-import time
-import datetime
-import traceback
 import streamlit as st
-from uuid import uuid4
-import platform
-import streamlit.components.v1 as components
-from loguru import logger
-
 from app.config import config
-from app.models.const import FILE_TYPE_VIDEOS
-from app.models.schema import VideoClipParams, VideoAspect, VideoConcatMode
-from app.services import task as tm, llm, voice, material
-from app.utils import utils
-
-# # 将项目的根目录添加到系统路径中，以允许从项目导入模块
-root_dir = os.path.dirname(os.path.realpath(__file__))
-if root_dir not in sys.path:
-    sys.path.append(root_dir)
-    print("******** sys.path ********")
-    print(sys.path)
-    print("*" * 20)
 
 st.set_page_config(
     page_title="NarratoAI",
@@ -36,6 +12,31 @@ st.set_page_config(
                  f"自动化影视解说视频详情请移步：https://github.com/linyqh/NarratoAI"
     },
 )
+
+import sys
+import os
+import glob
+import json
+import time
+import datetime
+import traceback
+from uuid import uuid4
+import platform
+import streamlit.components.v1 as components
+from loguru import logger
+
+from app.models.const import FILE_TYPE_VIDEOS
+from app.models.schema import VideoClipParams, VideoAspect, VideoConcatMode
+from app.services import task as tm, llm, voice, material
+from app.utils import utils
+
+# # 将项目的根目录添加到系统路径中，以允许从项目导入模块
+root_dir = os.path.dirname(os.path.realpath(__file__))
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
+    print("******** sys.path ********")
+    print(sys.path)
+    print("*" * 20)
 
 proxy_url_http = config.proxy.get("http", "") or os.getenv("VPN_PROXY_URL", "")
 proxy_url_https = config.proxy.get("https", "") or os.getenv("VPN_PROXY_URL", "")
@@ -59,8 +60,6 @@ i18n_dir = os.path.join(root_dir, "webui", "i18n")
 config_file = os.path.join(root_dir, "webui", ".streamlit", "webui.toml")
 system_locale = utils.get_system_locale()
 
-if 'video_subject' not in st.session_state:
-    st.session_state['video_subject'] = ''
 if 'video_clip_json' not in st.session_state:
     st.session_state['video_clip_json'] = ''
 if 'video_plot' not in st.session_state:
@@ -189,16 +188,7 @@ with st.expander(tr("Basic Settings"), expanded=False):
         if HTTPS_PROXY:
             config.proxy["https"] = HTTPS_PROXY
 
-
     with middle_config_panel:
-        #   openai
-        #   moonshot (月之暗面)
-        #   oneapi
-        #   g4f
-        #   azure
-        #   qwen (通义千问)
-        #   gemini
-        #   ollama
         llm_providers = ['Gemini']
         saved_llm_provider = config.app.get("llm_provider", "OpenAI").lower()
         saved_llm_provider_index = 0
@@ -470,6 +460,7 @@ with left_panel:
             else:
                 st.error(tr("请先生成视频脚本"))
 
+
         # 裁剪视频
         with button_columns[1]:
             if st.button(tr("Crop Video"), key="auto_crop_video", use_container_width=True):
@@ -479,50 +470,6 @@ with left_panel:
 with middle_panel:
     with st.container(border=True):
         st.write(tr("Video Settings"))
-        # video_concat_modes = [
-        #     (tr("Sequential"), "sequential"),
-        #     (tr("Random"), "random"),
-        # ]
-        # video_sources = [
-        #     (tr("Pexels"), "pexels"),
-        #     (tr("Pixabay"), "pixabay"),
-        #     (tr("Local file"), "local"),
-        #     (tr("TikTok"), "douyin"),
-        #     (tr("Bilibili"), "bilibili"),
-        #     (tr("Xiaohongshu"), "xiaohongshu"),
-        # ]
-        #
-        # saved_video_source_name = config.app.get("video_source", "pexels")
-        # saved_video_source_index = [v[1] for v in video_sources].index(
-        #     saved_video_source_name
-        # )
-        #
-        # selected_index = st.selectbox(
-        #     tr("Video Source"),
-        #     options=range(len(video_sources)),
-        #     format_func=lambda x: video_sources[x][0],
-        #     index=saved_video_source_index,
-        # )
-        # params.video_source = video_sources[selected_index][1]
-        # config.app["video_source"] = params.video_source
-        #
-        # if params.video_source == "local":
-        #     _supported_types = FILE_TYPE_VIDEOS + FILE_TYPE_IMAGES
-        #     uploaded_files = st.file_uploader(
-        #         "Upload Local Files",
-        #         type=["mp4", "mov", "avi", "flv", "mkv", "jpg", "jpeg", "png"],
-        #         accept_multiple_files=True,
-        #     )
-
-        # selected_index = st.selectbox(
-        #     tr("Video Concat Mode"),
-        #     index=1,
-        #     options=range(len(video_concat_modes)),  # 使用索引作为内部选项值
-        #     format_func=lambda x: video_concat_modes[x][0],  # 显示给用户的是标签
-        # )
-        # params.video_concat_mode = VideoConcatMode(
-        #     video_concat_modes[selected_index][1]
-        # )
 
         # 视频比例
         video_aspect_ratios = [
@@ -582,8 +529,9 @@ with middle_panel:
         params.voice_name = voice_name
         config.ui["voice_name"] = voice_name
 
+        # 试听语言合成
         if st.button(tr("Play Voice")):
-            play_content = params.video_subject
+            play_content = "这是一段试听语言"
             if not play_content:
                 play_content = params.video_script
             if not play_content:
@@ -779,6 +727,7 @@ with st.expander(tr("Video Check"), expanded=False):
                             caijian()
                             st.rerun()
 
+# 开始按钮
 start_button = st.button(tr("Generate Video"), use_container_width=True, type="primary")
 if start_button:
     config.save_config()
@@ -798,10 +747,6 @@ if start_button:
         st.stop()
     if not params.video_origin_path:
         st.error(tr("视频文件不能为空"))
-        scroll_to_bottom()
-        st.stop()
-    if llm_provider != 'g4f' and not config.app.get(f"{llm_provider}_api_key", ""):
-        st.error(tr("请输入 LLM API 密钥"))
         scroll_to_bottom()
         st.stop()
 

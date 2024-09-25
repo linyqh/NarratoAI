@@ -352,7 +352,8 @@ def compress_video(input_path: str, output_path: str):
         input_path: 输入视频文件路径
         output_path: 输出压缩后的视频文件路径
     """
-    ffmpeg_path = "E:\\projects\\NarratoAI_v0.1.2\\lib\\ffmpeg\\ffmpeg-7.0-essentials_build\\ffmpeg.exe"  # 指定 ffmpeg 的完整路径
+    # 指定 ffmpeg 的完整路径
+    ffmpeg_path = os.getenv("FFMPEG_PATH") or config.app.get("ffmpeg_path")
 
     # 如果压缩后的视频文件已经存在，则直接使用
     if os.path.exists(output_path):

@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, List, Optional
 
 import pydantic
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # 忽略 Pydantic 的特定警告
 warnings.filterwarnings(
@@ -330,42 +330,39 @@ class BgmUploadResponse(BaseResponse):
 
 
 class VideoClipParams(BaseModel):
-    video_subject: Optional[str] = "春天的花海让人心旷神怡"
+    """
+    NarratoAI 数据模型
+    """
+    video_clip_json: Optional[list] = Field(default=[], description="LLM 生成的视频剪辑脚本内容")
+    video_clip_json_path: Optional[str] = Field(default="", description="LLM 生成的视频剪辑脚本路径")
+    video_origin_path: Optional[str] = Field(default="", description="原视频路径")
+    video_aspect: Optional[VideoAspect] = Field(default=VideoAspect.portrait.value, description="视频比例")
+    video_language: Optional[str] = Field(default="zh-CN", description="视频语言")
 
-    video_clip_json: Optional[str] = ""      # 视频剪辑脚本
-    video_origin_path: Optional[str] = ""    # 原视频路径
-    video_aspect: Optional[VideoAspect] = VideoAspect.portrait.value        # 视频比例
-    video_clip_duration: Optional[int] = 5      # 视频片段时长
-    video_count: Optional[int] = 1      # 视频片段数量
-    video_source: Optional[str] = "local"
-    video_language: Optional[str] = ""  # 自动检测
+    # video_clip_duration: Optional[int] = 5      # 视频片段时长
+    # video_count: Optional[int] = 1      # 视频片段数量
+    # video_source: Optional[str] = "local"
     # video_concat_mode: Optional[VideoConcatMode] = VideoConcatMode.random.value
 
-    # # 女性
-    # "zh-CN-XiaoxiaoNeural",
-    # "zh-CN-XiaoyiNeural",
-    # # 男性
-    # "zh-CN-YunjianNeural" 男声
-    # "zh-CN-YunyangNeural",
-    # "zh-CN-YunxiNeural",
-    voice_name: Optional[str] = "zh-CN-YunjianNeural"      # 语音名称 指定选择：
-    voice_volume: Optional[float] = 1.0     # 语音音量
-    voice_rate: Optional[float] = 1.0       # 语速
+    voice_name: Optional[str] = Field(default="zh-CN-YunjianNeural", description="语音名称")
+    voice_volume: Optional[float] = Field(default=1.0, description="语音音量")
+    voice_rate: Optional[float] = Field(default=1.0, description="语速")
 
-    bgm_name: Optional[str] = "random"  # 背景音乐名称
-    bgm_type: Optional[str] = "random"  # 背景音乐类型
-    bgm_file: Optional[str] = ""        # 背景音乐文件
-    bgm_volume: Optional[float] = 0.2
+    bgm_name: Optional[str] = Field(default="random", description="背景音乐名称")
+    bgm_type: Optional[str] = Field(default="random", description="背景音乐类型")
+    bgm_file: Optional[str] = Field(default="", description="背景音乐文件")
+    bgm_volume: Optional[float] = Field(default=0.2, description="背景音乐音量")
 
-    subtitle_enabled: Optional[bool] = True     # 是否启用字幕
-    subtitle_position: Optional[str] = "bottom"  # top, bottom, center
-    font_name: Optional[str] = "STHeitiMedium.ttc"      # 字体名称
-    text_fore_color: Optional[str] = "#FFFFFF"      # 文字前景色
-    text_background_color: Optional[str] = "transparent"    # 文字背景色
+    subtitle_enabled: Optional[bool] = Field(default=True, description="是否启用字幕")
+    subtitle_position: Optional[str] = Field(default="bottom", description="字幕位置")  # top, bottom, center
+    font_name: Optional[str] = Field(default="STHeitiMedium.ttc", description="字体名称")
+    text_fore_color: Optional[str] = Field(default="#FFFFFF", description="文字前景色")
+    text_background_color: Optional[str] = Field(default="transparent", description="文字背景色")
 
-    font_size: int = 60     # 文字大小
-    stroke_color: Optional[str] = "#000000"     # 文字描边颜色
-    stroke_width: float = 1.5       # 文字描边宽度
-    custom_position: float = 70.0   # 自定义位置
-    n_threads: Optional[int] = 2    # 线程数
-    paragraph_number: Optional[int] = 1     # 段落数量
+    font_size: int = Field(default=60, description="文字大小")
+    stroke_color: Optional[str] = Field(default="#000000", description="文字描边颜色")
+    stroke_width: float = Field(default=1.5, description="文字描边宽度")
+    custom_position: float = Field(default=70.0, description="自定义位置")
+
+    # n_threads: Optional[int] = 2    # 线程数
+    # paragraph_number: Optional[int] = 1     # 段落数量

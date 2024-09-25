@@ -326,17 +326,20 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
 def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
     """
     后台任务（自动剪辑视频进行剪辑）
+
+        task_id: 任务ID
+        params: 剪辑参数
+        subclip_path_videos: 视频文件路径
+
     """
     logger.info(f"\n\n## 开始任务: {task_id}")
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=5)
 
+    # tts 角色名称
     voice_name = voice.parse_voice_name(params.voice_name)
-    paragraph_number = params.paragraph_number
-    n_threads = params.n_threads
-    max_clip_duration = params.video_clip_duration
 
     logger.info("\n\n## 1. 读取视频json脚本")
-    video_script_path = path.join(params.video_clip_json)
+    video_script_path = path.join(params.video_clip_json_path)
     # 判断json文件是否存在
     if path.exists(video_script_path):
         try:
@@ -430,7 +433,7 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
             video_ost_list=video_ost,
             list_script=list_script,
             video_aspect=params.video_aspect,
-            threads=n_threads
+            threads=1   # 暂时只支持单线程
         )
 
         _progress += 50 / params.video_count / 2
