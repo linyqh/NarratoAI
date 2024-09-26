@@ -521,7 +521,8 @@ def combine_clip_videos(combined_video_path: str,
     Args:
         combined_video_path: 合并后的存储路径
         video_paths: 子视频路径列表
-        audio_file: mp3旁白
+        video_ost_list: 原声播放列表
+        list_script: 剪辑脚本
         video_aspect: 屏幕比例
         threads: 线程数
 
@@ -545,10 +546,13 @@ def combine_clip_videos(combined_video_path: str,
     # 一遍又一遍地添加下载的剪辑，直到达到音频的持续时间 （max_duration）
     # while video_duration < audio_duration:
     for video_path, video_ost in zip(video_paths, video_ost_list):
-        clip = VideoFileClip(video_path)
-        # 通过 ost 字段判断是否播放原声
-        if not video_ost:
-            clip = clip.without_audio()
+        print(video_path)
+        print(video_ost)
+        cache_video_path = utils.root_dir()
+        clip = VideoFileClip(os.path.join(cache_video_path, video_path))
+        # # 通过 ost 字段判断是否播放原声
+        # if not video_ost:
+        #     clip = clip.without_audio()
         # # 检查剪辑是否比剩余音频长
         # if (audio_duration - video_duration) < clip.duration:
         #     clip = clip.subclip(0, (audio_duration - video_duration))

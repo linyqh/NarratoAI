@@ -211,7 +211,7 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
 
     if type(params.video_concat_mode) is str:
         params.video_concat_mode = VideoConcatMode(params.video_concat_mode)
-        
+
     # 1. Generate script
     video_script = generate_script(task_id, params)
     if not video_script:
@@ -323,7 +323,7 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
     return kwargs
 
 
-def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
+def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
     """
     后台任务（自动剪辑视频进行剪辑）
 
@@ -423,39 +423,46 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
     combined_video_paths = []
 
     _progress = 50
-    for i in range(params.video_count):
-        index = i + 1
-        combined_video_path = path.join(utils.task_dir(task_id), f"combined-{index}.mp4")
-        logger.info(f"\n\n## 5. 合并视频: {index} => {combined_video_path}")
-        video.combine_clip_videos(
-            combined_video_path=combined_video_path,
-            video_paths=subclip_videos,
-            video_ost_list=video_ost,
-            list_script=list_script,
-            video_aspect=params.video_aspect,
-            threads=1   # 暂时只支持单线程
-        )
+    # for i in range(params.video_count):
+    index = 1
+    combined_video_path = path.join(utils.task_dir(task_id), f"combined.mp4")
+    logger.info(f"\n\n## 5. 合并视频: => {combined_video_path}")
+    print("111", subclip_videos)
+    print("222", video_ost)
+    print("333", len(subclip_videos))
+    print("444", len(video_ost))
+    # for video_path, video_ost in zip(subclip_videos, video_ost):
+    #     print(video_path)
+    #     print(video_ost)
+    video.combine_clip_videos(
+        combined_video_path=combined_video_path,
+        video_paths=subclip_videos,
+        video_ost_list=video_ost,
+        list_script=list_script,
+        video_aspect=params.video_aspect,
+        threads=1  # 暂时只支持单线程
+    )
 
-        _progress += 50 / params.video_count / 2
-        sm.state.update_task(task_id, progress=_progress)
+    _progress += 50 / 2
+    sm.state.update_task(task_id, progress=_progress)
 
-        final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
+    final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
 
-        logger.info(f"\n\n## 6. 最后一步: {index} => {final_video_path}")
-        # 把所有东西合到在一起
-        video.generate_video_v2(
-            video_path=combined_video_path,
-            audio_paths=audio_files,
-            subtitle_path=subtitle_path,
-            output_file=final_video_path,
-            params=params,
-        )
+    logger.info(f"\n\n## 6. 最后一步: {index} => {final_video_path}")
+    # 把所有东西合到在一起
+    video.generate_video_v2(
+        video_path=combined_video_path,
+        audio_paths=audio_files,
+        subtitle_path=subtitle_path,
+        output_file=final_video_path,
+        params=params,
+    )
 
-        _progress += 50 / params.video_count / 2
-        sm.state.update_task(task_id, progress=_progress)
+    _progress += 50 / 2
+    sm.state.update_task(task_id, progress=_progress)
 
-        final_video_paths.append(final_video_path)
-        combined_video_paths.append(combined_video_path)
+    final_video_paths.append(final_video_path)
+    combined_video_paths.append(combined_video_path)
 
     logger.success(f"任务 {task_id} 已完成, 生成 {len(final_video_paths)} 个视频.")
 
@@ -468,11 +475,25 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
 
 
 if __name__ == "__main__":
-    task_id = "task_id"
-    params = VideoParams(
-        video_subject="金钱的作用",
-        voice_name="zh-CN-XiaoyiNeural-Female",
-        voice_rate=1.0,
-
+    task_id = "test123456"
+    subclip_path_videos = {'01:17-01:37': './storage/cache_videos/vid-01_17-01_37.mp4',
+                           '00:00-00:06': './storage/cache_videos/vid-00_00-00_06.mp4',
+                           '00:06-00:09': './storage/cache_videos/vid-00_06-00_09.mp4',
+                           '01:03-01:10': './storage/cache_videos/vid-01_03-01_10.mp4',
+                           '01:10-01:17': './storage/cache_videos/vid-01_10-01_17.mp4',
+                           '00:24-00:27': './storage/cache_videos/vid-00_24-00_27.mp4',
+                           '01:28-01:36': './storage/cache_videos/vid-01_28-01_36.mp4',
+                           '00:32-00:41': './storage/cache_videos/vid-00_32-00_41.mp4',
+                           '01:36-01:58': './storage/cache_videos/vid-01_36-01_58.mp4',
+                           '00:12-00:15': './storage/cache_videos/vid-00_12-00_15.mp4',
+                           '00:09-00:12': './storage/cache_videos/vid-00_09-00_12.mp4',
+                           '02:12-02:25': './storage/cache_videos/vid-02_12-02_25.mp4',
+                           '02:03-02:12': './storage/cache_videos/vid-02_03-02_12.mp4',
+                           '01:58-02:03': './storage/cache_videos/vid-01_58-02_03.mp4',
+                           '03:14-03:18': './storage/cache_videos/vid-03_14-03_18.mp4',
+                           '03:18-03:20': './storage/cache_videos/vid-03_18-03_20.mp4'}
+    params = VideoClipParams(
+        video_clip_json_path="/Users/apple/Desktop/home/NarratoAI/resource/scripts/test003.json",
+        video_origin_path="/Users/apple/Desktop/home/NarratoAI/resource/videos/1.mp4",
     )
-    start(task_id, params, stop_at="video")
+    start_subclip(task_id, params, subclip_path_videos=subclip_path_videos)

@@ -126,7 +126,7 @@ def handle_exception(err):
     elif isinstance(err, ConnectionError):
         logger.error("网络连接错误，请检查您的网络连接。")
     else:
-        logger.error(f"视频转录失败, 下面是具体报错信息: \n{traceback.format_exc()} \n问题排查指南: https://ai.google.dev/gemini-api/docs/troubleshooting?hl=zh-cn")
+        logger.error(f"大模型请求失败, 下面是具体报错信息: \n{traceback.format_exc()}")
     return ""
 
 
@@ -353,11 +353,11 @@ def _generate_response(prompt: str, llm_provider: str = None) -> str:
     return content.replace("\n", "")
 
 
-def _generate_response_video(prompt: str, llm_provider: str, video_file: str | File) -> str:
+def _generate_response_video(prompt: str, llm_provider_video: str, video_file: str | File) -> str:
     """
     多模态能力大模型
     """
-    if llm_provider == "gemini":
+    if llm_provider_video == "gemini":
         api_key = config.app.get("gemini_api_key")
         model_name = config.app.get("gemini_model_name")
         base_url = "***"
@@ -366,7 +366,7 @@ def _generate_response_video(prompt: str, llm_provider: str, video_file: str | F
             "llm_provider 未设置，请在 config.toml 文件中进行设置。"
         )
 
-    if llm_provider == "gemini":
+    if llm_provider_video == "gemini":
         import google.generativeai as genai
 
         genai.configure(api_key=api_key, transport="rest")
@@ -441,15 +441,44 @@ def generate_script(
     compressed_video_path = f"{os.path.splitext(video_path)[0]}_compressed.mp4"
     compress_video(video_path, compressed_video_path)
 
-    # 2. 转录视频
-    transcription = gemini_video_transcription(
-        video_name=video_name,
-        video_path=compressed_video_path,
-        language=language,
-        progress_text=progress_text,
-        llm_provider="gemini"
-    )
-
+    # # 2. 转录视频
+    # transcription = gemini_video_transcription(
+    #     video_name=video_name,
+    #     video_path=compressed_video_path,
+    #     language=language,
+    #     progress_text=progress_text,
+    #     llm_provider_video="gemini"
+    # )
+    transcription = """
+[{"timestamp": "00:00-00:06", "picture": "一个穿着蓝色囚服，戴着手铐的人在房间里走路。", "speech": ""},
+{"timestamp": "00:06-00:09", "picture": "一个穿着蓝色囚服，戴着手铐的人，画面上方显示“李自忠 银行抢劫犯”。", "speech": "李自忠 银行抢劫一案 现在宣判"},
+{"timestamp": "00:09-00:12", "picture": "一个穿着黑色西装，打着红色领带的女人，坐在一个牌子上，牌子上写着“书记员”，身后墙上挂着“国徽”。", "speech": "全体起立"},
+{"timestamp": "00:12-00:15", "picture": "一个穿着黑色法官服的男人坐在一个牌子后面，牌子上写着“审判长”，身后墙上挂着“国徽”。法庭上，很多人站着。", "speech": ""},
+{"timestamp": "00:15-00:19", "picture": "一个穿着黑色西装，打着红色领带的女人，坐在一个牌子上，牌子上写着“书记员”，身后墙上挂着“国徽”。法庭上，很多人站着。", "speech": "本庭二审判决如下 被告李自忠 犯抢劫银行罪"},
+{"timestamp": "00:19-00:24", "picture": "一个穿着蓝色囚服，戴着手铐的人，画面上方显示“李自忠 银行抢劫犯”。", "speech": "维持一审判决 判处有期徒刑 二十年"},
+{"timestamp": "00:24-00:27", "picture": "一个穿着黑色法官服的男人坐在一个牌子后面，牌子上写着“审判长”，他敲了一下法槌。", "speech": ""},
+{"timestamp": "00:27-00:32", "picture": "一个穿着蓝色囚服，戴着手铐的人，画面上方显示“李自忠 银行抢劫犯”。", "speech": "我们要让她们牢底坐穿 越父啊越父 你一个平头老百姓 也敢跟外资银行做对 真是不知天高地厚"},
+{"timestamp": "00:32-00:41", "picture": "一个穿着蓝色囚服，戴着手铐的人跪在地上。", "speech": "我要让她们牢底坐穿 越父啊越父 你一个平头老百姓 也敢跟外资银行做对 真是不知天高地厚"},
+{"timestamp": "00:41-00:47", "picture": "两个警察押解着一个穿着蓝色囚服，戴着手铐的人走在路上，一个女记者在路边报道新闻。", "speech": "李先生 这里是孔雀卫视 这里是黄金眼819新闻直播间 这里是浙江卫视新闻直播间 近日李自忠案引发社会热议"},
+{"timestamp": "00:47-01:03", "picture": "一个穿着灰色外套的男人坐在银行柜台前，和银行工作人员说话。画面中还穿插着女记者在路边报道新闻的画面。", "speech": "李自忠案引发社会热议 李自忠在去银行取钱的时候 由于他拿的是儿子的存折 所以银行要求李自忠证明他的儿子就是他的儿子 我说取不了就是取不了啊 这是你儿子的存折啊 你要证明你儿子是你儿子啊"},
+{"timestamp": "01:03-01:10", "picture": "一个穿着灰色外套的男人坐在银行柜台前，和银行工作人员说话。画面中还穿插着女记者在路边报道新闻的画面。", "speech": "李自忠提供了身份证账户户口本后 银行都不认可他的儿子是他的儿子 就在这个时候 银行发生一起抢劫案"},
+{"timestamp": "01:10-01:17", "picture": "三个戴着帽子和口罩的劫匪持枪闯入银行，银行里的人都很害怕，纷纷蹲下躲避。", "speech": "都给我蹲下 老实点 把钱给我交出来"},
+{"timestamp": "01:17-01:28", "picture": "女记者在路边报道新闻，画面中穿插着银行抢劫案的画面。", "speech": "劫匪看到一旁大哭的李自忠 得知他是因为儿子需要治病才取钱的时候 给了他一打钱 怎么 你儿子在医院等着钱救命啊 银行不给取啊"},
+{"timestamp": "01:28-01:36", "picture": "一个戴着黑色帽子和口罩的劫匪，拿着枪，给一个穿着灰色外套的男人一叠钱。", "speech": "银行不给取啊 好了 给儿子看病去 李自忠在把钱给儿子交完药费后被捕"},
+{"timestamp": "01:36-01:58", "picture": "两个警察押解着一个穿着蓝色囚服，戴着手铐的男人走在路上，一个女记者在路边报道新闻。", "speech": "目前一审二审都维持原判 判处有期徒刑二十年 对此你有什么想说的吗 他怎么证明他儿子是他儿子 要是银行早点把钱给我 我也不会遇到劫匪 我儿子还得救命 不是的 儿子 儿子 儿子"},
+{"timestamp": "01:58-02:03", "picture": "两个警察押解着一个穿着蓝色囚服，戴着手铐的男人走在路上，一个女记者在路边报道新闻。男人情绪激动，大声喊叫。", "speech": "儿子 儿子 儿子"},
+{"timestamp": "02:03-02:12", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边。画面中穿插着新闻报道的画面。", "speech": "近日李自忠案引发社会热议 李自忠在去银行取钱的时候 银行要求李自忠证明他的儿子就是他的儿子"},
+{"timestamp": "02:12-02:25", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生站在门口。", "speech": "爸 这家人也真够可怜的 当爹的坐牢 这儿子 恐怕要成植物人了"},
+{"timestamp": "02:25-02:31", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生站在门口。", "speech": "医生啊 我弟弟的情况怎么样 我先看看"},
+{"timestamp": "02:31-02:40", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生正在给男人做检查。", "speech": ""},
+{"timestamp": "02:40-02:46", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生正在给男人做检查。", "speech": "不太理想啊 你弟弟想要醒过来 希望渺茫"},
+{"timestamp": "02:46-02:57", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生正在给男人做检查。", "speech": "这 麟木 麟木你别吓姐啊麟木 麟木"},
+{"timestamp": "02:57-03:02", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生正在给男人做检查。画面中穿插着新闻报道的画面。", "speech": "麟木 儿子 麟木你别吓姐啊麟木"},
+{"timestamp": "03:02-03:08", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生正在给男人做检查。画面中穿插着新闻报道的画面。女人情绪激动，大声哭泣。", "speech": "儿子 麟木你别吓姐啊麟木 儿子"},
+{"timestamp": "03:08-03:14", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生正在给男人做检查。画面中穿插着新闻报道的画面。女人情绪激动，大声哭泣。", "speech": "儿子"},
+{"timestamp": "03:14-03:18", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，画面变成紫色光效。", "speech": ""},
+{"timestamp": "03:18-03:20", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，他突然睁开了眼睛。", "speech": ""}]
+    """
     # # 清理压缩后的视频文件
     # try:
     #     os.remove(compressed_video_path)
@@ -458,7 +487,7 @@ def generate_script(
 
     # 3. 编写解说文案
     progress_text.text("解说文案中...")
-    script = writing_short_play(video_plot, video_name, "openai")
+    script = writing_short_play(video_plot, video_name, "openai", count=300)
 
     # 4. 文案匹配画面
     if transcription != "":
@@ -620,7 +649,7 @@ def gemini_video2json(video_origin_name: str, video_origin_path: str, video_plot
     return response
 
 
-def gemini_video_transcription(video_name: str, video_path: str, language: str, llm_provider: str, progress_text: st.empty = ""):
+def gemini_video_transcription(video_name: str, video_path: str, language: str, llm_provider_video: str, progress_text: st.empty = ""):
     '''
     使用 gemini-1.5-xxx 进行视频画面转录
     '''
@@ -661,28 +690,25 @@ def gemini_video_transcription(video_name: str, video_path: str, language: str, 
 
     progress_text.text("视频转录中...")
     try:
-        response = _generate_response_video(prompt=prompt, llm_provider=llm_provider, video_file=gemini_video_file)
+        response = _generate_response_video(prompt=prompt, llm_provider_video=llm_provider_video, video_file=gemini_video_file)
         logger.success("视频转录成功")
+        logger.debug(response)
+        print(type(response))
         return response
     except Exception as err:
         return handle_exception(err)
 
 
-def writing_movie(video_plot, video_name):
+def writing_movie(video_plot, video_name, llm_provider):
     """
     影视解说（电影解说）
     """
-    api_key = config.app.get("gemini_api_key")
-    model_name = config.app.get("gemini_model_name")
-
-    gemini.configure(api_key=api_key)
-    model = gemini.GenerativeModel(model_name)
-
     prompt = f"""
     **角色设定：**  
     你是一名有10年经验的影视解说文案的创作者，
     下面是关于如何写解说文案的方法 {Method}，请认真阅读它，之后我会给你一部影视作品的名称，然后让你写一篇文案
-    请根据方法撰写 《{video_name}》的影视解说文案，文案要符合以下要求:
+    请根据方法撰写 《{video_name}》的影视解说文案，《{video_name}》的大致剧情如下: {video_plot}
+    文案要符合以下要求:
     
     **任务目标：**  
     1. 文案字数在 1500字左右，严格要求字数，最低不得少于 1000字。
@@ -691,34 +717,17 @@ def writing_movie(video_plot, video_name):
     4. 不要包含小标题，每个段落以 \n 进行分隔。
     """
     try:
-        response = model.generate_content(
-            prompt,
-            generation_config=gemini.types.GenerationConfig(
-                candidate_count=1,
-                temperature=1.3,
-            ),
-            safety_settings={
-                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-            }
-        )
-        return response.text
+        response = _generate_response(prompt, llm_provider)
+        logger.success("解说文案生成成功")
+        return response
     except Exception as err:
         return handle_exception(err)
 
 
-def writing_short_play(video_plot: str, video_name: str, llm_provider: str):
+def writing_short_play(video_plot: str, video_name: str, llm_provider: str, count: int = 500):
     """
     影视解说（短剧解说）
     """
-    # api_key = config.app.get("gemini_api_key")
-    # # model_name = config.app.get("gemini_model_name")
-    #
-    # gemini.configure(api_key=api_key)
-    # model = gemini.GenerativeModel(model_name)
-
     if not video_plot:
         raise ValueError("短剧的简介不能为空")
     if not video_name:
@@ -732,27 +741,12 @@ def writing_short_play(video_plot: str, video_name: str, llm_provider: str):
     文案要符合以下要求:
 
     **任务目标：**  
-    1. 文案字数在 800字左右，严格要求字数，最低不得少于 600字。
+    1. 请严格要求文案字数, 字数控制在 {count} 字左右。
     2. 避免使用 markdown 格式输出文案。
     3. 仅输出解说文案，不输出任何其他内容。
     4. 不要包含小标题，每个段落以 \\n 进行分隔。
     """
     try:
-        # if "gemini" in model_name:
-        #     response = model.generate_content(
-        #         prompt,
-        #         generation_config=gemini.types.GenerationConfig(
-        #             candidate_count=1,
-        #             temperature=1.0,
-        #         ),
-        #         safety_settings={
-        #             HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        #             HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-        #             HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-        #             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        #         }
-        #     )
-        # else:
         response = _generate_response(prompt, llm_provider)
         logger.success("解说文案生成成功")
         logger.debug(response)
@@ -763,7 +757,7 @@ def writing_short_play(video_plot: str, video_name: str, llm_provider: str):
 
 def screen_matching(huamian: str, wenan: str, llm_provider: str):
     """
-    画面匹配
+    画面匹配（一次性匹配）
     """
     if not huamian:
         raise ValueError("画面不能为空")
@@ -772,12 +766,18 @@ def screen_matching(huamian: str, wenan: str, llm_provider: str):
 
     prompt = """
     你是一名有10年经验的影视解说创作者，
-    你的任务是根据画面描述文本和解说文案，匹配出每段解说文案对应的画面时间戳, 结果以 json 格式输出。
+    你的任务是根据视频转录脚本和解说文案，匹配出每段解说文案对应的画面时间戳, 结果以 json 格式输出。
     
-    画面描述文本和文案（由 XML 标记<SOURCE_TEXT><SOURCE_TEXT>和 <COPYWRITER><COPYWRITER>分隔）如下所示：
-    <SOURCE_TEXT>
+    注意：
+    转录脚本中 
+        - timestamp: 表示视频时间戳
+        - picture: 表示当前画面描述
+        - speech": 表示当前视频中人物的台词
+    
+    转录脚本和文案（由 XML 标记<PICTURE></PICTURE>和 <COPYWRITER></COPYWRITER>分隔）如下所示：
+    <PICTURE>
     %s
-    </SOURCE_TEXT>
+    </PICTURE>
     
     <COPYWRITER>
     %s
@@ -787,8 +787,15 @@ def screen_matching(huamian: str, wenan: str, llm_provider: str):
     - 使用以下 JSON schema:    
         script = {'picture': str, 'timestamp': str(时间戳), "narration": str, "OST": bool(是否开启原声)}
         Return: list[script]
+    - picture: 字段表示当前画面描述，与转录脚本保持一致
+    - timestamp: 字段表示某一段文案对应的画面的时间戳，不必和转录脚本的时间戳一致，应该充分考虑文案内容，匹配出与其描述最匹配的时间戳
+    - narration: 字段表示需要解说文案，每段解说文案尽量不要超过30字
+    - OST: 字段表示是否开启原声，即当 OST 字段为 true 时，narration 字段为空字符串，当 OST 为 false 时，narration 字段为对应的解说文案
+    - 注意，在画面匹配的过程中，需要适当的加入原声播放，使得解说和画面更加匹配，请按照 1:1 的比例，生成原声和解说的脚本内容。
+    - 注意，在时间戳匹配上，一定不能原样照搬“转录脚本”，应当适当的合并或者删减一些片段。
+    - 注意，第一个画面一定是原声播放并且时长不少于 20 s，为了吸引观众，第一段一定是整个转录脚本中最精彩的片段。
+    - 注意，匹配的画面不能重复出现，即生成的脚本中 timestamp 不能重复。
     - 请以严格的 JSON 格式返回数据，不要包含任何注释、标记或其他字符。数据应符合 JSON 语法，可以被 json.loads() 函数直接解析， 不要添加 ```json 或其他标记。
-    - 
     """ % (huamian, wenan)
     try:
         response = _generate_response(prompt, llm_provider)

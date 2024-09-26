@@ -358,7 +358,7 @@ def add_new_timestamps(scenes):
         new_scene['new_timestamp'] = f"{new_start_str}-{new_end_str}"
 
         # 为"原生播放"的narration添加唯一标识符
-        if new_scene.get('narration') == "原声播放" or new_scene.get('narration') == None:
+        if new_scene.get('narration') == "" or new_scene.get('narration') == None:
             unique_id = str(uuid4())[:8]  # 使用UUID的前8个字符作为唯一标识符
             new_scene['narration'] = f"原声播放_{unique_id}"
 

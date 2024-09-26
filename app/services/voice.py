@@ -1071,7 +1071,10 @@ def azure_tts_v1(
                                 (chunk["offset"], chunk["duration"]), chunk["text"]
                             )
                 return sub_maker
-
+            # 判断音频文件是否一件存在
+            if os.path.exists(voice_file):
+                logger.info(f"voice file exists, skip tts: {voice_file}")
+                continue
             sub_maker = asyncio.run(_do())
             if not sub_maker or not sub_maker.subs:
                 logger.warning(f"failed, sub_maker is None or sub_maker.subs is None")

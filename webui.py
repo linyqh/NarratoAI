@@ -456,7 +456,7 @@ with left_panel:
                         video_script['path'] = subclip_videos[video_script['timestamp']]
                     except KeyError as err:
                         st.error(f"裁剪视频失败 {err}")
-                # logger.debug(f"当前的脚本为：{st.session_state.video_script_list}")
+                logger.debug(f"当前的脚本为：{st.session_state.subclip_videos}")
             else:
                 st.error(tr("请先生成视频脚本"))
 
