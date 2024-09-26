@@ -1,20 +1,5 @@
 [app]
-    project_version="0.1.2"
-    video_source = "pexels"  # "pexels" or "pixabay"
-    # Pexels API Key
-    # Register at https://www.pexels.com/api/ to get your API key.
-    # You can use multiple keys to avoid rate limits.
-    # For example: pexels_api_keys = ["123adsf4567adf89","abd1321cd13efgfdfhi"]
-    # 特别注意格式，Key 用英文双引号括起来，多个Key用逗号隔开
-    pexels_api_keys = []
-
-    # Pixabay API Key
-    # Register at https://pixabay.com/api/docs/ to get your API key.
-    # You can use multiple keys to avoid rate limits.
-    # For example: pixabay_api_keys = ["123adsf4567adf89","abd1321cd13efgfdfhi"]
-    # 特别注意格式，Key 用英文双引号括起来，多个Key用逗号隔开
-    pixabay_api_keys = []
-
+    project_version="0.2.0"
     # 如果你没有 OPENAI API Key，可以使用 g4f 代替，或者使用国内的 Moonshot API
     # If you don't have an OPENAI API Key, you can use g4f instead
 
@@ -27,6 +12,8 @@
     #   qwen (通义千问)
     #   gemini
     llm_provider="openai"
+    # 支持多模态视频理解能力的大模型
+    llm_provider_video="gemini"
 
     ########## Ollama Settings
     # No need to set it unless you want to use your own proxy
@@ -184,8 +171,8 @@
     ### Example: "http://user:pass@proxy:1234"
     ### Doc: https://requests.readthedocs.io/en/latest/user/advanced/#proxies
 
-    # http = "http://10.10.1.10:3128"
-    # https = "http://10.10.1.10:1080"
+    http = "http://127.0.0.1:7890"
+    https = "http://127.0.0.1:7890"
 
 [azure]
     # Azure Speech API Key

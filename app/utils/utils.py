@@ -365,3 +365,13 @@ def add_new_timestamps(scenes):
         updated_scenes.append(new_scene)
 
     return updated_scenes
+
+
+def clean_model_output(output):
+    """
+    模型输出包含 ```json 标记时的处理
+    """
+    if "```json" in output:
+        print("##########")
+        output = output.replace("```json", "").replace("```", "")
+    return output.strip()
