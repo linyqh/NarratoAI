@@ -3,6 +3,12 @@ set CURRENT_DIR=%CD%
 echo ***** Current directory: %CURRENT_DIR% *****
 set PYTHONPATH=%CURRENT_DIR%
 
+set "vpn_proxy_url=%http://127.0.0.1:7890%"
+
+:: 使用VPN代理进行一些操作，例如通过代理下载文件
+set "http_proxy=%vpn_proxy_url%"
+set "https_proxy=%vpn_proxy_url%"
+
 @echo off
 setlocal enabledelayedexpansion
 
@@ -40,4 +46,4 @@ pause
 
 
 rem set HF_ENDPOINT=https://hf-mirror.com
-streamlit run webui.py --browser.gatherUsageStats=False --server.enableCORS=True
+streamlit run webui.py --browser.serverAddress="127.0.0.1" --server.enableCORS=True  --server.maxUploadSize=2048 --browser.gatherUsageStats=False

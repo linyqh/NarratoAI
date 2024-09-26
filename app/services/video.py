@@ -300,7 +300,8 @@ def generate_video(
     )
     video_clip.close()
     del video_clip
-    logger.success("completed")
+    logger.success(""
+                   "completed")
 
 
 def generate_video_v2(
@@ -310,6 +311,18 @@ def generate_video_v2(
         output_file: str,
         params: Union[VideoParams, VideoClipParams],
 ):
+    """
+    合并所有素材
+    Args:
+        video_path:
+        audio_paths:
+        subtitle_path:
+        output_file:
+        params:
+
+    Returns:
+
+    """
     aspect = VideoAspect(params.video_aspect)
     video_width, video_height = aspect.to_resolution()
 
@@ -546,13 +559,11 @@ def combine_clip_videos(combined_video_path: str,
     # 一遍又一遍地添加下载的剪辑，直到达到音频的持续时间 （max_duration）
     # while video_duration < audio_duration:
     for video_path, video_ost in zip(video_paths, video_ost_list):
-        print(video_path)
-        print(video_ost)
         cache_video_path = utils.root_dir()
         clip = VideoFileClip(os.path.join(cache_video_path, video_path))
-        # # 通过 ost 字段判断是否播放原声
-        # if not video_ost:
-        #     clip = clip.without_audio()
+        # 通过 ost 字段判断是否播放原声
+        if not video_ost:
+            clip = clip.without_audio()
         # # 检查剪辑是否比剩余音频长
         # if (audio_duration - video_duration) < clip.duration:
         #     clip = clip.subclip(0, (audio_duration - video_duration))

@@ -7,6 +7,7 @@ from typing import List
 from loguru import logger
 from openai import OpenAI
 from openai import AzureOpenAI
+from moviepy.editor import VideoFileClip
 from openai.types.chat import ChatCompletion
 import google.generativeai as gemini
 from googleapiclient.errors import ResumableUploadError
@@ -406,17 +407,19 @@ def compress_video(input_path: str, output_path: str):
         return
 
     try:
-        command = [
-            ffmpeg_path,
-            "-i", input_path,
-            "-c:v", "h264",
-            "-b:v", "500k",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            output_path
-        ]
-        logger.info(f"执行命令: {' '.join(command)}")
-        subprocess.run(command, check=True)
+        clip = VideoFileClip(input_path)
+        clip.write_videofile(output_path, codec='libx264', audio_codec='aac', bitrate="500k", audio_bitrate="128k")
+        # command = [
+        #     ffmpeg_path,
+        #     "-i", input_path,
+        #     "-c:v", "h264",
+        #     "-b:v", "500k",
+        #     "-c:a", "aac",
+        #     "-b:a", "128k",
+        #     output_path
+        # ]
+        # logger.info(f"执行命令: {' '.join(command)}")
+        # subprocess.run(command, check=True)
     except subprocess.CalledProcessError as e:
         logger.error(f"视频压缩失败: {e}")
         raise
@@ -814,7 +817,8 @@ if __name__ == "__main__":
     # gemini_video_transcription(video_subject, video_path, language)
 
     # 2. 解说文案
-    video_path = "/Users/apple/Desktop/home/NarratoAI/resource/videos/1.mp4"
+    # video_path = "/Users/apple/Desktop/home/NarratoAI/resource/videos/1.mp4"
+    video_path = "E:\\projects\\NarratoAI\\resource\\videos\\1.mp4"
     video_plot = """
         李自忠拿着儿子李牧名下的存折，去银行取钱给儿子救命，却被要求证明"你儿子是你儿子"。
     走投无路时碰到银行被抢劫，劫匪给了他两沓钱救命，李自忠却因此被银行以抢劫罪起诉，并顶格判处20年有期徒刑。

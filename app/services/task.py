@@ -476,24 +476,17 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
 
 if __name__ == "__main__":
     task_id = "test123456"
-    subclip_path_videos = {'01:17-01:37': './storage/cache_videos/vid-01_17-01_37.mp4',
-                           '00:00-00:06': './storage/cache_videos/vid-00_00-00_06.mp4',
-                           '00:06-00:09': './storage/cache_videos/vid-00_06-00_09.mp4',
-                           '01:03-01:10': './storage/cache_videos/vid-01_03-01_10.mp4',
-                           '01:10-01:17': './storage/cache_videos/vid-01_10-01_17.mp4',
-                           '00:24-00:27': './storage/cache_videos/vid-00_24-00_27.mp4',
-                           '01:28-01:36': './storage/cache_videos/vid-01_28-01_36.mp4',
-                           '00:32-00:41': './storage/cache_videos/vid-00_32-00_41.mp4',
-                           '01:36-01:58': './storage/cache_videos/vid-01_36-01_58.mp4',
-                           '00:12-00:15': './storage/cache_videos/vid-00_12-00_15.mp4',
-                           '00:09-00:12': './storage/cache_videos/vid-00_09-00_12.mp4',
-                           '02:12-02:25': './storage/cache_videos/vid-02_12-02_25.mp4',
-                           '02:03-02:12': './storage/cache_videos/vid-02_03-02_12.mp4',
-                           '01:58-02:03': './storage/cache_videos/vid-01_58-02_03.mp4',
-                           '03:14-03:18': './storage/cache_videos/vid-03_14-03_18.mp4',
-                           '03:18-03:20': './storage/cache_videos/vid-03_18-03_20.mp4'}
+    subclip_path_videos = {'00:41-01:58': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-00_41-01_58.mp4',
+                           '00:06-00:15': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-00_06-00_15.mp4',
+                           '01:10-01:17': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-01_10-01_17.mp4',
+                           '00:47-01:03': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-00_47-01_03.mp4',
+                           '01:03-01:10': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-01_03-01_10.mp4',
+                           '02:40-03:08': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-02_40-03_08.mp4',
+                           '03:02-03:20': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-03_02-03_20.mp4',
+                           '03:18-03:20': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-03_18-03_20.mp4'}
+
     params = VideoClipParams(
-        video_clip_json_path="/Users/apple/Desktop/home/NarratoAI/resource/scripts/test003.json",
-        video_origin_path="/Users/apple/Desktop/home/NarratoAI/resource/videos/1.mp4",
+        video_clip_json_path="E:\\projects\\NarratoAI\\resource/scripts/test003.json",
+        video_origin_path="E:\\projects\\NarratoAI\\resource/videos/1.mp4",
     )
     start_subclip(task_id, params, subclip_path_videos=subclip_path_videos)
