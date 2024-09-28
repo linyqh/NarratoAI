@@ -1034,8 +1034,8 @@ def is_azure_v2_voice(voice_name: str):
 def tts(
     text: str, voice_name: str, voice_rate: float, voice_file: str
 ) -> [SubMaker, None]:
-    if is_azure_v2_voice(voice_name):
-        return azure_tts_v2(text, voice_name, voice_file)
+    # if is_azure_v2_voice(voice_name):
+    #     return azure_tts_v2(text, voice_name, voice_file)
     return azure_tts_v1(text, voice_name, voice_rate, voice_file)
 
 
@@ -1414,7 +1414,7 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
             audio_file = os.path.join(output_dir, f"audio_{timestamp}.mp3")
             
             # 检查文件是否已存在，如存在且不强制重新生成，则跳过
-            if os.path.exists(audio_file) and not force_regenerate:
+            if os.path.exists(audio_file):
                 logger.info(f"音频文件已存在，跳过生成: {audio_file}")
                 audio_files.append(audio_file)
                 continue

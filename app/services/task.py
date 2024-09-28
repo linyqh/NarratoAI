@@ -338,7 +338,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
     # tts 角色名称
     voice_name = voice.parse_voice_name(params.voice_name)
 
-    logger.info("\n\n## 1. 读取视频json脚本")
+    logger.info("\n\n## 1. 加载视频脚本")
     video_script_path = path.join(params.video_clip_json_path)
     # 判断json文件是否存在
     if path.exists(video_script_path):
@@ -376,7 +376,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
             "音频文件为空，可能是网络不可用。如果您在中国，请使用VPN。或者手动选择 zh-CN-Yunjian-男性 音频")
         return
     logger.info("合并音频")
-    audio_file, sub_maker = audio_merger.merge_audio_files(task_id, audio_files, total_duration)
+    audio_file, sub_maker = audio_merger.merge_audio_files(task_id, audio_files, total_duration, list_script)
 
     # audio_duration = voice.get_audio_duration(sub_maker)
     # audio_duration = math.ceil(audio_duration)
@@ -387,7 +387,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
         subtitle_path = path.join(utils.task_dir(task_id), f"subtitle111.srt")
         subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
         logger.info(f"\n\n## 3. 生成字幕、提供程序是: {subtitle_provider}")
-        # subtitle_fallback = False
+        subtitle_fallback = False
         if subtitle_provider == "edge":
             voice.create_subtitle(text=video_script, sub_maker=sub_maker, subtitle_file=subtitle_path)
             # voice.create_subtitle(
@@ -401,7 +401,8 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
         #         logger.warning("找不到字幕文件，回退到whisper")
         #
         # if subtitle_provider == "whisper" or subtitle_fallback:
-        #     subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
+        #     # subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
+        #     subtitle.create_with_gemini(audio_file=audio_file, subtitle_file=subtitle_path, api_key=config.app.get("gemini_api_key", ""))
         #     logger.info("\n\n## 更正字幕")
         #     subtitle.correct(subtitle_file=subtitle_path, video_script=video_script)
 
@@ -449,7 +450,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
         video_ost_list=video_ost,
         list_script=list_script,
         video_aspect=params.video_aspect,
-        threads=1  # 暂时只支持单线程
+        threads=params.n_threads  # 多线程
     )
 
     _progress += 50 / 2
@@ -461,7 +462,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
     # 把所有东西合到在一起
     video.generate_video_v2(
         video_path=combined_video_path,
-        audio_paths=audio_files,
+        audio_path=audio_file,
         subtitle_path=subtitle_path,
         output_file=final_video_path,
         params=params,

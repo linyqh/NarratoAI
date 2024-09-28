@@ -1,10 +1,12 @@
 import json
 import os.path
 import re
+from typing import Optional
 
 from faster_whisper import WhisperModel
 from timeit import default_timer as timer
 from loguru import logger
+import google.generativeai as genai
 
 from app.config import config
 from app.utils import utils
@@ -278,8 +280,40 @@ def correct(subtitle_file, video_script):
         logger.success("Subtitle is correct")
 
 
+def create_with_gemini(audio_file: str, subtitle_file: str = "", api_key: Optional[str] = None) -> Optional[str]:
+    if not api_key:
+        logger.error("Gemini API key is not provided")
+        return None
+
+    genai.configure(api_key=api_key)
+
+    logger.info(f"开始使用Gemini模型处理音频文件: {audio_file}")
+    
+    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+    prompt = "生成这段语音的转录文本。请以SRT格式输出，包含时间戳。"
+
+    try:
+        with open(audio_file, "rb") as f:
+            audio_data = f.read()
+        
+        response = model.generate_content([prompt, audio_data])
+        transcript = response.text
+
+        if not subtitle_file:
+            subtitle_file = f"{audio_file}.srt"
+
+        with open(subtitle_file, "w", encoding="utf-8") as f:
+            f.write(transcript)
+
+        logger.info(f"Gemini生成的字幕文件已保存: {subtitle_file}")
+        return subtitle_file
+    except Exception as e:
+        logger.error(f"使用Gemini处理音频时出错: {e}")
+        return None
+
+
 if __name__ == "__main__":
-    task_id = "c12fd1e6-4b0a-4d65-a075-c87abe35a072"
+    task_id = "task456"
     task_dir = utils.task_dir(task_id)
     subtitle_file = f"{task_dir}/subtitle.srt"
     audio_file = f"{task_dir}/audio.mp3"
@@ -297,3 +331,10 @@ if __name__ == "__main__":
 
     subtitle_file = f"{task_dir}/subtitle-test.srt"
     create(audio_file, subtitle_file)
+
+    # 使用Gemini模型处理音频
+    gemini_api_key = config.app.get("gemini_api_key")  # 请替换为实际的API密钥
+    gemini_subtitle_file = create_with_gemini(audio_file, api_key=gemini_api_key)
+
+    if gemini_subtitle_file:
+        print(f"Gemini生成的字幕文件: {gemini_subtitle_file}")

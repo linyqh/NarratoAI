@@ -294,7 +294,7 @@ def generate_video(
         output_file,
         audio_codec="aac",
         temp_audiofile_path=output_dir,
-        threads=params.n_threads or 2,
+        threads=params.n_threads,
         logger=None,
         fps=30,
     )
@@ -306,7 +306,7 @@ def generate_video(
 
 def generate_video_v2(
         video_path: str,
-        audio_paths: List[str],
+        audio_path: str,
         subtitle_path: str,
         output_file: str,
         params: Union[VideoParams, VideoClipParams],
@@ -314,11 +314,11 @@ def generate_video_v2(
     """
     合并所有素材
     Args:
-        video_path:
-        audio_paths:
-        subtitle_path:
-        output_file:
-        params:
+        video_path: 视频路径
+        audio_path: 单个音频文件路径
+        subtitle_path: 字幕文件路径
+        output_file: 输出文件路径
+        params: 视频参数
 
     Returns:
 
@@ -328,7 +328,7 @@ def generate_video_v2(
 
     logger.info(f"开始，视频尺寸: {video_width} x {video_height}")
     logger.info(f"  ① 视频: {video_path}")
-    logger.info(f"  ② 音频文件数量: {len(audio_paths)}")
+    logger.info(f"  ② 音频: {audio_path}")
     logger.info(f"  ③ 字幕: {subtitle_path}")
     logger.info(f"  ④ 输出: {output_file}")
 
@@ -386,40 +386,8 @@ def generate_video_v2(
     original_audio = video_clip.audio  # 保存原始视频的音轨
     video_duration = video_clip.duration
 
-    # 处理多个音频文件
-    audio_clips = []
-    for audio_path in audio_paths:
-        # 确保每个音频文件路径是正确的
-        if not os.path.exists(audio_path):
-            logger.warning(f"音频文件不存在: {audio_path}")
-            continue
-
-        # 从文件名中提取时间信息
-        match = re.search(r'audio_(\d{2}-\d{2}-\d{2}-\d{2})\.mp3', os.path.basename(audio_path))
-        if match:
-            time_str = match.group(1)
-            start, end = time_str.split('-')[:2], time_str.split('-')[2:]
-            start_time = sum(int(x) * 60 ** i for i, x in enumerate(reversed(start)))
-            end_time = sum(int(x) * 60 ** i for i, x in enumerate(reversed(end)))
-
-            audio_clip = AudioFileClip(audio_path).volumex(params.voice_volume)
-            
-            # 确保结束时间不超过音频实际长度
-            actual_end_time = min(end_time - start_time, audio_clip.duration)
-            
-            audio_clip = audio_clip.subclip(0, actual_end_time)
-            audio_clip = audio_clip.set_start(start_time).set_end(start_time + actual_end_time)
-            audio_clips.append(audio_clip)
-        else:
-            logger.warning(f"无法从文件名解析时间信息: {audio_path}")
-
-    # 合并所有音频剪辑，包括原始音轨
-    if audio_clips:
-        audio_clips.insert(0, original_audio)  # 将原始音轨添加到音频剪辑列表的开头
-        audio_clip = CompositeAudioClip(audio_clips)
-    else:
-        logger.warning("没有有效的音频文件，使用原始音轨")
-        audio_clip = original_audio
+    # 处理新的音频文件
+    new_audio = AudioFileClip(audio_path).volumex(params.voice_volume)
 
     # 字幕处理部分
     if subtitle_path and os.path.exists(subtitle_path):
@@ -451,22 +419,29 @@ def generate_video_v2(
 
     # 背景音乐处理部分
     bgm_file = get_bgm_file(bgm_type=params.bgm_type, bgm_file=params.bgm_file)
+    
+    # 合并音频轨道
+    audio_tracks = [original_audio, new_audio]
+    
     if bgm_file:
         try:
             bgm_clip = (
                 AudioFileClip(bgm_file).volumex(params.bgm_volume).audio_fadeout(3)
             )
-            bgm_clip = afx.audio_loop(bgm_clip, duration=video_clip.duration)
-            audio_clip = CompositeAudioClip([audio_clip, bgm_clip])
+            bgm_clip = afx.audio_loop(bgm_clip, duration=video_duration)
+            audio_tracks.append(bgm_clip)
         except Exception as e:
             logger.error(f"添加背景音乐失败: {str(e)}")
 
-    video_clip = video_clip.set_audio(audio_clip)
+    # 合并所有音频轨道
+    final_audio = CompositeAudioClip(audio_tracks)
+
+    video_clip = video_clip.set_audio(final_audio)
     video_clip.write_videofile(
         output_file,
         audio_codec="aac",
         temp_audiofile_path=output_dir,
-        threads=params.n_threads or 2,
+        threads=params.n_threads,
         logger=None,
         fps=30,
     )
@@ -607,7 +582,7 @@ def combine_clip_videos(combined_video_path: str,
 
     video_clip = concatenate_videoclips(clips)
     video_clip = video_clip.set_fps(30)
-    logger.info(f"合并中...")
+    logger.info(f"合并视频中...")
     video_clip.write_videofile(filename=combined_video_path,
                                threads=threads,
                                logger=None,
@@ -687,19 +662,14 @@ if __name__ == "__main__":
 
     video_path = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/combined-1.mp4"
 
-    audio_paths = ['../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-00-00-07.mp3',
-                   '../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-14-00-17.mp3',
-                   '../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-17-00-22.mp3',
-                   '../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-34-00-45.mp3',
-                   '../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-59-01-09.mp3',
-                   ]
+    audio_path = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-00-00-07.mp3"
 
     subtitle_path = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa\subtitle.srt"
 
     output_file = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/final-123.mp4"
 
     generate_video_v2(video_path=video_path,
-                       audio_paths=audio_paths,
+                       audio_path=audio_path,
                        subtitle_path=subtitle_path,
                        output_file=output_file,
                        params=cfg
