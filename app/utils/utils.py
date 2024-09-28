@@ -10,6 +10,7 @@ import urllib3
 from datetime import datetime, timedelta
 
 from app.models import const
+from app.utils import check_script
 
 urllib3.disable_warnings()
 
@@ -339,6 +340,9 @@ def add_new_timestamps(scenes):
     """
     current_time = timedelta()
     updated_scenes = []
+
+    # 保存脚本前先检查脚本是否正确
+    check_script.check_script(scenes, calculate_total_duration(scenes))
 
     for scene in scenes:
         new_scene = scene.copy()  # 创建场景的副本，以保留原始数据

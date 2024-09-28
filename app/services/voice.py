@@ -1410,7 +1410,8 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
 
     for item in list_script:
         if not item['OST']:
-            timestamp = item['new_timestamp'].replace(':', '-')
+            # timestamp = item['new_timestamp'].replace(':', '@')
+            timestamp = item['new_timestamp']
             audio_file = os.path.join(output_dir, f"audio_{timestamp}.mp3")
             
             # 检查文件是否已存在，如存在且不强制重新生成，则跳过

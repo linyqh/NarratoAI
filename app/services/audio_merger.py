@@ -34,19 +34,6 @@ def merge_audio_files(task_id: str, audio_file_paths: List[str], total_duration:
 
     # 创建一个总时长为total_duration的空白音频
     blank_audio = AudioSegment.silent(duration=total_duration * 1000)  # pydub使用毫秒
-    # 创建SubMaker对象
-    sub_maker = edge_tts.SubMaker()
-
-    # 解析JSON格式的video_script
-    script_data = video_script
-
-    for segment in script_data:
-        start_time, end_time = parse_timestamp(segment['new_timestamp'])
-        duration = (end_time - start_time) * 1000  # 转换为毫秒
-
-        if not segment['OST']:
-            # 如果不是原声，则添加narration作为字幕
-            sub_maker.create_sub((start_time * 1000, duration), segment['narration'])
 
     for audio_path in audio_file_paths:
         if not os.path.exists(audio_path):
@@ -82,12 +69,12 @@ def merge_audio_files(task_id: str, audio_file_paths: List[str], total_duration:
             logger.error(f"导出音频失败：{str(e)}")
             return None, None
 
-    return output_file, sub_maker
+    return output_file
 
-def parse_timestamp(timestamp: str) -> tuple:
+def parse_timestamp(timestamp: str):
     """解析时间戳字符串为秒数"""
-    start, end = timestamp.split('-')
-    return time_to_seconds(*start.split(':')), time_to_seconds(*end.split(':'))
+    # start, end = timestamp.split('-')
+    return time_to_seconds(timestamp)
 
 def extract_timestamp(filename):
     """从文件名中提取开始和结束时间戳"""
@@ -95,30 +82,31 @@ def extract_timestamp(filename):
     times = time_part.split('-')
 
     # 将时间戳转换为秒
-    start_seconds = time_to_seconds(times[0], times[1])
-    end_seconds = time_to_seconds(times[2], times[3])
+    start_seconds = time_to_seconds(times[0])
+    end_seconds = time_to_seconds(times[1])
 
     return start_seconds, end_seconds
 
 
-def time_to_seconds(minutes, seconds):
-    """将分钟和秒转换为总秒数"""
-    return int(minutes) * 60 + int(seconds)
+def time_to_seconds(times):
+    """将 “00:06” 转换为总秒数 """
+    times = times.split(':')
+    return int(times[0]) * 60 + int(times[1])
 
 
 if __name__ == "__main__":
     # 示例用法
     audio_files =[
-        "/Users/apple/Desktop/home/NarratoAI/storage/tasks/test456/audio_00-06-00-24.mp3",
-        "/Users/apple/Desktop/home/NarratoAI/storage/tasks/test456/audio_00-32-00-38.mp3",
-        "/Users/apple/Desktop/home/NarratoAI/storage/tasks/test456/audio_00-43-00-52.mp3",
-        "/Users/apple/Desktop/home/NarratoAI/storage/tasks/test456/audio_00-52-01-09.mp3",
-        "/Users/apple/Desktop/home/NarratoAI/storage/tasks/test456/audio_01-13-01-15.mp3",
+        "/Users/apple/Desktop/home/NarratoAI/storage/tasks/test456/audio_00:06-00:24.mp3",
+        "/Users/apple/Desktop/home/NarratoAI/storage/tasks/test456/audio_00:32-00:38.mp3",
+        "/Users/apple/Desktop/home/NarratoAI/storage/tasks/test456/audio_00:43-00:52.mp3",
+        "/Users/apple/Desktop/home/NarratoAI/storage/tasks/test456/audio_00:52-01:09.mp3",
+        "/Users/apple/Desktop/home/NarratoAI/storage/tasks/test456/audio_01:13-01:15.mp3",
     ]
     total_duration = 38
     video_script_path = "/Users/apple/Desktop/home/NarratoAI/resource/scripts/test003.json"
     with open(video_script_path, "r", encoding="utf-8") as f:
         video_script = json.load(f)
 
-    output_file, sub_maker = merge_audio_files("test456", audio_files, total_duration, video_script)
-    print(output_file, sub_maker)
+    output_file = merge_audio_files("test456", audio_files, total_duration, video_script)
+    print(output_file)

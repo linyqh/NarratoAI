@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 从环境变量中加载VPN代理的配置URL
-vpn_proxy_url="$VPN_PROXY_URL"
+vpn_proxy_url="http://127.0.0.1:7890"
 # 检查是否成功加载
 if [ -z "$vpn_proxy_url" ]; then
     echo "VPN代理配置URL未设置，请检查环境变量VPN_PROXY_URL"

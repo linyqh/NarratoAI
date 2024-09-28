@@ -792,13 +792,66 @@ def screen_matching(huamian: str, wenan: str, llm_provider: str):
         Return: list[script]
     - picture: 字段表示当前画面描述，与转录脚本保持一致
     - timestamp: 字段表示某一段文案对应的画面的时间戳，不必和转录脚本的时间戳一致，应该充分考虑文案内容，匹配出与其描述最匹配的时间戳
+        - 请注意，请严格的执行已经出现的画面不能重复出现，即生成的脚本中 timestamp 不能有重叠的部分。
     - narration: 字段表示需要解说文案，每段解说文案尽量不要超过30字
     - OST: 字段表示是否开启原声，即当 OST 字段为 true 时，narration 字段为空字符串，当 OST 为 false 时，narration 字段为对应的解说文案
     - 注意，在画面匹配的过程中，需要适当的加入原声播放，使得解说和画面更加匹配，请按照 1:1 的比例，生成原声和解说的脚本内容。
     - 注意，在时间戳匹配上，一定不能原样照搬“转录脚本”，应当适当的合并或者删减一些片段。
     - 注意，第一个画面一定是原声播放并且时长不少于 20 s，为了吸引观众，第一段一定是整个转录脚本中最精彩的片段。
-    - 注意，匹配的画面不能重复出现，即生成的脚本中 timestamp 不能重复。
     - 请以严格的 JSON 格式返回数据，不要包含任何注释、标记或其他字符。数据应符合 JSON 语法，可以被 json.loads() 函数直接解析， 不要添加 ```json 或其他标记。
+    """ % (huamian, wenan)
+
+    prompt = """
+    你是一位拥有10年丰富经验的影视解说创作专家。你的任务是根据提供的视频转录脚本和解说文案，创作一个引人入胜的解说脚本。请按照以下要求完成任务：
+
+1. 输入数据：
+   - 视频转录脚本：包含时间戳、画面描述和人物台词
+   - 解说文案：需要你进行匹配和编排的内容
+   - 视频转录脚本和文案（由 XML 标记<PICTURE></PICTURE>和 <COPYWRITER></COPYWRITER>分隔）如下所示：
+    视频转录脚本
+    <PICTURE>
+    %s
+    </PICTURE>
+    文案：
+    <COPYWRITER>
+    %s
+    </COPYWRITER>
+
+2. 输出要求：
+   - 格式：严格的JSON格式，可直接被json.loads()解析
+   - 结构：list[script]，其中script为字典类型
+   - script字段：
+     {
+       "picture": "画面描述",
+       "timestamp": "时间戳",
+       "narration": "解说文案",
+       "OST": true/false
+     }
+
+3. 匹配规则：
+   a) 时间戳匹配：
+      - 根据文案内容选择最合适的画面时间段
+      - 避免时间重叠，确保画面不重复出现
+      - 适当合并或删减片段，不要完全照搬转录脚本
+   b) 画面描述：与转录脚本保持一致
+   c) 解说文案：
+      - 当OST为true时，narration为空字符串
+      - 当OST为false时，narration为解说文案，但是要确保文案字数不要超过 30字，若文案较长，则添加到下一个片段
+   d) OST（原声）：
+      - 按1:1比例穿插原声和解说片段
+      - 第一个片段必须是原声，时长不少于20秒
+      - 选择整个视频中最精彩的片段作为开场
+
+4. 创作重点：
+   - 确保解说与画面高度匹配
+   - 巧妙安排原声和解说的交替，提升观众体验
+   - 创造一个引人入胜、节奏紧凑的解说脚本
+
+5. 注意事项：
+   - 严格遵守JSON格式，不包含任何注释或额外标记
+   - 充分利用你的专业经验，创作出高质量、吸引人的解说内容
+
+请基于以上要求，将提供的视频转录脚本和解说文案整合成一个专业、吸引人的解说脚本。你的创作将直接影响观众的观看体验，请发挥你的专业素养，创作出最佳效果。
     """ % (huamian, wenan)
     try:
         response = _generate_response(prompt, llm_provider)
@@ -830,5 +883,3 @@ if __name__ == "__main__":
     res = clean_model_output(res)
     aaa = json.loads(res)
     print(json.dumps(aaa, indent=2, ensure_ascii=False))
-    # response = _generate_response("你好，介绍一下你自己")
-    # print(response)

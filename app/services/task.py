@@ -355,7 +355,8 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
                 logger.debug(f"解说时间戳列表: \n{time_list}")
                 # 获取视频总时长(单位 s)
                 total_duration = list_script[-1]['new_timestamp']
-                total_duration = int(total_duration.split("-")[1].split(":")[0]) * 60 + int(total_duration.split("-")[1].split(":")[1])
+                total_duration = int(total_duration.split("-")[1].split(":")[0]) * 60 + int(
+                    total_duration.split("-")[1].split(":")[1])
         except Exception as e:
             logger.error(f"无法读取视频json脚本，请检查配置是否正确。{e}")
             raise ValueError("无法读取视频json脚本，请检查配置是否正确")
@@ -375,11 +376,9 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
         logger.error(
             "音频文件为空，可能是网络不可用。如果您在中国，请使用VPN。或者手动选择 zh-CN-Yunjian-男性 音频")
         return
-    logger.info("合并音频")
-    audio_file, sub_maker = audio_merger.merge_audio_files(task_id, audio_files, total_duration, list_script)
+    logger.info(f"合并音频:\n\n {audio_files}")
+    audio_file = audio_merger.merge_audio_files(task_id, audio_files, total_duration, list_script)
 
-    # audio_duration = voice.get_audio_duration(sub_maker)
-    # audio_duration = math.ceil(audio_duration)
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=30)
 
     subtitle_path = ""
@@ -389,7 +388,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
         logger.info(f"\n\n## 3. 生成字幕、提供程序是: {subtitle_provider}")
         subtitle_fallback = False
         if subtitle_provider == "edge":
-            voice.create_subtitle(text=video_script, sub_maker=sub_maker, subtitle_file=subtitle_path)
+            voice.create_subtitle(text=video_script, sub_maker="sub_maker", subtitle_file=subtitle_path)
             # voice.create_subtitle(
             #     text=video_script,
             #     sub_maker_list=sub_maker_list,
@@ -415,10 +414,6 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
 
     logger.info("\n\n## 4. 裁剪视频")
     subclip_videos = [x for x in subclip_path_videos.values()]
-    # subclip_videos = material.clip_videos(task_id=task_id,
-    #                                          timestamp_terms=time_list,
-    #                                          origin_video=params.video_origin_path
-    #                                          )
     logger.debug(f"\n\n## 裁剪后的视频文件列表: \n{subclip_videos}")
 
     if not subclip_videos:
@@ -433,17 +428,10 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
     combined_video_paths = []
 
     _progress = 50
-    # for i in range(params.video_count):
     index = 1
     combined_video_path = path.join(utils.task_dir(task_id), f"combined.mp4")
     logger.info(f"\n\n## 5. 合并视频: => {combined_video_path}")
-    print("111", subclip_videos)
-    print("222", video_ost)
-    print("333", len(subclip_videos))
-    print("444", len(video_ost))
-    # for video_path, video_ost in zip(subclip_videos, video_ost):
-    #     print(video_path)
-    #     print(video_ost)
+
     video.combine_clip_videos(
         combined_video_path=combined_video_path,
         video_paths=subclip_videos,
@@ -502,18 +490,18 @@ if __name__ == "__main__":
     # start_subclip(task_id, params, subclip_path_videos=subclip_path_videos)
 
     task_id = "test456"
-    subclip_path_videos = {'00:00-00:06': './storage/cache_videos/vid-00_00-00_06.mp4',
-                           '00:06-00:24': './storage/cache_videos/vid-00_06-00_24.mp4',
-                           '01:28-01:36': './storage/cache_videos/vid-01_28-01_36.mp4',
-                           '00:41-00:47': './storage/cache_videos/vid-00_41-00_47.mp4',
-                           '01:58-02:03': './storage/cache_videos/vid-01_58-02_03.mp4',
-                           '02:03-02:12': './storage/cache_videos/vid-02_03-02_12.mp4',
-                           '02:40-02:57': './storage/cache_videos/vid-02_40-02_57.mp4',
+    subclip_path_videos = {'01:10-01:17': './storage/cache_videos/vid-01_10-01_17.mp4',
+                           '01:58-02:04': './storage/cache_videos/vid-01_58-02_04.mp4',
+                           '02:25-02:31': './storage/cache_videos/vid-02_25-02_31.mp4',
+                           '01:28-01:33': './storage/cache_videos/vid-01_28-01_33.mp4',
                            '03:14-03:18': './storage/cache_videos/vid-03_14-03_18.mp4',
-                           '03:18-03:20': './storage/cache_videos/vid-03_18-03_20.mp4'}
+                           '00:24-00:28': './storage/cache_videos/vid-00_24-00_28.mp4',
+                           '03:02-03:08': './storage/cache_videos/vid-03_02-03_08.mp4',
+                           '00:41-00:44': './storage/cache_videos/vid-00_41-00_44.mp4',
+                           '02:12-02:25': './storage/cache_videos/vid-02_12-02_25.mp4'}
 
     params = VideoClipParams(
-        video_clip_json_path="/Users/apple/Desktop/home/NarratoAI/resource/scripts/test003.json",
+        video_clip_json_path="/Users/apple/Desktop/home/NarratoAI/resource/scripts/test004.json",
         video_origin_path="/Users/apple/Desktop/home/NarratoAI/resource/videos/1.mp4",
     )
     start_subclip(task_id, params, subclip_path_videos=subclip_path_videos)
