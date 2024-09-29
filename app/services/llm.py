@@ -109,26 +109,25 @@ Method = """
 
 def handle_exception(err):
     if isinstance(err, PermissionDenied):
-        logger.error("403 用户没有权限访问该资源")
+        raise Exception("403 用户没有权限访问该资源")
     elif isinstance(err, ResourceExhausted):
-        logger.error("429 您的配额已用尽。请稍后重试。请考虑设置自动重试来处理这些错误")
+        raise Exception("429 您的配额已用尽。请稍后重试。请考虑设置自动重试来处理这些错误")
     elif isinstance(err, InvalidArgument):
-        logger.error("400 参数无效。例如，文件过大，超出了载荷大小限制。另一个事件提供了无效的 API 密钥。")
+        raise Exception("400 参数无效。例如，文件过大，超出了载荷大小限制。另一个事件提供了无效的 API 密钥。")
     elif isinstance(err, AlreadyExists):
-        logger.error("409 已存在具有相同 ID 的已调参模型。对新模型进行调参时，请指定唯一的模型 ID。")
+        raise Exception("409 已存在具有相同 ID 的已调参模型。对新模型进行调参时，请指定唯一的模型 ID。")
     elif isinstance(err, RetryError):
-        logger.error("使用不支持 gRPC 的代理时可能会引起此错误。请尝试将 REST 传输与 genai.configure(..., transport=rest) 搭配使用。")
+        raise Exception("使用不支持 gRPC 的代理时可能会引起此错误。请尝试将 REST 传输与 genai.configure(..., transport=rest) 搭配使用。")
     elif isinstance(err, BlockedPromptException):
-        logger.error("400 出于安全原因，该提示已被屏蔽。")
+        raise Exception("400 出于安全原因，该提示已被屏蔽。")
     elif isinstance(err, BrokenResponseError):
-        logger.error("500 流式传输响应已损坏。在访问需要完整响应的内容（例如聊天记录）时引发。查看堆栈轨迹中提供的错误详情。")
+        raise Exception("500 流式传输响应已损坏。在访问需要完整响应的内容（例如聊天记录）时引发。查看堆栈轨迹中提供的错误详情。")
     elif isinstance(err, IncompleteIterationError):
-        logger.error("500 访问需要完整 API 响应但流式响应尚未完全迭代的内容时引发。对响应对象调用 resolve() 以使用迭代器。")
+        raise Exception("500 访问需要完整 API 响应但流式响应尚未完全迭代的内容时引发。对响应对象调用 resolve() 以使用迭代器。")
     elif isinstance(err, ConnectionError):
-        logger.error("网络连接错误，请检查您的网络连接。")
+        raise Exception("网络连接错误, 请检查您的网络连接(建议使用 NarratoAI 官方提供的 url)")
     else:
-        logger.error(f"大模型请求失败, 下面是具体报错信息: \n{traceback.format_exc()}")
-    return ""
+        raise Exception(f"大模型请求失败, 下面是具体报错信息: \n\n{traceback.format_exc()}")
 
 
 def _generate_response(prompt: str, llm_provider: str = None) -> str:
@@ -398,9 +397,6 @@ def compress_video(input_path: str, output_path: str):
         input_path: 输入视频文件路径
         output_path: 输出压缩后的视频文件路径
     """
-    # 指定 ffmpeg 的完整路径
-    ffmpeg_path = os.getenv("FFMPEG_PATH") or config.app.get("ffmpeg_path") or "ffmpeg"
-
     # 如果压缩后的视频文件已经存在，则直接使用
     if os.path.exists(output_path):
         logger.info(f"压缩视频文件已存在: {output_path}")
@@ -409,17 +405,6 @@ def compress_video(input_path: str, output_path: str):
     try:
         clip = VideoFileClip(input_path)
         clip.write_videofile(output_path, codec='libx264', audio_codec='aac', bitrate="500k", audio_bitrate="128k")
-        # command = [
-        #     ffmpeg_path,
-        #     "-i", input_path,
-        #     "-c:v", "h264",
-        #     "-b:v", "500k",
-        #     "-c:a", "aac",
-        #     "-b:a", "128k",
-        #     output_path
-        # ]
-        # logger.info(f"执行命令: {' '.join(command)}")
-        # subprocess.run(command, check=True)
     except subprocess.CalledProcessError as e:
         logger.error(f"视频压缩失败: {e}")
         raise
@@ -440,41 +425,45 @@ def generate_script(
     Returns:
         str: 生成的脚本
     """
-    # 1. 压缩视频
-    compressed_video_path = f"{os.path.splitext(video_path)[0]}_compressed.mp4"
-    compress_video(video_path, compressed_video_path)
+    try:
+        # 1. 压缩视频
+        compressed_video_path = f"{os.path.splitext(video_path)[0]}_compressed.mp4"
+        compress_video(video_path, compressed_video_path)
 
-    # 在关键步骤更新进度
-    if progress_callback:
-        progress_callback(15, "压缩完成")  # 例如,在压缩视频后
-
-    # 2. 转录视频
-    transcription = gemini_video_transcription(
-        video_name=video_name,
-        video_path=compressed_video_path,
-        language=language,
-        llm_provider_video="gemini",
-        progress_callback=progress_callback
-    )
-    if progress_callback:
-        progress_callback(60, "生成解说文案...")  # 例如,在转录视频后
-
-    # 3. 编写解说文案
-    script = writing_short_play(video_plot, video_name, "openai", count=300)
-
-    # 在关键步骤更新进度
-    if progress_callback:
-        progress_callback(70, "匹配画面...")  # 例如,在生成脚本后
-
-    # 4. 文案匹配画面
-    if transcription != "":
-        matched_script = screen_matching(huamian=transcription, wenan=script, llm_provider="openai")
         # 在关键步骤更新进度
         if progress_callback:
-            progress_callback(80, "匹配成功")
-        return matched_script
-    else:
-        return ""
+            progress_callback(15, "压缩完成")  # 例如,在压缩视频后
+
+        # 2. 转录视频
+        transcription = gemini_video_transcription(
+            video_name=video_name,
+            video_path=compressed_video_path,
+            language=language,
+            llm_provider_video="gemini",
+            progress_callback=progress_callback
+        )
+        if progress_callback:
+            progress_callback(60, "生成解说文案...")  # 例如,在转录视频后
+
+        # 3. 编写解说文案
+        script = writing_short_play(video_plot, video_name, "openai", count=300)
+
+        # 在关键步骤更新进度
+        if progress_callback:
+            progress_callback(70, "匹配画面...")  # 例如,在生成脚本后
+
+        # 4. 文案匹配画面
+        if transcription != "":
+            matched_script = screen_matching(huamian=transcription, wenan=script, llm_provider="openai")
+            # 在关键步骤更新进度
+            if progress_callback:
+                progress_callback(80, "匹配成功")
+            return matched_script
+        else:
+            return ""
+    except Exception as e:
+        handle_exception(e)
+        raise
 
 
 def gemini_video_transcription(video_name: str, video_path: str, language: str, llm_provider_video: str, progress_callback=None):

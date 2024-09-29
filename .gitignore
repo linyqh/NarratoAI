@@ -27,3 +27,4 @@ resource/scripts/*
 resource/videos/*
 resource/songs/*
 resource/fonts/*
+app/models/faster-whisper-large-v2/*

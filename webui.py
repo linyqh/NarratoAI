@@ -66,6 +66,8 @@ if 'video_plot' not in st.session_state:
     st.session_state['video_plot'] = ''
 if 'ui_language' not in st.session_state:
     st.session_state['ui_language'] = config.ui.get("language", system_locale)
+if 'subclip_videos' not in st.session_state:
+    st.session_state['subclip_videos'] = {}
 
 
 def get_all_fonts():
@@ -404,8 +406,8 @@ with left_panel:
                 progress_bar.progress(100)
                 status_text.text("脚本生成完成！")
                 st.success("视频脚本生成成功！")
-            except Exception as e:
-                st.error(f"生成过程中发生错误: {traceback.format_exc()}")
+            except Exception as err:
+                st.error(f"生成过程中发生错误: {str(err)}")
             finally:
                 time.sleep(2)  # 给用户一些时间查看最终状态
                 progress_bar.empty()
@@ -445,7 +447,7 @@ with left_panel:
                         st.session_state['video_clip_json'] = data
                         st.session_state['video_clip_json_path'] = save_path
                         # 刷新页面
-                        # st.rerun()
+                        st.rerun()
 
         # 裁剪视频
         with button_columns[1]:
@@ -677,7 +679,7 @@ with right_panel:
 # 视频编辑面板
 with st.expander(tr("Video Check"), expanded=False):
     try:
-        video_list = st.session_state['video_script_list']
+        video_list = st.session_state.video_clip_json
     except KeyError as e:
         video_list = []
 
