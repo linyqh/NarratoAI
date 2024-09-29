@@ -383,27 +383,11 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
 
     subtitle_path = ""
     if params.subtitle_enabled:
-        subtitle_path = path.join(utils.task_dir(task_id), f"subtitle111.srt")
+        subtitle_path = path.join(utils.task_dir(task_id), f"subtitle.srt")
         subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
         logger.info(f"\n\n## 3. 生成字幕、提供程序是: {subtitle_provider}")
-        subtitle_fallback = False
-        if subtitle_provider == "edge":
-            voice.create_subtitle(text=video_script, sub_maker="sub_maker", subtitle_file=subtitle_path)
-            # voice.create_subtitle(
-            #     text=video_script,
-            #     sub_maker_list=sub_maker_list,
-            #     list_script=list_script,
-            #     subtitle_file=subtitle_path
-            # )
-        #     if not os.path.exists(subtitle_path):
-        #         subtitle_fallback = True
-        #         logger.warning("找不到字幕文件，回退到whisper")
-        #
-        # if subtitle_provider == "whisper" or subtitle_fallback:
-        #     # subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
-        #     subtitle.create_with_gemini(audio_file=audio_file, subtitle_file=subtitle_path, api_key=config.app.get("gemini_api_key", ""))
-        #     logger.info("\n\n## 更正字幕")
-        #     subtitle.correct(subtitle_file=subtitle_path, video_script=video_script)
+        # 使用 faster-whisper-large-v2 模型生成字幕
+        subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
 
         subtitle_lines = subtitle.file_to_subtitles(subtitle_path)
         if not subtitle_lines:

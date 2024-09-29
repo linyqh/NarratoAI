@@ -73,9 +73,10 @@
     deepseek_base_url = "https://api.deepseek.com"
     deepseek_model_name = "deepseek-chat"
 
-    # Subtitle Provider, "edge" or "whisper"
+    # Subtitle Provider, "whisper"
     # If empty, the subtitle will not be generated
-    subtitle_provider = "edge"
+    subtitle_provider = "faster-whisper-large-v2"
+    subtitle_enabled = true
 
     #
     # ImageMagick
@@ -159,7 +160,7 @@
     # model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
     # recommended model_size: "large-v3"
-    model_size="large-v3"
+    model_size="faster-whisper-large-v2"
     # if you want to use GPU, set device="cuda"
     device="CPU"
     compute_type="int8"

@@ -353,7 +353,7 @@ class VideoClipParams(BaseModel):
     bgm_file: Optional[str] = Field(default="", description="背景音乐文件")
     bgm_volume: Optional[float] = Field(default=0.2, description="背景音乐音量")
 
-    subtitle_enabled: Optional[bool] = Field(default=False, description="是否启用字幕")
+    subtitle_enabled: Optional[bool] = Field(default=True, description="是否启用字幕")
     subtitle_position: Optional[str] = Field(default="bottom", description="字幕位置")  # top, bottom, center
     font_name: Optional[str] = Field(default="STHeitiMedium.ttc", description="字体名称")
     text_fore_color: Optional[str] = Field(default="#FFFFFF", description="文字前景色")
@@ -365,4 +365,3 @@ class VideoClipParams(BaseModel):
     custom_position: float = Field(default=70.0, description="自定义位置")
 
     n_threads: Optional[int] = 8    # 线程数，有助于提升视频处理速度
-    # paragraph_number: Optional[int] = 1     # 段落数量

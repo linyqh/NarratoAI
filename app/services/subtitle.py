@@ -1,6 +1,7 @@
 import json
 import os.path
 import re
+import traceback
 from typing import Optional
 
 from faster_whisper import WhisperModel
@@ -11,35 +12,53 @@ import google.generativeai as genai
 from app.config import config
 from app.utils import utils
 
-model_size = config.whisper.get("model_size", "large-v3")
+model_size = config.whisper.get("model_size", "faster-whisper-large-v2")
 device = config.whisper.get("device", "cpu")
 compute_type = config.whisper.get("compute_type", "int8")
 model = None
 
 
 def create(audio_file, subtitle_file: str = ""):
+    """
+    为给定的音频文件创建字幕文件。
+
+    参数:
+    - audio_file: 音频文件的路径。
+    - subtitle_file: 字幕文件的输出路径（可选）。如果未提供，将根据音频文件的路径生成字幕文件。
+
+    返回:
+    无返回值，但会在指定路径生成字幕文件。
+    """
     global model
     if not model:
-        model_path = f"{utils.root_dir()}/models/whisper-{model_size}"
+        model_path = f"{utils.root_dir()}/app/models/faster-whisper-large-v2"
         model_bin_file = f"{model_path}/model.bin"
         if not os.path.isdir(model_path) or not os.path.isfile(model_bin_file):
-            model_path = model_size
+            logger.error(
+                "请先下载 whisper 模型\n\n"
+                "********************************************\n"
+                "下载地址：https://huggingface.co/guillaumekln/faster-whisper-large-v2\n"
+                "存放路径：app/models \n"
+                "********************************************\n"
+            )
+            return None
 
         logger.info(
-            f"loading model: {model_path}, device: {device}, compute_type: {compute_type}"
+            f"加载模型: {model_path}, 设备: {device}, 计算类型: {compute_type}"
         )
         try:
             model = WhisperModel(
-                model_size_or_path=model_path, device=device, compute_type=compute_type
+                model_size_or_path=model_path, device=device, compute_type=compute_type, local_files_only=True
             )
         except Exception as e:
             logger.error(
-                f"failed to load model: {e} \n\n"
+                f"加载模型失败: {e} \n\n"
                 f"********************************************\n"
-                f"this may be caused by network issue. \n"
-                f"please download the model manually and put it in the 'models' folder. \n"
-                f"see [README.md FAQ](https://github.com/harry0703/NarratoAI) for more details.\n"
+                f"这可能是由网络问题引起的. \n"
+                f"请手动下载模型并将其放入 'app/models' 文件夹中。 \n"
+                f"see [README.md FAQ](https://github.com/linyqh/NarratoAI) for more details.\n"
                 f"********************************************\n\n"
+                f"{traceback.format_exc()}"
             )
             return None
 
@@ -56,7 +75,7 @@ def create(audio_file, subtitle_file: str = ""):
     )
 
     logger.info(
-        f"detected language: '{info.language}', probability: {info.language_probability:.2f}"
+        f"检测到的语言: '{info.language}', probability: {info.language_probability:.2f}"
     )
 
     start = timer()
@@ -139,6 +158,15 @@ def create(audio_file, subtitle_file: str = ""):
 
 
 def file_to_subtitles(filename):
+    """
+    将字幕文件转换为字幕列表。
+
+    参数:
+    filename (str): 字幕文件的路径。
+
+    返回:
+    list: 包含字幕序号、出现时间、和字幕文本的元组列表。
+    """
     if not filename or not os.path.isfile(filename):
         return []
 
@@ -313,28 +341,28 @@ def create_with_gemini(audio_file: str, subtitle_file: str = "", api_key: Option
 
 
 if __name__ == "__main__":
-    task_id = "task456"
+    task_id = "test456"
     task_dir = utils.task_dir(task_id)
     subtitle_file = f"{task_dir}/subtitle.srt"
-    audio_file = f"{task_dir}/audio.mp3"
+    audio_file = f"{task_dir}/audio.wav"
 
     subtitles = file_to_subtitles(subtitle_file)
     print(subtitles)
 
-    script_file = f"{task_dir}/script.json"
-    with open(script_file, "r") as f:
-        script_content = f.read()
-    s = json.loads(script_content)
-    script = s.get("script")
+    # script_file = f"{task_dir}/script.json"
+    # with open(script_file, "r") as f:
+    #     script_content = f.read()
+    # s = json.loads(script_content)
+    # script = s.get("script")
+    #
+    # correct(subtitle_file, script)
 
-    correct(subtitle_file, script)
-
-    subtitle_file = f"{task_dir}/subtitle-test.srt"
+    subtitle_file = f"{task_dir}/subtitle111.srt"
     create(audio_file, subtitle_file)
 
-    # 使用Gemini模型处理音频
-    gemini_api_key = config.app.get("gemini_api_key")  # 请替换为实际的API密钥
-    gemini_subtitle_file = create_with_gemini(audio_file, api_key=gemini_api_key)
-
-    if gemini_subtitle_file:
-        print(f"Gemini生成的字幕文件: {gemini_subtitle_file}")
+    # # 使用Gemini模型处理音频
+    # gemini_api_key = config.app.get("gemini_api_key")  # 请替换为实际的API密钥
+    # gemini_subtitle_file = create_with_gemini(audio_file, api_key=gemini_api_key)
+    #
+    # if gemini_subtitle_file:
+    #     print(f"Gemini生成的字幕文件: {gemini_subtitle_file}")
