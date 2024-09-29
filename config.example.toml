@@ -2,6 +2,7 @@
     project_version="0.2.0"
     # 如果你没有 OPENAI API Key，可以使用 g4f 代替，或者使用国内的 Moonshot API
     # If you don't have an OPENAI API Key, you can use g4f instead
+    video_llm_provider="gemini"
 
     # 支持的提供商 (Supported providers):
     #   openai
@@ -13,7 +14,6 @@
     #   gemini
     llm_provider="openai"
     # 支持多模态视频理解能力的大模型
-    llm_provider_video="gemini"
 
     ########## Ollama Settings
     # No need to set it unless you want to use your own proxy

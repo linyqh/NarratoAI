@@ -188,8 +188,37 @@ with st.expander(tr("Basic Settings"), expanded=False):
         if HTTPS_PROXY:
             config.proxy["https"] = HTTPS_PROXY
 
+    # 视频转录大模型
     with middle_config_panel:
-        llm_providers = ['Gemini']
+        video_llm_providers = ['Gemini']
+        saved_llm_provider = config.app.get("llm_provider", "OpenAI").lower()
+        saved_llm_provider_index = 0
+        for i, provider in enumerate(video_llm_providers):
+            if provider.lower() == saved_llm_provider:
+                saved_llm_provider_index = i
+                break
+
+        video_llm_provider = st.selectbox(tr("Video LLM Provider"), options=video_llm_providers, index=saved_llm_provider_index)
+        video_llm_provider = video_llm_provider.lower()
+        config.app["video_llm_provider"] = video_llm_provider
+
+        video_llm_api_key = config.app.get(f"{video_llm_provider}_api_key", "")
+        video_llm_base_url = config.app.get(f"{video_llm_provider}_base_url", "")
+        video_llm_model_name = config.app.get(f"{video_llm_provider}_model_name", "")
+        video_llm_account_id = config.app.get(f"{video_llm_provider}_account_id", "")
+        st_llm_api_key = st.text_input(tr("Video API Key"), value=video_llm_api_key, type="password")
+        st_llm_base_url = st.text_input(tr("Video Base Url"), value=video_llm_base_url)
+        st_llm_model_name = st.text_input(tr("Video Model Name"), value=video_llm_model_name)
+        if st_llm_api_key:
+            config.app[f"{video_llm_provider}_api_key"] = st_llm_api_key
+        if st_llm_base_url:
+            config.app[f"{video_llm_provider}_base_url"] = st_llm_base_url
+        if st_llm_model_name:
+            config.app[f"{video_llm_provider}_model_name"] = st_llm_model_name
+
+    # 大语言模型
+    with right_config_panel:
+        llm_providers = ['Gemini', 'OpenAI', 'Moonshot', 'Azure', 'Qwen', 'Ollama', 'G4f', 'OneAPI', "Cloudflare"]
         saved_llm_provider = config.app.get("llm_provider", "OpenAI").lower()
         saved_llm_provider_index = 0
         for i, provider in enumerate(llm_providers):
@@ -219,17 +248,6 @@ with st.expander(tr("Basic Settings"), expanded=False):
             st_llm_account_id = st.text_input(tr("Account ID"), value=llm_account_id)
             if st_llm_account_id:
                 config.app[f"{llm_provider}_account_id"] = st_llm_account_id
-
-    with right_config_panel:
-        pexels_api_keys = config.app.get("pexels_api_keys", [])
-        if isinstance(pexels_api_keys, str):
-            pexels_api_keys = [pexels_api_keys]
-        pexels_api_key = ", ".join(pexels_api_keys)
-
-        pexels_api_key = st.text_input(tr("Pexels API Key"), value=pexels_api_key, type="password")
-        pexels_api_key = pexels_api_key.replace(" ", "")
-        if pexels_api_key:
-            config.app["pexels_api_keys"] = pexels_api_key.split(",")
 
 panel = st.columns(3)
 left_panel = panel[0]
