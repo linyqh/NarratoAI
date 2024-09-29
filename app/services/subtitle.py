@@ -48,7 +48,10 @@ def create(audio_file, subtitle_file: str = ""):
         )
         try:
             model = WhisperModel(
-                model_size_or_path=model_path, device=device, compute_type=compute_type, local_files_only=True
+                model_size_or_path=model_path,
+                device=device,
+                compute_type=compute_type,
+                local_files_only=True
             )
         except Exception as e:
             logger.error(
@@ -72,6 +75,7 @@ def create(audio_file, subtitle_file: str = ""):
         word_timestamps=True,
         vad_filter=True,
         vad_parameters=dict(min_silence_duration_ms=500),
+        initial_prompt="以下是普通话的句子"
     )
 
     logger.info(

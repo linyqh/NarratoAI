@@ -267,7 +267,6 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    # url_hash = utils.md5(str(uuid.uuid4()))
     video_id = f"vid-{timestamp.replace(':', '_')}"
     video_path = f"{save_dir}/{video_id}.mp4"
 
@@ -278,7 +277,7 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
     # 剪辑视频
     start, end = utils.split_timestamp(timestamp)
     video = VideoFileClip(origin_video).subclip(start, end)
-    video.write_videofile(video_path)
+    video.write_videofile(video_path, logger=None)  # 禁用 MoviePy 的内置日志
 
     if os.path.getsize(video_path) > 0 and os.path.exists(video_path):
         try:
@@ -297,20 +296,21 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
     return {}
 
 
-def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, ) -> dict:
+def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, progress_callback=None):
     """
     剪辑视频
     Args:
         task_id: 任务id
         timestamp_terms: 需要剪辑的时间戳列表，如:['00:00-00:20', '00:36-00:40', '07:07-07:22']
         origin_video: 原视频路径
+        progress_callback: 进度回调函数
 
     Returns:
         剪辑后的视频路径
     """
     video_paths = {}
-    for item in timestamp_terms:
-        logger.info(f"需要裁剪 '{origin_video}' 为 {len(timestamp_terms)} 个视频")
+    total_items = len(timestamp_terms)
+    for index, item in enumerate(timestamp_terms):
         material_directory = config.app.get("material_directory", "").strip()
         if material_directory == "task":
             material_directory = utils.task_dir(task_id)
@@ -318,11 +318,14 @@ def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, ) -
             material_directory = ""
 
         try:
-            logger.info(f"clip video: {item}")
             saved_video_path = save_clip_video(timestamp=item, origin_video=origin_video, save_dir=material_directory)
             if saved_video_path:
                 logger.info(f"video saved: {saved_video_path}")
                 video_paths.update(saved_video_path)
+            
+            # 更新进度
+            if progress_callback:
+                progress_callback(index + 1, total_items)
         except Exception as e:
             logger.error(f"视频裁剪失败: {utils.to_json(item)} => {str(e)}")
             return {}

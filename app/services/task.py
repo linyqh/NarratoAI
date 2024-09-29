@@ -2,6 +2,7 @@ import math
 import json
 import os.path
 import re
+import traceback
 from os import path
 from loguru import logger
 
@@ -323,7 +324,7 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
     return kwargs
 
 
-def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
+def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: list):
     """
     后台任务（自动剪辑视频进行剪辑）
 
@@ -340,6 +341,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
 
     logger.info("\n\n## 1. 加载视频脚本")
     video_script_path = path.join(params.video_clip_json_path)
+    # video_script_path = video_clip_json_path
     # 判断json文件是否存在
     if path.exists(video_script_path):
         try:
@@ -361,6 +363,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos):
             logger.error(f"无法读取视频json脚本，请检查配置是否正确。{e}")
             raise ValueError("无法读取视频json脚本，请检查配置是否正确")
     else:
+        logger.error(f"video_script_path: {video_script_path} \n\n", traceback.format_exc())
         raise ValueError("解说脚本不存在！请检查配置是否正确。")
 
     logger.info("\n\n## 2. 生成音频列表")

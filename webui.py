@@ -61,13 +61,11 @@ config_file = os.path.join(root_dir, "webui", ".streamlit", "webui.toml")
 system_locale = utils.get_system_locale()
 
 if 'video_clip_json' not in st.session_state:
-    st.session_state['video_clip_json'] = ''
+    st.session_state['video_clip_json'] = []
 if 'video_plot' not in st.session_state:
     st.session_state['video_plot'] = ''
 if 'ui_language' not in st.session_state:
     st.session_state['ui_language'] = config.ui.get("language", system_locale)
-if 'script_generation_status' not in st.session_state:
-    st.session_state['script_generation_status'] = ""
 
 
 def get_all_fonts():
@@ -124,7 +122,7 @@ def init_log():
     _lvl = "DEBUG"
 
     def format_record(record):
-        # 获取日志记录中的文件全路径
+        # 获取日志记录中的文件全���径
         file_path = record["file"].path
         # 将绝对路径转换为相对于项目根目录的路径
         relative_path = os.path.relpath(file_path, root_dir)
@@ -272,7 +270,7 @@ with left_panel:
         # 按创建时间降序排序
         script_list.sort(key=lambda x: x["ctime"], reverse=True)
 
-        # 脚本文件 下拉框
+        # ��本文件 下拉框
         script_path = [(tr("Auto Generate"), ""), ]
         for file in script_list:
             display_name = file['file'].replace(root_dir, "")
@@ -282,8 +280,9 @@ with left_panel:
                                              options=range(len(script_path)),  # 使用索引作为内部选项值
                                              format_func=lambda x: script_path[x][0]  # 显示给用户的是标签
                                              )
-        params.video_clip_json = script_path[selected_script_index][1]
-        video_json_file = params.video_clip_json
+        params.video_clip_json_path = script_path[selected_script_index][1]
+        config.app["video_clip_json_path"] = params.video_clip_json_path
+        st.session_state['video_clip_json_path'] = params.video_clip_json_path
 
         # 视频文件处理
         video_files = []
@@ -301,18 +300,20 @@ with left_panel:
             })
         # 按创建时间降序排序
         video_list.sort(key=lambda x: x["ctime"], reverse=True)
-        video_path = [("None", ""), (tr("Upload Local Files"), "local")]
-        for code in [file['file'] for file in video_list]:
-            video_path.append((code, code))
+        video_path = [(tr("None"), ""), (tr("Upload Local Files"), "local")]
+        for file in video_list:
+            display_name = file['file'].replace(root_dir, "")
+            video_path.append((display_name, file['file']))
 
         # 视频文件
         selected_video_index = st.selectbox(tr("Video File"),
                                             index=0,
                                             options=range(len(video_path)),  # 使用索引作为内部选项值
-                                            format_func=lambda x: video_path[x][0]  # 显示给用户的是标
+                                            format_func=lambda x: video_path[x][0]  # 显示给用户的是标签
                                             )
         params.video_origin_path = video_path[selected_video_index][1]
         config.app["video_origin_path"] = params.video_origin_path
+        st.session_state['video_origin_path'] = params.video_origin_path
 
         # 从本地上传 mp4 文件
         if params.video_origin_path == "local":
@@ -347,40 +348,73 @@ with left_panel:
         )
 
         # 生成视频脚本
-        st.session_state['script_generation_status'] = "开始生成视频脚本"
-        if st.button(tr("Video Script Generate"), key="auto_generate_script"):
-            with st.spinner("正在生成脚本..."):
-                # 这里可以用 st.empty() 来动态更新文本
-                progress_text = st.empty()
-                progress_text.text("正在处理...")
+        if st.session_state['video_clip_json_path']:
+            generate_button_name = tr("Video Script Load")
+        else:
+            generate_button_name = tr("Video Script Generate")
+        if st.button(generate_button_name, key="auto_generate_script"):
+            progress_bar = st.progress(0)
+            status_text = st.empty()
 
-                if video_json_file == "" and params.video_origin_path != "":
-                    progress_text.text("开始压缩...")
-                    # 使用大模型生成视频脚本
-                    script = llm.generate_script(
-                        video_path=params.video_origin_path,
-                        video_plot=video_plot,
-                        video_name=video_name,
-                        language=params.video_language,
-                        progress_text=progress_text
-                    )
-                    if script is None:
-                        st.error("生成脚本失败，请检查日志")
-                        st.stop()
-                    st.session_state['video_clip_json'] = script
-                    cleaned_string = script.strip("```json").strip("```")
-                    st.session_state['video_script_list'] = json.loads(cleaned_string)
+            def update_progress(progress: float, message: str = ""):
+                progress_bar.progress(progress)
+                if message:
+                    status_text.text(f"{progress}% - {message}")
                 else:
-                    with open(video_json_file, 'r', encoding='utf-8') as f:
-                        script = f.read()
-                        st.session_state['video_clip_json'] = script
-                        cleaned_string = script.strip("```json").strip("```")
-                        st.session_state['video_script_list'] = json.loads(cleaned_string)
+                    status_text.text(f"进度: {progress}%")
+
+            try:
+                with st.spinner("正在生成脚本..."):
+                    if not video_name:
+                        st.warning("视频名称不能为空")
+                        st.stop()
+                    if not video_plot:
+                        st.warning("视频剧情不能为空")
+                        st.stop()
+                    if params.video_clip_json_path == "" and params.video_origin_path != "":
+                        update_progress(10, "压缩视频中...")
+                        # 使用大模型生成视频脚本
+                        script = llm.generate_script(
+                            video_path=params.video_origin_path,
+                            video_plot=video_plot,
+                            video_name=video_name,
+                            language=params.video_language,
+                            progress_callback=update_progress
+                        )
+                        if script is None:
+                            st.error("生成脚本失败，请检查日志")
+                            st.stop()
+                        else:
+                            update_progress(90)
+
+                        script = utils.clean_model_output(script)
+                        st.session_state['video_clip_json'] = json.loads(script)
+                    else:
+                        # 从本地加载
+                        with open(params.video_clip_json_path, 'r', encoding='utf-8') as f:
+                            update_progress(50)
+                            status_text.text("从本地加载中...")
+                            script = f.read()
+                            script = utils.clean_model_output(script)
+                            st.session_state['video_clip_json'] = json.loads(script)
+                            update_progress(100)
+                            status_text.text("从本地加载成功")
+
+                time.sleep(0.5)  # 给进度条一点时间到达100%
+                progress_bar.progress(100)
+                status_text.text("脚本生成完成！")
+                st.success("视频脚本生成成功！")
+            except Exception as e:
+                st.error(f"生成过程中发生错误: {traceback.format_exc()}")
+            finally:
+                time.sleep(2)  # 给用户一些时间查看最终状态
+                progress_bar.empty()
+                status_text.empty()
 
         # 视频脚本
         video_clip_json_details = st.text_area(
             tr("Video Script"),
-            value=st.session_state['video_clip_json'],
+            value=json.dumps(st.session_state.video_clip_json, indent=2, ensure_ascii=False),
             height=180
         )
 
@@ -398,73 +432,43 @@ with left_panel:
                     timestamp = datetime.datetime.now().strftime("%Y-%m%d-%H%M%S")
                     save_path = os.path.join(script_dir, f"{timestamp}.json")
 
-                    # 尝试解析输入的 JSON 数据
-                    input_json = str(video_clip_json_details)
-                    # 去掉json的头尾标识
-                    input_json = input_json.strip('```json').strip('```')
                     try:
-                        data = utils.add_new_timestamps(json.loads(input_json))
+                        data = utils.add_new_timestamps(json.loads(video_clip_json_details))
                     except Exception as err:
                         st.error(f"视频脚本格式错误，请检查脚本是否符合 JSON 格式；{err} \n\n{traceback.format_exc()}")
                         st.stop()
-
-                    # 检查是否是一个列表
-                    if not isinstance(data, list):
-                        st.error("JSON is not a list")
-                        st.stop()
-
-                    # 检查列表中的每个元素是否包含所需的键
-                    required_keys = {"picture", "timestamp", "narration"}
-                    for item in data:
-                        if not isinstance(item, dict):
-                            st.error("List 元素不是字典")
-                            st.stop()
-                        if not required_keys.issubset(item.keys()):
-                            st.error("Dict 元素不包含必需的键")
-                            st.stop()
 
                     # 存储为新的 JSON 文件
                     with open(save_path, 'w', encoding='utf-8') as file:
                         json.dump(data, file, ensure_ascii=False, indent=4)
                         # 将data的值存储到 session_state 中，类似缓存
-                        st.session_state['video_script_list'] = data
+                        st.session_state['video_clip_json'] = data
                         st.session_state['video_clip_json_path'] = save_path
                         # 刷新页面
-                        st.rerun()
-
-
-        def caijian():
-            with st.spinner(tr("裁剪视频中...")):
-                st.session_state['task_id'] = str(uuid4())
-
-            if st.session_state.get('video_script_list', None) is not None:
-                video_script_list = st.session_state.video_script_list
-                print(video_script_list)
-                print(type(video_script_list))
-                time_list = [i['timestamp'] for i in video_script_list]
-                subclip_videos = material.clip_videos(
-                    task_id=st.session_state['task_id'],
-                    timestamp_terms=time_list,
-                    origin_video=params.video_origin_path
-                )
-                if subclip_videos is None:
-                    st.error(tr("裁剪视频失败"))
-                    st.stop()
-                st.session_state['subclip_videos'] = subclip_videos
-                for video_script in video_script_list:
-                    try:
-                        video_script['path'] = subclip_videos[video_script['timestamp']]
-                    except KeyError as err:
-                        st.error(f"裁剪视频失败 {err}")
-                logger.debug(f"当前的脚本为：{st.session_state.subclip_videos}")
-            else:
-                st.error(tr("请先生成视频脚本"))
-
+                        # st.rerun()
 
         # 裁剪视频
         with button_columns[1]:
             if st.button(tr("Crop Video"), key="auto_crop_video", use_container_width=True):
-                caijian()
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+
+                def update_progress(progress):
+                    progress_bar.progress(progress)
+                    status_text.text(f"剪辑进度: {progress}%")
+
+                try:
+                    utils.cut_video(params, update_progress)
+                    time.sleep(0.5)  # 给进度条一点时间到达100%
+                    progress_bar.progress(100)
+                    status_text.text("剪辑完成！")
+                    st.success("视频剪辑成功完成！")
+                except Exception as e:
+                    st.error(f"剪辑过程中发生错误: {str(e)}")
+                finally:
+                    time.sleep(2)  # 给用户一些时间查看最终状态
+                    progress_bar.empty()
+                    status_text.empty()
 
 # 新中间面板
 with middle_panel:
@@ -703,14 +707,16 @@ with st.expander(tr("Video Check"), expanded=False):
                         # 可编辑的输入框
                         text_panels = st.columns(2)
                         with text_panels[0]:
-                            text1 = st.text_area(tr("timestamp"), value=initial_timestamp, height=20)
+                            text1 = st.text_area(tr("timestamp"), value=initial_timestamp, height=20,
+                                                 key=f"timestamp_{index}")
                         with text_panels[1]:
-                            text2 = st.text_area(tr("Picture description"), value=initial_picture, height=20)
-                        logger.debug(initial_narration)
-                        text3 = st.text_area(tr("Narration"), value=initial_narration, height=100)
+                            text2 = st.text_area(tr("Picture description"), value=initial_picture, height=20,
+                                                 key=f"picture_{index}")
+                        text3 = st.text_area(tr("Narration"), value=initial_narration, height=100,
+                                             key=f"narration_{index}")
 
                         # 重新生成按钮
-                        if st.button(tr("Rebuild"), key=f"button_{index}"):
+                        if st.button(tr("Rebuild"), key=f"rebuild_{index}"):
                             # 更新video_list中的对应项
                             video_list[index]['timestamp'] = text1
                             video_list[index]['picture'] = text2
@@ -719,12 +725,12 @@ with st.expander(tr("Video Check"), expanded=False):
                             for video in video_list:
                                 if 'path' in video:
                                     del video['path']
-                                    # 更新session_state以确保更改被保存
+                            # 更新session_state以确保更改被保存
                             st.session_state['video_clip_json'] = utils.to_json(video_list)
                             # 替换原JSON 文件
-                            with open(video_json_file, 'w', encoding='utf-8') as file:
+                            with open(params.video_clip_json_path, 'w', encoding='utf-8') as file:
                                 json.dump(video_list, file, ensure_ascii=False, indent=4)
-                            caijian()
+                            utils.cut_video(params, progress_callback=None)
                             st.rerun()
 
 # 开始按钮
@@ -735,13 +741,15 @@ if start_button:
     if st.session_state.get('video_script_json_path') is not None:
         params.video_clip_json = st.session_state.get('video_clip_json')
 
-    logger.debug(f"当前的脚本为：{params.video_clip_json}")
+    logger.debug(f"当前的脚本文件为：{st.session_state.video_clip_json_path}")
+    logger.debug(f"当前的视频文件为：{st.session_state.video_origin_path}")
+    logger.debug(f"裁剪后是视频列表：{st.session_state.subclip_videos}")
 
     if not task_id:
         st.error(tr("请先裁剪视频"))
         scroll_to_bottom()
         st.stop()
-    if not params.video_clip_json:
+    if not params.video_clip_json_path:
         st.error(tr("脚本文件不能为空"))
         scroll_to_bottom()
         st.stop()

@@ -1,9 +1,12 @@
 import locale
 import os
+import traceback
+
 import requests
 import threading
 from typing import Any
 from loguru import logger
+import streamlit as st
 import json
 from uuid import uuid4
 import urllib3
@@ -11,6 +14,7 @@ from datetime import datetime, timedelta
 
 from app.models import const
 from app.utils import check_script
+from app.services import material
 
 urllib3.disable_warnings()
 
@@ -372,10 +376,52 @@ def add_new_timestamps(scenes):
 
 
 def clean_model_output(output):
-    """
-    模型输出包含 ```json 标记时的处理
-    """
-    if "```json" in output:
-        print("##########")
-        output = output.replace("```json", "").replace("```", "")
-    return output.strip()
+    # 移除可能的代码块标记
+    output = output.strip('```json').strip('```')
+    # 移除开头和结尾的空白字符
+    output = output.strip()
+    return output
+
+
+def cut_video(params, progress_callback=None):
+    try:
+        task_id = str(uuid4())
+        st.session_state['task_id'] = task_id
+
+        if not st.session_state.get('video_clip_json'):
+            raise ValueError("视频脚本不能为空")
+
+        video_script_list = st.session_state['video_clip_json']
+        time_list = [i['timestamp'] for i in video_script_list]
+        
+        total_clips = len(time_list)
+        
+        def clip_progress(current, total):
+            progress = int((current / total) * 100)
+            if progress_callback:
+                progress_callback(progress)
+
+        subclip_videos = material.clip_videos(
+            task_id=task_id,
+            timestamp_terms=time_list,
+            origin_video=params.video_origin_path,
+            progress_callback=clip_progress
+        )
+
+        if subclip_videos is None:
+            raise ValueError("裁剪视频失败")
+
+        st.session_state['subclip_videos'] = subclip_videos
+
+        for i, video_script in enumerate(video_script_list):
+            try:
+                video_script['path'] = subclip_videos[video_script['timestamp']]
+            except KeyError as err:
+                logger.error(f"裁剪视频失败: {err}")
+                raise ValueError(f"裁剪视频失败: {err}")
+
+        return task_id, subclip_videos
+
+    except Exception as e:
+        logger.error(f"视频裁剪过程中发生错误: {traceback.format_exc()}")
+        raise

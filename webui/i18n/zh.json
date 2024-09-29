@@ -10,7 +10,7 @@
     "Auto Detect": "自动检测",
     "Auto Generate": "自动生成",
     "Video Name": "视频名称",
-    "Video Script": "视频脚本（:blue[①可不填，使用AI生成  ②合理使用标点断句，有助于生成字幕]）",
+    "Video Script": "视频脚本（:blue[①使用AI生成    ②从本机加载]）",
     "Save Script": "保存脚本",
     "Crop Video": "裁剪视频",
     "Video File": "视频文件（:blue[1️⃣支持上传视频文件(限制2G) 2️⃣大文件建议直接导入 ./resource/videos 目录]）",
@@ -91,6 +91,7 @@
     "timestamp": "时间戳",
     "Picture description": "图片描述",
     "Narration": "视频文案",
-    "Rebuild": "重新生成"
+    "Rebuild": "重新生成",
+    "Video Script Load": "加载视频脚本"
   }
 }

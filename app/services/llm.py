@@ -31,7 +31,7 @@ Method = """
 文案的前三句，是整部电影的概括总结，2-3句介绍后，开始叙述故事剧情！
 推荐新手（新号）做：（盘点型）
 盘点全球最恐怖的10部电影
-盘点全球最科幻的10部电影
+盘���全球最科幻的10部电影
 盘点全球最悲惨的10部电影
 盘全球最值得看的10部灾难电影
 盘点全球最值得看的10部励志电影
@@ -43,13 +43,13 @@ Method = """
 4.是什么样的一个人被豆瓣网友称之为史上最牛P的老太太，都70岁了还要去贩毒……
 5.他是M国历史上最NB/惨/猖狂/冤枉……的囚犯/抢劫犯/……
 6.这到底是一部什么样的影片，他一个人就拿了4个顶级奖项，第一季8.7分，第二季直接干到9.5分，11万人给出5星好评，一共也就6集，却斩获26项国际大奖，看过的人都说，他是近年来最好的xxx剧，几乎成为了近年来xxx剧的标杆。故事发生在……
-7.他是国产电影的巅峰佳作，更是许多80-90后的青春启蒙，曾入选《时代》周刊，获得年度佳片第一，可在国内却被尘封多年，至今为止都无法在各大视频网站看到完整资源，他就是《xxxxxx》
+7.他是国产电影的巅峰佳作，更是许多80-90后的青春启蒙，曾入选《��代》周刊，获得年度佳片第一，可在国内却被尘封多年，至今为止都无法在各大视频网站看到完整资源，他就是《xxxxxx》
 8.这是一部让所有人看得荷尔蒙飙升的爽片……
 9.他被成为世界上最虐心绝望的电影，至今无人敢看第二遍，很难想象，他是根据真实事件改编而来……
 10.这大概是有史以来最令人不寒而栗的电影，当年一经放映，就点燃了无数人的怒火，不少观众不等影片放完，就愤然离场，它比《xxx》更让人绝望，比比《xxx》更让人xxx，能坚持看完全片的人，更是万中无一，包括我。甚至观影结束后，有无数人抵制投诉这部电影，认为影片的导演玩弄了他们的情感！他是顶级神作《xxxx》……
 11.这是X国有史以来最高赞的一部悬疑电影，然而却因为某些原因，国内90%的人，没能看过这部片子，他就是《xxx》……
 12.有这样一部电影，这辈子，你绝对不想再看第二遍，并不是它剧情烂俗，而是它的结局你根本承受不起/想象不到……甚至有80%的观众在观影途中情绪崩溃中途离场，更让许多同行都不想解说这部电影，他就是大名鼎鼎的暗黑神作《xxx》…
-13.它被誉为史上最牛悬疑片无数人在看完它时候，一个月不敢照镜子，这样一部仅适合部分年龄段观看的影片，究竟有什么样的魅力，竟然获得某瓣8.2的高分，很多人说这部电影到处都是看点，他就是《xxx》….
+13.它被誉为史上最牛悬疑片无数人在看完它时候，一个月不敢照镜��，这样一部仅适合部分年龄段观看的影片，究竟有什么样的魅力，竟然获得某瓣8.2的高分，很多人说这部电影到处都是看点，他就是《xxx》….
 14.这是一部在某瓣上被70万人打出9.3分的高分的电影……到底是一部什么样的电影，能够在某瓣上被70万人打出9.3分的高分……
 15.这是一部细思极恐的科幻大片，整部电影颠覆你的三观，它的名字叫……
 16.史上最震撼的灾难片，每一点都不舍得快进的电影，他叫……
@@ -66,7 +66,7 @@ Method = """
 2.这是一部印度高分悬疑片，
 3.这部电影原在日本因为……而被下架，
 4.这是韩国最恐怖的犯罪片，
-5.这是最近国产片评分最高的悬疑片
+5.这是最近国产片评分最高的悬疑��
 以上均按照影片国家来区分，然后简单介绍下主题。就可以开始直接叙述作品。也是一个很不错的方法！
 
 ### 方式四：如何自由发挥
@@ -97,7 +97,7 @@ Method = """
 后面水平越来越高的时候，可以进行人生道理的讲评。
 
 比如：这部电影告诉我们……
-类似于哲理性质的，作为一个总结！
+类似于哲理性质��作为一个总结！
 也可以把最后的影视反转，原生放出来，留下悬念。
 
 比如：也可以总结下这部短片如何的好，推荐/值得大家去观看之类的话语。
@@ -426,7 +426,7 @@ def compress_video(input_path: str, output_path: str):
 
 
 def generate_script(
-    video_path: str, video_plot: str, video_name: str, language: str = "zh-CN", progress_text: st.empty = st.empty()
+    video_path: str, video_plot: str, video_name: str, language: str = "zh-CN", progress_callback=None
 ) -> str:
     """
     生成视频剪辑脚本
@@ -435,71 +435,100 @@ def generate_script(
         video_plot: 视频剧情内容
         video_name: 视频名称
         language: 语言
+        progress_callback: 进度回调函数
 
     Returns:
         str: 生成的脚本
     """
     # 1. 压缩视频
-    progress_text.text("压缩视频中...")
     compressed_video_path = f"{os.path.splitext(video_path)[0]}_compressed.mp4"
     compress_video(video_path, compressed_video_path)
 
-    # # 2. 转录视频
-    # transcription = gemini_video_transcription(
-    #     video_name=video_name,
-    #     video_path=compressed_video_path,
-    #     language=language,
-    #     progress_text=progress_text,
-    #     llm_provider_video="gemini"
-    # )
-    transcription = """
-[{"timestamp": "00:00-00:06", "picture": "一个穿着蓝色囚服，戴着手铐的人在房间里走路。", "speech": ""},
-{"timestamp": "00:06-00:09", "picture": "一个穿着蓝色囚服，戴着手铐的人，画面上方显示“李自忠 银行抢劫犯”。", "speech": "李自忠 银行抢劫一案 现在宣判"},
-{"timestamp": "00:09-00:12", "picture": "一个穿着黑色西装，打着红色领带的女人，坐在一个牌子上，牌子上写着“书记员”，身后墙上挂着“国徽”。", "speech": "全体起立"},
-{"timestamp": "00:12-00:15", "picture": "一个穿着黑色法官服的男人坐在一个牌子后面，牌子上写着“审判长”，身后墙上挂着“国徽”。法庭上，很多人站着。", "speech": ""},
-{"timestamp": "00:15-00:19", "picture": "一个穿着黑色西装，打着红色领带的女人，坐在一个牌子上，牌子上写着“书记员”，身后墙上挂着“国徽”。法庭上，很多人站着。", "speech": "本庭二审判决如下 被告李自忠 犯抢劫银行罪"},
-{"timestamp": "00:19-00:24", "picture": "一个穿着蓝色囚服，戴着手铐的人，画面上方显示“李自忠 银行抢劫犯”。", "speech": "维持一审判决 判处有期徒刑 二十年"},
-{"timestamp": "00:24-00:27", "picture": "一个穿着黑色法官服的男人坐在一个牌子后面，牌子上写着“审判长”，他敲了一下法槌。", "speech": ""},
-{"timestamp": "00:27-00:32", "picture": "一个穿着蓝色囚服，戴着手铐的人，画面上方显示“李自忠 银行抢劫犯”。", "speech": "我们要让她们牢底坐穿 越父啊越父 你一个平头老百姓 也敢跟外资银行做对 真是不知天高地厚"},
-{"timestamp": "00:32-00:41", "picture": "一个穿着蓝色囚服，戴着手铐的人跪在地上。", "speech": "我要让她们牢底坐穿 越父啊越父 你一个平头老百姓 也敢跟外资银行做对 真是不知天高地厚"},
-{"timestamp": "00:41-00:47", "picture": "两个警察押解着一个穿着蓝色囚服，戴着手铐的人走在路上，一个女记者在路边报道新闻。", "speech": "李先生 这里是孔雀卫视 这里是黄金眼819新闻直播间 这里是浙江卫视新闻直播间 近日李自忠案引发社会热议"},
-{"timestamp": "00:47-01:03", "picture": "一个穿着灰色外套的男人坐在银行柜台前，和银行工作人员说话。画面中还穿插着女记者在路边报道新闻的画面。", "speech": "李自忠案引发社会热议 李自忠在去银行取钱的时候 由于他拿的是儿子的存折 所以银行要求李自忠证明他的儿子就是他的儿子 我说取不了就是取不了啊 这是你儿子的存折啊 你要证明你儿子是你儿子啊"},
-{"timestamp": "01:03-01:10", "picture": "一个穿着灰色外套的男人坐在银行柜台前，和银行工作人员说话。画面中还穿插着女记者在路边报道新闻的画面。", "speech": "李自忠提供了身份证账户户口本后 银行都不认可他的儿子是他的儿子 就在这个时候 银行发生一起抢劫案"},
-{"timestamp": "01:10-01:17", "picture": "三个戴着帽子和口罩的劫匪持枪闯入银行，银行里的人都很害怕，纷纷蹲下躲避。", "speech": "都给我蹲下 老实点 把钱给我交出来"},
-{"timestamp": "01:17-01:28", "picture": "女记者在路边报道新闻，画面中穿插着银行抢劫案的画面。", "speech": "劫匪看到一旁大哭的李自忠 得知他是因为儿子需要治病才取钱的时候 给了他一打钱 怎么 你儿子在医院等着钱救命啊 银行不给取啊"},
-{"timestamp": "01:28-01:36", "picture": "一个戴着黑色帽子和口罩的劫匪，拿着枪，给一个穿着灰色外套的男人一叠钱。", "speech": "银行不给取啊 好了 给儿子看病去 李自忠在把钱给儿子交完药费后被捕"},
-{"timestamp": "01:36-01:58", "picture": "两个警察押解着一个穿着蓝色囚服，戴着手铐的男人走在路上，一个女记者在路边报道新闻。", "speech": "目前一审二审都维持原判 判处有期徒刑二十年 对此你有什么想说的吗 他怎么证明他儿子是他儿子 要是银行早点把钱给我 我也不会遇到劫匪 我儿子还得救命 不是的 儿子 儿子 儿子"},
-{"timestamp": "01:58-02:03", "picture": "两个警察押解着一个穿着蓝色囚服，戴着手铐的男人走在路上，一个女记者在路边报道新闻。男人情绪激动，大声喊叫。", "speech": "儿子 儿子 儿子"},
-{"timestamp": "02:03-02:12", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边。画面中穿插着新闻报道的画面。", "speech": "近日李自忠案引发社会热议 李自忠在去银行取钱的时候 银行要求李自忠证明他的儿子就是他的儿子"},
-{"timestamp": "02:12-02:25", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生站在门口。", "speech": "爸 这家人也真够可怜的 当爹的坐牢 这儿子 恐怕要成植物人了"},
-{"timestamp": "02:25-02:31", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生站在门口。", "speech": "医生啊 我弟弟的情况怎么样 我先看看"},
-{"timestamp": "02:31-02:40", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生正在给男人做检查。", "speech": ""},
-{"timestamp": "02:40-02:46", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生正在给男人做检查。", "speech": "不太理想啊 你弟弟想要醒过来 希望渺茫"},
-{"timestamp": "02:46-02:57", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生正在给男人做检查。", "speech": "这 麟木 麟木你别吓姐啊麟木 麟木"},
-{"timestamp": "02:57-03:02", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生正在给男人做检查。画面中穿插着新闻报道的画面。", "speech": "麟木 儿子 麟木你别吓姐啊麟木"},
-{"timestamp": "03:02-03:08", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生正在给男人做检查。画面中穿插着新闻报道的画面。女人情绪激动，大声哭泣。", "speech": "儿子 麟木你别吓姐啊麟木 儿子"},
-{"timestamp": "03:08-03:14", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，一个穿着粉色上衣的女人站在病床边，一个白头发的医生正在给男人做检查。画面中穿插着新闻报道的画面。女人情绪激动，大声哭泣。", "speech": "儿子"},
-{"timestamp": "03:14-03:18", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，画面变成紫色光效。", "speech": ""},
-{"timestamp": "03:18-03:20", "picture": "一个病房里，一个年轻男人躺在病床上，戴着呼吸机，他突然睁开了眼睛。", "speech": ""}]
-    """
-    # # 清理压缩后的视频文件
-    # try:
-    #     os.remove(compressed_video_path)
-    # except OSError as e:
-    #     logger.warning(f"删除压缩视频文件失败: {e}")
+    # 在关键步骤更新进度
+    if progress_callback:
+        progress_callback(15, "压缩完成")  # 例如,在压缩视频后
+
+    # 2. 转录视频
+    transcription = gemini_video_transcription(
+        video_name=video_name,
+        video_path=compressed_video_path,
+        language=language,
+        llm_provider_video="gemini",
+        progress_callback=progress_callback
+    )
+    if progress_callback:
+        progress_callback(60, "生成解说文案...")  # 例如,在转录视频后
 
     # 3. 编写解说文案
-    progress_text.text("解说文案中...")
     script = writing_short_play(video_plot, video_name, "openai", count=300)
+
+    # 在关键步骤更新进度
+    if progress_callback:
+        progress_callback(70, "匹配画面...")  # 例如,在生成脚本后
 
     # 4. 文案匹配画面
     if transcription != "":
-        progress_text.text("画面匹配中...")
         matched_script = screen_matching(huamian=transcription, wenan=script, llm_provider="openai")
-
+        # 在关键步骤更新进度
+        if progress_callback:
+            progress_callback(80, "匹配成功")
         return matched_script
     else:
         return ""
+
+
+def gemini_video_transcription(video_name: str, video_path: str, language: str, llm_provider_video: str, progress_callback=None):
+    '''
+    使用 gemini-1.5-xxx 进行视频画面转录
+    '''
+    api_key = config.app.get("gemini_api_key")
+    gemini.configure(api_key=api_key)
+
+    prompt = """
+    请转录音频，包括时间戳，并提供视觉描述，然后以 JSON 格式输出，当前视频中使用的语言为 %s。
+    
+    在转录视频时，请通过确保以下条件来完成转录：
+    1. 画面描述使用语言: %s 进行输出。
+    2. 同一个画面合并为一个转录记录。
+    3. 使用以下 JSON schema:    
+        Graphics = {"timestamp": "MM:SS-MM:SS"(时间戳格式), "picture": "str"(画面描述), "speech": "str"(台词，如果没有人说话，则使用空字符串。)}
+        Return: list[Graphics]
+    4. 请以严格的 JSON 格式返回数据，不要包含任何注释、标记或其他字符。数据应符合 JSON 语法，可以被 json.loads() 函数直接解析， 不要添加 ```json 或其他标记。
+    """ % (language, language)
+
+    logger.debug(f"视频名称: {video_name}")
+    try:
+        if progress_callback:
+            progress_callback(20, "上传视频至 Google cloud")
+        gemini_video_file = gemini.upload_file(video_path)
+        logger.debug(f"视频 {gemini_video_file.name} 上传至 Google cloud 成功, 开始解析...")
+        while gemini_video_file.state.name == "PROCESSING":
+            gemini_video_file = gemini.get_file(gemini_video_file.name)
+            if progress_callback:
+                progress_callback(30, "上传成功, 开始解析")  # 更新进度为20%
+        if gemini_video_file.state.name == "FAILED":
+            raise ValueError(gemini_video_file.state.name)
+        elif gemini_video_file.state.name == "ACTIVE":
+            if progress_callback:
+                progress_callback(40, "解析完成, 开始转录...")  # 更新进度为30%
+            logger.debug("解析完成, 开始转录...")
+    except ResumableUploadError as err:
+        logger.error(f"上传视频至 Google cloud 失败, 用户的位置信息不支持用于该API; \n{traceback.format_exc()}")
+        return False
+    except FailedPrecondition as err:
+        logger.error(f"400 用户位置不支持 Google API 使用。\n{traceback.format_exc()}")
+        return False
+
+    if progress_callback:
+        progress_callback(50, "开始转录")
+    try:
+        response = _generate_response_video(prompt=prompt, llm_provider_video=llm_provider_video, video_file=gemini_video_file)
+        logger.success("视频转录成功")
+        logger.debug(response)
+        print(type(response))
+        return response
+    except Exception as err:
+        return handle_exception(err)
 
 
 def generate_terms(video_subject: str, video_script: str, amount: int = 5) -> List[str]:
@@ -652,56 +681,6 @@ def gemini_video2json(video_origin_name: str, video_origin_path: str, video_plot
     return response
 
 
-def gemini_video_transcription(video_name: str, video_path: str, language: str, llm_provider_video: str, progress_text: st.empty = ""):
-    '''
-    使用 gemini-1.5-xxx 进行视频画面转录
-    '''
-    api_key = config.app.get("gemini_api_key")
-    gemini.configure(api_key=api_key)
-
-    prompt = """
-    请转录音频，包括时间戳，并提供视觉描述，然后以 JSON 格式输出，当前视频中使用的语言为 %s。
-    
-    在转录视频时，请通过确保以下条件来完成转录：
-    1. 画面描述使用语言: %s 进行输出。
-    2. 同一个画面合并为一个转录记录。
-    3. 使用以下 JSON schema:    
-        Graphics = {"timestamp": "MM:SS-MM:SS"(时间戳格式), "picture": "str"(画面描述), "speech": "str"(台词，如果没有人说话，则使用空字符串。)}
-        Return: list[Graphics]
-    4. 请以严格的 JSON 格式返回数据，不要包含任何注释、标记或其他字符。数据应符合 JSON 语法，可以被 json.loads() 函数直接解析， 不要添加 ```json 或其他标记。
-    """ % (language, language)
-
-    logger.debug(f"视频名称: {video_name}")
-    try:
-        progress_text.text("上传视频中...")
-        gemini_video_file = gemini.upload_file(video_path)
-        logger.debug(f"视频 {gemini_video_file.name} 上传至 Google cloud 成功, 开始解析...")
-        while gemini_video_file.state.name == "PROCESSING":
-            gemini_video_file = gemini.get_file(gemini_video_file.name)
-            progress_text.text(f"解析视频中, 当前状态: {gemini_video_file.state.name}")
-        if gemini_video_file.state.name == "FAILED":
-            raise ValueError(gemini_video_file.state.name)
-        elif gemini_video_file.state.name == "ACTIVE":
-            progress_text.text("解析完成")
-            logger.debug("解析完成, 开始转录...")
-    except ResumableUploadError as err:
-        logger.error(f"上传视频至 Google cloud 失败, 用户的位置信息不支持用于该API; \n{traceback.format_exc()}")
-        return False
-    except FailedPrecondition as err:
-        logger.error(f"400 用户位置不支持 Google API 使用。\n{traceback.format_exc()}")
-        return False
-
-    progress_text.text("视频转录中...")
-    try:
-        response = _generate_response_video(prompt=prompt, llm_provider_video=llm_provider_video, video_file=gemini_video_file)
-        logger.success("视频转录成功")
-        logger.debug(response)
-        print(type(response))
-        return response
-    except Exception as err:
-        return handle_exception(err)
-
-
 def writing_movie(video_plot, video_name, llm_provider):
     """
     影视解说（电影解说）
@@ -801,58 +780,58 @@ def screen_matching(huamian: str, wenan: str, llm_provider: str):
     - 请以严格的 JSON 格式返回数据，不要包含任何注释、标记或其他字符。数据应符合 JSON 语法，可以被 json.loads() 函数直接解析， 不要添加 ```json 或其他标记。
     """ % (huamian, wenan)
 
-    prompt = """
-    你是一位拥有10年丰富经验的影视解说创作专家。你的任务是根据提供的视频转录脚本和解说文案，创作一个引人入胜的解说脚本。请按照以下要求完成任务：
-
-1. 输入数据：
-   - 视频转录脚本：包含时间戳、画面描述和人物台词
-   - 解说文案：需要你进行匹配和编排的内容
-   - 视频转录脚本和文案（由 XML 标记<PICTURE></PICTURE>和 <COPYWRITER></COPYWRITER>分隔）如下所示：
-    视频转录脚本
-    <PICTURE>
-    %s
-    </PICTURE>
-    文案：
-    <COPYWRITER>
-    %s
-    </COPYWRITER>
-
-2. 输出要求：
-   - 格式：严格的JSON格式，可直接被json.loads()解析
-   - 结构：list[script]，其中script为字典类型
-   - script字段：
-     {
-       "picture": "画面描述",
-       "timestamp": "时间戳",
-       "narration": "解说文案",
-       "OST": true/false
-     }
-
-3. 匹配规则：
-   a) 时间戳匹配：
-      - 根据文案内容选择最合适的画面时间段
-      - 避免时间重叠，确保画面不重复出现
-      - 适当合并或删减片段，不要完全照搬转录脚本
-   b) 画面描述：与转录脚本保持一致
-   c) 解说文案：
-      - 当OST为true时，narration为空字符串
-      - 当OST为false时，narration为解说文案，但是要确保文案字数不要超过 30字，若文案较长，则添加到下一个片段
-   d) OST（原声）：
-      - 按1:1比例穿插原声和解说片段
-      - 第一个片段必须是原声，时长不少于20秒
-      - 选择整个视频中最精彩的片段作为开场
-
-4. 创作重点：
-   - 确保解说与画面高度匹配
-   - 巧妙安排原声和解说的交替，提升观众体验
-   - 创造一个引人入胜、节奏紧凑的解说脚本
-
-5. 注意事项：
-   - 严格遵守JSON格式，不包含任何注释或额外标记
-   - 充分利用你的专业经验，创作出高质量、吸引人的解说内容
-
-请基于以上要求，将提供的视频转录脚本和解说文案整合成一个专业、吸引人的解说脚本。你的创作将直接影响观众的观看体验，请发挥你的专业素养，创作出最佳效果。
-    """ % (huamian, wenan)
+#     prompt = """
+#     你是一位拥有10年丰富经验的影视解说创作专家。你的任务是根据提供的视频转录脚本和解说文案，创作一个引人入胜的解说脚本。请按照以下要求完成任务：
+#
+# 1. 输入数据：
+#    - 视频转录脚本：包含时间戳、画面描述和人物台词
+#    - 解说文案：需要你进行匹配和编排的内容
+#    - 视频转录脚本和文案（由 XML 标记<PICTURE></PICTURE>和 <COPYWRITER></COPYWRITER>分隔）如下所示：
+#     视频转录脚本
+#     <PICTURE>
+#     %s
+#     </PICTURE>
+#     文案：
+#     <COPYWRITER>
+#     %s
+#     </COPYWRITER>
+#
+# 2. 输出要求：
+#    - 格式：严格的JSON格式，可直接被json.loads()解析
+#    - 结构：list[script]，其中script为字典类型
+#    - script字段：
+#      {
+#        "picture": "画面描述",
+#        "timestamp": "时间戳",
+#        "narration": "解说文案",
+#        "OST": true/false
+#      }
+#
+# 3. 匹配规则：
+#    a) 时间戳匹配：
+#       - 根据文案内容选择最合适的画面时间段
+#       - 避免时间重叠，确保画面不重复出现
+#       - 适当合并或删减片段，不要完全照搬转录脚本
+#    b) 画面描述：与转录脚本保持一致
+#    c) 解说文案：
+#       - 当OST为true时，narration为空字符串
+#       - 当OST为false时，narration为解说文案，但是要确保文案字数不要超过 30字，若文案较长，则添加到下一个片段
+#    d) OST（原声）：
+#       - 按1:1比例穿插原声和解说片段
+#       - 第一个片段必须是原声，时长不少于20秒
+#       - 选择整个视频中最精彩的片段作为开场
+#
+# 4. 创作重点：
+#    - 确保解说与画面高度匹配
+#    - 巧妙安排原声和解说的交替，提升观众体验
+#    - 创造一个引人入胜、节奏紧凑的解说脚本
+#
+# 5. 注意事项：
+#    - 严格遵守JSON格式，不包含任何注释或额外标记
+#    - 充分利用你的专业经验，创作出高质量、吸引人的解说内容
+#
+# 请基于以上要求，将提供的视频转录脚本和解说文案整合成一个专业、吸引人的解说脚本。你的创作将直接影响观众的观看体验，请发挥你的专业素养，创作出最佳效果。
+#     """ % (huamian, wenan)
     try:
         response = _generate_response(prompt, llm_provider)
         logger.success("匹配成功")
