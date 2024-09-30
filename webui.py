@@ -124,7 +124,7 @@ def init_log():
     _lvl = "DEBUG"
 
     def format_record(record):
-        # 获取日志记录中的文件全���径
+        # 获取日志记录中的文件全径
         file_path = record["file"].path
         # 将绝对路径转换为相对于项目根目录的路径
         relative_path = os.path.relpath(file_path, root_dir)
@@ -290,7 +290,7 @@ with left_panel:
         # 按创建时间降序排序
         script_list.sort(key=lambda x: x["ctime"], reverse=True)
 
-        # ��本文件 下拉框
+        # 本文件 下拉框
         script_path = [(tr("Auto Generate"), ""), ]
         for file in script_list:
             display_name = file['file'].replace(root_dir, "")
@@ -385,12 +385,8 @@ with left_panel:
 
             try:
                 with st.spinner("正在生成脚本..."):
-                    if not video_name:
-                        st.warning("视频名称不能为空")
-                        st.stop()
                     if not video_plot:
-                        st.warning("视频剧情不能为空")
-                        st.stop()
+                        st.warning("视频剧情为空; 会极大影响生成效果！")
                     if params.video_clip_json_path == "" and params.video_origin_path != "":
                         update_progress(10, "压缩视频中...")
                         # 使用大模型生成视频脚本
@@ -756,6 +752,10 @@ with st.expander(tr("Video Check"), expanded=False):
 # 开始按钮
 start_button = st.button(tr("Generate Video"), use_container_width=True, type="primary")
 if start_button:
+    # 重置日志容器和记录
+    log_container = st.empty()
+    log_records = []
+
     config.save_config()
     task_id = st.session_state.get('task_id')
     if st.session_state.get('video_script_json_path') is not None:
@@ -778,15 +778,10 @@ if start_button:
         scroll_to_bottom()
         st.stop()
 
-    log_container = st.empty()
-    log_records = []
-
-
     def log_received(msg):
         with log_container:
             log_records.append(msg)
             st.code("\n".join(log_records))
-
 
     logger.add(log_received)
 

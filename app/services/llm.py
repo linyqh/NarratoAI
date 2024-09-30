@@ -439,14 +439,14 @@ def generate_script(
             video_name=video_name,
             video_path=compressed_video_path,
             language=language,
-            llm_provider_video="gemini",
+            llm_provider_video=config.app["video_llm_provider"],
             progress_callback=progress_callback
         )
         if progress_callback:
             progress_callback(60, "生成解说文案...")  # 例如,在转录视频后
 
         # 3. 编写解说文案
-        script = writing_short_play(video_plot, video_name, "openai", count=300)
+        script = writing_short_play(video_plot, video_name, config.app["llm_provider"], count=300)
 
         # 在关键步骤更新进度
         if progress_callback:
@@ -454,7 +454,7 @@ def generate_script(
 
         # 4. 文案匹配画面
         if transcription != "":
-            matched_script = screen_matching(huamian=transcription, wenan=script, llm_provider="openai")
+            matched_script = screen_matching(huamian=transcription, wenan=script, llm_provider=config.app["video_llm_provider"])
             # 在关键步骤更新进度
             if progress_callback:
                 progress_callback(80, "匹配成功")
@@ -769,58 +769,6 @@ def screen_matching(huamian: str, wenan: str, llm_provider: str):
     - 请以严格的 JSON 格式返回数据，不要包含任何注释、标记或其他字符。数据应符合 JSON 语法，可以被 json.loads() 函数直接解析， 不要添加 ```json 或其他标记。
     """ % (huamian, wenan)
 
-#     prompt = """
-#     你是一位拥有10年丰富经验的影视解说创作专家。你的任务是根据提供的视频转录脚本和解说文案，创作一个引人入胜的解说脚本。请按照以下要求完成任务：
-#
-# 1. 输入数据：
-#    - 视频转录脚本：包含时间戳、画面描述和人物台词
-#    - 解说文案：需要你进行匹配和编排的内容
-#    - 视频转录脚本和文案（由 XML 标记<PICTURE></PICTURE>和 <COPYWRITER></COPYWRITER>分隔）如下所示：
-#     视频转录脚本
-#     <PICTURE>
-#     %s
-#     </PICTURE>
-#     文案：
-#     <COPYWRITER>
-#     %s
-#     </COPYWRITER>
-#
-# 2. 输出要求：
-#    - 格式：严格的JSON格式，可直接被json.loads()解析
-#    - 结构：list[script]，其中script为字典类型
-#    - script字段：
-#      {
-#        "picture": "画面描述",
-#        "timestamp": "时间戳",
-#        "narration": "解说文案",
-#        "OST": true/false
-#      }
-#
-# 3. 匹配规则：
-#    a) 时间戳匹配：
-#       - 根据文案内容选择最合适的画面时间段
-#       - 避免时间重叠，确保画面不重复出现
-#       - 适当合并或删减片段，不要完全照搬转录脚本
-#    b) 画面描述：与转录脚本保持一致
-#    c) 解说文案：
-#       - 当OST为true时，narration为空字符串
-#       - 当OST为false时，narration为解说文案，但是要确保文案字数不要超过 30字，若文案较长，则添加到下一个片段
-#    d) OST（原声）：
-#       - 按1:1比例穿插原声和解说片段
-#       - 第一个片段必须是原声，时长不少于20秒
-#       - 选择整个视频中最精彩的片段作为开场
-#
-# 4. 创作重点：
-#    - 确保解说与画面高度匹配
-#    - 巧妙安排原声和解说的交替，提升观众体验
-#    - 创造一个引人入胜、节奏紧凑的解说脚本
-#
-# 5. 注意事项：
-#    - 严格遵守JSON格式，不包含任何注释或额外标记
-#    - 充分利用你的专业经验，创作出高质量、吸引人的解说内容
-#
-# 请基于以上要求，将提供的视频转录脚本和解说文案整合成一个专业、吸引人的解说脚本。你的创作将直接影响观众的观看体验，请发挥你的专业素养，创作出最佳效果。
-#     """ % (huamian, wenan)
     try:
         response = _generate_response(prompt, llm_provider)
         logger.success("匹配成功")
