@@ -1,14 +1,20 @@
 import locale
 import os
-import platform
+import traceback
+
+import requests
 import threading
 from typing import Any
 from loguru import logger
+import streamlit as st
 import json
 from uuid import uuid4
 import urllib3
+from datetime import datetime, timedelta
 
 from app.models import const
+from app.utils import check_script
+from app.services import material
 
 urllib3.disable_warnings()
 
@@ -269,3 +275,153 @@ def reduce_video_time(txt: str, duration: float = 0.21531):
     # 返回结果四舍五入为整数
     duration = len(txt) * duration
     return int(duration)
+
+
+def get_current_country():
+    """
+    判断当前网络IP地址所在的国家
+    """
+    try:
+        # 使用ipapi.co的免费API获取IP地址信息
+        response = requests.get('https://ipapi.co/json/')
+        data = response.json()
+
+        # 获取国家名称
+        country = data.get('country_name')
+
+        if country:
+            logger.debug(f"当前网络IP地址位于：{country}")
+            return country
+        else:
+            logger.debug("无法确定当前网络IP地址所在的国家")
+            return None
+
+    except requests.RequestException:
+        logger.error("获取IP地址信息时发生错误，请检查网络连接")
+        return None
+
+
+def time_to_seconds(time_str: str) -> float:
+    parts = time_str.split(':')
+    if len(parts) == 2:
+        m, s = map(float, parts)
+        return m * 60 + s
+    elif len(parts) == 3:
+        h, m, s = map(float, parts)
+        return h * 3600 + m * 60 + s
+    else:
+        raise ValueError(f"Invalid time format: {time_str}")
+
+
+def seconds_to_time(seconds: float) -> str:
+    h, remainder = divmod(seconds, 3600)
+    m, s = divmod(remainder, 60)
+    return f"{int(h):02d}:{int(m):02d}:{s:06.3f}"
+
+
+def calculate_total_duration(scenes):
+    total_seconds = 0
+    
+    for scene in scenes:
+        start, end = scene['timestamp'].split('-')
+        start_time = datetime.strptime(start, '%M:%S')
+        end_time = datetime.strptime(end, '%M:%S')
+        
+        duration = end_time - start_time
+        total_seconds += duration.total_seconds()
+    
+    return total_seconds
+
+
+def add_new_timestamps(scenes):
+    """
+    新增新视频的时间戳，并为"原生播放"的narration添加唯一标识符
+    Args:
+        scenes: 场景列表
+
+    Returns:
+        更新后的场景列表
+    """
+    current_time = timedelta()
+    updated_scenes = []
+
+    # 保存脚本前先检查脚本是否正确
+    check_script.check_script(scenes, calculate_total_duration(scenes))
+
+    for scene in scenes:
+        new_scene = scene.copy()  # 创建场景的副本，以保留原始数据
+        start, end = new_scene['timestamp'].split('-')
+        start_time = datetime.strptime(start, '%M:%S')
+        end_time = datetime.strptime(end, '%M:%S')
+        duration = end_time - start_time
+
+        new_start = current_time
+        current_time += duration
+        new_end = current_time
+
+        # 将 timedelta 转换为分钟和秒
+        new_start_str = f"{int(new_start.total_seconds() // 60):02d}:{int(new_start.total_seconds() % 60):02d}"
+        new_end_str = f"{int(new_end.total_seconds() // 60):02d}:{int(new_end.total_seconds() % 60):02d}"
+
+        new_scene['new_timestamp'] = f"{new_start_str}-{new_end_str}"
+
+        # 为"原生播放"的narration添加唯一标识符
+        if new_scene.get('narration') == "" or new_scene.get('narration') == None:
+            unique_id = str(uuid4())[:8]  # 使用UUID的前8个字符作为唯一标识符
+            new_scene['narration'] = f"原声播放_{unique_id}"
+
+        updated_scenes.append(new_scene)
+
+    return updated_scenes
+
+
+def clean_model_output(output):
+    # 移除可能的代码块标记
+    output = output.strip('```json').strip('```')
+    # 移除开头和结尾的空白字符
+    output = output.strip()
+    return output
+
+
+def cut_video(params, progress_callback=None):
+    try:
+        task_id = str(uuid4())
+        st.session_state['task_id'] = task_id
+
+        if not st.session_state.get('video_clip_json'):
+            raise ValueError("视频脚本不能为空")
+
+        video_script_list = st.session_state['video_clip_json']
+        time_list = [i['timestamp'] for i in video_script_list]
+        
+        total_clips = len(time_list)
+        
+        def clip_progress(current, total):
+            progress = int((current / total) * 100)
+            if progress_callback:
+                progress_callback(progress)
+
+        subclip_videos = material.clip_videos(
+            task_id=task_id,
+            timestamp_terms=time_list,
+            origin_video=params.video_origin_path,
+            progress_callback=clip_progress
+        )
+
+        if subclip_videos is None:
+            raise ValueError("裁剪视频失败")
+
+        st.session_state['subclip_videos'] = subclip_videos
+
+        for i, video_script in enumerate(video_script_list):
+            try:
+                video_script['path'] = subclip_videos[video_script['timestamp']]
+            except KeyError as err:
+                logger.error(f"裁剪视频失败: {err}")
+                raise ValueError(f"裁剪视频失败: {err}")
+
+        return task_id, subclip_videos
+
+    except Exception as e:
+        logger.error(f"视频裁剪过程中发生错误: {traceback.format_exc()}")
+        raise

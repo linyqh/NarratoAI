@@ -1,4 +1,5 @@
 import os
+import subprocess
 import random
 from urllib.parse import urlencode
 
@@ -266,7 +267,6 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    # url_hash = utils.md5(str(uuid.uuid4()))
     video_id = f"vid-{timestamp.replace(':', '_')}"
     video_path = f"{save_dir}/{video_id}.mp4"
 
@@ -277,7 +277,7 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
     # 剪辑视频
     start, end = utils.split_timestamp(timestamp)
     video = VideoFileClip(origin_video).subclip(start, end)
-    video.write_videofile(video_path)
+    video.write_videofile(video_path, logger=None)  # 禁用 MoviePy 的内置日志
 
     if os.path.getsize(video_path) > 0 and os.path.exists(video_path):
         try:
@@ -296,20 +296,21 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
     return {}
 
 
-def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, ) -> dict:
+def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, progress_callback=None):
     """
     剪辑视频
     Args:
         task_id: 任务id
         timestamp_terms: 需要剪辑的时间戳列表，如:['00:00-00:20', '00:36-00:40', '07:07-07:22']
         origin_video: 原视频路径
+        progress_callback: 进度回调函数
 
     Returns:
         剪辑后的视频路径
     """
     video_paths = {}
-    for item in timestamp_terms:
-        logger.info(f"需要裁剪 '{origin_video}' 为 {len(timestamp_terms)} 个视频")
+    total_items = len(timestamp_terms)
+    for index, item in enumerate(timestamp_terms):
         material_directory = config.app.get("material_directory", "").strip()
         if material_directory == "task":
             material_directory = utils.task_dir(task_id)
@@ -317,16 +318,98 @@ def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, ) -
             material_directory = ""
 
         try:
-            logger.info(f"clip video: {item}")
             saved_video_path = save_clip_video(timestamp=item, origin_video=origin_video, save_dir=material_directory)
             if saved_video_path:
                 logger.info(f"video saved: {saved_video_path}")
                 video_paths.update(saved_video_path)
+            
+            # 更新进度
+            if progress_callback:
+                progress_callback(index + 1, total_items)
         except Exception as e:
             logger.error(f"视频裁剪失败: {utils.to_json(item)} => {str(e)}")
             return {}
     logger.success(f"裁剪 {len(video_paths)} videos")
     return video_paths
+
+
+def merge_videos(video_paths, ost_list):
+    """
+    合并多个视频为一个视频，可选择是否保留每个视频的原声。
+
+    :param video_paths: 视频文件路径列表
+    :param ost_list: 是否保留原声的布尔值列表
+    :return: 合并后的视频文件路径
+    """
+    if len(video_paths) != len(ost_list):
+        raise ValueError("视频路径列表和保留原声列表长度必须相同")
+
+    if not video_paths:
+        raise ValueError("视频路径列表不能为空")
+
+    # 准备临时文件列表
+    temp_file = "temp_file_list.txt"
+    with open(temp_file, "w") as f:
+        for video_path, keep_ost in zip(video_paths, ost_list):
+            if keep_ost:
+                f.write(f"file '{video_path}'\n")
+            else:
+                # 如果不保留原声，创建一个无声的临时视频
+                silent_video = f"silent_{os.path.basename(video_path)}"
+                subprocess.run(["ffmpeg", "-i", video_path, "-c:v", "copy", "-an", silent_video], check=True)
+                f.write(f"file '{silent_video}'\n")
+
+    # 合并视频
+    output_file = "combined.mp4"
+    ffmpeg_cmd = [
+        "ffmpeg",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", temp_file,
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-strict", "experimental",
+        output_file
+    ]
+
+    try:
+        subprocess.run(ffmpeg_cmd, check=True)
+        print(f"视频合并成功：{output_file}")
+    except subprocess.CalledProcessError as e:
+        print(f"视频合并失败：{e}")
+        return None
+    finally:
+        # 清理临时文件
+        os.remove(temp_file)
+        for video_path, keep_ost in zip(video_paths, ost_list):
+            if not keep_ost:
+                silent_video = f"silent_{os.path.basename(video_path)}"
+                if os.path.exists(silent_video):
+                    os.remove(silent_video)
+
+    return output_file
+
+
+# 使用示例
+# if __name__ == "__main__":
+#     video_paths = ['/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-01_17-01_37.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-00_00-00_06.mp4',
+#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-00_06-00_09.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-01_03-01_10.mp4',
+#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-01_10-01_17.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-00_24-00_27.mp4',
+#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-01_28-01_36.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-00_32-00_41.mp4',
+#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-01_36-01_58.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-00_12-00_15.mp4',
+#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-00_09-00_12.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-02_12-02_25.mp4',
+#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-02_03-02_12.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-01_58-02_03.mp4',
+#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-03_14-03_18.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-03_18-03_20.mp4']
+#
+#     ost_list = [True, False, False, False, False, False, False, False, True, False, False, False, False, False, False,
+#                 False]
+#
+#     result = merge_videos(video_paths, ost_list)
+#     if result:
+#         print(f"合并后的视频文件：{result}")
+#     else:
+#         print("视频合并失败")
+#
 
 
 if __name__ == "__main__":

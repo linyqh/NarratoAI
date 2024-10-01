@@ -2,15 +2,14 @@ import math
 import json
 import os.path
 import re
+import traceback
 from os import path
-
-from edge_tts import SubMaker
 from loguru import logger
 
 from app.config import config
 from app.models import const
 from app.models.schema import VideoConcatMode, VideoParams, VideoClipParams
-from app.services import llm, material, subtitle, video, voice
+from app.services import llm, material, subtitle, video, voice, audio_merger
 from app.services import state as sm
 from app.utils import utils
 
@@ -99,7 +98,7 @@ def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
     if not params.subtitle_enabled:
         return ""
 
-    subtitle_path = path.join(utils.task_dir(task_id), "subtitle.srt")
+    subtitle_path = path.join(utils.task_dir(task_id), "subtitle111.srt")
     subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
     logger.info(f"\n\n## generating subtitle, provider: {subtitle_provider}")
 
@@ -213,7 +212,7 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
 
     if type(params.video_concat_mode) is str:
         params.video_concat_mode = VideoConcatMode(params.video_concat_mode)
-        
+
     # 1. Generate script
     video_script = generate_script(task_id, params)
     if not video_script:
@@ -325,51 +324,63 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
     return kwargs
 
 
-def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
+def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: list):
     """
     后台任务（自动剪辑视频进行剪辑）
+
+        task_id: 任务ID
+        params: 剪辑参数
+        subclip_path_videos: 视频文件路径
+
     """
     logger.info(f"\n\n## 开始任务: {task_id}")
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=5)
 
+    # tts 角色名称
     voice_name = voice.parse_voice_name(params.voice_name)
-    # voice_name = 'zh-CN-XiaoyiNeural'
-    paragraph_number = params.paragraph_number
-    n_threads = params.n_threads
-    max_clip_duration = params.video_clip_duration
 
-    logger.info("\n\n## 1. 读取json")
-    video_script_path = path.join(params.video_clip_json)
+    logger.info("\n\n## 1. 加载视频脚本")
+    video_script_path = path.join(params.video_clip_json_path)
+    # video_script_path = video_clip_json_path
     # 判断json文件是否存在
     if path.exists(video_script_path):
-        # 读取json文件内容，并转为dict
-        with open(video_script_path, "r", encoding="utf-8") as f:
-            list_script = json.load(f)
-            video_list = [i['narration'] for i in list_script]
-            time_list = [i['timestamp'] for i in list_script]
+        try:
+            with open(video_script_path, "r", encoding="utf-8") as f:
+                list_script = json.load(f)
+                video_list = [i['narration'] for i in list_script]
+                video_ost = [i['OST'] for i in list_script]
+                time_list = [i['timestamp'] for i in list_script]
 
-            video_script = " ".join(video_list)
-            logger.debug(f"原json脚本: \n{video_script}")
-            logger.debug(f"原json时间戳: \n{time_list}")
-
+                video_script = " ".join(video_list)
+                logger.debug(f"解说完整脚本: \n{video_script}")
+                logger.debug(f"解说 OST 列表: \n{video_ost}")
+                logger.debug(f"解说时间戳列表: \n{time_list}")
+                # 获取视频总时长(单位 s)
+                total_duration = list_script[-1]['new_timestamp']
+                total_duration = int(total_duration.split("-")[1].split(":")[0]) * 60 + int(
+                    total_duration.split("-")[1].split(":")[1])
+        except Exception as e:
+            logger.error(f"无法读取视频json脚本，请检查配置是否正确。{e}")
+            raise ValueError("无法读取视频json脚本，请检查配置是否正确")
     else:
-        raise ValueError("解说文案不存在！检查文案名称是否正确。")
+        logger.error(f"video_script_path: {video_script_path} \n\n", traceback.format_exc())
+        raise ValueError("解说脚本不存在！请检查配置是否正确。")
 
-    # video_script = llm.text_polishing(context=video_script, language=params.video_language)
-    # logger.debug(f"润色后的视频脚本: \n{video_script}")
-    # sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=10)
-
-    logger.info("\n\n## 2. 生成音频")
-    audio_file = path.join(utils.task_dir(task_id), f"audio.mp3")
-    sub_maker = voice.tts(text=video_script, voice_name=voice_name, voice_file=audio_file, voice_rate=params.voice_rate)
-    if sub_maker is None:
+    logger.info("\n\n## 2. 生成音频列表")
+    audio_files, sub_maker_list = voice.tts_multiple(
+        task_id=task_id,
+        list_script=list_script,
+        voice_name=voice_name,
+        voice_rate=params.voice_rate,
+        force_regenerate=True
+    )
+    if audio_files is None:
         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
         logger.error(
-            "无法生成音频，可能是网络不可用。如果您在中国，请使用VPN。或者手动选择 zh-CN-Yunjian-男性 音频")
+            "音频文件为空，可能是网络不可用。如果您在中国，请使用VPN。或者手动选择 zh-CN-Yunjian-男性 音频")
         return
-
-    audio_duration = voice.get_audio_duration(sub_maker)
-    audio_duration = math.ceil(audio_duration)
+    logger.info(f"合并音频:\n\n {audio_files}")
+    audio_file = audio_merger.merge_audio_files(task_id, audio_files, total_duration, list_script)
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=30)
 
@@ -378,17 +389,8 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
         subtitle_path = path.join(utils.task_dir(task_id), f"subtitle.srt")
         subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
         logger.info(f"\n\n## 3. 生成字幕、提供程序是: {subtitle_provider}")
-        subtitle_fallback = False
-        if subtitle_provider == "edge":
-            voice.create_subtitle(text=video_script, sub_maker=sub_maker, subtitle_file=subtitle_path)
-            if not os.path.exists(subtitle_path):
-                subtitle_fallback = True
-                logger.warning("找不到字幕文件，回退到whisper")
-
-        if subtitle_provider == "whisper" or subtitle_fallback:
-            subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
-            logger.info("\n\n## 更正字幕")
-            subtitle.correct(subtitle_file=subtitle_path, video_script=video_script)
+        # 使用 faster-whisper-large-v2 模型生成字幕
+        subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
 
         subtitle_lines = subtitle.file_to_subtitles(subtitle_path)
         if not subtitle_lines:
@@ -399,10 +401,6 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
 
     logger.info("\n\n## 4. 裁剪视频")
     subclip_videos = [x for x in subclip_path_videos.values()]
-    # subclip_videos = material.clip_videos(task_id=task_id,
-    #                                          timestamp_terms=time_list,
-    #                                          origin_video=params.video_origin_path
-    #                                          )
     logger.debug(f"\n\n## 裁剪后的视频文件列表: \n{subclip_videos}")
 
     if not subclip_videos:
@@ -417,36 +415,39 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
     combined_video_paths = []
 
     _progress = 50
-    for i in range(params.video_count):
-        index = i + 1
-        combined_video_path = path.join(utils.task_dir(task_id), f"combined-{index}.mp4")
-        logger.info(f"\n\n## 5. 合并视频: {index} => {combined_video_path}")
-        video.combine_clip_videos(combined_video_path=combined_video_path,
-                             video_paths=subclip_videos,
-                             video_script_list=video_list,
-                             audio_file=audio_file,
-                             video_aspect=params.video_aspect,
-                             threads=n_threads)
+    index = 1
+    combined_video_path = path.join(utils.task_dir(task_id), f"combined.mp4")
+    logger.info(f"\n\n## 5. 合并视频: => {combined_video_path}")
 
-        _progress += 50 / params.video_count / 2
-        sm.state.update_task(task_id, progress=_progress)
+    video.combine_clip_videos(
+        combined_video_path=combined_video_path,
+        video_paths=subclip_videos,
+        video_ost_list=video_ost,
+        list_script=list_script,
+        video_aspect=params.video_aspect,
+        threads=params.n_threads  # 多线程
+    )
 
-        final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
+    _progress += 50 / 2
+    sm.state.update_task(task_id, progress=_progress)
 
-        logger.info(f"\n\n## 6. 最后一步: {index} => {final_video_path}")
-        # 把所有东西合到在一起
-        video.generate_video(video_path=combined_video_path,
-                             audio_path=audio_file,
-                             subtitle_path=subtitle_path,
-                             output_file=final_video_path,
-                             params=params,
-                             )
+    final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
 
-        _progress += 50 / params.video_count / 2
-        sm.state.update_task(task_id, progress=_progress)
+    logger.info(f"\n\n## 6. 最后一步: {index} => {final_video_path}")
+    # 把所有东西合到在一起
+    video.generate_video_v2(
+        video_path=combined_video_path,
+        audio_path=audio_file,
+        subtitle_path=subtitle_path,
+        output_file=final_video_path,
+        params=params,
+    )
 
-        final_video_paths.append(final_video_path)
-        combined_video_paths.append(combined_video_path)
+    _progress += 50 / 2
+    sm.state.update_task(task_id, progress=_progress)
+
+    final_video_paths.append(final_video_path)
+    combined_video_paths.append(combined_video_path)
 
     logger.success(f"任务 {task_id} 已完成, 生成 {len(final_video_paths)} 个视频.")
 
@@ -459,11 +460,35 @@ def start_subclip(task_id, params: VideoClipParams, subclip_path_videos):
 
 
 if __name__ == "__main__":
-    task_id = "task_id"
-    params = VideoParams(
-        video_subject="金钱的作用",
-        voice_name="zh-CN-XiaoyiNeural-Female",
-        voice_rate=1.0,
+    # task_id = "test123"
+    # subclip_path_videos = {'00:41-01:58': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-00_41-01_58.mp4',
+    #                        '00:06-00:15': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-00_06-00_15.mp4',
+    #                        '01:10-01:17': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-01_10-01_17.mp4',
+    #                        '00:47-01:03': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-00_47-01_03.mp4',
+    #                        '01:03-01:10': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-01_03-01_10.mp4',
+    #                        '02:40-03:08': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-02_40-03_08.mp4',
+    #                        '03:02-03:20': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-03_02-03_20.mp4',
+    #                        '03:18-03:20': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-03_18-03_20.mp4'}
+    #
+    # params = VideoClipParams(
+    #     video_clip_json_path="E:\\projects\\NarratoAI\\resource/scripts/test003.json",
+    #     video_origin_path="E:\\projects\\NarratoAI\\resource/videos/1.mp4",
+    # )
+    # start_subclip(task_id, params, subclip_path_videos=subclip_path_videos)
 
+    task_id = "test456"
+    subclip_path_videos = {'01:10-01:17': './storage/cache_videos/vid-01_10-01_17.mp4',
+                           '01:58-02:04': './storage/cache_videos/vid-01_58-02_04.mp4',
+                           '02:25-02:31': './storage/cache_videos/vid-02_25-02_31.mp4',
+                           '01:28-01:33': './storage/cache_videos/vid-01_28-01_33.mp4',
+                           '03:14-03:18': './storage/cache_videos/vid-03_14-03_18.mp4',
+                           '00:24-00:28': './storage/cache_videos/vid-00_24-00_28.mp4',
+                           '03:02-03:08': './storage/cache_videos/vid-03_02-03_08.mp4',
+                           '00:41-00:44': './storage/cache_videos/vid-00_41-00_44.mp4',
+                           '02:12-02:25': './storage/cache_videos/vid-02_12-02_25.mp4'}
+
+    params = VideoClipParams(
+        video_clip_json_path="/Users/apple/Desktop/home/NarratoAI/resource/scripts/test004.json",
+        video_origin_path="/Users/apple/Desktop/home/NarratoAI/resource/videos/1.mp4",
     )
-    start(task_id, params, stop_at="video")
+    start_subclip(task_id, params, subclip_path_videos=subclip_path_videos)

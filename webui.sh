@@ -44,7 +44,24 @@ for url in "${!urls_paths[@]}"; do
         echo "下载失败: $url" >&2
     }
 done
+
+# 安装 git lfs 并下载模型到指定目录
+git lfs install
+mkdir -p /NarratoAI/app/models
+cd /NarratoAI/app/models
+if [ ! -d "faster-whisper-large-v2" ] || [ -z "$(ls -A faster-whisper-large-v2)" ]; then
+    if git clone https://huggingface.co/guillaumekln/faster-whisper-large-v2; then
+        echo "下载faster-whisper-large-v2成功"
+    else
+        echo "下载faster-whisper-large-v2失败" >&2
+        exit 1
+    fi
+else
+    echo "faster-whisper-large-v2 已存在，跳过下载"
+fi
+
 # 等待所有后台任务完成
 wait
 echo "所有文件已成功下载到指定目录"
-streamlit run ./webui/Main.py --browser.serverAddress="0.0.0.0" --server.enableCORS=True  --server.maxUploadSize=2048 --browser.gatherUsageStats=False
+cd /NarratoAI/
+streamlit run webui.py --browser.serverAddress="0.0.0.0" --server.enableCORS=True  --server.maxUploadSize=2048 --browser.gatherUsageStats=False

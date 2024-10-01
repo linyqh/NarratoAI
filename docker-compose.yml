@@ -6,6 +6,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: linyq1/narratoai:latest
     container_name: "webui"
     ports:
       - "8501:8501"
@@ -18,9 +19,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: linyq1/narratoai:latest
     container_name: "api"
     ports:
       - "8502:8080"
     command: [ "python3", "main.py" ]
     volumes: *common-volumes
+    environment:
+      - "VPN_PROXY_URL=http://host.docker.internal:7890"
     restart: always
