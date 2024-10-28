@@ -130,7 +130,7 @@ docker-compose up
 ## 开发 💻
 1. 安装依赖
 ```shell
-conda create -n narratoai python=3.10
+conda create -n narratoai python=3.11
 conda activate narratoai
 cd narratoai
 pip install -r requirements.txt
