@@ -73,25 +73,40 @@ def merge_audio_files(task_id: str, audio_file_paths: List[str], total_duration:
 
 def parse_timestamp(timestamp: str):
     """解析时间戳字符串为秒数"""
-    # start, end = timestamp.split('-')
+    # 确保使用冒号作为分隔符
+    timestamp = timestamp.replace('_', ':')
     return time_to_seconds(timestamp)
 
 def extract_timestamp(filename):
     """从文件名中提取开始和结束时间戳"""
-    time_part = filename.split('_')[1].split('.')[0]
-    times = time_part.split('-')
-
+    # 从 "audio_00_06-00_24.mp3" 这样的格式中提取时间
+    time_part = filename.split('_', 1)[1].split('.')[0]  # 获取 "00_06-00_24" 部分
+    start_time, end_time = time_part.split('-')  # 分割成 "00_06" 和 "00_24"
+    
+    # 将下划线格式转换回冒号格式
+    start_time = start_time.replace('_', ':')
+    end_time = end_time.replace('_', ':')
+    
     # 将时间戳转换为秒
-    start_seconds = time_to_seconds(times[0])
-    end_seconds = time_to_seconds(times[1])
+    start_seconds = time_to_seconds(start_time)
+    end_seconds = time_to_seconds(end_time)
 
     return start_seconds, end_seconds
 
 
-def time_to_seconds(times):
-    """将 “00:06” 转换为总秒数 """
-    times = times.split(':')
-    return int(times[0]) * 60 + int(times[1])
+def time_to_seconds(time_str):
+    """将 "00:06" 或 "00_06" 格式转换为总秒数"""
+    # 确保使用冒号作为分隔符
+    time_str = time_str.replace('_', ':')
+    try:
+        parts = time_str.split(':')
+        if len(parts) != 2:
+            logger.error(f"Invalid time format: {time_str}")
+            return 0
+        return int(parts[0]) * 60 + int(parts[1])
+    except (ValueError, IndexError) as e:
+        logger.error(f"Error parsing time {time_str}: {str(e)}")
+        return 0
 
 
 if __name__ == "__main__":

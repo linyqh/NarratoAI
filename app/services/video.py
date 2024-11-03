@@ -332,7 +332,7 @@ def generate_video_v2(
     logger.info(f"  ③ 字幕: {subtitle_path}")
     logger.info(f"  ④ 输出: {output_file}")
 
-    # 写入与输出文件相同的目录
+    # ��入与输出文件相同的目录
     output_dir = os.path.dirname(output_file)
 
     # 字体设置部分保持不变
@@ -389,6 +389,36 @@ def generate_video_v2(
     # 处理新的音频文件
     new_audio = AudioFileClip(audio_path).volumex(params.voice_volume)
 
+    # 合并音频轨道
+    audio_tracks = []
+    
+    # 检查原始视频音轨
+    if original_audio is not None:
+        audio_tracks.append(original_audio)
+    
+    # 添加新的音频
+    audio_tracks.append(new_audio)
+    
+    # 背景音乐处理部分
+    bgm_file = get_bgm_file(bgm_type=params.bgm_type, bgm_file=params.bgm_file)
+    if bgm_file:
+        try:
+            bgm_clip = (
+                AudioFileClip(bgm_file).volumex(params.bgm_volume).audio_fadeout(3)
+            )
+            bgm_clip = afx.audio_loop(bgm_clip, duration=video_duration)
+            audio_tracks.append(bgm_clip)
+        except Exception as e:
+            logger.error(f"添加背景音乐失败: {str(e)}")
+
+    # 确保至少有一个有效的音轨
+    if not audio_tracks:
+        logger.warning("没有有效的音轨可用")
+        final_audio = new_audio
+    else:
+        # 合并所有音频轨道
+        final_audio = CompositeAudioClip(audio_tracks)
+
     # 字幕处理部分
     if subtitle_path and os.path.exists(subtitle_path):
         sub = SubtitlesClip(subtitles=subtitle_path, encoding="utf-8")
@@ -416,25 +446,6 @@ def generate_video_v2(
         
         # 创建一个新的视频剪辑，包含所有字幕
         video_clip = CompositeVideoClip([video_clip, *text_clips])
-
-    # 背景音乐处理部分
-    bgm_file = get_bgm_file(bgm_type=params.bgm_type, bgm_file=params.bgm_file)
-    
-    # 合并音频轨道
-    audio_tracks = [original_audio, new_audio]
-    
-    if bgm_file:
-        try:
-            bgm_clip = (
-                AudioFileClip(bgm_file).volumex(params.bgm_volume).audio_fadeout(3)
-            )
-            bgm_clip = afx.audio_loop(bgm_clip, duration=video_duration)
-            audio_tracks.append(bgm_clip)
-        except Exception as e:
-            logger.error(f"添加背景音乐失败: {str(e)}")
-
-    # 合并所有音频轨道
-    final_audio = CompositeAudioClip(audio_tracks)
 
     video_clip = video_clip.set_audio(final_audio)
     video_clip.write_videofile(

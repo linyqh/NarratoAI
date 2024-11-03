@@ -365,3 +365,13 @@ class VideoClipParams(BaseModel):
     custom_position: float = Field(default=70.0, description="自定义位置")
 
     n_threads: Optional[int] = 8    # 线程数，有助于提升视频处理速度
+
+class VideoTranscriptionRequest(BaseModel):
+    video_name: str
+    language: str = "zh-CN"
+
+    class Config:
+        arbitrary_types_allowed = True
+
+class VideoTranscriptionResponse(BaseModel):
+    transcription: str

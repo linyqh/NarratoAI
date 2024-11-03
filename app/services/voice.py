@@ -1060,7 +1060,7 @@ def azure_tts_v1(
             logger.info(f"start, voice name: {voice_name}, try: {i + 1}")
 
             async def _do() -> SubMaker:
-                communicate = edge_tts.Communicate(text, voice_name, rate=rate_str)
+                communicate = edge_tts.Communicate(text, voice_name, rate=rate_str, proxy="http://127.0.0.1:7890")
                 sub_maker = edge_tts.SubMaker()
                 with open(voice_file, "wb") as file:
                     async for chunk in communicate.stream():
@@ -1410,12 +1410,12 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
 
     for item in list_script:
         if not item['OST']:
-            # timestamp = item['new_timestamp'].replace(':', '@')
-            timestamp = item['new_timestamp']
+            # 将时间戳中的冒号替换为下划线
+            timestamp = item['new_timestamp'].replace(':', '_')
             audio_file = os.path.join(output_dir, f"audio_{timestamp}.mp3")
             
             # 检查文件是否已存在，如存在且不强制重新生成，则跳过
-            if os.path.exists(audio_file):
+            if os.path.exists(audio_file) and not force_regenerate:
                 logger.info(f"音频文件已存在，跳过生成: {audio_file}")
                 audio_files.append(audio_file)
                 continue
