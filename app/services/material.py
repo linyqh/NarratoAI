@@ -275,25 +275,37 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
         logger.info(f"video already exists: {video_path}")
         return {timestamp: video_path}
 
-    # 剪辑视频
-    start, end = utils.split_timestamp(timestamp)
-    video = VideoFileClip(origin_video).subclip(start, end)
-    video.write_videofile(video_path, logger=None)  # 禁用 MoviePy 的内置日志
+    try:
+        # 剪辑视频
+        start, end = utils.split_timestamp(timestamp)
+        video = VideoFileClip(origin_video).subclip(start, end)
+        
+        # 检查视频是否有音频轨道
+        if video.audio is not None:
+            video.write_videofile(video_path, logger=None)  # 有音频时正常处理
+        else:
+            # 没有音频时使用不同的写入方式
+            video.write_videofile(video_path, audio=False, logger=None)
+        
+        video.close()  # 确保关闭视频文件
 
-    if os.path.getsize(video_path) > 0 and os.path.exists(video_path):
-        try:
-            clip = VideoFileClip(video_path)
-            duration = clip.duration
-            fps = clip.fps
-            clip.close()
-            if duration > 0 and fps > 0:
-                return {timestamp: video_path}
-        except Exception as e:
+        if os.path.getsize(video_path) > 0 and os.path.exists(video_path):
             try:
-                os.remove(video_path)
+                clip = VideoFileClip(video_path)
+                duration = clip.duration
+                fps = clip.fps
+                clip.close()
+                if duration > 0 and fps > 0:
+                    return {timestamp: video_path}
             except Exception as e:
-                logger.warning(str(e))
-            logger.warning(f"无效的视频文件: {video_path}")
+                logger.warning(f"视频文件验证失败: {video_path} => {str(e)}")
+                if os.path.exists(video_path):
+                    os.remove(video_path)
+    except Exception as e:
+        logger.warning(f"视频剪辑失败: {str(e)}")
+        if os.path.exists(video_path):
+            os.remove(video_path)
+    
     return {}
 
 

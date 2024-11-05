@@ -1403,7 +1403,7 @@ def get_audio_duration(sub_maker: submaker.SubMaker):
     return sub_maker.offset[-1][1] / 10000000
 
 
-def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: float, force_regenerate: bool = True):
+def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: float, voice_pitch: float, force_regenerate: bool = True):
     """
     根据JSON文件中的多段文本进行TTS转换
     
@@ -1437,7 +1437,8 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                 text=text,
                 voice_name=voice_name,
                 voice_rate=voice_rate,
-                voice_file=audio_file
+                voice_pitch=voice_pitch,
+                voice_file=audio_file,
             )
 
             if sub_maker is None:

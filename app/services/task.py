@@ -372,6 +372,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: li
         list_script=list_script,
         voice_name=voice_name,
         voice_rate=params.voice_rate,
+        voice_pitch=params.voice_pitch,
         force_regenerate=True
     )
     if audio_files is None:
