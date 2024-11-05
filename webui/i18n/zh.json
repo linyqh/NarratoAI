@@ -91,6 +91,7 @@
     "Picture description": "图片描述",
     "Narration": "视频文案",
     "Rebuild": "重新生成",
-    "Video Script Load": "加载视频脚本"
+    "Video Script Load": "加载视频脚本",
+    "Speech Pitch": "语调"
   }
 }

@@ -549,37 +549,6 @@ with middle_panel:
         params.voice_name = voice_name
         config.ui["voice_name"] = voice_name
 
-        # 试听语言合成
-        if st.button(tr("Play Voice")):
-            play_content = "感谢关注 NarratoAI，有任何问题或建议，可以关注微信公众号，求助或讨论"
-            if not play_content:
-                play_content = params.video_script
-            if not play_content:
-                play_content = tr("Voice Example")
-            with st.spinner(tr("Synthesizing Voice")):
-                temp_dir = utils.storage_dir("temp", create=True)
-                audio_file = os.path.join(temp_dir, f"tmp-voice-{str(uuid4())}.mp3")
-                sub_maker = voice.tts(
-                    text=play_content,
-                    voice_name=voice_name,
-                    voice_rate=params.voice_rate,
-                    voice_file=audio_file,
-                )
-                # 如果语音文件生成失败，请使用默认内容重试。
-                if not sub_maker:
-                    play_content = "This is a example voice. if you hear this, the voice synthesis failed with the original content."
-                    sub_maker = voice.tts(
-                        text=play_content,
-                        voice_name=voice_name,
-                        voice_rate=params.voice_rate,
-                        voice_file=audio_file,
-                    )
-
-                if sub_maker and os.path.exists(audio_file):
-                    st.audio(audio_file, format="audio/mp3")
-                    if os.path.exists(audio_file):
-                        os.remove(audio_file)
-
         if voice.is_azure_v2_voice(voice_name):
             saved_azure_speech_region = config.azure.get("speech_region", "")
             saved_azure_speech_key = config.azure.get("speech_key", "")
@@ -603,6 +572,45 @@ with middle_panel:
             options=[0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.8, 2.0],
             index=2,
         )
+
+        params.voice_pitch = st.selectbox(
+            tr("Speech Pitch"),
+            options=[0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.8, 2.0],
+            index=2,
+        )
+
+        # 试听语言合成
+        if st.button(tr("Play Voice")):
+            play_content = "感谢关注 NarratoAI，有任何问题或建议，可以关注微信公众号，求助或讨论"
+            if not play_content:
+                play_content = params.video_script
+            if not play_content:
+                play_content = tr("Voice Example")
+            with st.spinner(tr("Synthesizing Voice")):
+                temp_dir = utils.storage_dir("temp", create=True)
+                audio_file = os.path.join(temp_dir, f"tmp-voice-{str(uuid4())}.mp3")
+                sub_maker = voice.tts(
+                    text=play_content,
+                    voice_name=voice_name,
+                    voice_rate=params.voice_rate,
+                    voice_pitch=params.voice_pitch,
+                    voice_file=audio_file,
+                )
+                # 如果语音文件生成失败，请使用默认内容重试。
+                if not sub_maker:
+                    play_content = "This is a example voice. if you hear this, the voice synthesis failed with the original content."
+                    sub_maker = voice.tts(
+                        text=play_content,
+                        voice_name=voice_name,
+                        voice_rate=params.voice_rate,
+                        voice_pitch=params.voice_pitch,
+                        voice_file=audio_file,
+                    )
+
+                if sub_maker and os.path.exists(audio_file):
+                    st.audio(audio_file, format="audio/mp3")
+                    if os.path.exists(audio_file):
+                        os.remove(audio_file)
 
         bgm_options = [
             (tr("No Background Music"), ""),

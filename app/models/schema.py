@@ -347,6 +347,7 @@ class VideoClipParams(BaseModel):
     voice_name: Optional[str] = Field(default="zh-CN-YunjianNeural", description="语音名称")
     voice_volume: Optional[float] = Field(default=1.0, description="语音音量")
     voice_rate: Optional[float] = Field(default=1.0, description="语速")
+    voice_pitch: Optional[float] = Field(default=1.0, description="语调")
 
     bgm_name: Optional[str] = Field(default="random", description="背景音乐名称")
     bgm_type: Optional[str] = Field(default="random", description="背景音乐类型")

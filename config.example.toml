@@ -1,11 +1,12 @@
 [app]
-    project_version="0.2.0"
-    # 如果你没有 OPENAI API Key，可以使用 g4f 代替，或者使用国内的 Moonshot API
-    # If you don't have an OPENAI API Key, you can use g4f instead
+    project_version="0.2.2"
+    # 支持视频理解的大模型提供商
+    #   gemini
+    #   qwen2-vl (待增加)
     video_llm_provider="gemini"
 
-    # 支持的提供商 (Supported providers):
-    #   openai
+    # 用于生成文案的大模型支持的提供商 (Supported providers):
+    #   openai (默认)
     #   moonshot (月之暗面)
     #   oneapi
     #   g4f
@@ -13,8 +14,6 @@
     #   qwen (通义千问)
     #   gemini
     llm_provider="openai"
-    # 支持多模态视频理解能力的大模型
-
     ########## Ollama Settings
     # No need to set it unless you want to use your own proxy
     ollama_base_url = ""
@@ -27,7 +26,7 @@
     # No need to set it unless you want to use your own proxy
     openai_base_url = ""
     # Check your available models at https://platform.openai.com/account/limits
-    openai_model_name = "gpt-4-turbo"
+    openai_model_name = "gpt-4o"
 
     ########## Moonshot API Key
     # Visit https://platform.moonshot.cn/console/api-keys to get your API key.
@@ -56,7 +55,7 @@
 
     ########## Gemini API Key
     gemini_api_key=""
-    gemini_model_name = "gemini-1.5-flash"
+    gemini_model_name = "gemini-1.5-pro"
 
     ########## Qwen API Key
     # Visit https://dashscope.console.aliyun.com/apiKey to get your API key
@@ -66,29 +65,23 @@
     qwen_api_key = ""
     qwen_model_name = "qwen-max"
 
-
     ########## DeepSeek API Key
     # Visit https://platform.deepseek.com/api_keys to get your API key
     deepseek_api_key = ""
     deepseek_base_url = "https://api.deepseek.com"
     deepseek_model_name = "deepseek-chat"
 
-    # Subtitle Provider, "whisper"
-    # If empty, the subtitle will not be generated
+    # 字幕提供商、可选，支持 whisper 和 faster-whisper-large-v2"whisper"
+    # 默认为 faster-whisper-large-v2 模型地址：https://huggingface.co/guillaumekln/faster-whisper-large-v2
     subtitle_provider = "faster-whisper-large-v2"
     subtitle_enabled = true
 
-    #
     # ImageMagick
-    #
-    # Once you have installed it, ImageMagick will be automatically detected, except on Windows!
-    # On Windows, for example "C:\Program Files (x86)\ImageMagick-7.1.1-Q16-HDRI\magick.exe"
-    # Download from https://imagemagick.org/archive/binaries/ImageMagick-7.1.1-29-Q16-x64-static.exe
-
+    # 安装后，将自动检测到 ImageMagick，Windows 除外！
+    # 例如，在 Windows 上 "C:\Program Files (x86)\ImageMagick-7.1.1-Q16-HDRI\magick.exe"
+    # 下载位置 https://imagemagick.org/archive/binaries/ImageMagick-7.1.1-29-Q16-x64-static.exe
     # imagemagick_path = "C:\\Program Files (x86)\\ImageMagick-7.1.1-Q16\\magick.exe"
 
-
-    #
     # FFMPEG
     #
     # 通常情况下，ffmpeg 会被自动下载，并且会被自动检测到。
@@ -96,12 +89,6 @@
     #   RuntimeError: No ffmpeg exe could be found.
     #   Install ffmpeg on your system, or set the IMAGEIO_FFMPEG_EXE environment variable.
     # 此时你可以手动下载 ffmpeg 并设置 ffmpeg_path，下载地址：https://www.gyan.dev/ffmpeg/builds/
-
-    # Under normal circumstances, ffmpeg is downloaded automatically and detected automatically.
-    # However, if there is an issue with your environment that prevents automatic downloading, you might encounter the following error:
-    #   RuntimeError: No ffmpeg exe could be found.
-    #   Install ffmpeg on your system, or set the IMAGEIO_FFMPEG_EXE environment variable.
-    # In such cases, you can manually download ffmpeg and set the ffmpeg_path, download link: https://www.gyan.dev/ffmpeg/builds/
 
     # ffmpeg_path = "C:\\Users\\harry\\Downloads\\ffmpeg.exe"
     #########################################################################################
@@ -132,7 +119,7 @@
 
     material_directory = ""
 
-    # Used for state management of the task
+    # 用于任务的状态管理
     enable_redis = false
     redis_host = "localhost"
     redis_port = 6379
@@ -143,7 +130,6 @@
     max_concurrent_tasks = 5
 
     # webui界面是否显示配置项
-    # webui hide baisc config panel
     hide_config = false
 
 
@@ -161,7 +147,7 @@
 
     # recommended model_size: "large-v3"
     model_size="faster-whisper-large-v2"
-    # if you want to use GPU, set device="cuda"
+    # 如果要使用 GPU，请设置 device=“cuda”
     device="CPU"
     compute_type="int8"
 
