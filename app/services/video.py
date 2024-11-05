@@ -233,7 +233,7 @@ def generate_video_v2(
     Returns:
 
     """
-    total_steps = 4  # 总步数
+    total_steps = 4  # 总步���
     current_step = 0
     
     def update_progress(step_name):
@@ -436,7 +436,7 @@ def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
 
 def combine_clip_videos(combined_video_path: str,
                         video_paths: List[str],
-                        video_ost_list: List[bool],
+                        video_ost_list: List[int],
                         list_script: list,
                         video_aspect: VideoAspect = VideoAspect.portrait,
                         threads: int = 2,
@@ -446,7 +446,7 @@ def combine_clip_videos(combined_video_path: str,
     Args:
         combined_video_path: 合并后的存储路径
         video_paths: 子视频路径列表
-        video_ost_list: 原声播放列表
+        video_ost_list: 原声播放列表 (0: 不保留原声, 1: 只保留原声, 2: 保留原声并保留解说)
         list_script: 剪辑脚本
         video_aspect: 屏幕比例
         threads: 线程数
@@ -465,12 +465,11 @@ def combine_clip_videos(combined_video_path: str,
     clips = []
     for video_path, video_ost in zip(video_paths, video_ost_list):
         try:
-            # 直接使用视频路径，不再拼接root_dir
             clip = VideoFileClip(video_path)
             
-            # 通过 ost 字段判断是否播放原声
-            if not video_ost:
+            if video_ost == 0:  # 不保留原声
                 clip = clip.without_audio()
+            # video_ost 为 1 或 2 时都保留原声，不需要特殊处理
                 
             clip = clip.set_fps(30)
 

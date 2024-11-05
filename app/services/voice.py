@@ -1409,7 +1409,7 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
     sub_maker_list = []
 
     for item in list_script:
-        if not item['OST']:
+        if item['OST'] != 1:
             # 将时间戳中的冒号替换为下划线
             timestamp = item['new_timestamp'].replace(':', '_')
             audio_file = os.path.join(output_dir, f"audio_{timestamp}.mp3")
