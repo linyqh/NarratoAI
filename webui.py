@@ -551,7 +551,7 @@ with middle_panel:
 
         # 试听语言合成
         if st.button(tr("Play Voice")):
-            play_content = "这是一段试听语言"
+            play_content = "感谢关注 NarratoAI，有任何问题或建议，可以关注微信公众号，求助或讨论"
             if not play_content:
                 play_content = params.video_script
             if not play_content:
@@ -565,7 +565,7 @@ with middle_panel:
                     voice_rate=params.voice_rate,
                     voice_file=audio_file,
                 )
-                # if the voice file generation failed, try again with a default content.
+                # 如果语音文件生成失败，请使用默认内容重试。
                 if not sub_maker:
                     play_content = "This is a example voice. if you hear this, the voice synthesis failed with the original content."
                     sub_maker = voice.tts(

@@ -423,5 +423,5 @@ def cut_video(params, progress_callback=None):
         return task_id, subclip_videos
 
     except Exception as e:
-        logger.error(f"视频裁剪过程中发生错误: {traceback.format_exc()}")
+        logger.error(f"视频裁剪过程中发生错误: \n{traceback.format_exc()}")
         raise

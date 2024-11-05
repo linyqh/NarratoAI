@@ -1,6 +1,7 @@
 import os
 import subprocess
 import random
+import traceback
 from urllib.parse import urlencode
 
 import requests
@@ -327,7 +328,7 @@ def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, pro
             if progress_callback:
                 progress_callback(index + 1, total_items)
         except Exception as e:
-            logger.error(f"视频裁剪失败: {utils.to_json(item)} => {str(e)}")
+            logger.error(f"视频裁剪失败: {utils.to_json(item)} =>\n{str(traceback.format_exc())}")
             return {}
     logger.success(f"裁剪 {len(video_paths)} videos")
     return video_paths
