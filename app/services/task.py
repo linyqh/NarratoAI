@@ -378,7 +378,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: li
     if audio_files is None:
         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
         logger.error(
-            "音频文件为空，可能是网络不可用。如果您在中国，请使用VPN。或者手动选择 zh-CN-Yunjian-男性 音频")
+            "TTS转换音频失败, 可能是网络不可用! 如果您在中国, 请使用VPN.")
         return
     logger.info(f"合并音频:\n\n {audio_files}")
     audio_file = audio_merger.merge_audio_files(task_id, audio_files, total_duration, list_script)
