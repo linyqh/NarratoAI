@@ -24,3 +24,4 @@ azure-cognitiveservices-speech~=1.37.0
 git-changelog~=2.5.2
 watchdog==5.0.2
 pydub==0.25.1
+psutil>=5.9.0
