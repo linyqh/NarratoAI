@@ -11,7 +11,7 @@ from loguru import logger
 
 from app.config import config
 from app.models.schema import VideoClipParams
-from app.services import llm
+from app.utils.script_generator import ScriptProcessor
 from app.utils import utils, check_script, vision_analyzer, video_processor
 from webui.utils import file_utils
 
@@ -421,8 +421,23 @@ def generate_script(tr, params):
 
                     # ===================开始生成文案===================
                     update_progress(90, "正在生成文案...")
-                    # 使用 ScriptProcessor 生成脚本
-                    from app.utils.script_generator import ScriptProcessor
+                    # 校验配置
+                    api_params = {
+                        'batch_size': st.session_state.get('narrato_batch_size', 10),
+                        'use_ai': False,
+                        'start_offset': 0,
+                        'vision_model': vision_model,
+                        'vision_api_key': vision_api_key,
+                        'llm_model': text_model,
+                        'llm_api_key': text_api_key,
+                        'custom_prompt': st.session_state.get('custom_prompt', '')
+                    }
+                    logger.debug(f"Narrato API 请求参数: {api_params}")
+                    requests.post(
+                        f"{config.app.get('narrato_api_url')}/video/config",
+                        params=api_params,
+                        timeout=30
+                    )
                     custom_prompt = st.session_state.get('custom_prompt', '')
                     processor = ScriptProcessor(
                         model_name=text_model,
@@ -430,10 +445,10 @@ def generate_script(tr, params):
                         prompt=custom_prompt,
                         video_theme=st.session_state.get('video_theme', '')
                     )
-                    
+
                     # 处理帧内容生成脚本
                     script_result = processor.process_frames(frame_content_list)
-                    
+
                     # 将结果转换为JSON字符串
                     script = json.dumps(script_result, ensure_ascii=False, indent=2)
                     
@@ -550,7 +565,10 @@ def generate_script(tr, params):
                 st.error("生成脚本失败，请检查日志")
                 st.stop()
             logger.info(f"脚本生成完成\n{script} \n{type(script)}")
-            st.session_state['video_clip_json'] = script
+            if isinstance(script, list):
+                st.session_state['video_clip_json'] = script
+            elif isinstance(script, str):
+                st.session_state['video_clip_json'] = json.loads(script)
             update_progress(90, "脚本生成完成")
 
         time.sleep(0.5)
