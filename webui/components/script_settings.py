@@ -283,9 +283,10 @@ def generate_script(tr, params):
                     raise Exception(f"关键帧提取失败: {str(e)}")
 
             # 根据不同的 LLM 提供商处理
-            video_llm_provider = st.session_state.get('video_llm_providers', 'Gemini').lower()
+            vision_llm_provider = st.session_state.get('vision_llm_providers').lower()
+            logger.debug(f"Vision LLM 提供商: {vision_llm_provider}")
             
-            if video_llm_provider == 'gemini':
+            if vision_llm_provider == 'gemini':
                 try:
                     # ===================初始化视觉分析器===================
                     update_progress(30, "正在初始化视觉分析器...")
@@ -443,7 +444,7 @@ def generate_script(tr, params):
                     logger.exception(f"Gemini 处理过程中发生错误\n{traceback.format_exc()}")
                     raise Exception(f"视觉分析失败: {str(e)}")
 
-            else:  # NarratoAPI
+            elif vision_llm_provider == 'narratoapi':  # NarratoAPI
                 try:
                     # 创建临时目录
                     temp_dir = utils.temp_dir("narrato")
@@ -451,12 +452,11 @@ def generate_script(tr, params):
                     # 打包关键帧
                     update_progress(30, "正在打包关键帧...")
                     zip_path = os.path.join(temp_dir, f"keyframes_{int(time.time())}.zip")
-                    
                     if not file_utils.create_zip(keyframe_files, zip_path):
                         raise Exception("打包关键帧失败")
                     
                     # 获取API配置
-                    api_url = st.session_state.get('narrato_api_url', 'http://127.0.0.1:8000/api/v1/video/analyze')
+                    api_url = st.session_state.get('narrato_api_url')
                     api_key = st.session_state.get('narrato_api_key')
                     
                     if not api_key:
@@ -480,12 +480,13 @@ def generate_script(tr, params):
                     }
                     
                     # 发送API请求
+                    logger.info(f"请求 NarratoAPI:{api_url}")
                     update_progress(40, "正在上传文件...")
                     with open(zip_path, 'rb') as f:
                         files = {'file': (os.path.basename(zip_path), f, 'application/x-zip-compressed')}
                         try:
                             response = requests.post(
-                                api_url, 
+                                f"{api_url}/video/analyze",
                                 headers=headers, 
                                 params=api_params, 
                                 files=files,
@@ -493,10 +494,11 @@ def generate_script(tr, params):
                             )
                             response.raise_for_status()
                         except requests.RequestException as e:
+                            logger.error(f"Narrato API 请求失败:\n{traceback.format_exc()}")
                             raise Exception(f"API请求失败: {str(e)}")
                     
                     task_data = response.json()
-                    task_id = task_data.get('task_id')
+                    task_id = task_data["data"].get('task_id')
                     if not task_id:
                         raise Exception(f"无效的API响应: {response.text}")
                     
@@ -508,7 +510,7 @@ def generate_script(tr, params):
                     while retry_count < max_retries:
                         try:
                             status_response = requests.get(
-                                f"{api_url}/tasks/{task_id}",
+                                f"{api_url}/video/tasks/{task_id}",
                                 headers=headers,
                                 timeout=10
                             )
@@ -516,14 +518,12 @@ def generate_script(tr, params):
                             task_status = status_response.json()['data']
                             
                             if task_status['status'] == 'SUCCESS':
-                                script = task_status['result']
+                                script = task_status['result']['data']
                                 break
                             elif task_status['status'] in ['FAILURE', 'RETRY']:
                                 raise Exception(f"任务失败: {task_status.get('error')}")
                             
                             retry_count += 1
-                            progress = min(70, 50 + (retry_count * 20 / max_retries))
-                            update_progress(progress, "正在分析中...")
                             time.sleep(2)
                             
                         except requests.RequestException as e:
@@ -536,7 +536,7 @@ def generate_script(tr, params):
                         raise Exception("任务执行超时")
                     
                 except Exception as e:
-                    logger.exception("NarratoAPI 处理过程中发生错误")
+                    logger.exception(f"NarratoAPI 处理过程中发生错误\n{traceback.format_exc()}")
                     raise Exception(f"NarratoAPI 处理失败: {str(e)}")
                 finally:
                     # 清理临时文件
@@ -546,12 +546,14 @@ def generate_script(tr, params):
                     except Exception as e:
                         logger.warning(f"清理临时文件失败: {str(e)}")
 
+            else:
+                logger.exception("Vision Model 未启用，请检查配置")
+
             if script is None:
                 st.error("生成脚本失败，请检查日志")
                 st.stop()
-            
-            script = utils.clean_model_output(script)
-            st.session_state['video_clip_json'] = json.loads(script)
+            logger.info(f"脚本生成完成\n{script} \n{type(script)}")
+            st.session_state['video_clip_json'] = script
             update_progress(90, "脚本生成完成")
 
         time.sleep(0.5)
@@ -561,7 +563,7 @@ def generate_script(tr, params):
         
     except Exception as err:
         st.error(f"生成过程中发生错误: {str(err)}")
-        logger.exception("生成脚本时发生错误")
+        logger.exception(f"生成脚本时发生错误\n{traceback.format_exc()}")
     finally:
         time.sleep(2)
         progress_bar.empty()
