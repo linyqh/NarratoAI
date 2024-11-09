@@ -14,6 +14,7 @@ from googleapiclient.errors import ResumableUploadError
 from google.api_core.exceptions import *
 from google.generativeai.types import *
 import subprocess
+from typing import Union, TextIO
 
 from app.config import config
 from app.utils.utils import clean_model_output
@@ -353,7 +354,7 @@ def _generate_response(prompt: str, llm_provider: str = None) -> str:
     return content.replace("\n", "")
 
 
-def _generate_response_video(prompt: str, llm_provider_video: str, video_file: str | File) -> str:
+def _generate_response_video(prompt: str, llm_provider_video: str, video_file: Union[str, TextIO]) -> str:
     """
     多模态能力大模型
     """
@@ -780,22 +781,28 @@ def screen_matching(huamian: str, wenan: str, llm_provider: str):
 
 if __name__ == "__main__":
     # 1. 视频转录
-    # video_subject = "第二十条之无罪释放"
-    # video_path = "../../resource/videos/test01.mp4"
-    # language = "zh-CN"
-    # gemini_video_transcription(video_subject, video_path, language)
+    video_subject = "第二十条之无罪释放"
+    video_path = "/Users/apple/Desktop/home/pipedream_project/downloads/jianzao.mp4"
+    language = "zh-CN"
+    gemini_video_transcription(
+        video_name=video_subject,
+        video_path=video_path,
+        language=language,
+        progress_callback=print,
+        llm_provider_video="gemini"
+    )
 
-    # 2. 解说文案
-    video_path = "/Users/apple/Desktop/home/NarratoAI/resource/videos/1.mp4"
-    # video_path = "E:\\projects\\NarratoAI\\resource\\videos\\1.mp4"
-    video_plot = """
-        李自忠拿着儿子李牧名下的存折，去银行取钱给儿子救命，却被要求证明"你儿子是你儿子"。
-    走投无路时碰到银行被抢劫，劫匪给了他两沓钱救命，李自忠却因此被银行以抢劫罪起诉，并顶格判处20年有期徒刑。
-    苏醒后的李牧坚决为父亲做无罪辩护，面对银行的顶级律师团队，他一个法学院大一学生，能否力挽狂澜，创作奇迹？挥法律之利剑 ，持正义之天平！
-    """
-    res = generate_script(video_path, video_plot, video_name="第二十条之无罪释放")
-    # res = generate_script(video_path, video_plot, video_name="海岸")
-    print("脚本生成成功:\n", res)
-    res = clean_model_output(res)
-    aaa = json.loads(res)
-    print(json.dumps(aaa, indent=2, ensure_ascii=False))
+    # # 2. 解说文案
+    # video_path = "/Users/apple/Desktop/home/NarratoAI/resource/videos/1.mp4"
+    # # video_path = "E:\\projects\\NarratoAI\\resource\\videos\\1.mp4"
+    # video_plot = """
+    #     李自忠拿着儿子李牧名下的存折，去银行取钱给儿子救命，却被要求证明"你儿子是你儿子"。
+    # 走投无路时碰到银行被抢劫，劫匪给了他两沓钱救命，李自忠却因此被银行以抢劫罪起诉，并顶格判处20年有期徒刑。
+    # 苏醒后的李牧坚决为父亲做无罪辩护，面对银行的顶级律师团队，他一个法学院大一学生，能否力挽狂澜，创作奇迹？挥法律之利剑 ，持正义之天平！
+    # """
+    # res = generate_script(video_path, video_plot, video_name="第二十条之无罪释放")
+    # # res = generate_script(video_path, video_plot, video_name="海岸")
+    # print("脚本生成成功:\n", res)
+    # res = clean_model_output(res)
+    # aaa = json.loads(res)
+    # print(json.dumps(aaa, indent=2, ensure_ascii=False))

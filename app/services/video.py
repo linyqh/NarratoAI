@@ -4,11 +4,13 @@ import glob
 import random
 from typing import List
 from typing import Union
+import traceback
 
 from loguru import logger
 from moviepy.editor import *
 from moviepy.video.tools.subtitles import SubtitlesClip
 from PIL import ImageFont
+from contextlib import contextmanager
 
 from app.models import const
 from app.models.schema import MaterialInfo, VideoAspect, VideoConcatMode, VideoParams, VideoClipParams
@@ -144,7 +146,7 @@ def combine_videos(
     return combined_video_path
 
 
-def wrap_text(text, max_width, font="Arial", fontsize=60):
+def wrap_text(text, max_width, font, fontsize=60):
     # 创建字体对象
     font = ImageFont.truetype(font, fontsize)
 
@@ -157,7 +159,7 @@ def wrap_text(text, max_width, font="Arial", fontsize=60):
     if width <= max_width:
         return text, height
 
-    # logger.warning(f"wrapping text, max_width: {max_width}, text_width: {width}, text: {text}")
+    logger.debug(f"换行文本, 最大宽度: {max_width}, 文本宽度: {width}, 文本: {text}")
 
     processed = True
 
@@ -198,110 +200,17 @@ def wrap_text(text, max_width, font="Arial", fontsize=60):
     _wrapped_lines_.append(_txt_)
     result = "\n".join(_wrapped_lines_).strip()
     height = len(_wrapped_lines_) * height
-    # logger.warning(f"wrapped text: {result}")
+    logger.debug(f"换行文本: {result}")
     return result, height
 
 
-def generate_video(
-    video_path: str,
-    audio_path: str,
-    subtitle_path: str,
-    output_file: str,
-    params: Union[VideoParams, VideoClipParams],
-):
-    aspect = VideoAspect(params.video_aspect)
-    video_width, video_height = aspect.to_resolution()
-
-    logger.info(f"start, video size: {video_width} x {video_height}")
-    logger.info(f"  ① video: {video_path}")
-    logger.info(f"  ② audio: {audio_path}")
-    logger.info(f"  ③ subtitle: {subtitle_path}")
-    logger.info(f"  ④ output: {output_file}")
-
-    # 写入与输出文件相同的目录
-    output_dir = os.path.dirname(output_file)
-
-    font_path = ""
-    if params.subtitle_enabled:
-        if not params.font_name:
-            params.font_name = "STHeitiMedium.ttc"
-        font_path = os.path.join(utils.font_dir(), params.font_name)
-        if os.name == "nt":
-            font_path = font_path.replace("\\", "/")
-
-        logger.info(f"using font: {font_path}")
-
-    def create_text_clip(subtitle_item):
-        phrase = subtitle_item[1]
-        max_width = video_width * 0.9
-        wrapped_txt, txt_height = wrap_text(
-            phrase, max_width=max_width, font=font_path, fontsize=params.font_size
-        )
-        _clip = TextClip(
-            wrapped_txt,
-            font=font_path,
-            fontsize=params.font_size,
-            color=params.text_fore_color,
-            bg_color=params.text_background_color,
-            stroke_color=params.stroke_color,
-            stroke_width=params.stroke_width,
-            print_cmd=False,
-        )
-        duration = subtitle_item[0][1] - subtitle_item[0][0]
-        _clip = _clip.set_start(subtitle_item[0][0])
-        _clip = _clip.set_end(subtitle_item[0][1])
-        _clip = _clip.set_duration(duration)
-        if params.subtitle_position == "bottom":
-            _clip = _clip.set_position(("center", video_height * 0.95 - _clip.h))
-        elif params.subtitle_position == "top":
-            _clip = _clip.set_position(("center", video_height * 0.05))
-        elif params.subtitle_position == "custom":
-            # 确保字幕完全在屏幕内
-            margin = 10  # 额外的边距，单位为像素
-            max_y = video_height - _clip.h - margin
-            min_y = margin
-            custom_y = (video_height - _clip.h) * (params.custom_position / 100)
-            custom_y = max(min_y, min(custom_y, max_y))  # 限制 y 值在有效范围内
-            _clip = _clip.set_position(("center", custom_y))
-        else:  # center
-            _clip = _clip.set_position(("center", "center"))
-        return _clip
-
-    video_clip = VideoFileClip(video_path)
-    audio_clip = AudioFileClip(audio_path).volumex(params.voice_volume)
-
-    if subtitle_path and os.path.exists(subtitle_path):
-        sub = SubtitlesClip(subtitles=subtitle_path, encoding="utf-8")
-        text_clips = []
-        for item in sub.subtitles:
-            clip = create_text_clip(subtitle_item=item)
-            text_clips.append(clip)
-        video_clip = CompositeVideoClip([video_clip, *text_clips])
-
-    bgm_file = get_bgm_file(bgm_type=params.bgm_type, bgm_file=params.bgm_file)
-    if bgm_file:
-        try:
-            bgm_clip = (
-                AudioFileClip(bgm_file).volumex(params.bgm_volume).audio_fadeout(3)
-            )
-            bgm_clip = afx.audio_loop(bgm_clip, duration=video_clip.duration)
-            audio_clip = CompositeAudioClip([audio_clip, bgm_clip])
-        except Exception as e:
-            logger.error(f"failed to add bgm: {str(e)}")
-
-    video_clip = video_clip.set_audio(audio_clip)
-    video_clip.write_videofile(
-        output_file,
-        audio_codec="aac",
-        temp_audiofile_path=output_dir,
-        threads=params.n_threads,
-        logger=None,
-        fps=30,
-    )
-    video_clip.close()
-    del video_clip
-    logger.success(""
-                   "completed")
+@contextmanager
+def manage_clip(clip):
+    try:
+        yield clip
+    finally:
+        clip.close()
+        del clip
 
 
 def generate_video_v2(
@@ -310,6 +219,7 @@ def generate_video_v2(
         subtitle_path: str,
         output_file: str,
         params: Union[VideoParams, VideoClipParams],
+        progress_callback=None,
 ):
     """
     合并所有素材
@@ -319,135 +229,163 @@ def generate_video_v2(
         subtitle_path: 字幕文件路径
         output_file: 输出文件路径
         params: 视频参数
+        progress_callback: 进度回调函数，接收 0-100 的进度值
 
     Returns:
 
     """
-    aspect = VideoAspect(params.video_aspect)
-    video_width, video_height = aspect.to_resolution()
+    total_steps = 4
+    current_step = 0
+    
+    def update_progress(step_name):
+        nonlocal current_step
+        current_step += 1
+        if progress_callback:
+            progress_callback(int(current_step * 100 / total_steps))
+        logger.info(f"完成步骤: {step_name}")
 
-    logger.info(f"开始，视频尺寸: {video_width} x {video_height}")
-    logger.info(f"  ① 视频: {video_path}")
-    logger.info(f"  ② 音频: {audio_path}")
-    logger.info(f"  ③ 字幕: {subtitle_path}")
-    logger.info(f"  ④ 输出: {output_file}")
-
-    # 写入与输出文件相同的目录
-    output_dir = os.path.dirname(output_file)
-
-    # 字体设置部分保持不变
-    font_path = ""
-    if params.subtitle_enabled:
-        if not params.font_name:
-            params.font_name = "STHeitiMedium.ttc"
-        font_path = os.path.join(utils.font_dir(), params.font_name)
-        if os.name == "nt":
-            font_path = font_path.replace("\\", "/")
-        logger.info(f"使用字体: {font_path}")
-
-    # create_text_clip 函数保持不变
-    def create_text_clip(subtitle_item):
-        phrase = subtitle_item[1]
-        max_width = video_width * 0.9
-        wrapped_txt, txt_height = wrap_text(
-            phrase, max_width=max_width, font=font_path, fontsize=params.font_size
-        )
-        _clip = TextClip(
-            wrapped_txt,
-            font=font_path,
-            fontsize=params.font_size,
-            color=params.text_fore_color,
-            bg_color=params.text_background_color,
-            stroke_color=params.stroke_color,
-            stroke_width=params.stroke_width,
-            print_cmd=False,
-        )
-        duration = subtitle_item[0][1] - subtitle_item[0][0]
-        _clip = _clip.set_start(subtitle_item[0][0])
-        _clip = _clip.set_end(subtitle_item[0][1])
-        _clip = _clip.set_duration(duration)
-        if params.subtitle_position == "bottom":
-            _clip = _clip.set_position(("center", video_height * 0.95 - _clip.h))
-        elif params.subtitle_position == "top":
-            _clip = _clip.set_position(("center", video_height * 0.05))
-        elif params.subtitle_position == "custom":
-            # 确保字幕完全在屏幕内
-            margin = 10  # 额外的边距，单位为像素
-            max_y = video_height - _clip.h - margin
-            min_y = margin
-            custom_y = (video_height - _clip.h) * (params.custom_position / 100)
-            custom_y = max(min_y, min(custom_y, max_y))  # 限制 y 值在有效范围内
-            _clip = _clip.set_position(("center", custom_y))
-        else:  # center
-            _clip = _clip.set_position(("center", "center"))
-        return _clip
-
-    video_clip = VideoFileClip(video_path)
-    original_audio = video_clip.audio  # 保存原始视频的音轨
-    video_duration = video_clip.duration
-
-    # 处理新的音频文件
-    new_audio = AudioFileClip(audio_path).volumex(params.voice_volume)
-
-    # 字幕处理部分
-    if subtitle_path and os.path.exists(subtitle_path):
-        sub = SubtitlesClip(subtitles=subtitle_path, encoding="utf-8")
-        text_clips = []
+    try:
+        validate_params(video_path, audio_path, output_file, params)
         
-        for item in sub.subtitles:
-            clip = create_text_clip(subtitle_item=item)
-            
-            # 确保字幕的开始时间不早于视频开始
-            start_time = max(clip.start, 0)
-            
-            # 如果字幕的开始时间晚于视频结束时间，则跳过此字幕
-            if start_time >= video_duration:
-                continue
-            
-            # 调整字幕的结束时间，但不要超过视频长度
-            end_time = min(clip.end, video_duration)
-            
-            # 调整字幕的时间范围
-            clip = clip.set_start(start_time).set_end(end_time)
-            
-            text_clips.append(clip)
-        
-        logger.info(f"处理了 {len(text_clips)} 段字幕")
-        
-        # 创建一个新的视频剪辑，包含所有字幕
-        video_clip = CompositeVideoClip([video_clip, *text_clips])
+        with manage_clip(VideoFileClip(video_path)) as video_clip:
+            aspect = VideoAspect(params.video_aspect)
+            video_width, video_height = aspect.to_resolution()
 
-    # 背景音乐处理部分
+            logger.info(f"开始，视频尺寸: {video_width} x {video_height}")
+            logger.info(f"  ① 视频: {video_path}")
+            logger.info(f"  ② 音频: {audio_path}")
+            logger.info(f"  ③ 字幕: {subtitle_path}")
+            logger.info(f"  ④ 输出: {output_file}")
+
+            output_dir = os.path.dirname(output_file)
+            update_progress("初始化完成")
+
+            # 字体设置
+            font_path = ""
+            if params.subtitle_enabled:
+                if not params.font_name:
+                    params.font_name = "STHeitiMedium.ttc"
+                font_path = os.path.join(utils.font_dir(), params.font_name)
+                if os.name == "nt":
+                    font_path = font_path.replace("\\", "/")
+                logger.info(f"使用字体: {font_path}")
+
+            def create_text_clip(subtitle_item):
+                phrase = subtitle_item[1]
+                max_width = video_width * 0.9
+                wrapped_txt, txt_height = wrap_text(
+                    phrase, max_width=max_width, font=font_path, fontsize=params.font_size
+                )
+                _clip = TextClip(
+                    wrapped_txt,
+                    font=font_path,
+                    fontsize=params.font_size,
+                    color=params.text_fore_color,
+                    bg_color=params.text_background_color,
+                    stroke_color=params.stroke_color,
+                    stroke_width=params.stroke_width,
+                    print_cmd=False,
+                )
+                duration = subtitle_item[0][1] - subtitle_item[0][0]
+                _clip = _clip.set_start(subtitle_item[0][0])
+                _clip = _clip.set_end(subtitle_item[0][1])
+                _clip = _clip.set_duration(duration)
+                
+                if params.subtitle_position == "bottom":
+                    _clip = _clip.set_position(("center", video_height * 0.95 - _clip.h))
+                elif params.subtitle_position == "top":
+                    _clip = _clip.set_position(("center", video_height * 0.05))
+                elif params.subtitle_position == "custom":
+                    margin = 10
+                    max_y = video_height - _clip.h - margin
+                    min_y = margin
+                    custom_y = (video_height - _clip.h) * (params.custom_position / 100)
+                    custom_y = max(min_y, min(custom_y, max_y))
+                    _clip = _clip.set_position(("center", custom_y))
+                else:  # center
+                    _clip = _clip.set_position(("center", "center"))
+                return _clip
+
+            update_progress("字体设置完成")
+
+            # 处理音频
+            original_audio = video_clip.audio
+            video_duration = video_clip.duration
+            new_audio = AudioFileClip(audio_path)
+            final_audio = process_audio_tracks(original_audio, new_audio, params, video_duration)
+            update_progress("音频处理完成")
+
+            # 处理字幕
+            if subtitle_path and os.path.exists(subtitle_path):
+                video_clip = process_subtitles(subtitle_path, video_clip, video_duration, create_text_clip)
+            update_progress("字幕处理完成")
+
+            # 合并音频和导出
+            video_clip = video_clip.set_audio(final_audio)
+            video_clip.write_videofile(
+                output_file,
+                audio_codec="aac",
+                temp_audiofile=os.path.join(output_dir, "temp-audio.m4a"),
+                threads=params.n_threads,
+                logger=None,
+                fps=30,
+            )
+            
+    except FileNotFoundError as e:
+        logger.error(f"文件不存在: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"视频生成失败: {str(e)}")
+        raise
+    finally:
+        logger.success("完成")
+
+
+def process_audio_tracks(original_audio, new_audio, params, video_duration):
+    """处理所有音轨"""
+    audio_tracks = []
+    
+    if original_audio is not None:
+        audio_tracks.append(original_audio)
+    
+    new_audio = new_audio.volumex(params.voice_volume)
+    audio_tracks.append(new_audio)
+    
+    # 处理背景音乐
     bgm_file = get_bgm_file(bgm_type=params.bgm_type, bgm_file=params.bgm_file)
-    
-    # 合并音频轨道
-    audio_tracks = [original_audio, new_audio]
-    
     if bgm_file:
         try:
-            bgm_clip = (
-                AudioFileClip(bgm_file).volumex(params.bgm_volume).audio_fadeout(3)
-            )
+            bgm_clip = AudioFileClip(bgm_file).volumex(params.bgm_volume).audio_fadeout(3)
             bgm_clip = afx.audio_loop(bgm_clip, duration=video_duration)
             audio_tracks.append(bgm_clip)
         except Exception as e:
             logger.error(f"添加背景音乐失败: {str(e)}")
+    
+    return CompositeAudioClip(audio_tracks) if audio_tracks else new_audio
 
-    # 合并所有音频轨道
-    final_audio = CompositeAudioClip(audio_tracks)
 
-    video_clip = video_clip.set_audio(final_audio)
-    video_clip.write_videofile(
-        output_file,
-        audio_codec="aac",
-        temp_audiofile_path=output_dir,
-        threads=params.n_threads,
-        logger=None,
-        fps=30,
-    )
-    video_clip.close()
-    del video_clip
-    logger.success("完成")
+def process_subtitles(subtitle_path, video_clip, video_duration, create_text_clip):
+    """处理字幕"""
+    if not (subtitle_path and os.path.exists(subtitle_path)):
+        return video_clip
+        
+    sub = SubtitlesClip(subtitles=subtitle_path, encoding="utf-8")
+    text_clips = []
+    
+    for item in sub.subtitles:
+        clip = create_text_clip(subtitle_item=item)
+        
+        # 时间范围调整
+        start_time = max(clip.start, 0)
+        if start_time >= video_duration:
+            continue
+            
+        end_time = min(clip.end, video_duration)
+        clip = clip.set_start(start_time).set_end(end_time)
+        text_clips.append(clip)
+    
+    logger.info(f"处理了 {len(text_clips)} 段字幕")
+    return CompositeVideoClip([video_clip, *text_clips])
 
 
 def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
@@ -499,7 +437,7 @@ def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
 
 def combine_clip_videos(combined_video_path: str,
                         video_paths: List[str],
-                        video_ost_list: List[bool],
+                        video_ost_list: List[int],
                         list_script: list,
                         video_aspect: VideoAspect = VideoAspect.portrait,
                         threads: int = 2,
@@ -509,90 +447,117 @@ def combine_clip_videos(combined_video_path: str,
     Args:
         combined_video_path: 合并后的存储路径
         video_paths: 子视频路径列表
-        video_ost_list: 原声播放列表
+        video_ost_list: 原声播放列表 (0: 不保留原声, 1: 只保留原声, 2: 保留原声并保留解说)
         list_script: 剪辑脚本
         video_aspect: 屏幕比例
         threads: 线程数
 
     Returns:
-
+        str: 合并后的视频路径
     """
     from app.utils.utils import calculate_total_duration
     audio_duration = calculate_total_duration(list_script)
     logger.info(f"音频的最大持续时间: {audio_duration} s")
-    # 每个剪辑所需的持续时间
-    req_dur = audio_duration / len(video_paths)
-    # req_dur = max_clip_duration
-    # logger.info(f"每个剪辑的最大长度为 {req_dur} s")
+    
     output_dir = os.path.dirname(combined_video_path)
-
     aspect = VideoAspect(video_aspect)
     video_width, video_height = aspect.to_resolution()
 
     clips = []
-    video_duration = 0
-    # 一遍又一遍地添加下载的剪辑，直到达到音频的持续时间 （max_duration）
-    # while video_duration < audio_duration:
     for video_path, video_ost in zip(video_paths, video_ost_list):
-        cache_video_path = utils.root_dir()
-        clip = VideoFileClip(os.path.join(cache_video_path, video_path))
-        # 通过 ost 字段判断是否播放原声
-        if not video_ost:
-            clip = clip.without_audio()
-        # # 检查剪辑是否比剩余音频长
-        # if (audio_duration - video_duration) < clip.duration:
-        #     clip = clip.subclip(0, (audio_duration - video_duration))
-        # # 仅当计算出的剪辑长度 （req_dur） 短于实际剪辑时，才缩短剪辑以防止静止图像
-        # elif req_dur < clip.duration:
-        #     clip = clip.subclip(0, req_dur)
-        clip = clip.set_fps(30)
+        try:
+            clip = VideoFileClip(video_path)
+            
+            if video_ost == 0:  # 不保留原声
+                clip = clip.without_audio()
+            # video_ost 为 1 或 2 时都保留原声，不需要特殊处理
+                
+            clip = clip.set_fps(30)
 
-        # 并非所有视频的大小都相同，因此我们需要调整它们的大小
-        clip_w, clip_h = clip.size
-        if clip_w != video_width or clip_h != video_height:
-            clip_ratio = clip.w / clip.h
-            video_ratio = video_width / video_height
+            # 处理视频尺寸
+            clip_w, clip_h = clip.size
+            if clip_w != video_width or clip_h != video_height:
+                clip = resize_video_with_padding(
+                    clip, 
+                    target_width=video_width, 
+                    target_height=video_height
+                )
+                logger.info(f"视频 {video_path} 已调整尺寸为 {video_width} x {video_height}")
 
-            if clip_ratio == video_ratio:
-                # 等比例缩放
-                clip = clip.resize((video_width, video_height))
-            else:
-                # 等比缩放视频
-                if clip_ratio > video_ratio:
-                    # 按照目标宽度等比缩放
-                    scale_factor = video_width / clip_w
-                else:
-                    # 按照目标高度等比缩放
-                    scale_factor = video_height / clip_h
+            clips.append(clip)
+            
+        except Exception as e:
+            logger.error(f"处理视频 {video_path} 时出错: {str(e)}")
+            continue
 
-                new_width = int(clip_w * scale_factor)
-                new_height = int(clip_h * scale_factor)
-                clip_resized = clip.resize(newsize=(new_width, new_height))
+    if not clips:
+        raise ValueError("没有有效的视频片段可以合并")
 
-                background = ColorClip(size=(video_width, video_height), color=(0, 0, 0))
-                clip = CompositeVideoClip([
-                    background.set_duration(clip.duration),
-                    clip_resized.set_position("center")
-                ])
+    try:
+        video_clip = concatenate_videoclips(clips)
+        video_clip = video_clip.set_fps(30)
+        
+        logger.info("开始合并视频...")
+        video_clip.write_videofile(
+            filename=combined_video_path,
+            threads=threads,
+            logger=None,
+            audio_codec="aac",
+            fps=30,
+            temp_audiofile=os.path.join(output_dir, "temp-audio.m4a")
+        )
+    finally:
+        # 确保资源被正确���放
+        video_clip.close()
+        for clip in clips:
+            clip.close()
 
-            logger.info(f"将视频 {video_path} 大小调整为 {video_width} x {video_height}, 剪辑尺寸: {clip_w} x {clip_h}")
-
-        clips.append(clip)
-        video_duration += clip.duration
-
-    video_clip = concatenate_videoclips(clips)
-    video_clip = video_clip.set_fps(30)
-    logger.info(f"合并视频中...")
-    video_clip.write_videofile(filename=combined_video_path,
-                               threads=threads,
-                               logger=None,
-                               temp_audiofile_path=output_dir,
-                               audio_codec="aac",
-                               fps=30,
-                               )
-    video_clip.close()
-    logger.success(f"completed")
+    logger.success("视频合并完成")
     return combined_video_path
+
+
+def resize_video_with_padding(clip, target_width: int, target_height: int):
+    """辅助函数：调整视频尺寸并添加黑边"""
+    clip_ratio = clip.w / clip.h
+    target_ratio = target_width / target_height
+
+    if clip_ratio == target_ratio:
+        return clip.resize((target_width, target_height))
+    
+    if clip_ratio > target_ratio:
+        scale_factor = target_width / clip.w
+    else:
+        scale_factor = target_height / clip.h
+
+    new_width = int(clip.w * scale_factor)
+    new_height = int(clip.h * scale_factor)
+    clip_resized = clip.resize(newsize=(new_width, new_height))
+
+    background = ColorClip(
+        size=(target_width, target_height), 
+        color=(0, 0, 0)
+    ).set_duration(clip.duration)
+    
+    return CompositeVideoClip([
+        background,
+        clip_resized.set_position("center")
+    ])
+
+
+def validate_params(video_path, audio_path, output_file, params):
+    """验证输入参数"""
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"视频文件不存在: {video_path}")
+        
+    if not os.path.exists(audio_path):
+        raise FileNotFoundError(f"音频文件不存在: {audio_path}")
+        
+    output_dir = os.path.dirname(output_file)
+    if not os.path.exists(output_dir):
+        raise FileNotFoundError(f"输出目录不存在: {output_dir}")
+        
+    if not hasattr(params, 'video_aspect'):
+        raise ValueError("params 缺少必要参数 video_aspect")
 
 
 if __name__ == "__main__":
@@ -635,23 +600,23 @@ if __name__ == "__main__":
     # ]
     # combine_clip_videos(combined_video_path=combined_video_path, video_paths=video_paths, video_ost_list=video_ost_list, list_script=list_script)
 
-    cfg = VideoClipParams()
-    cfg.video_aspect = VideoAspect.portrait
-    cfg.font_name = "STHeitiMedium.ttc"
-    cfg.font_size = 60
-    cfg.stroke_color = "#000000"
-    cfg.stroke_width = 1.5
-    cfg.text_fore_color = "#FFFFFF"
-    cfg.text_background_color = "transparent"
-    cfg.bgm_type = "random"
-    cfg.bgm_file = ""
-    cfg.bgm_volume = 1.0
-    cfg.subtitle_enabled = True
-    cfg.subtitle_position = "bottom"
-    cfg.n_threads = 2
-    cfg.paragraph_number = 1
-
-    cfg.voice_volume = 1.0
+    # cfg = VideoClipParams()
+    # cfg.video_aspect = VideoAspect.portrait
+    # cfg.font_name = "STHeitiMedium.ttc"
+    # cfg.font_size = 60
+    # cfg.stroke_color = "#000000"
+    # cfg.stroke_width = 1.5
+    # cfg.text_fore_color = "#FFFFFF"
+    # cfg.text_background_color = "transparent"
+    # cfg.bgm_type = "random"
+    # cfg.bgm_file = ""
+    # cfg.bgm_volume = 1.0
+    # cfg.subtitle_enabled = True
+    # cfg.subtitle_position = "bottom"
+    # cfg.n_threads = 2
+    # cfg.paragraph_number = 1
+    #
+    # cfg.voice_volume = 1.0
 
     # generate_video(video_path=video_file,
     #                audio_path=audio_file,
@@ -659,18 +624,27 @@ if __name__ == "__main__":
     #                output_file=output_file,
     #                params=cfg
     #                )
+    #
+    # video_path = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/combined-1.mp4"
+    #
+    # audio_path = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-00-00-07.mp3"
+    #
+    # subtitle_path = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa\subtitle.srt"
+    #
+    # output_file = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/final-123.mp4"
+    #
+    # generate_video_v2(video_path=video_path,
+    #                    audio_path=audio_path,
+    #                    subtitle_path=subtitle_path,
+    #                    output_file=output_file,
+    #                    params=cfg
+    #                   )
 
-    video_path = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/combined-1.mp4"
+    # 合并视频
+    video_list = [
+        './storage/cache_videos/vid-01_03-01_50.mp4',
+        './storage/cache_videos/vid-01_55-02_29.mp4',
+        './storage/cache_videos/vid-03_24-04_04.mp4',
+        './storage/cache_videos/vid-04_50-05_28.mp4'
+    ]
 
-    audio_path = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/audio_00-00-00-07.mp3"
-
-    subtitle_path = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa\subtitle.srt"
-
-    output_file = "../../storage/tasks/7f5ae494-abce-43cf-8f4f-4be43320eafa/final-123.mp4"
-
-    generate_video_v2(video_path=video_path,
-                       audio_path=audio_path,
-                       subtitle_path=subtitle_path,
-                       output_file=output_file,
-                       params=cfg
-                      )

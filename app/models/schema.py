@@ -347,6 +347,7 @@ class VideoClipParams(BaseModel):
     voice_name: Optional[str] = Field(default="zh-CN-YunjianNeural", description="语音名称")
     voice_volume: Optional[float] = Field(default=1.0, description="语音音量")
     voice_rate: Optional[float] = Field(default=1.0, description="语速")
+    voice_pitch: Optional[float] = Field(default=1.0, description="语调")
 
     bgm_name: Optional[str] = Field(default="random", description="背景音乐名称")
     bgm_type: Optional[str] = Field(default="random", description="背景音乐类型")
@@ -365,3 +366,13 @@ class VideoClipParams(BaseModel):
     custom_position: float = Field(default=70.0, description="自定义位置")
 
     n_threads: Optional[int] = 8    # 线程数，有助于提升视频处理速度
+
+class VideoTranscriptionRequest(BaseModel):
+    video_name: str
+    language: str = "zh-CN"
+
+    class Config:
+        arbitrary_types_allowed = True
+
+class VideoTranscriptionResponse(BaseModel):
+    transcription: str

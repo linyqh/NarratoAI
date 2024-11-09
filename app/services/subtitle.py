@@ -29,7 +29,7 @@ def create(audio_file, subtitle_file: str = ""):
     返回:
     无返回值，但会在指定路径生成字幕文件。
     """
-    global model
+    global model, device, compute_type
     if not model:
         model_path = f"{utils.root_dir()}/app/models/faster-whisper-large-v2"
         model_bin_file = f"{model_path}/model.bin"
@@ -43,27 +43,45 @@ def create(audio_file, subtitle_file: str = ""):
             )
             return None
 
-        logger.info(
-            f"加载模型: {model_path}, 设备: {device}, 计算类型: {compute_type}"
-        )
+        # 尝试使用 CUDA，如果失败则回退到 CPU
         try:
+            import torch
+            if torch.cuda.is_available():
+                try:
+                    logger.info(f"尝试使用 CUDA 加载模型: {model_path}")
+                    model = WhisperModel(
+                        model_size_or_path=model_path,
+                        device="cuda",
+                        compute_type="float16",
+                        local_files_only=True
+                    )
+                    device = "cuda"
+                    compute_type = "float16"
+                    logger.info("成功使用 CUDA 加载模型")
+                except Exception as e:
+                    logger.warning(f"CUDA 加载失败，错误信息: {str(e)}")
+                    logger.warning("回退到 CPU 模式")
+                    device = "cpu"
+                    compute_type = "int8"
+            else:
+                logger.info("未检测到 CUDA，使用 CPU 模式")
+                device = "cpu"
+                compute_type = "int8"
+        except ImportError:
+            logger.warning("未安装 torch，使用 CPU 模式")
+            device = "cpu"
+            compute_type = "int8"
+
+        if device == "cpu":
+            logger.info(f"使用 CPU 加载模型: {model_path}")
             model = WhisperModel(
                 model_size_or_path=model_path,
                 device=device,
                 compute_type=compute_type,
                 local_files_only=True
             )
-        except Exception as e:
-            logger.error(
-                f"加载模型失败: {e} \n\n"
-                f"********************************************\n"
-                f"这可能是由网络问题引起的. \n"
-                f"请手动下载模型并将其放入 'app/models' 文件夹中。 \n"
-                f"see [README.md FAQ](https://github.com/linyqh/NarratoAI) for more details.\n"
-                f"********************************************\n\n"
-                f"{traceback.format_exc()}"
-            )
-            return None
+
+        logger.info(f"模型加载完成，使用设备: {device}, 计算类型: {compute_type}")
 
     logger.info(f"start, output file: {subtitle_file}")
     if not subtitle_file:

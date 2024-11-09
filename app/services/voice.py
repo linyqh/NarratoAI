@@ -1032,11 +1032,11 @@ def is_azure_v2_voice(voice_name: str):
 
 
 def tts(
-    text: str, voice_name: str, voice_rate: float, voice_file: str
+    text: str, voice_name: str, voice_rate: float, voice_pitch: float, voice_file: str
 ) -> [SubMaker, None]:
     # if is_azure_v2_voice(voice_name):
     #     return azure_tts_v2(text, voice_name, voice_file)
-    return azure_tts_v1(text, voice_name, voice_rate, voice_file)
+    return azure_tts_v1(text, voice_name, voice_rate, voice_pitch, voice_file)
 
 
 def convert_rate_to_percent(rate: float) -> str:
@@ -1049,18 +1049,29 @@ def convert_rate_to_percent(rate: float) -> str:
         return f"{percent}%"
 
 
+def convert_pitch_to_percent(rate: float) -> str:
+    if rate == 1.0:
+        return "+0Hz"
+    percent = round((rate - 1.0) * 100)
+    if percent > 0:
+        return f"+{percent}Hz"
+    else:
+        return f"{percent}Hz"
+
+
 def azure_tts_v1(
-    text: str, voice_name: str, voice_rate: float, voice_file: str
+    text: str, voice_name: str, voice_rate: float, voice_pitch: float, voice_file: str
 ) -> [SubMaker, None]:
     voice_name = parse_voice_name(voice_name)
     text = text.strip()
     rate_str = convert_rate_to_percent(voice_rate)
+    pitch_str = convert_pitch_to_percent(voice_pitch)
     for i in range(3):
         try:
             logger.info(f"start, voice name: {voice_name}, try: {i + 1}")
 
             async def _do() -> SubMaker:
-                communicate = edge_tts.Communicate(text, voice_name, rate=rate_str)
+                communicate = edge_tts.Communicate(text, voice_name, rate=rate_str, pitch=pitch_str, proxy=config.proxy.get("http"))
                 sub_maker = edge_tts.SubMaker()
                 with open(voice_file, "wb") as file:
                     async for chunk in communicate.stream():
@@ -1392,7 +1403,7 @@ def get_audio_duration(sub_maker: submaker.SubMaker):
     return sub_maker.offset[-1][1] / 10000000
 
 
-def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: float, force_regenerate: bool = True):
+def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: float, voice_pitch: float, force_regenerate: bool = True):
     """
     根据JSON文件中的多段文本进行TTS转换
     
@@ -1409,13 +1420,13 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
     sub_maker_list = []
 
     for item in list_script:
-        if not item['OST']:
-            # timestamp = item['new_timestamp'].replace(':', '@')
-            timestamp = item['new_timestamp']
+        if item['OST'] != 1:
+            # 将时间戳中的冒号替换为下划线
+            timestamp = item['new_timestamp'].replace(':', '_')
             audio_file = os.path.join(output_dir, f"audio_{timestamp}.mp3")
             
             # 检查文件是否已存在，如存在且不强制重新生成，则跳过
-            if os.path.exists(audio_file):
+            if os.path.exists(audio_file) and not force_regenerate:
                 logger.info(f"音频文件已存在，跳过生成: {audio_file}")
                 audio_files.append(audio_file)
                 continue
@@ -1426,7 +1437,8 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                 text=text,
                 voice_name=voice_name,
                 voice_rate=voice_rate,
-                voice_file=audio_file
+                voice_pitch=voice_pitch,
+                voice_file=audio_file,
             )
 
             if sub_maker is None:
