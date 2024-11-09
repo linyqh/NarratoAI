@@ -15,7 +15,7 @@
     ########### Vision NarratoAPI Key
     # NarratoAPI 是为了便捷访问不了 Gemini API 的用户， 提供的代理服务
     narrato_api_key = ""
-    narrato_api_url = ""
+    narrato_api_url = "https://narratoapi.scsmtech.cn/api/v1"
     narrato_vision_model = "gemini-1.5-flash"
     narrato_vision_key = ""
     narrato_llm_model = "gpt-4o"

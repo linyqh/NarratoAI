@@ -432,11 +432,11 @@ def generate_script(tr, params):
                         'llm_api_key': text_api_key,
                         'custom_prompt': st.session_state.get('custom_prompt', '')
                     }
-                    logger.debug(f"Narrato API 请求参数: {api_params}")
-                    requests.post(
+                    response = requests.post(
                         f"{config.app.get('narrato_api_url')}/video/config",
                         params=api_params,
-                        timeout=30
+                        timeout=30,
+                        verify=False
                     )
                     custom_prompt = st.session_state.get('custom_prompt', '')
                     processor = ScriptProcessor(
