@@ -24,6 +24,8 @@ def render_basic_settings(tr):
 
 
 def render_language_settings(tr):
+    st.subheader(tr("Proxy Settings"))
+
     """渲染语言设置"""
     system_locale = utils.get_system_locale()
     i18n_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "i18n")

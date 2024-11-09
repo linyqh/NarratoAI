@@ -127,15 +127,15 @@ def render_video_file(tr, params):
 def render_video_details(tr):
     """渲染视频主题和提示词"""
     video_theme = st.text_input(tr("Video Theme"))
-    prompt = st.text_area(
+    custom_prompt = st.text_area(
         tr("Generation Prompt"),
         value=st.session_state.get('video_plot', ''),
         help=tr("Custom prompt for LLM, leave empty to use default prompt"),
         height=180
     )
-    st.session_state['video_name'] = video_theme
-    st.session_state['video_plot'] = prompt
-    return video_theme, prompt
+    st.session_state['video_theme'] = video_theme
+    st.session_state['custom_prompt'] = custom_prompt
+    return video_theme, custom_prompt
 
 
 def render_script_buttons(tr, params):
@@ -367,18 +367,11 @@ def generate_script(tr, params):
                         f.write(frame_analysis)
                     
                     update_progress(70, "正在生成脚本...")
-                    
-                    # 构建完整的上下文
-                    context = {
-                        'video_name': st.session_state.get('video_name', ''),
-                        'video_plot': st.session_state.get('video_plot', ''),
-                        'frame_analysis': frame_analysis,
-                        'total_frames': len(keyframe_files)
-                    }
+
                     # 从配置中获取文本生成相关配置
                     text_provider = config.app.get('text_llm_provider', 'gemini').lower()
                     text_api_key = config.app.get(f'text_{text_provider}_api_key')
-                    text_model = config.app.get(f'text_{text_provider}_model_name', 'gemini-1.5-pro')
+                    text_model = config.app.get(f'text_{text_provider}_model_name')
                     text_base_url = config.app.get(f'text_{text_provider}_base_url')
                     
                     # 构建帧内容列表
@@ -425,13 +418,17 @@ def generate_script(tr, params):
                     
                     if not frame_content_list:
                         raise Exception("没有有效的帧内容可以处理")
-                    
+
+                    # ===================开始生成文案===================
+                    update_progress(90, "正在生成文案...")
                     # 使用 ScriptProcessor 生成脚本
                     from app.utils.script_generator import ScriptProcessor
+                    custom_prompt = st.session_state.get('custom_prompt', '')
                     processor = ScriptProcessor(
                         model_name=text_model,
                         api_key=text_api_key,
-                        prompt=""  # 使用默认提示词
+                        prompt=custom_prompt,
+                        video_theme=st.session_state.get('video_theme', '')
                     )
                     
                     # 处理帧内容生成脚本
@@ -476,11 +473,11 @@ def generate_script(tr, params):
                         'vision_api_key': st.session_state.get('narrato_vision_key'),
                         'llm_model': st.session_state.get('narrato_llm_model', 'qwen-plus'),
                         'llm_api_key': st.session_state.get('narrato_llm_key'),
-                        'custom_prompt': st.session_state.get('video_plot', '')
+                        'custom_prompt': st.session_state.get('custom_prompt', '')
                     }
                     
                     # 发送API请求
-                    logger.info(f"请求 NarratoAPI:{api_url}")
+                    logger.info(f"请求NarratoAPI: {api_url}")
                     update_progress(40, "正在上传文件...")
                     with open(zip_path, 'rb') as f:
                         files = {'file': (os.path.basename(zip_path), f, 'application/x-zip-compressed')}

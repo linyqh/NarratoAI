@@ -247,17 +247,10 @@ class MoonshotGenerator(BaseGenerator):
 
 
 class ScriptProcessor:
-    def __init__(self, model_name, api_key=None, prompt=None):
+    def __init__(self, model_name: str, api_key: str = None, prompt: str = None, video_theme: str = ""):
         self.model_name = model_name
-        # 根据不同模型选择对应的环境变量
-        default_api_key = {
-            'gemini': 'GOOGLE_API_KEY',
-            'gpt': 'OPENAI_API_KEY',
-            'qwen': 'DASHSCOPE_API_KEY',
-            'moonshot': 'MOONSHOT_API_KEY'
-        }
-        api_key_env = next((v for k, v in default_api_key.items() if k in model_name.lower()), 'OPENAI_API_KEY')
-        self.api_key = api_key or os.getenv(api_key_env)
+        self.api_key = api_key
+        self.video_theme = video_theme
         self.prompt = prompt or self._get_default_prompt()
 
         # 根据模型名称选择对应的生成器
@@ -271,11 +264,11 @@ class ScriptProcessor:
             self.generator = OpenAIGenerator(model_name, self.api_key, self.prompt)
 
     def _get_default_prompt(self) -> str:
-        return """你是一位极具幽默感的短视频脚本创作大师，擅长用"温和的违反"制造笑点，让野外建造视频既有趣又富有传播力。你的任务是将视频画面描述转化为能在社交平台疯狂传播的爆款口播文案。
+        return f"""你是一位极具幽默感的短视频脚本创作大师，擅长用"温和的违反"制造笑点，让{self.video_theme}视频既有趣又富有传播力。你的任务是将视频画面描述转化为能在社交平台疯狂传播的爆款口播文案。
 
-目标受众：热爱野外生活、追求独特体验的18-35岁年轻人
+目标受众：热爱生活、追求独特体验的18-35岁年轻人
 文案风格：基于HKRR理论 + 段子手精神
-主题：野外建造
+主题：{self.video_theme}
 
 【创作核心理念】
 1. 敢于用"温和的违反"制造笑点，但不能过于冒犯
@@ -300,7 +293,7 @@ class ScriptProcessor:
 3. 用接地气的表达方式拉近与观众距离
 
 【节奏控制 Rhythm】
-1. 严格控制文案字数在{word_count}字左右，允许误差不超过5字
+1. 严格控制文案字数在{self.word_count}字左右，允许误差不超过5字
 2. 像讲段子一样，注意铺垫和包袱的节奏
 3. 确保每段都有笑点，但不强求
 4. 段落结尾干净利落，不拖泥带水
@@ -313,7 +306,7 @@ class ScriptProcessor:
 5. 确保情节和建造过程的逻辑连续性
 
 【字数控制要求】
-1. 严格控制文案字数在{word_count}字左右，允许误差不超过5字
+1. 严格控制文案字数在{self.word_count}字左右，允许误差不超过5字
 2. 如果内容过长，优先精简修饰性词语
 3. 如果内容过短，可以适当增加细节描写
 4. 保持文案结构完整，不因字数限制而牺牲内容质量
