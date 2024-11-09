@@ -7,8 +7,10 @@ def render_review_panel(tr):
     with st.expander(tr("Video Check"), expanded=False):
         try:
             video_list = st.session_state.get('video_clip_json', [])
+            subclip_videos = st.session_state.get('subclip_videos', {})
         except KeyError:
             video_list = []
+            subclip_videos = {}
 
         # 计算列数和行数
         num_videos = len(video_list)
@@ -22,44 +24,62 @@ def render_review_panel(tr):
                 index = row * cols_per_row + col
                 if index < num_videos:
                     with cols[col]:
-                        render_video_item(tr, video_list, index)
+                        render_video_item(tr, video_list, subclip_videos, index)
 
-def render_video_item(tr, video_list, index):
+def render_video_item(tr, video_list, subclip_videos, index):
     """渲染单个视频项"""
-    video_info = video_list[index]
-    video_path = video_info.get('path')
-    if video_path is not None and os.path.exists(video_path):
-        initial_narration = video_info.get('narration', '')
-        initial_picture = video_info.get('picture', '')
-        initial_timestamp = video_info.get('timestamp', '')
-
-        # 显示视频
-        with open(video_path, 'rb') as video_file:
-            video_bytes = video_file.read()
-            st.video(video_bytes)
-
-        # 显示信息（只读）
-        text_panels = st.columns(2)
-        with text_panels[0]:
-            st.text_area(
-                tr("timestamp"), 
-                value=initial_timestamp, 
-                height=20,
-                key=f"timestamp_{index}",
-                disabled=True
-            )
-        with text_panels[1]:
-            st.text_area(
-                tr("Picture description"), 
-                value=initial_picture, 
-                height=20,
-                key=f"picture_{index}",
-                disabled=True
-            )
-        st.text_area(
-            tr("Narration"), 
-            value=initial_narration, 
-            height=100,
-            key=f"narration_{index}",
-            disabled=True
-        )
+    video_script = video_list[index]
+    
+    # 显示时间戳
+    timestamp = video_script.get('timestamp', '')
+    st.text_area(
+        tr("Timestamp"),
+        value=timestamp,
+        height=70,
+        disabled=True,
+        key=f"timestamp_{index}"
+    )
+    
+    # 显示视频播放器
+    video_path = subclip_videos.get(timestamp)
+    if video_path and os.path.exists(video_path):
+        try:
+            st.video(video_path)
+        except Exception as e:
+            logger.error(f"加载视频失败 {video_path}: {e}")
+            st.error(f"无法加载视频: {os.path.basename(video_path)}")
+    else:
+        st.warning(tr("视频文件未找到"))
+    
+    # 显示画面描述
+    st.text_area(
+        tr("Picture Description"),
+        value=video_script.get('picture', ''),
+        height=150,
+        disabled=True,
+        key=f"picture_{index}"
+    )
+    
+    # 显示旁白文本
+    narration = st.text_area(
+        tr("Narration"),
+        value=video_script.get('narration', ''),
+        height=150,
+        key=f"narration_{index}"
+    )
+    # 保存修改后的旁白文本
+    if narration != video_script.get('narration', ''):
+        video_script['narration'] = narration
+        st.session_state['video_clip_json'] = video_list
+    
+    # 显示剪辑模式
+    ost = st.selectbox(
+        tr("Clip Mode"),
+        options=range(1, 10),
+        index=video_script.get('OST', 1) - 1,
+        key=f"ost_{index}"
+    )
+    # 保存修改后的剪辑模式
+    if ost != video_script.get('OST', 1):
+        video_script['OST'] = ost
+        st.session_state['video_clip_json'] = video_list

@@ -187,3 +187,44 @@ def ensure_directory(directory):
     except Exception as e:
         logger.error(f"创建目录失败: {directory}, 错误: {e}")
         return False
+
+def create_zip(files: list, zip_path: str, base_dir: str = None) -> bool:
+    """
+    创建zip文件
+    Args:
+        files: 要打包的文件列表
+        zip_path: zip文件保存路径
+        base_dir: 基础目录，用于保持目录结构
+    Returns:
+        bool: 是否成功
+    """
+    try:
+        import zipfile
+        
+        # 确保目标目录存在
+        os.makedirs(os.path.dirname(zip_path), exist_ok=True)
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file in files:
+                if not os.path.exists(file):
+                    logger.warning(f"文件不存在，跳过: {file}")
+                    continue
+                    
+                # 计算文件在zip中的路径
+                if base_dir:
+                    arcname = os.path.relpath(file, base_dir)
+                else:
+                    arcname = os.path.basename(file)
+                
+                try:
+                    zipf.write(file, arcname)
+                except Exception as e:
+                    logger.error(f"添加文件到zip失败: {file}, 错误: {e}")
+                    continue
+        
+        logger.info(f"创建zip文件成功: {zip_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"创建zip文件失败: {e}")
+        return False

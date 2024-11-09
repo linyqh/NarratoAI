@@ -4,6 +4,7 @@ import glob
 import random
 from typing import List
 from typing import Union
+import traceback
 
 from loguru import logger
 from moviepy.editor import *
@@ -145,7 +146,7 @@ def combine_videos(
     return combined_video_path
 
 
-def wrap_text(text, max_width, font="Arial", fontsize=60):
+def wrap_text(text, max_width, font, fontsize=60):
     # 创建字体对象
     font = ImageFont.truetype(font, fontsize)
 
@@ -158,7 +159,7 @@ def wrap_text(text, max_width, font="Arial", fontsize=60):
     if width <= max_width:
         return text, height
 
-    # logger.warning(f"wrapping text, max_width: {max_width}, text_width: {width}, text: {text}")
+    logger.debug(f"换行文本, 最大宽度: {max_width}, 文本宽度: {width}, 文本: {text}")
 
     processed = True
 
@@ -199,7 +200,7 @@ def wrap_text(text, max_width, font="Arial", fontsize=60):
     _wrapped_lines_.append(_txt_)
     result = "\n".join(_wrapped_lines_).strip()
     height = len(_wrapped_lines_) * height
-    # logger.warning(f"wrapped text: {result}")
+    logger.debug(f"换行文本: {result}")
     return result, height
 
 
@@ -233,7 +234,7 @@ def generate_video_v2(
     Returns:
 
     """
-    total_steps = 4  # 总步���
+    total_steps = 4
     current_step = 0
     
     def update_progress(step_name):
@@ -506,7 +507,7 @@ def combine_clip_videos(combined_video_path: str,
             temp_audiofile=os.path.join(output_dir, "temp-audio.m4a")
         )
     finally:
-        # 确保资源被正确释放
+        # 确保资源被正确���放
         video_clip.close()
         for clip in clips:
             clip.close()

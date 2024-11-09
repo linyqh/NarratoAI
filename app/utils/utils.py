@@ -56,7 +56,7 @@ def to_json(obj):
         # 使用serialize函数处理输入对象
         serialized_obj = serialize(obj)
 
-        # 序列化处理后的对象为JSON字符串
+        # 序列化处理后的对象为JSON���符串
         return json.dumps(serialized_obj, ensure_ascii=False, indent=4)
     except Exception as e:
         return None
@@ -100,7 +100,7 @@ def task_dir(sub_dir: str = ""):
 
 
 def font_dir(sub_dir: str = ""):
-    d = resource_dir(f"fonts")
+    d = resource_dir("fonts")
     if sub_dir:
         d = os.path.join(d, sub_dir)
     if not os.path.exists(d):
@@ -109,7 +109,7 @@ def font_dir(sub_dir: str = ""):
 
 
 def song_dir(sub_dir: str = ""):
-    d = resource_dir(f"songs")
+    d = resource_dir("songs")
     if sub_dir:
         d = os.path.join(d, sub_dir)
     if not os.path.exists(d):
@@ -424,4 +424,103 @@ def cut_video(params, progress_callback=None):
 
     except Exception as e:
         logger.error(f"视频裁剪过程中发生错误: \n{traceback.format_exc()}")
+        raise
+
+
+def temp_dir(sub_dir: str = ""):
+    """
+    获取临时文件目录
+    Args:
+        sub_dir: 子目录名
+    Returns:
+        str: 临时文件目录路径
+    """
+    d = os.path.join(storage_dir(), "temp")
+    if sub_dir:
+        d = os.path.join(d, sub_dir)
+    if not os.path.exists(d):
+        os.makedirs(d)
+    return d
+
+
+def clear_keyframes_cache(video_path: str = None):
+    """
+    清理关键帧缓存
+    Args:
+        video_path: 视频文件路径，如果指定则只清理该视频的缓存
+    """
+    try:
+        keyframes_dir = os.path.join(temp_dir(), "keyframes")
+        if not os.path.exists(keyframes_dir):
+            return
+            
+        if video_path:
+            # ���理指定视频的缓存
+            video_hash = md5(video_path + str(os.path.getmtime(video_path)))
+            video_keyframes_dir = os.path.join(keyframes_dir, video_hash)
+            if os.path.exists(video_keyframes_dir):
+                import shutil
+                shutil.rmtree(video_keyframes_dir)
+                logger.info(f"已清理视频关键帧缓存: {video_path}")
+        else:
+            # 清理所有缓存
+            import shutil
+            shutil.rmtree(keyframes_dir)
+            logger.info("已清理所有关键帧缓存")
+            
+    except Exception as e:
+        logger.error(f"清理关键帧缓存失败: {e}")
+
+
+def init_resources():
+    """初始化资源文件"""
+    try:
+        # 创建字体目录
+        font_dir = os.path.join(root_dir(), "resource", "fonts")
+        os.makedirs(font_dir, exist_ok=True)
+        
+        # 检查字体文件
+        font_files = [
+            ("SourceHanSansCN-Regular.otf", "https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf"),
+            ("simhei.ttf", "C:/Windows/Fonts/simhei.ttf"),  # Windows 黑体
+            ("simkai.ttf", "C:/Windows/Fonts/simkai.ttf"),  # Windows 楷体
+            ("simsun.ttc", "C:/Windows/Fonts/simsun.ttc"),  # Windows 宋体
+        ]
+        
+        # 优先使用系统字体
+        system_font_found = False
+        for font_name, source in font_files:
+            if not source.startswith("http") and os.path.exists(source):
+                target_path = os.path.join(font_dir, font_name)
+                if not os.path.exists(target_path):
+                    import shutil
+                    shutil.copy2(source, target_path)
+                    logger.info(f"已复制系统字体: {font_name}")
+                system_font_found = True
+                break
+        
+        # 如果没有找到系统字体，则下载思源黑体
+        if not system_font_found:
+            source_han_path = os.path.join(font_dir, "SourceHanSansCN-Regular.otf")
+            if not os.path.exists(source_han_path):
+                download_font(font_files[0][1], source_han_path)
+                
+    except Exception as e:
+        logger.error(f"初始化资源文件失败: {e}")
+
+def download_font(url: str, font_path: str):
+    """下载字体文件"""
+    try:
+        logger.info(f"正在下载字体文件: {url}")
+        import requests
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        with open(font_path, 'wb') as f:
+            f.write(response.content)
+            
+        logger.info(f"字体文件下载成功: {font_path}")
+        
+    except Exception as e:
+        logger.error(f"下载字体文件失败: {e}")
         raise
