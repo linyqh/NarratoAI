@@ -20,6 +20,7 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 
 <a href="https://github.com/linyqh/NarratoAI/wiki" target="_blank">💬 加入开源社区，获取项目动态和最新资讯。</a>
 
+<h2>[🎉🎉🎉 官方文档 🎉🎉🎉](https://p9mf6rjv3c.feishu.cn/wiki/SP8swLLZki5WRWkhuFvc2CyInDg?from=from_copylink)</h2>
 <h3>首页</h3>
 
 ![](docs/index-zh.png)
