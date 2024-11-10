@@ -326,7 +326,7 @@ class ScriptProcessor:
             start_seconds = time_to_seconds(start_str)
             end_seconds = time_to_seconds(end_str)
             duration = end_seconds - start_seconds
-            word_count = int(duration / 0.2)
+            word_count = int(duration / 0.35)
 
             return word_count
         except Exception as e:

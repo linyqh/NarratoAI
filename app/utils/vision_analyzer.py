@@ -100,7 +100,7 @@ class VisionAnalyzer:
 
                         except Exception as e:
                             retry_count += 1
-                            error_msg = f"批次 {i // batch_size} 处理出错: {str(e)}\n{traceback.format_exc()}"
+                            error_msg = f"批次 {i // batch_size} 处理出错: {str(e)}"
                             logger.error(error_msg)
 
                             if retry_count >= 3:
@@ -111,7 +111,7 @@ class VisionAnalyzer:
                                     'model_used': self.model_name
                                 })
                             else:
-                                logger.info(f"批次 {i // batch_size} 处理失败，等待60秒后重试...")
+                                logger.info(f"批次 {i // batch_size} 处理失败，等待60秒后重试当前批次...")
                                 await asyncio.sleep(60)
 
                     pbar.update(1)

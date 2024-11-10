@@ -1,11 +1,11 @@
 [app]
-    project_version="0.3.2"
+    project_version="0.3.4"
     # 支持视频理解的大模型提供商
     #   gemini
     #   NarratoAPI
     #   qwen2-vl (待增加)
     vision_llm_provider="gemini"
-    vision_batch_size = 5
+    vision_batch_size = 7
     vision_analysis_prompt = "你是资深视频内容分析专家，擅长分析视频画面信息，分析下面视频画面内容，只输出客观的画面描述不要给任何总结或评价"
 
     ########## Vision Gemini API Key

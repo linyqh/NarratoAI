@@ -395,6 +395,8 @@ def cut_video(params, progress_callback=None):
         time_list = [i['timestamp'] for i in video_script_list]
         
         total_clips = len(time_list)
+
+        print("time_list", time_list)
         
         def clip_progress(current, total):
             progress = int((current / total) * 100)
@@ -413,12 +415,16 @@ def cut_video(params, progress_callback=None):
 
         st.session_state['subclip_videos'] = subclip_videos
 
+        print("list:", subclip_videos)
+
         for i, video_script in enumerate(video_script_list):
+            print(i)
+            print(video_script)
             try:
                 video_script['path'] = subclip_videos[video_script['timestamp']]
             except KeyError as err:
                 logger.error(f"裁剪视频失败: {err}")
-                raise ValueError(f"裁剪视频失败: {err}")
+                # raise ValueError(f"裁剪视频失败: {err}")
 
         return task_id, subclip_videos
 
