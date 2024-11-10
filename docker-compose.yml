@@ -1,30 +1,18 @@
-x-common-volumes: &common-volumes
-  - ./:/NarratoAI
+x-common: &common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: linyq1/narratoai:latest
+  volumes:
+    - ./:/NarratoAI
+  environment:
+    - VPN_PROXY_URL=http://host.docker.internal:7890
+  restart: always
 
 services:
   webui:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: linyq1/narratoai:latest
-    container_name: "webui"
+    <<: *common
+    container_name: webui
     ports:
       - "8501:8501"
-    command: [ "bash", "webui.sh" ]
-    volumes: *common-volumes
-    environment:
-      - "VPN_PROXY_URL=http://host.docker.internal:7890"
-    restart: always
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: linyq1/narratoai:latest
-    container_name: "api"
-    ports:
-      - "8502:8080"
-    command: [ "python3", "main.py" ]
-    volumes: *common-volumes
-    environment:
-      - "VPN_PROXY_URL=http://host.docker.internal:7890"
-    restart: always
+    command: ["webui"]

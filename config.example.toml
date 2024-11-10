@@ -1,5 +1,5 @@
 [app]
-    project_version="0.3.4"
+    project_version="0.3.5"
     # 支持视频理解的大模型提供商
     #   gemini
     #   NarratoAPI
