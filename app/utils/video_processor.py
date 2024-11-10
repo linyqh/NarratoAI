@@ -65,16 +65,44 @@ class VideoProcessor:
                 shot_boundaries.append(i)
         return shot_boundaries
 
+    def filter_keyframes_by_time(self, keyframes: List[np.ndarray], 
+                               keyframe_indices: List[int]) -> Tuple[List[np.ndarray], List[int]]:
+        """
+        过滤关键帧，确保每秒最多只有一个关键帧
+        
+        Args:
+            keyframes: 关键帧列表
+            keyframe_indices: 关键帧索引列表
+            
+        Returns:
+            Tuple[List[np.ndarray], List[int]]: 过滤后的关键帧列表和对应的帧索引
+        """
+        if not keyframes or not keyframe_indices:
+            return keyframes, keyframe_indices
+            
+        filtered_frames = []
+        filtered_indices = []
+        last_second = -1
+        
+        for frame, idx in zip(keyframes, keyframe_indices):
+            current_second = idx // self.fps
+            if current_second != last_second:
+                filtered_frames.append(frame)
+                filtered_indices.append(idx)
+                last_second = current_second
+                
+        return filtered_frames, filtered_indices
+
     def extract_keyframes(self, frames: List[np.ndarray], shot_boundaries: List[int]) -> Tuple[List[np.ndarray], List[int]]:
         """
-        从每个镜头中提取关键帧
+        从每个镜头中提取关键帧，并确保每秒最多一个关键帧
         
         Args:
             frames: 视频帧列表
             shot_boundaries: 镜头边界列表
             
         Returns:
-            Tuple[List[np.ndarray], List[int]]: 关���帧列表和对应的帧索引
+            Tuple[List[np.ndarray], List[int]]: 关键帧列表和对应的帧索引
         """
         keyframes = []
         keyframe_indices = []
@@ -92,7 +120,10 @@ class VideoProcessor:
             keyframes.append(shot_frames[center_idx])
             keyframe_indices.append(start + center_idx)
 
-        return keyframes, keyframe_indices
+        # 过滤每秒多余的关键帧
+        filtered_keyframes, filtered_indices = self.filter_keyframes_by_time(keyframes, keyframe_indices)
+        
+        return filtered_keyframes, filtered_indices
 
     def save_keyframes(self, keyframes: List[np.ndarray], keyframe_indices: List[int], 
                       output_dir: str) -> None:

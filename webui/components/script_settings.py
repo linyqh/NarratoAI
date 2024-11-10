@@ -18,6 +18,69 @@ from app.utils import utils, check_script, vision_analyzer, video_processor
 from webui.utils import file_utils
 
 
+def get_batch_timestamps(batch_files, prev_batch_files=None):
+    """
+    获取一批文件的时间戳范围
+    返回: (first_timestamp, last_timestamp, timestamp_range)
+    
+    文件名格式: keyframe_001253_000050.jpg
+    其中 000050 表示 00:00:50 (50秒)
+         000101 表示 00:01:01 (1分1秒)
+         
+    Args:
+        batch_files: 当前批次的文件列表
+        prev_batch_files: 上一个批次的文件列表，用于处理单张图片的情况
+    """
+    if not batch_files:
+        logger.warning("Empty batch files")
+        return "00:00", "00:00", "00:00-00:00"
+        
+    # 如果当前批次只有一张图片，且有上一个批次的文件，则使用上一批次的最后一张作为首帧
+    if len(batch_files) == 1 and prev_batch_files and len(prev_batch_files) > 0:
+        first_frame = os.path.basename(prev_batch_files[-1])
+        last_frame = os.path.basename(batch_files[0])
+        logger.debug(f"单张图片批次，使用上一批次最后一帧作为首帧: {first_frame}")
+    else:
+        # 提取首帧和尾帧的时间戳
+        first_frame = os.path.basename(batch_files[0])
+        last_frame = os.path.basename(batch_files[-1])
+    
+    # 从文件名中提取时间信息
+    first_time = first_frame.split('_')[2].replace('.jpg', '')  # 000050
+    last_time = last_frame.split('_')[2].replace('.jpg', '')    # 000101
+    
+    # 转换为分:秒格式
+    def format_timestamp(time_str):
+        # 时间格式为 MMSS，如 0050 表示 00:50, 0101 表示 01:01
+        if len(time_str) < 4:
+            logger.warning(f"Invalid timestamp format: {time_str}")
+            return "00:00"
+            
+        minutes = int(time_str[-4:-2])  # 取后4位的前2位作为分钟
+        seconds = int(time_str[-2:])    # 取后2位作为秒数
+        
+        # 处理进位
+        if seconds >= 60:
+            minutes += seconds // 60
+            seconds = seconds % 60
+            
+        return f"{minutes:02d}:{seconds:02d}"
+    
+    first_timestamp = format_timestamp(first_time)
+    last_timestamp = format_timestamp(last_time)
+    timestamp_range = f"{first_timestamp}-{last_timestamp}"
+    
+    logger.debug(f"解析时间戳: {first_frame} -> {first_timestamp}, {last_frame} -> {last_timestamp}")
+    return first_timestamp, last_timestamp, timestamp_range
+
+def get_batch_files(keyframe_files, result, batch_size=5):
+    """
+    获取当前批次的图片文件
+    """
+    batch_start = result['batch_index'] * batch_size
+    batch_end = min(batch_start + batch_size, len(keyframe_files))
+    return keyframe_files[batch_start:batch_end]
+
 def render_script_panel(tr):
     """渲染脚本配置面板"""
     with st.container(border=True):
@@ -238,7 +301,7 @@ def generate_script(tr, params):
             # 检查是否已经提取过关键帧
             keyframe_files = []
             if os.path.exists(video_keyframes_dir):
-                # 获取已有的关键帧文件
+                # 取已有的关键帧文件
                 for filename in sorted(os.listdir(video_keyframes_dir)):
                     if filename.endswith('.jpg'):
                         keyframe_files.append(os.path.join(video_keyframes_dir, filename))
@@ -282,7 +345,7 @@ def generate_script(tr, params):
                     except Exception as cleanup_err:
                         logger.error(f"清理失败的关键帧目录时出错: {cleanup_err}")
                     
-                    raise Exception(f"关键帧提取失败: {str(e)}")
+                    raise Exception(f"关键帧提取��败: {str(e)}")
 
             # 根据不同的 LLM 提供商处理
             vision_llm_provider = st.session_state.get('vision_llm_providers').lower()
@@ -327,38 +390,27 @@ def generate_script(tr, params):
                     
                     # 合并所有批次的析结果
                     frame_analysis = ""
+                    prev_batch_files = None
+
                     for result in results:
                         if 'error' in result:
                             logger.warning(f"批次 {result['batch_index']} 处理出现警告: {result['error']}")
                             continue
                             
-                        # 获取当前批次的图片文件
-                        batch_start = result['batch_index'] * config.app.get("vision_batch_size", 5)
-                        batch_end = min(batch_start + config.app.get("vision_batch_size", 5), len(keyframe_files))
-                        batch_files = keyframe_files[batch_start:batch_end]
+                        batch_files = get_batch_files(keyframe_files, result, config.app.get("vision_batch_size", 5))
+                        logger.debug(f"批次 {result['batch_index']} 处理完成，共 {len(batch_files)} 张图片")
+                        logger.debug(batch_files)
                         
-                        # 提取首帧和尾帧的时间戳
-                        first_frame = os.path.basename(batch_files[0])
-                        last_frame = os.path.basename(batch_files[-1])
-                        
-                        # 从文件名中提取时间信息
-                        first_time = first_frame.split('_')[2].replace('.jpg', '')  # 000002
-                        last_time = last_frame.split('_')[2].replace('.jpg', '')    # 000005
-                        
-                        # 转换为分:秒格式
-                        def format_timestamp(time_str):
-                            seconds = int(time_str)
-                            minutes = seconds // 60
-                            seconds = seconds % 60
-                            return f"{minutes:02d}:{seconds:02d}"
-                        
-                        first_timestamp = format_timestamp(first_time)
-                        last_timestamp = format_timestamp(last_time)
+                        first_timestamp, last_timestamp, _ = get_batch_timestamps(batch_files, prev_batch_files)
+                        logger.debug(f"处理时间戳: {first_timestamp}-{last_timestamp}")
                         
                         # 添加带时间戳的分析结果
                         frame_analysis += f"\n=== {first_timestamp}-{last_timestamp} ===\n"
                         frame_analysis += result['response']
                         frame_analysis += "\n"
+                        
+                        # 更新上一个批次的文件
+                        prev_batch_files = batch_files
                     
                     if not frame_analysis.strip():
                         raise Exception("未能生成有效的帧分析结果")
@@ -378,45 +430,27 @@ def generate_script(tr, params):
                     
                     # 构建帧内容列表
                     frame_content_list = []
+                    prev_batch_files = None
+
                     for i, result in enumerate(results):
                         if 'error' in result:
                             continue
                         
-                        # 获取当前批次的图片文件
-                        batch_start = result['batch_index'] * config.app.get("vision_batch_size", 5)
-                        batch_end = min(batch_start + config.app.get("vision_batch_size", 5), len(keyframe_files))
-                        batch_files = keyframe_files[batch_start:batch_end]
-                        
-                        # 提取首帧和尾帧的时间戳
-                        first_frame = os.path.basename(batch_files[0])
-                        last_frame = os.path.basename(batch_files[-1])
-                        
-                        # 从文件名中提取时间信息
-                        first_time = first_frame.split('_')[2].replace('.jpg', '')  # 000002
-                        last_time = last_frame.split('_')[2].replace('.jpg', '')    # 000005
-                        
-                        # 转换为分:秒格式
-                        def format_timestamp(time_str):
-                            seconds = int(time_str)
-                            minutes = seconds // 60
-                            seconds = seconds % 60
-                            return f"{minutes:02d}:{seconds:02d}"
-                        
-                        first_timestamp = format_timestamp(first_time)
-                        last_timestamp = format_timestamp(last_time)
-                        
-                        # 构建时间戳范围字符串 (MM:SS-MM:SS 格式)
-                        timestamp_range = f"{first_timestamp}-{last_timestamp}"
+                        batch_files = get_batch_files(keyframe_files, result, config.app.get("vision_batch_size", 5))
+                        _, _, timestamp_range = get_batch_timestamps(batch_files, prev_batch_files)
                         
                         frame_content = {
-                            "timestamp": timestamp_range,  # 使用时间范围格式 "MM:SS-MM:SS"
-                            "picture": result['response'],  # 图片分析结果
-                            "narration": "",  # 将由 ScriptProcessor 生成
-                            "OST": 2  # 默认值
+                            "timestamp": timestamp_range,
+                            "picture": result['response'],
+                            "narration": "",
+                            "OST": 2
                         }
                         frame_content_list.append(frame_content)
                         
                         logger.debug(f"添加帧内容: 时间范围={timestamp_range}, 分析结果长度={len(result['response'])}")
+                        
+                        # 更新上一个批次的文件
+                        prev_batch_files = batch_files
                     
                     if not frame_content_list:
                         raise Exception("没有有效的帧内容可以处理")
@@ -442,13 +476,15 @@ def generate_script(tr, params):
                     )
                     adapter = HTTPAdapter(max_retries=retry_strategy)
                     session.mount("https://", adapter)
-
-                    response = session.post(
-                        f"{config.app.get('narrato_api_url')}/video/config",
-                        params=api_params,
-                        timeout=30,
-                        verify=True  # 启用证书验证
-                    )
+                    try:
+                        response = session.post(
+                            f"{config.app.get('narrato_api_url')}/video/config",
+                            params=api_params,
+                            timeout=30,
+                            verify=True  # 启用证书验证
+                        )
+                    except:
+                        pass
 
                     custom_prompt = st.session_state.get('custom_prompt', '')
                     processor = ScriptProcessor(
@@ -621,7 +657,7 @@ def save_script(tr, video_clip_json_details):
                 # 显示成功消息
                 st.success(tr("Script saved successfully"))
 
-                # 强制重新加载页面��更新选择框
+                # 强制重新加载页面更新选择框
                 time.sleep(0.5)  # 给一点时间让用户看到成功消息
                 st.rerun()
 

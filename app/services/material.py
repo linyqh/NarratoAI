@@ -251,16 +251,41 @@ def download_videos(
     return video_paths
 
 
+def time_to_seconds(time_str: str) -> float:
+    """
+    将时间字符串转换为秒数
+    支持格式：
+    1. "MM:SS" (分:秒)
+    2. "SS" (纯秒数)
+    """
+    parts = time_str.split(':')
+    if len(parts) == 2:
+        minutes, seconds = map(float, parts)
+        return minutes * 60 + seconds
+    return float(time_str)
+
+
+def format_timestamp(seconds: float) -> str:
+    """
+    将秒数转换为 "MM:SS" 格式的时间字符串
+    """
+    minutes = int(seconds) // 60
+    secs = int(seconds) % 60
+    return f"{minutes:02d}:{secs:02d}"
+
+
 def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> dict:
     """
     保存剪辑后的视频
     Args:
-        timestamp: 需要裁剪的单个时间戳，如：'00:36-00:40'
+        timestamp: 需要裁剪的单个时间戳，支持两种格式：
+                  1. '00:36-00:40' (分:秒-分:秒)
+                  2. 'SS-SS' (秒-秒)
         origin_video: 原视频路径
         save_dir: 存储目录
 
     Returns:
-        裁剪后的视频路径
+        裁剪后的视频路径，格式为 {timestamp: video_path}
     """
     if not save_dir:
         save_dir = utils.storage_dir("cache_videos")
@@ -276,35 +301,64 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
         return {timestamp: video_path}
 
     try:
+        # 先加载视频获取总时长
+        video = VideoFileClip(origin_video)
+        total_duration = video.duration
+        
+        # 获取目标时间段
+        start_str, end_str = timestamp.split('-')
+        start = time_to_seconds(start_str)
+        end = time_to_seconds(end_str)
+        
+        # 验证时间段是否有效
+        if start >= total_duration:
+            logger.warning(f"起始时间 {format_timestamp(start)} ({start:.2f}秒) 超出视频总时长 {format_timestamp(total_duration)} ({total_duration:.2f}秒)")
+            video.close()
+            return {}
+            
+        if end > total_duration:
+            logger.warning(f"结束时间 {format_timestamp(end)} ({end:.2f}秒) 超出视频总时长 {format_timestamp(total_duration)} ({total_duration:.2f}秒)，将自动调整为视频结尾")
+            end = total_duration
+            
+        if end <= start:
+            logger.warning(f"结束时间 {format_timestamp(end)} 必须大于起始时间 {format_timestamp(start)}")
+            video.close()
+            return {}
+            
         # 剪辑视频
-        start, end = utils.split_timestamp(timestamp)
-        video = VideoFileClip(origin_video).subclip(start, end)
+        duration = end - start
+        logger.info(f"开始剪辑视频: {format_timestamp(start)} - {format_timestamp(end)}，时长 {format_timestamp(duration)}")
+        subclip = video.subclip(start, end)
         
-        # 检查视频是否有音频轨道
-        if video.audio is not None:
-            video.write_videofile(video_path, logger=None)  # 有音频时正常处理
-        else:
-            # 没有音频时使用不同的写入方式
-            video.write_videofile(video_path, audio=False, logger=None)
-        
-        video.close()  # 确保关闭视频文件
-
-        if os.path.getsize(video_path) > 0 and os.path.exists(video_path):
-            try:
-                clip = VideoFileClip(video_path)
-                duration = clip.duration
-                fps = clip.fps
-                clip.close()
-                if duration > 0 and fps > 0:
-                    return {timestamp: video_path}
-            except Exception as e:
-                logger.warning(f"视频文件验证失败: {video_path} => {str(e)}")
-                if os.path.exists(video_path):
-                    os.remove(video_path)
+        try:
+            # 检查视频是否有音频轨道并写入文件
+            subclip.write_videofile(video_path, audio=(subclip.audio is not None), logger=None)
+            
+            # 验证生成的视频文件
+            if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
+                with VideoFileClip(video_path) as clip:
+                    if clip.duration > 0 and clip.fps > 0:
+                        return {timestamp: video_path}
+                    
+            raise ValueError("视频文件验证失败")
+            
+        except Exception as e:
+            logger.warning(f"视频文件处理失败: {video_path} => {str(e)}")
+            if os.path.exists(video_path):
+                os.remove(video_path)
+                
     except Exception as e:
-        logger.warning(f"视频剪辑失败: {str(e)}")
+        logger.warning(f"视频剪辑失败: \n{str(traceback.format_exc())}")
         if os.path.exists(video_path):
             os.remove(video_path)
+    finally:
+        # 确保视频对象被正确关闭
+        try:
+            video.close()
+            if 'subclip' in locals():
+                subclip.close()
+        except:
+            pass
     
     return {}
 
@@ -426,6 +480,4 @@ def merge_videos(video_paths, ost_list):
 
 
 if __name__ == "__main__":
-    download_videos(
-        "test123", ["Money Exchange Medium"], audio_duration=100, source="pixabay"
-    )
+    save_clip_video('00:50-01:41', 'E:\\projects\\NarratoAI\\resource\\videos\\WeChat_20241110144511.mp4')
