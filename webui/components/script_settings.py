@@ -1,10 +1,12 @@
 import os
+import ssl
 import glob
 import json
 import time
 import asyncio
 import traceback
-
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import requests
 import streamlit as st
 from loguru import logger
@@ -432,12 +434,22 @@ def generate_script(tr, params):
                         'llm_api_key': text_api_key,
                         'custom_prompt': st.session_state.get('custom_prompt', '')
                     }
-                    response = requests.post(
+                    session = requests.Session()
+                    retry_strategy = Retry(
+                        total=3,
+                        backoff_factor=1,
+                        status_forcelist=[500, 502, 503, 504]
+                    )
+                    adapter = HTTPAdapter(max_retries=retry_strategy)
+                    session.mount("https://", adapter)
+
+                    response = session.post(
                         f"{config.app.get('narrato_api_url')}/video/config",
                         params=api_params,
                         timeout=30,
-                        verify=False
+                        verify=True  # 启用证书验证
                     )
+
                     custom_prompt = st.session_state.get('custom_prompt', '')
                     processor = ScriptProcessor(
                         model_name=text_model,
