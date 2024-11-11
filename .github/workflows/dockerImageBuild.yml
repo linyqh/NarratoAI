@@ -9,6 +9,10 @@ jobs:
     name: Build docker
     runs-on: ubuntu-latest
     steps:
+      - name: Remove unnecessary files
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
       - name: Checkout
         uses: actions/checkout@v3
 
