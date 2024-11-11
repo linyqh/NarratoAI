@@ -7,7 +7,16 @@ x-common: &common
     - ./:/NarratoAI
   environment:
     - VPN_PROXY_URL=http://host.docker.internal:7890
+    - PYTHONUNBUFFERED=1
+    - PYTHONMALLOC=malloc
+    - OPENCV_OPENCL_RUNTIME=disabled
+    - OPENCV_CPU_DISABLE=0
   restart: always
+  mem_limit: 4g
+  mem_reservation: 2g
+  memswap_limit: 6g
+  cpus: 2.0
+  cpu_shares: 1024
 
 services:
   webui:
@@ -16,3 +25,14 @@ services:
     ports:
       - "8501:8501"
     command: ["webui"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200m"
+        max-file: "3"
+    tmpfs:
+      - /tmp:size=1G
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
