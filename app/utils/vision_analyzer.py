@@ -11,6 +11,7 @@ import google.generativeai as genai
 import PIL.Image
 import traceback
 
+
 class VisionAnalyzer:
     """视觉分析器类"""
 
@@ -28,7 +29,15 @@ class VisionAnalyzer:
     def _configure_client(self):
         """配置API客户端"""
         genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel(self.model_name)
+        # 开放 Gemini 模型安全设置
+        from google.generativeai.types import HarmCategory, HarmBlockThreshold
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+        self.model = genai.GenerativeModel(self.model_name, safety_settings=safety_settings)
 
     @retry(
         stop=stop_after_attempt(3),
