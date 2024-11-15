@@ -149,17 +149,38 @@ class GeminiGenerator(BaseGenerator):
 
     def _generate(self, messages: list, params: dict) -> any:
         """实现Gemini特定的生成逻辑"""
-        try:
-            # 转换消息格式为Gemini格式
-            prompt = "\n".join([m["content"] for m in messages])
-            response = self.model.generate_content(
-                prompt,
-                generation_config=params
-            )
-            return response
-        except Exception as e:
-            logger.error(f"Gemini generation error: {str(e)}")
-            raise
+        while True:
+            try:
+                # 转换消息格式为Gemini格式
+                prompt = "\n".join([m["content"] for m in messages])
+                response = self.model.generate_content(
+                    prompt,
+                    generation_config=params
+                )
+                
+                # 检查响应是否包含有效内容
+                if (hasattr(response, 'result') and 
+                    hasattr(response.result, 'candidates') and 
+                    response.result.candidates):
+                    
+                    candidate = response.result.candidates[0]
+                    
+                    # 检查是否有内容字段
+                    if not hasattr(candidate, 'content'):
+                        logger.warning("Gemini API 返回速率限制响应，等待30秒后重试...")
+                        time.sleep(30)  # 等待3秒后重试
+                        continue
+                return response
+                
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str:
+                    logger.warning("Gemini API 触发限流，等待65秒后重试...")
+                    time.sleep(65)  # 等待65秒后重试
+                    continue
+                else:
+                    logger.error(f"Gemini 生成文案错误: \n{error_str}")
+                    raise
 
     def _process_response(self, response: any) -> str:
         """处理Gemini的响应"""
@@ -223,7 +244,7 @@ class MoonshotGenerator(BaseGenerator):
         }
 
     def _generate(self, messages: list, params: dict) -> any:
-        """实现Moonshot特定的生成逻辑，包含429���误重试机制"""
+        """实现Moonshot特定的生成逻辑，包含429误重试机制"""
         while True:
             try:
                 response = self.client.chat.completions.create(
