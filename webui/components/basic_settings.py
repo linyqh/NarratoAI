@@ -71,7 +71,7 @@ def render_vision_llm_settings(tr):
     st.subheader(tr("Vision Model Settings"))
 
     # 视频分析模型提供商选择
-    vision_providers = ['Gemini', 'NarratoAPI']
+    vision_providers = ['Gemini', 'NarratoAPI', 'Qwen']
     saved_vision_provider = config.app.get("vision_llm_provider", "Gemini").lower()
     saved_provider_index = 0
 

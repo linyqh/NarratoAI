@@ -14,7 +14,7 @@ from loguru import logger
 from app.config import config
 from app.models.schema import VideoClipParams
 from app.utils.script_generator import ScriptProcessor
-from app.utils import utils, check_script, vision_analyzer, video_processor
+from app.utils import utils, check_script, vision_analyzer, video_processor, qwen_analyzer
 from webui.utils import file_utils
 
 
@@ -605,6 +605,159 @@ def generate_script(tr, params):
                             os.remove(zip_path)
                     except Exception as e:
                         logger.warning(f"清理临时文件失败: {str(e)}")
+
+            elif vision_llm_provider == 'qwen':
+                try:
+                    # ===================初始化视觉分析器===================
+                    update_progress(30, "正在初始化视觉分析器...")
+
+                    # 从配置中获取 qwen 相关配置
+                    vision_api_key = st.session_state.get('vision_qwen_api_key')
+                    vision_model = st.session_state.get('vision_qwen_model_name')
+                    vision_base_url = st.session_state.get('vision_qwen_base_url')
+
+                    if not vision_api_key or not vision_model:
+                        raise ValueError("未配置 qwen API Key 或者 模型，请在基础设置中配置")
+
+                    analyzer = qwen_analyzer.QwenAnalyzer(
+                        model_name=vision_model,
+                        api_key=vision_api_key
+                    )
+
+                    update_progress(40, "正在分析关键帧...")
+
+                    # ===================创建异步事件循环===================
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                    # 执行异步分析
+                    results = loop.run_until_complete(
+                        analyzer.analyze_images(
+                            images=keyframe_files,
+                            prompt=config.app.get('vision_analysis_prompt'),
+                            batch_size=config.app.get("vision_batch_size", 5)
+                        )
+                    )
+                    loop.close()
+
+                    # ===================处理分析结果===================
+                    update_progress(60, "正在整理分析结果...")
+
+                    # 合并所有批次的析结果
+                    frame_analysis = ""
+                    prev_batch_files = None
+
+                    for result in results:
+                        if 'error' in result:
+                            logger.warning(f"批次 {result['batch_index']} 处理出现警告: {result['error']}")
+                            continue
+
+                        batch_files = get_batch_files(keyframe_files, result, config.app.get("vision_batch_size", 5))
+                        logger.debug(f"批次 {result['batch_index']} 处理完成，共 {len(batch_files)} 张图片")
+                        logger.debug(batch_files)
+
+                        first_timestamp, last_timestamp, _ = get_batch_timestamps(batch_files, prev_batch_files)
+                        logger.debug(f"处理时间戳: {first_timestamp}-{last_timestamp}")
+
+                        # 添加带时间戳的分析结果
+                        frame_analysis += f"\n=== {first_timestamp}-{last_timestamp} ===\n"
+                        frame_analysis += result['response']
+                        frame_analysis += "\n"
+
+                        # 更新上一个批次的文件
+                        prev_batch_files = batch_files
+
+                    if not frame_analysis.strip():
+                        raise Exception("未能生成有效的帧分析结果")
+
+                    # 保存分析结果
+                    analysis_path = os.path.join(utils.temp_dir(), "frame_analysis.txt")
+                    with open(analysis_path, 'w', encoding='utf-8') as f:
+                        f.write(frame_analysis)
+
+                    update_progress(70, "正在生成脚本...")
+
+                    # 从配置中获取文本生成相关配置
+                    text_provider = config.app.get('text_llm_provider', 'qwen').lower()
+                    text_api_key = config.app.get(f'text_{text_provider}_api_key')
+                    text_model = config.app.get(f'text_{text_provider}_model_name')
+                    text_base_url = config.app.get(f'text_{text_provider}_base_url')
+
+                    # 构建帧内容列表
+                    frame_content_list = []
+                    prev_batch_files = None
+
+                    for i, result in enumerate(results):
+                        if 'error' in result:
+                            continue
+
+                        batch_files = get_batch_files(keyframe_files, result, config.app.get("vision_batch_size", 5))
+                        _, _, timestamp_range = get_batch_timestamps(batch_files, prev_batch_files)
+
+                        frame_content = {
+                            "timestamp": timestamp_range,
+                            "picture": result['response'],
+                            "narration": "",
+                            "OST": 2
+                        }
+                        frame_content_list.append(frame_content)
+
+                        logger.debug(f"添加帧内容: 时间范围={timestamp_range}, 分析结果长度={len(result['response'])}")
+
+                        # 更新上一个批次的文件
+                        prev_batch_files = batch_files
+
+                    if not frame_content_list:
+                        raise Exception("没有有效的帧内容可以处理")
+
+                    # ===================开始生成文案===================
+                    update_progress(90, "正在生成文案...")
+                    # 校验配置
+                    api_params = {
+                        'batch_size': st.session_state.get('narrato_batch_size', 10),
+                        'use_ai': False,
+                        'start_offset': 0,
+                        'vision_model': vision_model,
+                        'vision_api_key': vision_api_key,
+                        'llm_model': text_model,
+                        'llm_api_key': text_api_key,
+                        'custom_prompt': st.session_state.get('custom_prompt', '')
+                    }
+                    session = requests.Session()
+                    retry_strategy = Retry(
+                        total=3,
+                        backoff_factor=1,
+                        status_forcelist=[500, 502, 503, 504]
+                    )
+                    adapter = HTTPAdapter(max_retries=retry_strategy)
+                    session.mount("https://", adapter)
+                    try:
+                        response = session.post(
+                            f"{config.app.get('narrato_api_url')}/video/config",
+                            params=api_params,
+                            timeout=30,
+                            verify=True  # 启用证书验证
+                        )
+                    except:
+                        pass
+
+                    custom_prompt = st.session_state.get('custom_prompt', '')
+                    processor = ScriptProcessor(
+                        model_name=text_model,
+                        api_key=text_api_key,
+                        prompt=custom_prompt,
+                        video_theme=st.session_state.get('video_theme', '')
+                    )
+
+                    # 处理帧内容生成脚本
+                    script_result = processor.process_frames(frame_content_list)
+
+                    # 将结果转换为JSON字符串
+                    script = json.dumps(script_result, ensure_ascii=False, indent=2)
+
+                except Exception as e:
+                    logger.exception(f"Qwen 处理过程中发生错误\n{traceback.format_exc()}")
+                    raise Exception(f"视觉分析失败: {str(e)}")
 
             else:
                 logger.exception("Vision Model 未启用，请检查配置")
