@@ -83,7 +83,7 @@ class VideoProcessor:
         keyframes = []
         keyframe_indices = []
 
-        for i in range(len(shot_boundaries)):
+        for i in tqdm(range(len(shot_boundaries)), desc="提取关键帧"):
             start = shot_boundaries[i - 1] if i > 0 else 0
             end = shot_boundaries[i]
             shot_frames = frames[start:end]
@@ -217,11 +217,10 @@ class VideoProcessor:
         if not frames:
             raise ValueError(f"跳过 {skip_seconds} 秒后没有剩余帧可以处理")
 
-        logger.info("\n检测场景边界...")
+        logger.info("检测场景边界...")
         shot_boundaries = self.detect_shot_boundaries(frames, threshold)
         logger.info(f"检测到 {len(shot_boundaries)} 个场景边界")
 
-        logger.info("\n提取关键帧...")
         keyframes, keyframe_indices = self.extract_keyframes(frames, shot_boundaries)
 
         adjusted_indices = [idx + skip_frames for idx in keyframe_indices]
@@ -247,6 +246,9 @@ class VideoProcessor:
         os.makedirs(mini_frames_dir, exist_ok=True)
         os.makedirs(hd_frames_dir, exist_ok=True)
 
+        mini_processor = None
+        compressed_video = None
+
         try:
             # 1. 压缩视频
             video_name = os.path.splitext(os.path.basename(self.video_path))[0]
@@ -268,20 +270,61 @@ class VideoProcessor:
 
             # 3. 从原始视频提取高清关键帧
             logger.info("\n步骤3: 提取高清关键帧...")
-            frame_numbers = mini_processor.extract_numbers_from_folder(mini_frames_dir)
+            frame_numbers = self.extract_numbers_from_folder(mini_frames_dir)
+
+            if not frame_numbers:
+                raise ValueError("未能从压缩视频中提取到有效的关键帧")
+
             self.extract_frames_by_numbers(frame_numbers, hd_frames_dir)
 
-            logger.info(f"\n处理完成！")
-            logger.info(f"高清关键帧保存在: {hd_frames_dir}")
+            logger.info(f"处理完成！高清关键帧保存在: {hd_frames_dir}")
+
+        except Exception as e:
+            import traceback
+            logger.error(f"视频处理失败: \n{traceback.format_exc()}")
+            raise
 
         finally:
+            # 释放资源
+            if mini_processor:
+                mini_processor.cap.release()
+                del mini_processor
+
+            # 确保视频文件句柄被释放
+            if hasattr(self, 'cap'):
+                self.cap.release()
+
+            # 等待资源释放
+            import time
+            time.sleep(0.5)
+
             if not keep_temp:
-                import shutil
                 try:
-                    shutil.rmtree(temp_dir)
+                    # 先删除压缩视频文件
+                    if compressed_video and os.path.exists(compressed_video):
+                        try:
+                            os.remove(compressed_video)
+                        except Exception as e:
+                            logger.warning(f"删除压缩视频失败: {e}")
+
+                    # 再删除临时目录
+                    import shutil
+                    if os.path.exists(temp_dir):
+                        max_retries = 3
+                        for i in range(max_retries):
+                            try:
+                                shutil.rmtree(temp_dir)
+                                break
+                            except Exception as e:
+                                if i == max_retries - 1:
+                                    logger.warning(f"清理临时文件失败: {e}")
+                                else:
+                                    time.sleep(1)  # 等待1秒后重试
+                                    continue
+
                     logger.info("临时文件已清理")
                 except Exception as e:
-                    logger.info(f"清理临时文件时出错: {e}")
+                    logger.warning(f"清理临时文件时出错: {e}")
 
 
 if __name__ == "__main__":
