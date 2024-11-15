@@ -25,9 +25,23 @@ def get_bgm_file(bgm_type: str = "random", bgm_file: str = ""):
         return bgm_file
 
     if bgm_type == "random":
-        suffix = "*.mp3"
         song_dir = utils.song_dir()
-        files = glob.glob(os.path.join(song_dir, suffix))
+
+        # 检查目录是否存在
+        if not os.path.exists(song_dir):
+            logger.warning(f"背景音乐目录不存在: {song_dir}")
+            return ""
+
+        # 支持 mp3 和 flac 格式
+        mp3_files = glob.glob(os.path.join(song_dir, "*.mp3"))
+        flac_files = glob.glob(os.path.join(song_dir, "*.flac"))
+        files = mp3_files + flac_files
+
+        # 检查是否找到音乐文件
+        if not files:
+            logger.warning(f"在目录 {song_dir} 中没有找到 MP3 或 FLAC 文件")
+            return ""
+
         return random.choice(files)
 
     return ""
