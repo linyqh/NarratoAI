@@ -5,7 +5,6 @@
     #   NarratoAPI
     #   qwen2-vl (待增加)
     vision_llm_provider="gemini"
-    vision_batch_size = 7
     vision_analysis_prompt = "你是资深视频内容分析专家，擅长分析视频画面信息，分析下面视频画面内容，只输出客观的画面描述不要给任何总结或评价"
 
     ########## Vision Gemini API Key
@@ -171,3 +170,14 @@
     # Get your API key at https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/SpeechServices
     speech_key=""
     speech_region=""
+
+[frames]
+    skip_seconds = 0
+    # threshold（差异阈值）用于判断两个连续帧之间是否发生了场景切换
+    # 较小的阈值（如 20）：更敏感，能捕捉到细微的场景变化，但可能会误判，关键帧图片更多
+    # 较大的阈值（如 40）：更保守，只捕捉明显的场景切换，但可能会漏掉渐变场景，关键帧图片更少
+    # 默认值 30：在实践中是一个比较平衡的选择
+    threshold = 30
+    version = "v2"
+    # 大模型单次处理的关键帧数量
+    vision_batch_size = 5

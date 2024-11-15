@@ -14,7 +14,7 @@ from loguru import logger
 from app.config import config
 from app.models.schema import VideoClipParams
 from app.utils.script_generator import ScriptProcessor
-from app.utils import utils, check_script, vision_analyzer, video_processor
+from app.utils import utils, check_script, vision_analyzer, video_processor, video_processor_v2
 from webui.utils import file_utils
 
 
@@ -318,13 +318,21 @@ def generate_script(tr, params):
                     os.makedirs(video_keyframes_dir, exist_ok=True)
                     
                     # 初始化视频处理器
-                    processor = video_processor.VideoProcessor(params.video_origin_path)
-                    
-                    # 处理视频并提取关键帧
-                    processor.process_video(
-                        output_dir=video_keyframes_dir,
-                        skip_seconds=0
-                    )
+                    if config.frames.get("version") == "v2":
+                        processor = video_processor_v2.VideoProcessor(params.video_origin_path)
+                        # 处理视频并提取关键帧
+                        processor.process_video_pipeline(
+                            output_dir=video_keyframes_dir,
+                            skip_seconds=config.frames.get("skip_seconds", 0),
+                            threshold=config.frames.get("threshold", 30)
+                        )
+                    else:
+                        processor = video_processor.VideoProcessor(params.video_origin_path)
+                        # 处理视频并提取关键帧
+                        processor.process_video(
+                            output_dir=video_keyframes_dir,
+                            skip_seconds=0
+                        )
                     
                     # 获取所有关键帧文件路径
                     for filename in sorted(os.listdir(video_keyframes_dir)):
@@ -380,7 +388,7 @@ def generate_script(tr, params):
                         analyzer.analyze_images(
                             images=keyframe_files,
                             prompt=config.app.get('vision_analysis_prompt'),
-                            batch_size=config.app.get("vision_batch_size", 5)
+                            batch_size=config.frames.get("vision_batch_size", 5)
                         )
                     )
                     loop.close()
@@ -397,7 +405,7 @@ def generate_script(tr, params):
                             logger.warning(f"批次 {result['batch_index']} 处理出现警告: {result['error']}")
                             continue
                             
-                        batch_files = get_batch_files(keyframe_files, result, config.app.get("vision_batch_size", 5))
+                        batch_files = get_batch_files(keyframe_files, result, config.frames.get("vision_batch_size", 5))
                         logger.debug(f"批次 {result['batch_index']} 处理完成，共 {len(batch_files)} 张图片")
                         logger.debug(batch_files)
                         
@@ -436,7 +444,7 @@ def generate_script(tr, params):
                         if 'error' in result:
                             continue
                         
-                        batch_files = get_batch_files(keyframe_files, result, config.app.get("vision_batch_size", 5))
+                        batch_files = get_batch_files(keyframe_files, result, config.frames.get("vision_batch_size", 5))
                         _, _, timestamp_range = get_batch_timestamps(batch_files, prev_batch_files)
                         
                         frame_content = {
@@ -612,14 +620,14 @@ def generate_script(tr, params):
             if script is None:
                 st.error("生成脚本失败，请检查日志")
                 st.stop()
-            logger.info(f"脚本生成完成\n{script} \n{type(script)}")
+            logger.info(f"脚本生成完成")
             if isinstance(script, list):
                 st.session_state['video_clip_json'] = script
             elif isinstance(script, str):
                 st.session_state['video_clip_json'] = json.loads(script)
-            update_progress(90, "脚本生成完成")
+            update_progress(80, "脚本生成完成")
 
-        time.sleep(0.5)
+        time.sleep(0.1)
         progress_bar.progress(100)
         status_text.text("脚本生成完成！")
         st.success("视频脚本生成成功！")
