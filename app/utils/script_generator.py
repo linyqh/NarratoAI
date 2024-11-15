@@ -179,8 +179,7 @@ class QwenGenerator(BaseGenerator):
         self.default_params = {
             **self.default_params,
             "stream": False,
-            "user": "script_generator",
-            "enable_search": True
+            "user": "script_generator"
         }
 
     def _generate(self, messages: list, params: dict) -> any:
