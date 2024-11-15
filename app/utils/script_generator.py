@@ -7,6 +7,7 @@ from typing import List, Dict
 from datetime import datetime
 from openai import OpenAI
 import google.generativeai as genai
+import time
 
 
 class BaseGenerator:
@@ -222,17 +223,24 @@ class MoonshotGenerator(BaseGenerator):
         }
 
     def _generate(self, messages: list, params: dict) -> any:
-        """实现Moonshot特定的生成逻辑"""
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
-                **params
-            )
-            return response
-        except Exception as e:
-            logger.error(f"Moonshot generation error: {str(e)}")
-            raise
+        """实现Moonshot特定的生成逻辑，包含429错误重试机制"""
+        while True:
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    **params
+                )
+                return response
+            except Exception as e:
+                error_str = str(e)
+                if "Error code: 429" in error_str:
+                    logger.warning("Moonshot API 触发限流，等待65秒后重试...")
+                    time.sleep(65)  # 等待65秒后重试
+                    continue
+                else:
+                    logger.error(f"Moonshot generation error: {error_str}")
+                    raise
 
     def _process_response(self, response: any) -> str:
         """处理Moonshot的响应"""
