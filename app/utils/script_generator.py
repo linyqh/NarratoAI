@@ -223,7 +223,7 @@ class MoonshotGenerator(BaseGenerator):
         }
 
     def _generate(self, messages: list, params: dict) -> any:
-        """实现Moonshot特定的生成逻辑，包含429错误重试机制"""
+        """实现Moonshot特定的生成逻辑，包含429���误重试机制"""
         while True:
             try:
                 response = self.client.chat.completions.create(
@@ -249,6 +249,42 @@ class MoonshotGenerator(BaseGenerator):
         return response.choices[0].message.content.strip()
 
 
+class DeepSeekGenerator(BaseGenerator):
+    """DeepSeek API 生成器实现"""
+    def __init__(self, model_name: str, api_key: str, prompt: str, base_url: str):
+        super().__init__(model_name, api_key, prompt)
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=base_url or "https://api.deepseek.com"
+        )
+        
+        # DeepSeek特定参数
+        self.default_params = {
+            **self.default_params,
+            "stream": False,
+            "user": "script_generator"
+        }
+
+    def _generate(self, messages: list, params: dict) -> any:
+        """实现DeepSeek特定的生成逻辑"""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,  # deepseek-chat 或 deepseek-coder
+                messages=messages,
+                **params
+            )
+            return response
+        except Exception as e:
+            logger.error(f"DeepSeek generation error: {str(e)}")
+            raise
+
+    def _process_response(self, response: any) -> str:
+        """处理DeepSeek的响应"""
+        if not response or not response.choices:
+            raise ValueError("Invalid response from DeepSeek API")
+        return response.choices[0].message.content.strip()
+
+
 class ScriptProcessor:
     def __init__(self, model_name: str, api_key: str = None, base_url: str = None, prompt: str = None, video_theme: str = ""):
         self.model_name = model_name
@@ -258,12 +294,15 @@ class ScriptProcessor:
         self.prompt = prompt or self._get_default_prompt()
 
         # 根据模型名称选择对应的生成器
+        logger.info(f"文本 LLM 提供商: {model_name}")
         if 'gemini' in model_name.lower():
             self.generator = GeminiGenerator(model_name, self.api_key, self.prompt)
         elif 'qwen' in model_name.lower():
             self.generator = QwenGenerator(model_name, self.api_key, self.prompt, self.base_url)
         elif 'moonshot' in model_name.lower():
             self.generator = MoonshotGenerator(model_name, self.api_key, self.prompt, self.base_url)
+        elif 'deepseek' in model_name.lower():
+            self.generator = DeepSeekGenerator(model_name, self.api_key, self.prompt, self.base_url)
         else:
             self.generator = OpenAIGenerator(model_name, self.api_key, self.prompt, self.base_url)
 

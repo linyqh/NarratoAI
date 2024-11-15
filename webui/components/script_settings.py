@@ -501,8 +501,8 @@ def generate_script(tr, params):
                     script = json.dumps(script_result, ensure_ascii=False, indent=2)
                     
                 except Exception as e:
-                    logger.exception(f"Gemini 处理过程中发生错误\n{traceback.format_exc()}")
-                    raise Exception(f"视觉分析失败: {str(e)}")
+                    logger.exception(f"大模型处理过程中发生错误\n{traceback.format_exc()}")
+                    raise Exception(f"分析失败: {str(e)}")
 
             elif vision_llm_provider == 'narratoapi':  # NarratoAPI
                 try:

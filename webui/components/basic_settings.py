@@ -191,7 +191,7 @@ def render_text_llm_settings(tr):
     st.subheader(tr("Text Generation Model Settings"))
 
     # 文案生成模型提供商选择
-    text_providers = ['OpenAI', 'Qwen', 'Moonshot', 'Gemini']
+    text_providers = ['OpenAI', 'Qwen', 'Moonshot', 'DeepSeek', 'Gemini']
     saved_text_provider = config.app.get("text_llm_provider", "OpenAI").lower()
     saved_provider_index = 0
 
