@@ -125,6 +125,15 @@
     "Text API Key": "文案生成 API 密钥",
     "Text Base URL": "文案生成接口地址",
     "Text Model Name": "文案生成模型名称",
-    "Account ID": "账户 ID"
+    "Account ID": "账户 ID",
+    "Skip the first few seconds": "跳过开头多少秒",
+    "Difference threshold": "差异阈值",
+    "Vision processing batch size": "视觉处理批次大小",
+    "Test Connection": "测试连接",
+    "gemini model is available": "Gemini 模型可用",
+    "gemini model is not available": "Gemini 模型不可用",
+    "NarratoAPI is available": "NarratoAPI 可用",
+    "NarratoAPI is not available": "NarratoAPI 不可用",
+    "Unsupported provider": "不支持的提供商"
   }
 }
