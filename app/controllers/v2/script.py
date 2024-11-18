@@ -8,14 +8,18 @@ from app.models.schema_v2 import (
     CropVideoRequest,
     CropVideoResponse,
     DownloadVideoRequest,
-    DownloadVideoResponse
+    DownloadVideoResponse,
+    StartSubclipRequest,
+    StartSubclipResponse
 )
+from app.models.schema import VideoClipParams
 from app.services.script_service import ScriptGenerator
 from app.services.video_service import VideoService
 from app.utils import utils
 from app.controllers.v2.base import v2_router
 from app.models.schema import VideoClipParams
 from app.services.youtube_service import YoutubeService
+from app.services import task as task_service
 
 router = v2_router()
 
@@ -118,4 +122,47 @@ async def download_youtube_video(
         
     except Exception as e:
         logger.exception(f"Download YouTube video failed: {str(e)}")
+        raise
+
+
+@router.post(
+    "/scripts/start-subclip",
+    response_model=StartSubclipResponse,
+    summary="异步请求；开始视频剪辑任务 (V2)"
+)
+async def start_subclip(
+    request: VideoClipParams,
+    background_tasks: BackgroundTasks
+):
+    """
+    开始视频剪辑任务的V2版本API
+    """
+    try:
+        # 构建参数对象
+        params = VideoClipParams(
+            video_origin_path=request.video_origin_path,
+            video_clip_json_path=request.video_clip_json_path,
+            voice_name=request.voice_name,
+            voice_rate=request.voice_rate,
+            voice_pitch=request.voice_pitch,
+            subtitle_enabled=request.subtitle_enabled,
+            video_aspect=request.video_aspect,
+            n_threads=request.n_threads
+        )
+        
+        # 在后台任务中执行视频剪辑
+        background_tasks.add_task(
+            task_service.start_subclip,
+            task_id=request.task_id,
+            params=params,
+            subclip_path_videos=request.subclip_videos
+        )
+        
+        return {
+            "task_id": request.task_id,
+            "state": "PROCESSING"  # 初始状态
+        }
+        
+    except Exception as e:
+        logger.exception(f"Start subclip task failed: {str(e)}")
         raise
