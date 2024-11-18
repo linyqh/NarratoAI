@@ -103,7 +103,6 @@
     "Video Quality": "视频质量",
     "Custom prompt for LLM, leave empty to use default prompt": "自定义提示词，留空则使用默认提示词",
     "Proxy Settings": "代理设置",
-    "Language": "界面语言",
     "HTTP_PROXY": "HTTP 代理",
     "HTTPs_PROXY": "HTTPS 代理",
     "Vision Model Settings": "视频分析模型设置",
