@@ -40,3 +40,23 @@ class DownloadVideoResponse(BaseModel):
     resolution: str
     format: str
     filename: str
+
+
+class StartSubclipRequest(BaseModel):
+    task_id: str
+    video_origin_path: str
+    video_clip_json_path: str
+    voice_name: Optional[str] = None
+    voice_rate: Optional[int] = 0
+    voice_pitch: Optional[int] = 0
+    subtitle_enabled: Optional[bool] = True
+    video_aspect: Optional[str] = "16:9"
+    n_threads: Optional[int] = 4
+    subclip_videos: list  # 从裁剪视频接口获取的视频片段字典
+
+
+class StartSubclipResponse(BaseModel):
+    task_id: str
+    state: str
+    videos: Optional[List[str]] = None
+    combined_videos: Optional[List[str]] = None
