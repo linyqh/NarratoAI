@@ -989,6 +989,9 @@ Gender: Female
 
 Name: zh-CN-XiaoxiaoMultilingualNeural-V2
 Gender: Female
+
+Name: zh-CN-YunxiNeural-V2
+Gender: Male
     """.strip()
     voices = []
     name = ""
@@ -1034,8 +1037,8 @@ def is_azure_v2_voice(voice_name: str):
 def tts(
     text: str, voice_name: str, voice_rate: float, voice_pitch: float, voice_file: str
 ) -> [SubMaker, None]:
-    # if is_azure_v2_voice(voice_name):
-    #     return azure_tts_v2(text, voice_name, voice_file)
+    if is_azure_v2_voice(voice_name):
+        return azure_tts_v2(text, voice_name, voice_file)
     return azure_tts_v1(text, voice_name, voice_rate, voice_pitch, voice_file)
 
 

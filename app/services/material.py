@@ -363,7 +363,7 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
     return {}
 
 
-def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, progress_callback=None):
+def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, progress_callback=None) -> dict:
     """
     剪辑视频
     Args:

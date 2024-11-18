@@ -324,7 +324,7 @@ def start(task_id, params: VideoParams, stop_at: str = "video"):
     return kwargs
 
 
-def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: list):
+def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: dict):
     """
     后台任务（自动剪辑视频进行剪辑）
 
