@@ -32,3 +32,4 @@ openai~=1.53.0
 tqdm>=4.66.6
 tenacity>=9.0.0
 tiktoken==0.8.0
+yt-dlp==2024.11.18
