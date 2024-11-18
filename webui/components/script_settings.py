@@ -205,6 +205,40 @@ def render_video_details(tr):
 
 def render_script_buttons(tr, params):
     """渲染脚本操作按钮"""
+    # 新增三个输入框，放在同一行
+    input_cols = st.columns(3)
+    
+    with input_cols[0]:
+        skip_seconds = st.number_input(
+            "skip_seconds",
+            min_value=0,
+            value=st.session_state.get('skip_seconds', config.frames.get('skip_seconds', 0)),
+            help=tr("Skip the first few seconds"),
+            key="skip_seconds_input"
+        )
+        st.session_state['skip_seconds'] = skip_seconds
+        
+    with input_cols[1]:
+        threshold = st.number_input(
+            "threshold",
+            min_value=0,
+            value=st.session_state.get('threshold', config.frames.get('threshold', 30)),
+            help=tr("Difference threshold"),
+            key="threshold_input"
+        )
+        st.session_state['threshold'] = threshold
+        
+    with input_cols[2]:
+        vision_batch_size = st.number_input(
+            "vision_batch_size",
+            min_value=1,
+            max_value=20,
+            value=st.session_state.get('vision_batch_size', config.frames.get('vision_batch_size', 5)),
+            help=tr("Vision processing batch size"),
+            key="vision_batch_size_input"
+        )
+        st.session_state['vision_batch_size'] = vision_batch_size
+
     # 生成/加载按钮
     script_path = st.session_state.get('video_clip_json_path', '')
     if script_path == "auto":
@@ -287,7 +321,6 @@ def generate_script(tr, params):
         with st.spinner("正在生成脚本..."):
             if not params.video_origin_path:
                 st.error("请先选择视频文件")
-                st.stop()
                 return
             
             # ===================提取键帧===================
@@ -323,8 +356,8 @@ def generate_script(tr, params):
                         # 处理视频并提取关键帧
                         processor.process_video_pipeline(
                             output_dir=video_keyframes_dir,
-                            skip_seconds=config.frames.get("skip_seconds", 0),
-                            threshold=config.frames.get("threshold", 30)
+                            skip_seconds=st.session_state.get('skip_seconds'),
+                            threshold=st.session_state.get('threshold')
                         )
                     else:
                         processor = video_processor.VideoProcessor(params.video_origin_path)
@@ -353,7 +386,7 @@ def generate_script(tr, params):
                     except Exception as cleanup_err:
                         logger.error(f"清理失败的关键帧目录时出错: {cleanup_err}")
                     
-                    raise Exception(f"关键帧提取��败: {str(e)}")
+                    raise Exception(f"关键帧提取失败: {str(e)}")
 
             # 根据不同的 LLM 提供商处理
             vision_llm_provider = st.session_state.get('vision_llm_providers').lower()
@@ -374,7 +407,7 @@ def generate_script(tr, params):
 
                     analyzer = vision_analyzer.VisionAnalyzer(
                         model_name=vision_model,
-                        api_key=vision_api_key
+                        api_key=vision_api_key,
                     )
 
                     update_progress(40, "正在分析关键帧...")
@@ -388,7 +421,7 @@ def generate_script(tr, params):
                         analyzer.analyze_images(
                             images=keyframe_files,
                             prompt=config.app.get('vision_analysis_prompt'),
-                            batch_size=config.frames.get("vision_batch_size", 5)
+                            batch_size=config.frames.get("vision_batch_size", st.session_state.get('vision_batch_size', 5))
                         )
                     )
                     loop.close()
