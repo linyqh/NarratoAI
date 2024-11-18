@@ -1,3 +1,4 @@
+import os
 import uvicorn
 from loguru import logger
 
@@ -7,6 +8,8 @@ if __name__ == "__main__":
     logger.info(
         "start server, docs: http://127.0.0.1:" + str(config.listen_port) + "/docs"
     )
+    os.environ["HTTP_PROXY"] = config.proxy.get("http")
+    os.environ["HTTPS_PROXY"] = config.proxy.get("https")
     uvicorn.run(
         app="app.asgi:app",
         host=config.listen_host,

@@ -5,6 +5,7 @@ from loguru import logger
 from uuid import uuid4
 
 from app.utils import utils
+from app.services import video as VideoService
 
 
 class YoutubeService:
@@ -61,6 +62,7 @@ class YoutubeService:
         Args:
             url: YouTube视频URL
             resolution: 目标分辨率 ('2160p', '1440p', '1080p', '720p' etc.)
+                       注意：对于类似'1080p60'的输入会被处理为'1080p'
             output_format: 输出视频格式
             rename: 可选的重命名
             
@@ -71,23 +73,32 @@ class YoutubeService:
             task_id = str(uuid4())
             self._validate_format(output_format)
 
+            # 标准化分辨率格式
+            base_resolution = resolution.split('p')[0] + 'p'
+            
             # 获取所有可用格式
             formats = self._get_video_formats(url)
 
             # 查找指定分辨率的最佳视频格式
             target_format = None
             for fmt in formats:
-                if fmt['resolution'] == resolution and fmt['vcodec'] != 'none':
-                    target_format = fmt
-                    break
+                fmt_resolution = fmt['resolution']
+                # 将格式的分辨率也标准化后进行比较
+                if fmt_resolution != 'N/A':
+                    fmt_base_resolution = fmt_resolution.split('p')[0] + 'p'
+                    if fmt_base_resolution == base_resolution and fmt['vcodec'] != 'none':
+                        target_format = fmt
+                        break
 
             if target_format is None:
+                # 收集可用分辨率时也进行标准化
                 available_resolutions = set(
-                    fmt['resolution'] for fmt in formats
+                    fmt['resolution'].split('p')[0] + 'p'
+                    for fmt in formats
                     if fmt['resolution'] != 'N/A' and fmt['vcodec'] != 'none'
                 )
                 raise ValueError(
-                    f"未找到 {resolution} 分辨率的视频。"
+                    f"未找到 {base_resolution} 分辨率的视频。"
                     f"可用分辨率: {', '.join(sorted(available_resolutions))}"
                 )
 

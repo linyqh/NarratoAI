@@ -31,7 +31,7 @@ def format_duration(seconds: float) -> str:
     return f"{minutes:02d}:{remaining_seconds:02d}"
 
 
-def cut_video(video_path: str, start_time: str, end_time: str) -> None:
+def cut_video(video_path: str, start_time: str, end_time: str, output_path: str) -> None:
     """
     剪辑视频
     参数:
@@ -53,11 +53,13 @@ def cut_video(video_path: str, start_time: str, end_time: str) -> None:
     
     # 剪辑视频
     video = video.subclip(start_seconds, end_seconds)
-    video.write_videofile("../../resource/videos/cut_video2.mp4")
+    video.write_videofile("../../resource/videos/cut_video3.mp4")
     
     # 释放资源
     video.close()
 
 
 if __name__ == "__main__":
-    cut_video("../../resource/videos/best.mp4", "00:40", "02:40")
+    # cut_video("E:\\NarratoAI_v0.3.5_cuda\\NarratoAI\storage\\tasks\ca4fee22-350b-47f9-bb2f-802ad96774f7\\final-2.mp4", "00:00", "07:00", "E:\\NarratoAI_v0.3.5_cuda\\NarratoAI\storage\\tasks\\yyjx2-1")
+    # cut_video("E:\\NarratoAI_v0.3.5_cuda\\NarratoAI\storage\\tasks\ca4fee22-350b-47f9-bb2f-802ad96774f7\\final-2.mp4", "07:00", "14:00", "E:\\NarratoAI_v0.3.5_cuda\\NarratoAI\storage\\tasks\\yyjx2-2")
+    cut_video("E:\\NarratoAI_v0.3.5_cuda\\NarratoAI\storage\\tasks\ca4fee22-350b-47f9-bb2f-802ad96774f7\\final-2.mp4", "14:00", "22:00", "E:\\NarratoAI_v0.3.5_cuda\\NarratoAI\storage\\tasks\\yyjx2-3")

@@ -132,6 +132,8 @@ async def download_youtube_video(
 )
 async def start_subclip(
     request: VideoClipParams,
+    task_id: str,
+    subclip_videos: dict,
     background_tasks: BackgroundTasks
 ):
     """
@@ -153,13 +155,13 @@ async def start_subclip(
         # 在后台任务中执行视频剪辑
         background_tasks.add_task(
             task_service.start_subclip,
-            task_id=request.task_id,
+            task_id=task_id,
             params=params,
-            subclip_path_videos=request.subclip_videos
+            subclip_path_videos=subclip_videos
         )
         
         return {
-            "task_id": request.task_id,
+            "task_id": task_id,
             "state": "PROCESSING"  # 初始状态
         }
         
