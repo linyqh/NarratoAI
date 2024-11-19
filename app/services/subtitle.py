@@ -8,6 +8,8 @@ from faster_whisper import WhisperModel
 from timeit import default_timer as timer
 from loguru import logger
 import google.generativeai as genai
+from moviepy.editor import VideoFileClip
+import os
 
 from app.config import config
 from app.utils import utils
@@ -362,29 +364,86 @@ def create_with_gemini(audio_file: str, subtitle_file: str = "", api_key: Option
         return None
 
 
+def extract_audio_and_create_subtitle(video_file: str, subtitle_file: str = "") -> Optional[str]:
+    """
+    从视频文件中提取音频并生成字幕文件。
+
+    参数:
+    - video_file: MP4视频文件的路径
+    - subtitle_file: 输出字幕文件的路径（可选）。如果未提供，将根据视频文件名自动生成。
+
+    返回:
+    - str: 生成的字幕文件路径
+    - None: 如果处理过程中出现错误
+    """
+    try:
+        # 获取视频文件所在目录
+        video_dir = os.path.dirname(video_file)
+        video_name = os.path.splitext(os.path.basename(video_file))[0]
+        
+        # 设置音频文件路径
+        audio_file = os.path.join(video_dir, f"{video_name}_audio.wav")
+        
+        # 如果未指定字幕文件路径，则自动生成
+        if not subtitle_file:
+            subtitle_file = os.path.join(video_dir, f"{video_name}.srt")
+        
+        logger.info(f"开始从视频提取音频: {video_file}")
+        
+        # 加载视频文件
+        video = VideoFileClip(video_file)
+        
+        # 提取音频并保存为WAV格式
+        logger.info(f"正在提取音频到: {audio_file}")
+        video.audio.write_audiofile(audio_file, codec='pcm_s16le')
+        
+        # 关闭视频文件
+        video.close()
+        
+        logger.info("音频提取完成，开始生成字幕")
+        
+        # 使用create函数生成字幕
+        create(audio_file, subtitle_file)
+        
+        # 删除临时音频文件
+        if os.path.exists(audio_file):
+            os.remove(audio_file)
+            logger.info("已清理临时音频文件")
+        
+        return subtitle_file
+        
+    except Exception as e:
+        logger.error(f"处理视频文件时出错: {str(e)}")
+        logger.error(traceback.format_exc())
+        return None
+
+
 if __name__ == "__main__":
-    task_id = "test456"
+    task_id = "12121"
     task_dir = utils.task_dir(task_id)
     subtitle_file = f"{task_dir}/subtitle.srt"
     audio_file = f"{task_dir}/audio.wav"
+    video_file = f"{task_dir}/duanju_demo.mp4"
 
-    subtitles = file_to_subtitles(subtitle_file)
-    print(subtitles)
+    extract_audio_and_create_subtitle(video_file, subtitle_file)
 
-    # script_file = f"{task_dir}/script.json"
-    # with open(script_file, "r") as f:
-    #     script_content = f.read()
-    # s = json.loads(script_content)
-    # script = s.get("script")
-    #
-    # correct(subtitle_file, script)
+    # subtitles = file_to_subtitles(subtitle_file)
+    # print(subtitles)
 
-    subtitle_file = f"{task_dir}/subtitle111.srt"
-    create(audio_file, subtitle_file)
+    # # script_file = f"{task_dir}/script.json"
+    # # with open(script_file, "r") as f:
+    # #     script_content = f.read()
+    # # s = json.loads(script_content)
+    # # script = s.get("script")
+    # #
+    # # correct(subtitle_file, script)
 
-    # # 使用Gemini模型处理音频
-    # gemini_api_key = config.app.get("gemini_api_key")  # 请替换为实际的API密钥
-    # gemini_subtitle_file = create_with_gemini(audio_file, api_key=gemini_api_key)
-    #
-    # if gemini_subtitle_file:
-    #     print(f"Gemini生成的字幕文件: {gemini_subtitle_file}")
+    # subtitle_file = f"{task_dir}/subtitle111.srt"
+    # create(audio_file, subtitle_file)
+
+    # # # 使用Gemini模型处理音频
+    # # gemini_api_key = config.app.get("gemini_api_key")  # 请替换为实际的API密钥
+    # # gemini_subtitle_file = create_with_gemini(audio_file, api_key=gemini_api_key)
+    # #
+    # # if gemini_subtitle_file:
+    # #     print(f"Gemini生成的字幕文件: {gemini_subtitle_file}")

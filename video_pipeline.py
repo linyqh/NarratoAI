@@ -110,12 +110,12 @@ class VideoPipeline:
         """运行完整的pipeline"""
         try:
             current_path = os.path.dirname(os.path.abspath(__file__))
-            video_path = os.path.join(current_path, "resource", "videos", video_name)
+            video_path = os.path.join(current_path, "resource", "videos", f"{video_name}.mp4")
             # 判断视频是否存在
             if not os.path.exists(video_path):
                 # 1. 下载视频
                 print(f"视频不存在, 开始下载视频: {video_path}")
-                download_result = self.download_video(youtube_url=youtube_url, resolution="1080p", output_format="mp4", rename=video_name)
+                download_result = self.download_video(url=youtube_url, resolution="1080p", output_format="mp4", rename=video_name)
                 video_path = download_result["output_path"]
             else:
                 print(f"视频已存在: {video_path}")
@@ -168,12 +168,12 @@ class VideoPipeline:
 if __name__ == "__main__":
     pipeline = VideoPipeline()
     result = pipeline.run_pipeline(
-        task_id="test_123",
+        task_id="test_111901",
         script_name="test.json",
-        youtube_url="https://www.youtube.com/watch?v=Kenm35gdqtk",
-        video_name="test.mp4",
-        skip_seconds=0,
-        threshold=30,
+        youtube_url="https://www.youtube.com/watch?v=vLJ7Yed6FQ4",
+        video_name="2024-11-19-01",
+        skip_seconds=50,
+        threshold=35,
         vision_batch_size=10,
         vision_llm_provider="gemini",
         voice_name="zh-CN-YunjianNeural",
