@@ -4,6 +4,7 @@
 
 from moviepy.editor import VideoFileClip
 from datetime import datetime
+import os
 
 
 def time_str_to_seconds(time_str: str) -> float:
@@ -38,25 +39,56 @@ def cut_video(video_path: str, start_time: str, end_time: str, output_path: str)
         video_path: 视频文件路径
         start_time: 开始时间 (格式: "MM:SS")
         end_time: 结束时间 (格式: "MM:SS")
+        output_path: 输出文件路径
     """
-    # 转换时间字符串为秒数
-    start_seconds = time_str_to_seconds(start_time)
-    end_seconds = time_str_to_seconds(end_time)
-    
-    # 加载视频文件
-    video = VideoFileClip(video_path)
-    
-    # 计算剪辑时长
-    clip_duration = end_seconds - start_seconds
-    print(f"原视频总长度: {format_duration(video.duration)}")
-    print(f"剪辑时长: {format_duration(clip_duration)}")
-    
-    # 剪辑视频
-    video = video.subclip(start_seconds, end_seconds)
-    video.write_videofile("../../resource/videos/cut_video3.mp4")
-    
-    # 释放资源
-    video.close()
+    try:
+        # 确保输出目录存在
+        output_dir = os.path.dirname(output_path)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
+        # 如果输出文件已存在，先尝试删除
+        if os.path.exists(output_path):
+            try:
+                os.remove(output_path)
+            except PermissionError:
+                print(f"无法删除已存在的文件：{output_path}，请确保文件未被其他程序占用")
+                return
+        
+        # 转换时间字符串为秒数
+        start_seconds = time_str_to_seconds(start_time)
+        end_seconds = time_str_to_seconds(end_time)
+        
+        # 加载视频文件
+        video = VideoFileClip(video_path)
+        
+        # 计算剪辑时长
+        clip_duration = end_seconds - start_seconds
+        print(f"原视频总长度: {format_duration(video.duration)}")
+        print(f"剪辑时长: {format_duration(clip_duration)}")
+        
+        # 剪辑视频
+        video = video.subclip(start_seconds, end_seconds)
+        
+        # 添加错误处理的写入过程
+        try:
+            video.write_videofile(
+                output_path,
+                codec='libx264',
+                audio_codec='aac',
+                temp_audiofile='temp-audio.m4a',
+                remove_temp=True
+            )
+        except IOError as e:
+            print(f"写入视频文件时发生错误：{str(e)}")
+            raise
+        finally:
+            # 确保资源被释放
+            video.close()
+            
+    except Exception as e:
+        print(f"视频剪辑过程中发生错误：{str(e)}")
+        raise
 
 
 if __name__ == "__main__":
