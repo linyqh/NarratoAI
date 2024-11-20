@@ -500,14 +500,12 @@ def generate_script(tr, params):
                     update_progress(90, "正在生成文案...")
                     # 校验配置
                     api_params = {
-                        'batch_size': st.session_state.get('narrato_batch_size', 10),
-                        'use_ai': False,
-                        'start_offset': 0,
-                        'vision_model': vision_model,
+                        'vision_model_name': vision_model,
                         'vision_api_key': vision_api_key,
-                        'llm_model': text_model,
-                        'llm_api_key': text_api_key,
-                        'custom_prompt': st.session_state.get('custom_prompt', '')
+                        'vision_base_url': vision_base_url,
+                        'text_model_name': text_model,
+                        'text_api_key': text_api_key,
+                        'text_base_url': text_base_url
                     }
                     session = requests.Session()
                     retry_strategy = Retry(
