@@ -35,7 +35,7 @@ class ScriptGenerator:
             video_theme: 视频主题
             custom_prompt: 自定义提示词
             skip_seconds: 跳过开始的秒数
-            threshold: 差异阈值
+            threshold: 差异���值
             vision_batch_size: 视觉处理批次大小
             vision_llm_provider: 视觉模型提供商
             progress_callback: 进度回调函数
@@ -177,7 +177,7 @@ class ScriptGenerator:
             batch_files = self._get_batch_files(keyframe_files, result, vision_batch_size)
             first_timestamp, last_timestamp, _ = self._get_batch_timestamps(batch_files, prev_batch_files)
             
-            # 添加带时间戳的分析结果
+            # 添加带时间戳的分��结果
             frame_analysis += f"\n=== {first_timestamp}-{last_timestamp} ===\n"
             frame_analysis += result['response']
             frame_analysis += "\n"
@@ -214,7 +214,7 @@ class ScriptGenerator:
 
         progress_callback(90, "正在生成文案...")
         
-        # 获取文本生成配置
+        # 获取文本生��配置
         text_provider = config.app.get('text_llm_provider', 'gemini').lower()
         text_api_key = config.app.get(f'text_{text_provider}_api_key')
         text_model = config.app.get(f'text_{text_provider}_model_name')
@@ -286,7 +286,7 @@ class ScriptGenerator:
             task_data = response.json()
             task_id = task_data["data"].get('task_id')
             if not task_id:
-                raise Exception(f"无效的API响应: {response.text}")
+                raise Exception(f"无效的API��应: {response.text}")
             
             progress_callback(50, "正在等待分析结果...")
             retry_count = 0
@@ -342,10 +342,10 @@ class ScriptGenerator:
         batch_files: List[str], 
         prev_batch_files: List[str] = None
     ) -> tuple[str, str, str]:
-        """获取一批文件的时间戳范围"""
+        """获取一批文件的时间戳范围，支持毫秒级精度"""
         if not batch_files:
             logger.warning("Empty batch files")
-            return "00:00", "00:00", "00:00-00:00"
+            return "00:00:00,000", "00:00:00,000", "00:00:00,000-00:00:00,000"
             
         if len(batch_files) == 1 and prev_batch_files and len(prev_batch_files) > 0:
             first_frame = os.path.basename(prev_batch_files[-1])
@@ -358,18 +358,45 @@ class ScriptGenerator:
         last_time = last_frame.split('_')[2].replace('.jpg', '')
         
         def format_timestamp(time_str: str) -> str:
-            if len(time_str) < 4:
-                logger.warning(f"Invalid timestamp format: {time_str}")
-                return "00:00"
+            """将时间字符串转换为 HH:MM:SS,mmm 格式"""
+            try:
+                if len(time_str) < 4:
+                    logger.warning(f"Invalid timestamp format: {time_str}")
+                    return "00:00:00,000"
                 
-            minutes = int(time_str[-4:-2])
-            seconds = int(time_str[-2:])
-            
-            if seconds >= 60:
-                minutes += seconds // 60
-                seconds = seconds % 60
+                # 处理毫秒部分
+                if ',' in time_str:
+                    time_part, ms_part = time_str.split(',')
+                    ms = int(ms_part)
+                else:
+                    time_part = time_str
+                    ms = 0
                 
-            return f"{minutes:02d}:{seconds:02d}"
+                # 处理时分秒
+                parts = time_part.split(':')
+                if len(parts) == 3:  # HH:MM:SS
+                    h, m, s = map(int, parts)
+                elif len(parts) == 2:  # MM:SS
+                    h = 0
+                    m, s = map(int, parts)
+                else:  # SS
+                    h = 0
+                    m = 0
+                    s = int(parts[0])
+                    
+                # 处理进位
+                if s >= 60:
+                    m += s // 60
+                    s = s % 60
+                if m >= 60:
+                    h += m // 60
+                    m = m % 60
+                    
+                return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+                
+            except Exception as e:
+                logger.error(f"时间戳格式转换错误 {time_str}: {str(e)}")
+                return "00:00:00,000"
         
         first_timestamp = format_timestamp(first_time)
         last_timestamp = format_timestamp(last_time)
