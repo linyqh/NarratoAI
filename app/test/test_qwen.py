@@ -2,9 +2,21 @@ import os
 import traceback
 import json
 from openai import OpenAI
-from test_moviepy import cut_video
+from pydantic import BaseModel
+from typing import List
 from app.utils import utils
 from app.services.subtitle import extract_audio_and_create_subtitle
+
+
+class Step(BaseModel):
+    timestamp: str
+    picture: str
+    narration: str
+    OST: int
+    new_timestamp: str
+
+class MathReasoning(BaseModel):
+    result: List[Step]
 
 
 def chat_with_qwen(prompt: str, system_message: str, subtitle_path: str) -> str:
@@ -23,7 +35,7 @@ def chat_with_qwen(prompt: str, system_message: str, subtitle_path: str) -> str:
     """
     try:
         client = OpenAI(
-            api_key="sk-",
+            api_key="sk-a1acd853d88d41d3ae92777d7bfa2612",
             base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         )
 
@@ -50,25 +62,25 @@ def chat_with_qwen(prompt: str, system_message: str, subtitle_path: str) -> str:
 # 使用示例
 if __name__ == "__main__":
     try:
-        # video_path = utils.video_dir("duanju_yuansp.mp4")
+        video_path = utils.video_dir("duanju_yuansp.mp4")
         # # 判断视频是否存在
         # if not os.path.exists(video_path):
         #     print(f"视频文件不存在：{video_path}")
         #     exit(1)
         # 提取字幕
         subtitle_path = os.path.join(utils.video_dir(""), f"duanju_yuan.srt")
-        # extract_audio_and_create_subtitle(video_file=video_path, subtitle_file=subtitle_path)
+        extract_audio_and_create_subtitle(video_file=video_path, subtitle_file=subtitle_path)
         # 分析字幕
         system_message = """
         你是一个视频srt字幕分析剪辑器, 输入视频的srt字幕, 分析其中的精彩且尽可能连续的片段并裁剪出来, 注意确保文字与时间戳的正确匹配。
-        输出需严格按照如下 json 格式: 
+        输出需严格按照如下 json 格式:
         [
             {
-                "timestamp": "00:50-01:44",
+                "timestamp": "00:00:50,020-00,01:44,000",
                 "picture": "画面1",
                 "narration": "播放原声",
                 "OST": 0,
-                "new_timestamp": "00:00-00:54"
+                "new_timestamp": "00:00:00,000-00:00:54,020"
             },
             {
                 "timestamp": "01:49-02:30",

@@ -18,95 +18,119 @@ def check_ffmpeg():
         return False
 
 
-def merge_audio_files(task_id: str, audio_file_paths: List[str], total_duration: int, video_script: list):
+def merge_audio_files(task_id: str, audio_files: list, total_duration: float, list_script: list):
     """
-    合并多个音频文件到一个指定总时长的音频文件中，并生成相应的字幕
-    :param task_id: 任务ID
-    :param audio_file_paths: 音频文件路径列表
-    :param total_duration: 最终音频文件的总时长（秒）
-    :param video_script: JSON格式的视频脚本
+    合并音频文件，根据OST设置处理不同的音频轨道
+    
+    Args:
+        task_id: 任务ID
+        audio_files: TTS生成的音频文件列表
+        total_duration: 总时长
+        list_script: 完整脚本信息，包含OST设置
+    
+    Returns:
+        str: 合并后的音频文件路径
     """
-    output_dir = utils.task_dir(task_id)
-
+    # 检查FFmpeg是否安装
     if not check_ffmpeg():
-        logger.error("错误：FFmpeg未安装。请安装FFmpeg后再运行此脚本。")
-        return None, None
+        logger.error("FFmpeg未安装，无法合并音频文件")
+        return None
 
-    # 创建一个总时长为total_duration的空白音频
-    blank_audio = AudioSegment.silent(duration=total_duration * 1000)  # pydub使用毫秒
+    # 创建一个空的音频片段
+    final_audio = AudioSegment.silent(duration=total_duration * 1000)  # 总时长以毫秒为单位
 
-    for audio_path in audio_file_paths:
-        if not os.path.exists(audio_path):
-            logger.info(f"警告：文件 {audio_path} 不存在，已跳过。")
+    # 遍历脚本中的每个片段
+    for segment, audio_file in zip(list_script, audio_files):
+        try:
+            # 加载TTS音频文件
+            tts_audio = AudioSegment.from_file(audio_file)
+
+            # 获取片段的开始和结束时间
+            start_time, end_time = segment['new_timestamp'].split('-')
+            start_seconds = utils.time_to_seconds(start_time)
+            end_seconds = utils.time_to_seconds(end_time)
+
+            # 根据OST设置处理音频
+            if segment['OST'] == 0:
+                # 只使用TTS音频
+                final_audio = final_audio.overlay(tts_audio, position=start_seconds * 1000)
+            elif segment['OST'] == 1:
+                # 只使用原声（假设原声已经在视频中）
+                continue
+            elif segment['OST'] == 2:
+                # 混合TTS音频和原声
+                original_audio = AudioSegment.silent(duration=(end_seconds - start_seconds) * 1000)
+                mixed_audio = original_audio.overlay(tts_audio)
+                final_audio = final_audio.overlay(mixed_audio, position=start_seconds * 1000)
+
+        except Exception as e:
+            logger.error(f"处理音频文件 {audio_file} 时出错: {str(e)}")
             continue
 
-        # 从文件名中提取时间戳
-        filename = os.path.basename(audio_path)
-        start_time, end_time = extract_timestamp(filename)
+    # 保存合并后的音频文件
+    output_audio_path = os.path.join(utils.task_dir(task_id), "final_audio.mp3")
+    final_audio.export(output_audio_path, format="mp3")
+    logger.info(f"合并后的音频文件已保存: {output_audio_path}")
 
-        # 读取音频文件
-        try:
-            audio = AudioSegment.from_mp3(audio_path)
-        except Exception as e:
-            logger.error(f"错误：无法读取文件 {audio_path}。错误信息：{str(e)}")
-            continue
-        
-        # 将音频插入到空白音频的指定位置
-        blank_audio = blank_audio.overlay(audio, position=start_time * 1000)
-
-    # 尝试导出为WAV格式
-    try:
-        output_file = os.path.join(output_dir, "audio.wav")
-        blank_audio.export(output_file, format="wav")
-        logger.info(f"音频合并完成，已保存为 {output_file}")
-    except Exception as e:
-        logger.info(f"导出为WAV格式失败，尝试使用MP3格式：{str(e)}")
-        try:
-            output_file = os.path.join(output_dir, "audio.mp3")
-            blank_audio.export(output_file, format="mp3", codec="libmp3lame")
-            logger.info(f"音频合并完成，已保存为 {output_file}")
-        except Exception as e:
-            logger.error(f"导出音频失败：{str(e)}")
-            return None, None
-
-    return output_file
-
-def parse_timestamp(timestamp: str):
-    """解析时间戳字符串为秒数"""
-    # 确保使用冒号作为分隔符
-    timestamp = timestamp.replace('_', ':')
-    return time_to_seconds(timestamp)
-
-def extract_timestamp(filename):
-    """从文件名中提取开始和结束时间戳"""
-    # 从 "audio_00_06-00_24.mp3" 这样的格式中提取时间
-    time_part = filename.split('_', 1)[1].split('.')[0]  # 获取 "00_06-00_24" 部分
-    start_time, end_time = time_part.split('-')  # 分割成 "00_06" 和 "00_24"
-    
-    # 将下划线格式转换回冒号格式
-    start_time = start_time.replace('_', ':')
-    end_time = end_time.replace('_', ':')
-    
-    # 将时间戳转换为秒
-    start_seconds = time_to_seconds(start_time)
-    end_seconds = time_to_seconds(end_time)
-
-    return start_seconds, end_seconds
+    return output_audio_path
 
 
 def time_to_seconds(time_str):
-    """将 "00:06" 或 "00_06" 格式转换为总秒数"""
-    # 确保使用冒号作为分隔符
-    time_str = time_str.replace('_', ':')
+    """
+    将时间字符串转换为秒数，支持多种格式：
+    1. 'HH:MM:SS,mmm' (时:分:秒,毫秒)
+    2. 'MM:SS,mmm' (分:秒,毫秒)
+    3. 'SS,mmm' (秒,毫秒)
+    """
     try:
-        parts = time_str.split(':')
-        if len(parts) != 2:
-            logger.error(f"Invalid time format: {time_str}")
-            return 0
-        return int(parts[0]) * 60 + int(parts[1])
+        # 处理毫秒部分
+        if ',' in time_str:
+            time_part, ms_part = time_str.split(',')
+            ms = float(ms_part) / 1000
+        else:
+            time_part = time_str
+            ms = 0
+
+        # 分割时间部分
+        parts = time_part.split(':')
+        
+        if len(parts) == 3:  # HH:MM:SS
+            h, m, s = map(int, parts)
+            seconds = h * 3600 + m * 60 + s
+        elif len(parts) == 2:  # MM:SS
+            m, s = map(int, parts)
+            seconds = m * 60 + s
+        else:  # SS
+            seconds = int(parts[0])
+
+        return seconds + ms
     except (ValueError, IndexError) as e:
         logger.error(f"Error parsing time {time_str}: {str(e)}")
-        return 0
+        return 0.0
+
+
+def extract_timestamp(filename):
+    """
+    从文件名中提取开始和结束时间戳
+    例如: "audio_00_06,500-00_24,800.mp3" -> (6.5, 24.8)
+    """
+    try:
+        # 从文件名中提取时间部分
+        time_part = filename.split('_', 1)[1].split('.')[0]  # 获取 "00_06,500-00_24,800" 部分
+        start_time, end_time = time_part.split('-')  # 分割成开始和结束时间
+        
+        # 将下划线格式转换回冒号格式
+        start_time = start_time.replace('_', ':')
+        end_time = end_time.replace('_', ':')
+        
+        # 将时间戳转换为秒
+        start_seconds = time_to_seconds(start_time)
+        end_seconds = time_to_seconds(end_time)
+
+        return start_seconds, end_seconds
+    except Exception as e:
+        logger.error(f"Error extracting timestamp from {filename}: {str(e)}")
+        return 0.0, 0.0
 
 
 if __name__ == "__main__":
