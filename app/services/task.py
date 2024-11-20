@@ -206,134 +206,14 @@ def generate_final_videos(
     return final_video_paths, combined_video_paths
 
 
-def start(task_id, params: VideoParams, stop_at: str = "video"):
-    logger.info(f"start task: {task_id}, stop_at: {stop_at}")
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=5)
-
-    if type(params.video_concat_mode) is str:
-        params.video_concat_mode = VideoConcatMode(params.video_concat_mode)
-
-    # 1. Generate script
-    video_script = generate_script(task_id, params)
-    if not video_script:
-        sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-        return
-
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=10)
-
-    if stop_at == "script":
-        sm.state.update_task(
-            task_id, state=const.TASK_STATE_COMPLETE, progress=100, script=video_script
-        )
-        return {"script": video_script}
-
-    # 2. Generate terms
-    video_terms = ""
-    if params.video_source != "local":
-        video_terms = generate_terms(task_id, params, video_script)
-        if not video_terms:
-            sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-            return
-
-    save_script_data(task_id, video_script, video_terms, params)
-
-    if stop_at == "terms":
-        sm.state.update_task(
-            task_id, state=const.TASK_STATE_COMPLETE, progress=100, terms=video_terms
-        )
-        return {"script": video_script, "terms": video_terms}
-
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=20)
-
-    # 3. Generate audio
-    audio_file, audio_duration, sub_maker = generate_audio(task_id, params, video_script)
-    if not audio_file:
-        sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-        return
-
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=30)
-
-    if stop_at == "audio":
-        sm.state.update_task(
-            task_id,
-            state=const.TASK_STATE_COMPLETE,
-            progress=100,
-            audio_file=audio_file,
-        )
-        return {"audio_file": audio_file, "audio_duration": audio_duration}
-
-    # 4. Generate subtitle
-    subtitle_path = generate_subtitle(task_id, params, video_script, sub_maker, audio_file)
-
-    if stop_at == "subtitle":
-        sm.state.update_task(
-            task_id,
-            state=const.TASK_STATE_COMPLETE,
-            progress=100,
-            subtitle_path=subtitle_path,
-        )
-        return {"subtitle_path": subtitle_path}
-
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=40)
-
-    # 5. Get video materials
-    downloaded_videos = get_video_materials(
-        task_id, params, video_terms, audio_duration
-    )
-    if not downloaded_videos:
-        sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-        return
-
-    if stop_at == "materials":
-        sm.state.update_task(
-            task_id,
-            state=const.TASK_STATE_COMPLETE,
-            progress=100,
-            materials=downloaded_videos,
-        )
-        return {"materials": downloaded_videos}
-
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=50)
-
-    # 6. Generate final videos
-    final_video_paths, combined_video_paths = generate_final_videos(
-        task_id, params, downloaded_videos, audio_file, subtitle_path
-    )
-
-    if not final_video_paths:
-        sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-        return
-
-    logger.success(
-        f"task {task_id} finished, generated {len(final_video_paths)} videos."
-    )
-
-    kwargs = {
-        "videos": final_video_paths,
-        "combined_videos": combined_video_paths,
-        "script": video_script,
-        "terms": video_terms,
-        "audio_file": audio_file,
-        "audio_duration": audio_duration,
-        "subtitle_path": subtitle_path,
-        "materials": downloaded_videos,
-    }
-    sm.state.update_task(
-        task_id, state=const.TASK_STATE_COMPLETE, progress=100, **kwargs
-    )
-    return kwargs
-
-
 def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: dict):
-    """
-    后台任务（自动剪辑视频进行剪辑）
-
-        task_id: 任务ID
-        params: 剪辑参数
-        subclip_path_videos: 视频文件路径
-
-    """
+    """后台任务（自动剪辑视频进行剪辑）"""
     logger.info(f"\n\n## 开始任务: {task_id}")
+    
+    # 初始化 ImageMagick
+    if not utils.init_imagemagick():
+        logger.warning("ImageMagick 初始化失败，字幕可能无法正常显示")
+    
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=5)
 
     # tts 角色名称
@@ -341,8 +221,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
 
     logger.info("\n\n## 1. 加载视频脚本")
     video_script_path = path.join(params.video_clip_json_path)
-    # video_script_path = video_clip_json_path
-    # 判断json文件是否存在
+    
     if path.exists(video_script_path):
         try:
             with open(video_script_path, "r", encoding="utf-8") as f:
@@ -355,10 +234,12 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
                 logger.debug(f"解说完整脚本: \n{video_script}")
                 logger.debug(f"解说 OST 列表: \n{video_ost}")
                 logger.debug(f"解说时间戳列表: \n{time_list}")
+                
                 # 获取视频总时长(单位 s)
-                total_duration = list_script[-1]['new_timestamp']
-                total_duration = int(total_duration.split("-")[1].split(":")[0]) * 60 + int(
-                    total_duration.split("-")[1].split(":")[1])
+                last_timestamp = list_script[-1]['new_timestamp']
+                end_time = last_timestamp.split("-")[1]
+                total_duration = utils.time_to_seconds(end_time)
+                
         except Exception as e:
             logger.error(f"无法读取视频json脚本，请检查配置是否正确。{e}")
             raise ValueError("无法读取视频json脚本，请检查配置是否正确")
@@ -366,32 +247,51 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         logger.error(f"video_script_path: {video_script_path} \n\n", traceback.format_exc())
         raise ValueError("解说脚本不存在！请检查配置是否正确。")
 
-    logger.info("\n\n## 2. 生成音频列表")
-    audio_files, sub_maker_list = voice.tts_multiple(
-        task_id=task_id,
-        list_script=list_script,
-        voice_name=voice_name,
-        voice_rate=params.voice_rate,
-        voice_pitch=params.voice_pitch,
-        force_regenerate=True
+    logger.info("\n\n## 2. 根据OST设置生成音频列表")
+    # 只为OST=0或2的片段生成TTS音频
+    tts_segments = [
+        segment for segment in list_script 
+        if segment['OST'] in [0, 2]
+    ]
+    logger.debug(f"tts_segments: {tts_segments}")
+    if tts_segments:
+        audio_files, sub_maker_list = voice.tts_multiple(
+            task_id=task_id,
+            list_script=tts_segments,  # 只传入需要TTS的片段
+            voice_name=voice_name,
+            voice_rate=params.voice_rate,
+            voice_pitch=params.voice_pitch,
+            force_regenerate=True
+        )
+        if audio_files is None:
+            sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
+            logger.error("TTS转换音频失败, 可能是网络不可用! 如果您在中国, 请使用VPN.")
+            return
+    else:
+        audio_files = []
+        
+    logger.info(f"合并音频文件:\n{audio_files}")
+    # 传入OST信息以便正确处理音频
+    final_audio = audio_merger.merge_audio_files(
+        task_id=task_id, 
+        audio_files=audio_files, 
+        total_duration=total_duration, 
+        list_script=list_script  # 传入完整脚本以便处理OST
     )
-    if audio_files is None:
-        sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-        logger.error(
-            "TTS转换音频失败, 可能是网络不可用! 如果您在中国, 请使用VPN.")
-        return
-    logger.info(f"合并音频:\n\n {audio_files}")
-    audio_file = audio_merger.merge_audio_files(task_id, audio_files, total_duration, list_script)
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=30)
 
+    # 只为OST=0或2的片段生成字幕
     subtitle_path = ""
     if params.subtitle_enabled:
         subtitle_path = path.join(utils.task_dir(task_id), f"subtitle.srt")
         subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
         logger.info(f"\n\n## 3. 生成字幕、提供程序是: {subtitle_provider}")
-        # 使用 faster-whisper-large-v2 模型生成字幕
-        subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
+         
+        subtitle.create(
+            audio_file=final_audio,
+            subtitle_file=subtitle_path,
+        )
 
         subtitle_lines = subtitle.file_to_subtitles(subtitle_path)
         if not subtitle_lines:
@@ -434,14 +334,15 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
 
     final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
 
-    logger.info(f"\n\n## 6. 最后一步: {index} => {final_video_path}")
-    # 把所有东西合到在一起
+    logger.info(f"\n\n## 6. 最后合成: {index} => {final_video_path}")
+    # 传入OST信息以便正确处理音频和视频
     video.generate_video_v2(
         video_path=combined_video_path,
-        audio_path=audio_file,
+        audio_path=final_audio,
         subtitle_path=subtitle_path,
         output_file=final_video_path,
         params=params,
+        list_script=list_script  # 传入完整脚本以便处理OST
     )
 
     _progress += 50 / 2

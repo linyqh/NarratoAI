@@ -93,10 +93,8 @@ class VideoPipeline:
         response.raise_for_status()
         return response.json()
     
-    def save_script_to_json(self, script: list, script_name: str) -> str:
-        """保存脚本到json文件"""
-        script_path = f"E:\\projects\\NarratoAI\\resource\\scripts\\{script_name}.json"
-        
+    def save_script_to_json(self, script: list, script_path: str) -> str:
+        """保存脚本到json文件"""        
         try:
             with open(script_path, 'w', encoding='utf-8') as f:
                 json.dump(script, f, ensure_ascii=False, indent=2)
@@ -133,8 +131,7 @@ class VideoPipeline:
             
             # 2.2 保存脚本到json文件
             print("保存脚本到json文件...")
-            script_path = self.save_script_to_json(script, script_name)
-            script_result["script_path"] = script_path
+            self.save_script_to_json(script=script, script_path=script_path)
             
             # 3. 剪辑视频
             print("开始剪辑视频...")
@@ -143,7 +140,7 @@ class VideoPipeline:
             
             # 4. 生成最终视频
             print("开始生成最终视频...")
-            final_result = self.generate_final_video(
+            self.generate_final_video(
                 task_id=task_id,
                 video_path=video_path,
                 script_path=script_path,

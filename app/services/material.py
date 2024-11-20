@@ -3,6 +3,7 @@ import subprocess
 import random
 import traceback
 from urllib.parse import urlencode
+from datetime import datetime
 
 import requests
 from typing import List
@@ -253,34 +254,58 @@ def download_videos(
 
 def time_to_seconds(time_str: str) -> float:
     """
-    将时间字符串转换为秒数
-    支持格式：
-    1. "MM:SS" (分:秒)
-    2. "SS" (纯秒数)
+    将时间字符串转换为秒数，支持多种格式：
+    1. 'HH:MM:SS,mmm' (时:分:秒,毫秒)
+    2. 'MM:SS' (分:秒)
+    3. 'SS' (秒)
     """
-    parts = time_str.split(':')
-    if len(parts) == 2:
-        minutes, seconds = map(float, parts)
-        return minutes * 60 + seconds
-    return float(time_str)
+    try:
+        # 处理毫秒部分
+        if ',' in time_str:
+            time_part, ms_part = time_str.split(',')
+            ms = int(ms_part) / 1000
+        else:
+            time_part = time_str
+            ms = 0
+
+        # 根据格式分别处理
+        parts = time_part.split(':')
+        if len(parts) == 3:  # HH:MM:SS
+            time_obj = datetime.strptime(time_part, "%H:%M:%S")
+            seconds = time_obj.hour * 3600 + time_obj.minute * 60 + time_obj.second
+        elif len(parts) == 2:  # MM:SS
+            time_obj = datetime.strptime(time_part, "%M:%S")
+            seconds = time_obj.minute * 60 + time_obj.second
+        else:  # SS
+            seconds = float(time_part)
+
+        return seconds + ms
+    except ValueError as e:
+        logger.error(f"时间格式错误: {time_str}")
+        raise ValueError(f"时间格式错误，支持的格式：HH:MM:SS,mmm 或 MM:SS 或 SS") from e
 
 
 def format_timestamp(seconds: float) -> str:
     """
-    将秒数转换为 "MM:SS" 格式的时间字符串
+    将秒数转换为可读的时间格式 (HH:MM:SS,mmm)
     """
-    minutes = int(seconds) // 60
-    secs = int(seconds) % 60
-    return f"{minutes:02d}:{secs:02d}"
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds_remain = seconds % 60
+    whole_seconds = int(seconds_remain)
+    milliseconds = int((seconds_remain - whole_seconds) * 1000)
+    
+    return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d},{milliseconds:03d}"
 
 
 def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> dict:
     """
     保存剪辑后的视频
     Args:
-        timestamp: 需要裁剪的单个时间戳，支持两种格式：
-                  1. '00:36-00:40' (分:秒-分:秒)
-                  2. 'SS-SS' (秒-秒)
+        timestamp: 需要裁剪的单个时间戳，支持格式：
+                  1. 'HH:MM:SS,mmm-HH:MM:SS,mmm' (时:分:秒,毫秒)
+                  2. 'MM:SS-MM:SS' (分:秒-分:秒)
+                  3. 'SS-SS' (秒-秒)
         origin_video: 原视频路径
         save_dir: 存储目录
 
@@ -293,7 +318,7 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    video_id = f"vid-{timestamp.replace(':', '_')}"
+    video_id = f"vid-{timestamp.replace(':', '_').replace(',', '-')}"
     video_path = f"{save_dir}/{video_id}.mp4"
 
     if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
@@ -312,12 +337,12 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
         
         # 验证时间段是否有效
         if start >= total_duration:
-            logger.warning(f"起始时间 {format_timestamp(start)} ({start:.2f}秒) 超出视频总时长 {format_timestamp(total_duration)} ({total_duration:.2f}秒)")
+            logger.warning(f"起始时间 {format_timestamp(start)} ({start:.3f}秒) 超出视频总时长 {format_timestamp(total_duration)} ({total_duration:.3f}秒)")
             video.close()
             return {}
             
         if end > total_duration:
-            logger.warning(f"结束时间 {format_timestamp(end)} ({end:.2f}秒) 超出视频总时长 {format_timestamp(total_duration)} ({total_duration:.2f}秒)，将自动调整为视频结尾")
+            logger.warning(f"结束时间 {format_timestamp(end)} ({end:.3f}秒) 超出视频总时长 {format_timestamp(total_duration)} ({total_duration:.3f}秒)，将自动调整为视频结尾")
             end = total_duration
             
         if end <= start:
@@ -332,7 +357,15 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
         
         try:
             # 检查视频是否有音频轨道并写入文件
-            subclip.write_videofile(video_path, audio=(subclip.audio is not None), logger=None)
+            subclip.write_videofile(
+                video_path,
+                codec='libx264',
+                audio_codec='aac',
+                temp_audiofile='temp-audio.m4a',
+                remove_temp=True,
+                audio=(subclip.audio is not None),
+                logger=None
+            )
             
             # 验证生成的视频文件
             if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
