@@ -13,7 +13,7 @@
 
     ########### Vision NarratoAPI Key
     narrato_api_key = ""
-    narrato_api_url = "https://narratoapi.scsmtech.cn/api/v1"
+    narrato_api_url = "https://narratoinsight.scsmtech.cn/api/v1"
     narrato_vision_model = "gemini-1.5-flash"
     narrato_vision_key = ""
     narrato_llm_model = "gpt-4o"
