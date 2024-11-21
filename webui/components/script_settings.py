@@ -497,15 +497,19 @@ def generate_script(tr, params):
                         raise Exception("没有有效的帧内容可以处理")
 
                     # ===================开始生成文案===================
-                    update_progress(90, "正在生成文案...")
+                    update_progress(80, "正在生成文案...")
                     # 校验配置
                     api_params = {
-                        'vision_model_name': vision_model,
-                        'vision_api_key': vision_api_key,
-                        'vision_base_url': vision_base_url,
-                        'text_model_name': text_model,
-                        'text_api_key': text_api_key,
-                        'text_base_url': text_base_url
+                        "vision_api_key": vision_api_key,
+                        "vision_model_name": vision_model, 
+                        "vision_base_url": vision_base_url or "",
+                        "text_api_key": text_api_key,
+                        "text_model_name": text_model,
+                        "text_base_url": text_base_url or ""
+                    }
+                    headers = {
+                        'accept': 'application/json',
+                        'Content-Type': 'application/json'
                     }
                     session = requests.Session()
                     retry_strategy = Retry(
@@ -518,13 +522,13 @@ def generate_script(tr, params):
                     try:
                         response = session.post(
                             f"{config.app.get('narrato_api_url')}/video/config",
-                            params=api_params,
+                            headers=headers,
+                            json=api_params,
                             timeout=30,
-                            verify=True  # 启用证书验证
+                            verify=True
                         )
-                    except:
+                    except Exception as e:
                         pass
-
                     custom_prompt = st.session_state.get('custom_prompt', '')
                     processor = ScriptProcessor(
                         model_name=text_model,
@@ -536,7 +540,7 @@ def generate_script(tr, params):
                     # 处理帧内容生成脚本
                     script_result = processor.process_frames(frame_content_list)
 
-                    # 将结果转换为JSON字符串
+                    # ��结果转换为JSON字符串
                     script = json.dumps(script_result, ensure_ascii=False, indent=2)
                     
                 except Exception as e:
@@ -561,7 +565,7 @@ def generate_script(tr, params):
                     if not api_key:
                         raise ValueError("未配置 Narrato API Key，请在基础设置中配置")
                     
-                    # 准备API请求
+                    # 准���API请求
                     headers = {
                         'X-API-Key': api_key,
                         'accept': 'application/json'
