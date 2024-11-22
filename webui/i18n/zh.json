@@ -63,13 +63,11 @@
     "Video Generation Failed": "视频生成失败",
     "You can download the generated video from the following links": "你可以从以下链接下载生成的视频",
     "Basic Settings": "**基础设置** (:blue[点击展开])",
-    "Language": "界面语言",
     "Pixabay API Key": "Pixabay API Key ([点击获取](https://pixabay.com/api/docs/#api_search_videos)) :red[可以不用配置，如果 Pexels 无法使用，再选择Pixabay]",
     "Video LLM Provider": "视频转录大模型",
     "LLM Provider": "大语言模型",
     "API Key": "API Key (:red[必填，需要到大模型提供商的后台申请])",
     "Base Url": "Base Url (可选)",
-    "Account ID": "账户ID (Cloudflare的dash面板url中获取)",
     "Model Name": "模型名称 (:blue[需要到大模型提供商的后台确认被授权的模型名称])",
     "Please Enter the LLM API Key": "请先填写大模型 **API Key**",
     "Please Enter the Pixabay API Key": "请先填写 **Pixabay API Key**",
@@ -104,7 +102,6 @@
     "Video Script": "视频脚本",
     "Video Quality": "视频质量",
     "Custom prompt for LLM, leave empty to use default prompt": "自定义提示词，留空则使用默认提示词",
-    "Basic Settings": "基础设置",
     "Proxy Settings": "代理设置",
     "Language": "界面语言",
     "HTTP_PROXY": "HTTP 代理",
@@ -134,6 +131,7 @@
     "gemini model is not available": "Gemini 模型不可用",
     "NarratoAPI is available": "NarratoAPI 可用",
     "NarratoAPI is not available": "NarratoAPI 不可用",
-    "Unsupported provider": "不支持的提供商"
+    "Unsupported provider": "不支持的提供商",
+    "0: Keep the audio only, 1: Keep the original sound only, 2: Keep the original sound and audio": "0: 仅保留音频，1: 仅保留原声，2: 保留原声和音频"
   }
 }

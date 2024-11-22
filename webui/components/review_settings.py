@@ -2,6 +2,7 @@ import streamlit as st
 import os
 from loguru import logger
 
+
 def render_review_panel(tr):
     """渲染视频审查面板"""
     with st.expander(tr("Video Check"), expanded=False):
@@ -26,10 +27,11 @@ def render_review_panel(tr):
                     with cols[col]:
                         render_video_item(tr, video_list, subclip_videos, index)
 
+
 def render_video_item(tr, video_list, subclip_videos, index):
     """渲染单个视频项"""
     video_script = video_list[index]
-    
+
     # 显示时间戳
     timestamp = video_script.get('timestamp', '')
     st.text_area(
@@ -39,7 +41,7 @@ def render_video_item(tr, video_list, subclip_videos, index):
         disabled=True,
         key=f"timestamp_{index}"
     )
-    
+
     # 显示视频播放器
     video_path = subclip_videos.get(timestamp)
     if video_path and os.path.exists(video_path):
@@ -50,7 +52,7 @@ def render_video_item(tr, video_list, subclip_videos, index):
             st.error(f"无法加载视频: {os.path.basename(video_path)}")
     else:
         st.warning(tr("视频文件未找到"))
-    
+
     # 显示画面描述
     st.text_area(
         tr("Picture Description"),
@@ -59,7 +61,7 @@ def render_video_item(tr, video_list, subclip_videos, index):
         disabled=True,
         key=f"picture_{index}"
     )
-    
+
     # 显示旁白文本
     narration = st.text_area(
         tr("Narration"),
@@ -71,15 +73,16 @@ def render_video_item(tr, video_list, subclip_videos, index):
     if narration != video_script.get('narration', ''):
         video_script['narration'] = narration
         st.session_state['video_clip_json'] = video_list
-    
+
     # 显示剪辑模式
     ost = st.selectbox(
         tr("Clip Mode"),
-        options=range(1, 10),
-        index=video_script.get('OST', 1) - 1,
-        key=f"ost_{index}"
+        options=range(0, 3),
+        index=video_script.get('OST', 0),
+        key=f"ost_{index}",
+        help=tr("0: Keep the audio only, 1: Keep the original sound only, 2: Keep the original sound and audio")
     )
     # 保存修改后的剪辑模式
-    if ost != video_script.get('OST', 1):
+    if ost != video_script.get('OST', 0):
         video_script['OST'] = ost
         st.session_state['video_clip_json'] = video_list
