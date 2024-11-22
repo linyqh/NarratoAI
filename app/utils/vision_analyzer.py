@@ -55,7 +55,7 @@ class VisionAnalyzer:
     async def analyze_images(self,
                            images: Union[List[str], List[PIL.Image.Image]],
                            prompt: str,
-                           batch_size: int = 5) -> List[Dict]:
+                           batch_size: int) -> List[Dict]:
         """批量分析多张图片"""
         try:
             # 加载图片
@@ -81,6 +81,8 @@ class VisionAnalyzer:
             images = valid_images
             results = []
             total_batches = (len(images) + batch_size - 1) // batch_size
+
+            logger.debug(f"共 {total_batches} 个批次，每批次 {batch_size} 张图片")
 
             with tqdm(total=total_batches, desc="分析进度") as pbar:
                 for i in range(0, len(images), batch_size):

@@ -417,11 +417,12 @@ def generate_script(tr, params):
                     asyncio.set_event_loop(loop)
                     
                     # 执行异步分析
+                    vision_batch_size = st.session_state.get('vision_batch_size') or config.frames.get("vision_batch_size")
                     results = loop.run_until_complete(
                         analyzer.analyze_images(
                             images=keyframe_files,
                             prompt=config.app.get('vision_analysis_prompt'),
-                            batch_size=config.frames.get("vision_batch_size", st.session_state.get('vision_batch_size', 5))
+                            batch_size=vision_batch_size
                         )
                     )
                     loop.close()
@@ -437,8 +438,8 @@ def generate_script(tr, params):
                         if 'error' in result:
                             logger.warning(f"批次 {result['batch_index']} 处理出现警告: {result['error']}")
                             continue
-                            
-                        batch_files = get_batch_files(keyframe_files, result, config.frames.get("vision_batch_size", 5))
+                        # 获取当前批次的文件列表
+                        batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
                         logger.debug(f"批次 {result['batch_index']} 处理完成，共 {len(batch_files)} 张图片")
                         logger.debug(batch_files)
                         
@@ -477,7 +478,7 @@ def generate_script(tr, params):
                         if 'error' in result:
                             continue
                         
-                        batch_files = get_batch_files(keyframe_files, result, config.frames.get("vision_batch_size", 5))
+                        batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
                         _, _, timestamp_range = get_batch_timestamps(batch_files, prev_batch_files)
                         
                         frame_content = {

@@ -3,6 +3,7 @@ name: build_docker
 on:
   release:
     types: [created] # 表示在创建新的 Release 时触发
+  workflow_dispatch:
 
 jobs:
   build_docker:
