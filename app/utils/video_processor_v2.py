@@ -88,10 +88,21 @@ class VideoProcessor:
             end = shot_boundaries[i]
             shot_frames = frames[start:end]
 
+            if not shot_frames:
+                continue
+
+            # 将每一帧转换为灰度图并展平为一维数组
             frame_features = np.array([cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY).flatten()
                                        for frame in shot_frames])
-            kmeans = KMeans(n_clusters=1, random_state=0).fit(frame_features)
-            center_idx = np.argmin(np.sum((frame_features - kmeans.cluster_centers_[0]) ** 2, axis=1))
+            
+            try:
+                # 尝试使用 KMeans
+                kmeans = KMeans(n_clusters=1, random_state=0).fit(frame_features)
+                center_idx = np.argmin(np.sum((frame_features - kmeans.cluster_centers_[0]) ** 2, axis=1))
+            except Exception as e:
+                logger.warning(f"KMeans 聚类失败，使用备选方案: {str(e)}")
+                # 备选方案：选择镜头中间的帧作为关键帧
+                center_idx = len(shot_frames) // 2
 
             keyframes.append(shot_frames[center_idx])
             keyframe_indices.append(start + center_idx)
