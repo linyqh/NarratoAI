@@ -212,7 +212,7 @@ class VideoProcessor:
 
         Args:
             output_dir: 输出目录
-            skip_seconds: 跳过视频开头的秒数
+            skip_seconds: 跳过视���开头的秒数
         """
         skip_frames = int(skip_seconds * self.fps)
 
@@ -265,14 +265,30 @@ class VideoProcessor:
             video_name = os.path.splitext(os.path.basename(self.video_path))[0]
             compressed_video = os.path.join(compressed_dir, f"{video_name}_compressed.mp4")
 
+            # 获取原始视频的宽度和高度
+            original_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            original_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            
             logger.info("步骤1: 压缩视频...")
+            if original_width > original_height:
+                # 横版视频
+                scale_filter = f'scale={compressed_width}:-1'
+            else:
+                # 竖版视频
+                scale_filter = f'scale=-1:{compressed_width}'
+            
             ffmpeg_cmd = [
                 'ffmpeg', '-i', self.video_path,
-                '-vf', f'scale={compressed_width}:-1',
+                '-vf', scale_filter,
                 '-y',
                 compressed_video
             ]
-            subprocess.run(ffmpeg_cmd, check=True)
+            
+            try:
+                subprocess.run(ffmpeg_cmd, check=True, capture_output=True, text=True)
+            except subprocess.CalledProcessError as e:
+                logger.error(f"FFmpeg 错误输出: {e.stderr}")
+                raise
 
             # 2. 从压缩视频中提取关键帧
             logger.info("\n步骤2: 从压缩视频提取关键帧...")
