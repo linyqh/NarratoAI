@@ -18,7 +18,7 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 [![GitHub issues](https://img.shields.io/github/issues/linyqh/NarratoAI?style=for-the-badge)](https://github.com/linyqh/NarratoAI/issues)
 [![GitHub stars](https://img.shields.io/github/stars/linyqh/NarratoAI?style=for-the-badge)](https://github.com/linyqh/NarratoAI/stargazers)
 
-<a href="https://github.com/linyqh/NarratoAI/wiki" target="_blank">💬 加入开源社区，获取项目动态和最新资讯。</a>
+<a href="https://discord.gg/uVAJftcm" target="_blank">💬 加入 discord 开源社区，获取项目动态和最新资讯。</a>
 
 <h2><a href="https://p9mf6rjv3c.feishu.cn/wiki/SP8swLLZki5WRWkhuFvc2CyInDg?from=from_copylink" target="_blank">🎉🎉🎉 官方文档 🎉🎉🎉</a> </h2>
 <h3>首页</h3>
@@ -32,15 +32,17 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 </div>
 
 ## 最新资讯
+- 2024.11.24 开通 discord 社群：https://discord.gg/uVAJftcm
 - 2024.11.11 迁移开源社群，欢迎加入！ [加入官方社群](https://github.com/linyqh/NarratoAI/wiki)
 - 2024.11.10 发布官方文档，详情参见 [官方文档](https://p9mf6rjv3c.feishu.cn/wiki/SP8swLLZki5WRWkhuFvc2CyInDg)
 - 2024.11.10 发布新版本 v0.3.5；优化视频剪辑流程，
 
 ## 未来计划 🥳
 - [x] windows 整合包发布
-- [ ] 优化剧情生成流程，提升生成效果
-- [ ] 支持本地大模型 MiniCPM-V
-- [ ] 支持本地大模型 Qwen2-VL
+- [x] 优化剧情生成流程，提升生成效果
+- [x] 发布 0.3.5 整合包
+- [ ] 支持阿里 Qwen2-VL 大模型理解视频
+- [ ] 支持短剧解说
 - [ ] ...
 
 ## 配置要求 📦
