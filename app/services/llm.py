@@ -354,7 +354,7 @@ def _generate_response(prompt: str, llm_provider: str = None) -> str:
     return content.replace("\n", "")
 
 
-def _generate_response_video(prompt: str, llm_provider_video: str, video_file: Union[str, TextIO]) -> str:
+def _generate_response_video(prompt: str, llm_provider_video: str, video_file: Union[str, File]) -> str:
     """
     多模态能力大模型
     """
