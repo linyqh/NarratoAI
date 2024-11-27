@@ -118,7 +118,7 @@ def render_style_settings(tr):
 def get_subtitle_params():
     """获取字幕参数"""
     return {
-        'enabled': st.session_state.get('subtitle_enabled', True),
+        'subtitle_enabled': st.session_state.get('subtitle_enabled', True),
         'font_name': st.session_state.get('font_name', ''),
         'font_size': st.session_state.get('font_size', 60),
         'text_fore_color': st.session_state.get('text_fore_color', '#FFFFFF'),
