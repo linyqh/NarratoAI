@@ -535,6 +535,7 @@ def generate_script(tr, params):
                         model_name=text_model,
                         api_key=text_api_key,
                         prompt=custom_prompt,
+                        base_url=text_base_url or "",
                         video_theme=st.session_state.get('video_theme', '')
                     )
 

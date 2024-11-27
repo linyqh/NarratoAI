@@ -132,6 +132,8 @@
     "NarratoAPI is available": "NarratoAPI 可用",
     "NarratoAPI is not available": "NarratoAPI 不可用",
     "Unsupported provider": "不支持的提供商",
-    "0: Keep the audio only, 1: Keep the original sound only, 2: Keep the original sound and audio": "0: 仅保留音频，1: 仅保留原声，2: 保留原声和音频"
+    "0: Keep the audio only, 1: Keep the original sound only, 2: Keep the original sound and audio": "0: 仅保留音频，1: 仅保留原声，2: 保留原声和音频",
+    "Text model is not available": "文案生成模型不可用",
+    "Text model is available": "文案生成模型可用"
   }
 }

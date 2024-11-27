@@ -5,8 +5,7 @@ import os
 os.environ["HTTP_PROXY"] = config.proxy.get("http")
 os.environ["HTTPS_PROXY"] = config.proxy.get("https")
 
-genai.configure(api_key="AIzaSyBnKPxuPuBpZKGKuR_Sb9CwCIJYJF-N8DM")
-# genai.configure(api_key="AIzaSyCm33aPRAZ_P29gTALv0tRerMJwY3zJrq0")
+genai.configure(api_key="")
 model = genai.GenerativeModel("gemini-1.5-pro")
 
 
