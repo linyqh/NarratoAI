@@ -438,7 +438,7 @@ def generate_script(tr, params):
                         if 'error' in result:
                             logger.warning(f"批次 {result['batch_index']} 处理出现警告: {result['error']}")
                             continue
-                        # 获取当前批次的文件列表
+                        # 获取当前批次的文件列表 keyframe_001136_000045.jpg 将 000045 精度提升到 毫秒
                         batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
                         logger.debug(f"批次 {result['batch_index']} 处理完成，共 {len(batch_files)} 张图片")
                         logger.debug(batch_files)
