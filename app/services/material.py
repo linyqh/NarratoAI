@@ -421,23 +421,10 @@ def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, pro
     Returns:
         剪辑后的视频路径
     """
-    # 创建基于原视频的缓存目录
-    video_cache_dir = os.path.join(utils.temp_dir(), "video")
-    video_hash = utils.md5(origin_video + str(os.path.getmtime(origin_video)))
-    video_clips_dir = os.path.join(video_cache_dir, video_hash)
-    
-    if not os.path.exists(video_clips_dir):
-        os.makedirs(video_clips_dir)
-        
     video_paths = {}
     total_items = len(timestamp_terms)
     for index, item in enumerate(timestamp_terms):
         material_directory = config.app.get("material_directory", "").strip()
-        if material_directory == "task":
-            material_directory = utils.task_dir(task_id)
-        elif material_directory and not os.path.isdir(material_directory):
-            material_directory = video_clips_dir  # 如果没有指定material_directory,使用缓存目录
-
         try:
             saved_video_path = save_clip_video(timestamp=item, origin_video=origin_video, save_dir=material_directory)
             if saved_video_path:
