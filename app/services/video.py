@@ -351,7 +351,7 @@ def process_subtitles(subtitle_path, video_clip, video_duration, create_text_cli
     for item in sub.subtitles:
         clip = create_text_clip(subtitle_item=item)
         
-        # 时间范围��整
+        # 时间范围整
         start_time = max(clip.start, 0)
         if start_time >= video_duration:
             continue
@@ -520,9 +520,9 @@ def combine_clip_videos(combined_video_path: str,
 
 def extract_timestamp_from_filename(filename: str) -> tuple:
     """
-    从文件名中提取时间戳，支持多种格式：
-    - "vid-00_06,500-00_24,800.mp4" -> (6.5, 24.8)
-    - "vid-00_00_00-020-00_00_10-400.mp4" -> (0.02, 10.4)
+    从文件名中提取时间戳，支持格式：
+    - "vid-00-00-10_000-00-00-43_039.mp4" -> (10.0, 43.039) 
+    表示 00时00分10秒000毫秒 到 00时00分43秒039毫秒
     """
     try:
         # 提取时间戳部分
@@ -533,35 +533,37 @@ def extract_timestamp_from_filename(filename: str) -> tuple:
             
         timestamp = match.group(1)
         
-        # 处理包含毫秒的格式 (00_00_00-020-00_00_10-400)
-        if timestamp.count('-') == 3:
-            parts = timestamp.split('-')
-            start_time = f"{parts[0]}-{parts[1]}"  # 组合开始时间和毫秒
-            end_time = f"{parts[2]}-{parts[3]}"    # 组合结束时间和毫秒
-            
-            # 转换开始时间
-            start_time_str = start_time.replace('_', ':')
-            if start_time_str.count(':') == 2:  # 如果是 00:00:00-020 格式
-                start_base = utils.time_to_seconds(start_time_str.split('-')[0])
-                start_ms = int(start_time_str.split('-')[1]) / 1000
-                start_seconds = start_base + start_ms
-            else:
-                start_seconds = utils.time_to_seconds(start_time_str)
-            
-            # 转换结束时间
-            end_time_str = end_time.replace('_', ':')
-            if end_time_str.count(':') == 2:  # 如果是 00:00:10-400 格式
-                end_base = utils.time_to_seconds(end_time_str.split('-')[0])
-                end_ms = int(end_time_str.split('-')[1]) / 1000
-                end_seconds = end_base + end_ms
-            else:
-                end_seconds = utils.time_to_seconds(end_time_str)
+        def parse_timestamp(time_str: str) -> float:
+            """解析单个时间戳字符串为秒数"""
+            try:
+                # 处理 "00-00-10_000" 格式
+                main_time, milliseconds = time_str.rsplit('_', 1)  # 从右边分割，处理可能存在的多个下划线
+                time_components = main_time.split('-')
                 
-        # 处理简单格式 (00_06-00_24)
-        else:
-            start_str, end_str = timestamp.split('-')
-            start_seconds = utils.time_to_seconds(start_str.replace('_', ':'))
-            end_seconds = utils.time_to_seconds(end_str.replace('_', ':'))
+                if len(time_components) != 3:
+                    raise ValueError(f"时间格式错误: {main_time}")
+                    
+                hours = int(time_components[0])
+                minutes = int(time_components[1])
+                seconds = int(time_components[2])
+                ms = int(milliseconds)
+                
+                # 转换为秒数
+                total_seconds = hours * 3600 + minutes * 60 + seconds + ms / 1000
+                return total_seconds
+            except Exception as e:
+                raise ValueError(f"解析时间戳失败 {time_str}: {str(e)}")
+            
+        # 分割起始和结束时间戳
+        timestamps = timestamp.split('-', 5)  # 最多分割5次，处理 00-00-10_000-00-00-43_039 格式
+        if len(timestamps) != 6:  # 应该得到 ['00', '00', '10_000', '00', '00', '43_039']
+            raise ValueError(f"时间戳格式错误，无法分割: {timestamp}")
+            
+        start_str = '-'.join(timestamps[0:3])  # 组合开始时间 "00-00-10_000"
+        end_str = '-'.join(timestamps[3:6])    # 组合结束时间 "00-00-43_039"
+        
+        start_seconds = parse_timestamp(start_str)
+        end_seconds = parse_timestamp(end_str)
         
         logger.debug(f"从文件名 {filename} 提取时间戳: {start_seconds:.3f} - {end_seconds:.3f}")
         return start_seconds, end_seconds
@@ -661,9 +663,11 @@ def add_subtitles(video_clip, subtitle_path, font_size, font_name, font_color, p
                 size=(video_clip.w * 0.9, None)  # 限制字幕宽度
             )
 
+        # 使用 SubtitlesClip，但明确指定 UTF-8 编码
         subtitles = SubtitlesClip(
             subtitle_path,
-            subtitle_generator
+            subtitle_generator,
+            encoding='utf-8'  # 明确指定使用 UTF-8 编码
         )
         
         # 添加字幕到视频
@@ -692,7 +696,7 @@ if __name__ == "__main__":
     #     {
     #         "picture": "夜晚，一个小孩在树林里奔跑，后面有人拿着火把在追赶",
     #         "timestamp": "00:00-00:03",
-    #         "narration": "夜���风高的树林，一个小孩在拼命奔跑，后面的人穷追不舍！",
+    #         "narration": "夜风高的树林，一个小孩在拼命奔跑，后面的人穷追不舍！",
     #         "OST": False,
     #         "new_timestamp": "00:00-00:03"
     #     },

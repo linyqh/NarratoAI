@@ -438,7 +438,6 @@ def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, pro
         elif material_directory and not os.path.isdir(material_directory):
             material_directory = video_clips_dir  # 如果没有指定material_directory,使用缓存目录
 
-        logger.debug("material_directory:",material_directory)
         try:
             saved_video_path = save_clip_video(timestamp=item, origin_video=origin_video, save_dir=material_directory)
             if saved_video_path:
@@ -511,7 +510,3 @@ def merge_videos(video_paths, ost_list):
                     os.remove(silent_video)
 
     return output_file
-
-
-if __name__ == "__main__":
-    save_clip_video('00:50-01:41', 'E:\\projects\\NarratoAI\\resource\\videos\\WeChat_20241110144511.mp4')
