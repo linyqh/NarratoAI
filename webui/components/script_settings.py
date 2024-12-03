@@ -20,52 +20,95 @@ from webui.utils import file_utils
 
 def get_batch_timestamps(batch_files, prev_batch_files=None):
     """
-    获取一批文件的时间戳范围
-    返回: (first_timestamp, last_timestamp, timestamp_range)
+    解析一批文件的时间戳范围,支持毫秒级精度
     
-    文件名格式: keyframe_001253_000050.jpg
-    其中 000050 表示 00:00:50 (50秒)
-         000101 表示 00:01:01 (1分1秒)
-         
     Args:
         batch_files: 当前批次的文件列表
-        prev_batch_files: 上一个批次的文件列表，用于处理单张图片的情况
+        prev_batch_files: 上一个批次的文件列表,用于处理单张图片的情况
+    
+    Returns:
+        tuple: (first_timestamp, last_timestamp, timestamp_range)
+        时间戳格式: HH:MM:SS,mmm (时:分:秒,毫秒)
+        例如: 00:00:50,100 表示50秒100毫秒
+    
+    示例文件名格式:
+        keyframe_001253_000050100.jpg
+        其中 000050100 表示 00:00:50,100 (50秒100毫秒)
     """
     if not batch_files:
         logger.warning("Empty batch files")
-        return "00:00", "00:00", "00:00-00:00"
+        return "00:00:00,000", "00:00:00,000", "00:00:00,000-00:00:00,000"
+    
+    def get_frame_files():
+        """获取首帧和尾帧文件名"""
+        if len(batch_files) == 1 and prev_batch_files and prev_batch_files:
+            # 单张图片情况:使用上一批次最后一帧作为首帧
+            first = os.path.basename(prev_batch_files[-1])
+            last = os.path.basename(batch_files[0])
+            logger.debug(f"单张图片批次,使用上一批次最后一帧作为首帧: {first}")
+        else:
+            first = os.path.basename(batch_files[0])
+            last = os.path.basename(batch_files[-1])
+        return first, last
+    
+    def extract_time(filename):
+        """从文件名提取时间信息"""
+        try:
+            # 提取类似 000050100 的时间戳部分
+            time_str = filename.split('_')[2].replace('.jpg', '')
+            if len(time_str) < 9:  # 处理旧格式
+                time_str = time_str.ljust(9, '0')
+            return time_str
+        except (IndexError, AttributeError) as e:
+            logger.warning(f"Invalid filename format: {filename}, error: {e}")
+            return "000000000"
+    
+    def format_timestamp(time_str):
+        """
+        将时间字符串转换为 HH:MM:SS,mmm 格式
         
-    # 如果当前批次只有一张图片，且有上一个批次的文件，则使用上一批次的最后一张作为首帧
-    if len(batch_files) == 1 and prev_batch_files and len(prev_batch_files) > 0:
-        first_frame = os.path.basename(prev_batch_files[-1])
-        last_frame = os.path.basename(batch_files[0])
-        logger.debug(f"单张图片批次，使用上一批次最后一帧作为首帧: {first_frame}")
-    else:
-        # 提取首帧和尾帧的时间戳
-        first_frame = os.path.basename(batch_files[0])
-        last_frame = os.path.basename(batch_files[-1])
+        Args:
+            time_str: 9位数字字符串,格式为 MMSSSMMM
+                     例如: 000050100 表示 00分50秒100毫秒
+        
+        Returns:
+            str: HH:MM:SS,mmm 格式的时间戳
+        """
+        try:
+            if len(time_str) < 9:
+                logger.warning(f"Invalid timestamp format: {time_str}")
+                return "00:00:00,000"
+            
+            # 提取分钟、秒和毫秒
+            minutes = int(time_str[-9:-6])  # 取后9位的前3位作为分钟
+            seconds = int(time_str[-6:-3])  # 取中间3位作为秒数
+            milliseconds = int(time_str[-3:])  # 取最后3位作为毫秒
+            
+            # 处理进位
+            if seconds >= 60:
+                minutes += seconds // 60
+                seconds = seconds % 60
+            
+            if minutes >= 60:
+                hours = minutes // 60
+                minutes = minutes % 60
+            else:
+                hours = 0
+                
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
+            
+        except ValueError as e:
+            logger.warning(f"时间戳格式转换失败: {time_str}, error: {e}")
+            return "00:00:00,000"
+    
+    # 获取首帧和尾帧文件名
+    first_frame, last_frame = get_frame_files()
     
     # 从文件名中提取时间信息
-    first_time = first_frame.split('_')[2].replace('.jpg', '')  # 000050
-    last_time = last_frame.split('_')[2].replace('.jpg', '')    # 000101
+    first_time = extract_time(first_frame)
+    last_time = extract_time(last_frame)
     
-    # 转换为分:秒格式
-    def format_timestamp(time_str):
-        # 时间格式为 MMSS，如 0050 表示 00:50, 0101 表示 01:01
-        if len(time_str) < 4:
-            logger.warning(f"Invalid timestamp format: {time_str}")
-            return "00:00"
-            
-        minutes = int(time_str[-4:-2])  # 取后4位的前2位作为分钟
-        seconds = int(time_str[-2:])    # 取后2位作为秒数
-        
-        # 处理进位
-        if seconds >= 60:
-            minutes += seconds // 60
-            seconds = seconds % 60
-            
-        return f"{minutes:02d}:{seconds:02d}"
-    
+    # 转换为标准时间戳格式
     first_timestamp = format_timestamp(first_time)
     last_timestamp = format_timestamp(last_time)
     timestamp_range = f"{first_timestamp}-{last_timestamp}"
@@ -542,7 +585,7 @@ def generate_script(tr, params):
                     # 处理帧内容生成脚本
                     script_result = processor.process_frames(frame_content_list)
 
-                    # ��结果转换为JSON字符串
+                    # 结果转换为JSON字符串
                     script = json.dumps(script_result, ensure_ascii=False, indent=2)
                     
                 except Exception as e:
@@ -567,7 +610,7 @@ def generate_script(tr, params):
                     if not api_key:
                         raise ValueError("未配置 Narrato API Key，请在基础设置中配置")
                     
-                    # 准���API请求
+                    # 准备API请求
                     headers = {
                         'X-API-Key': api_key,
                         'accept': 'application/json'
