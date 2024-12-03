@@ -26,7 +26,7 @@ psutil>=5.9.0
 opencv-python~=4.10.0.84
 scikit-learn~=1.5.2
 google-generativeai~=0.8.3
-pillow~=10.3.0
+pillow==10.3.0
 python-dotenv~=1.0.1
 openai~=1.53.0
 tqdm>=4.66.6

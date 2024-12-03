@@ -253,7 +253,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         segment for segment in list_script 
         if segment['OST'] in [0, 2]
     ]
-    logger.debug(f"tts_segments: {tts_segments}")
+    # logger.debug(f"tts_segments: {tts_segments}")
     if tts_segments:
         audio_files, sub_maker_list = voice.tts_multiple(
             task_id=task_id,
@@ -302,7 +302,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
 
     logger.info("\n\n## 4. 裁剪视频")
     subclip_videos = [x for x in subclip_path_videos.values()]
-    logger.debug(f"\n\n## 裁剪后的视频文件列表: \n{subclip_videos}")
+    # logger.debug(f"\n\n## 裁剪后的视频文件列表: \n{subclip_videos}")
 
     if not subclip_videos:
         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)

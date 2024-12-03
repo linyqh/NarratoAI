@@ -18,6 +18,15 @@ from app.utils import utils
 
 
 def get_bgm_file(bgm_type: str = "random", bgm_file: str = ""):
+    """
+    获取背景音乐文件路径
+    Args:
+        bgm_type: 背景音乐类型，可选值: random(随机), ""(无背景音乐)
+        bgm_file: 指定的背景音乐文件路径
+
+    Returns:
+        str: 背景音乐文件路径
+    """
     if not bgm_type:
         return ""
 
@@ -56,13 +65,27 @@ def combine_videos(
         max_clip_duration: int = 5,
         threads: int = 2,
 ) -> str:
+    """
+    合并多个视频片段
+    Args:
+        combined_video_path: 合并后的视频保存路径
+        video_paths: 待合并的视频路径列表
+        audio_file: 音频文件路径
+        video_aspect: 视频宽高比
+        video_concat_mode: 视频拼接模式(随机/顺序)
+        max_clip_duration: 每个片段的最大时长(秒)
+        threads: 处理线程数
+
+    Returns:
+        str: 合并后的视频路径
+    """
     audio_clip = AudioFileClip(audio_file)
     audio_duration = audio_clip.duration
-    logger.info(f"max duration of audio: {audio_duration} seconds")
-    # Required duration of each clip
+    logger.info(f"音频时长: {audio_duration} 秒")
+    # 每个片段的所需时长
     req_dur = audio_duration / len(video_paths)
     req_dur = max_clip_duration
-    logger.info(f"each clip will be maximum {req_dur} seconds long")
+    logger.info(f"每个片段最大时长: {req_dur} 秒")
     output_dir = os.path.dirname(combined_video_path)
 
     aspect = VideoAspect(video_aspect)
@@ -81,22 +104,22 @@ def combine_videos(
             end_time = min(start_time + max_clip_duration, clip_duration)
             split_clip = clip.subclip(start_time, end_time)
             raw_clips.append(split_clip)
-            # logger.info(f"splitting from {start_time:.2f} to {end_time:.2f}, clip duration {clip_duration:.2f}, split_clip duration {split_clip.duration:.2f}")
+            # logger.info(f"从 {start_time:.2f} 到 {end_time:.2f}, 片段时长 {clip_duration:.2f}, 分割片段时长 {split_clip.duration:.2f}")
             start_time = end_time
             if video_concat_mode.value == VideoConcatMode.sequential.value:
                 break
 
-    # random video_paths order
+    # 随机视频片段顺序
     if video_concat_mode.value == VideoConcatMode.random.value:
         random.shuffle(raw_clips)
 
-    # Add downloaded clips over and over until the duration of the audio (max_duration) has been reached
+    # 添加下载的片段，直到音频时长(max_duration)达到
     while video_duration < audio_duration:
         for clip in raw_clips:
-            # Check if clip is longer than the remaining audio
+            # 检查片段是否比剩余音频时长长
             if (audio_duration - video_duration) < clip.duration:
                 clip = clip.subclip(0, (audio_duration - video_duration))
-            # Only shorten clips if the calculated clip length (req_dur) is shorter than the actual clip to prevent still image
+            # 仅当计算的片段时长(req_dur)小于实际片段时长时，缩短片段
             elif req_dur < clip.duration:
                 clip = clip.subclip(0, req_dur)
             clip = clip.set_fps(30)
@@ -134,7 +157,7 @@ def combine_videos(
                     )
 
                 logger.info(
-                    f"resizing video to {video_width} x {video_height}, clip size: {clip_w} x {clip_h}"
+                    f"调整视频尺寸为 {video_width} x {video_height}, 片段尺寸: {clip_w} x {clip_h}"
                 )
 
             if clip.duration > max_clip_duration:
@@ -146,7 +169,7 @@ def combine_videos(
     video_clip = concatenate_videoclips(clips)
     video_clip = video_clip.set_fps(30)
     logger.info("writing")
-    # https://github.com/harry0703/NarratoAI/issues/111#issuecomment-2032354030
+
     video_clip.write_videofile(
         filename=combined_video_path,
         threads=threads,
@@ -161,6 +184,17 @@ def combine_videos(
 
 
 def wrap_text(text, max_width, font, fontsize=60):
+    """
+    文本自动换行处理
+    Args:
+        text: 待处理的文本
+        max_width: 最大宽度
+        font: 字体文件路径
+        fontsize: 字体大小
+
+    Returns:
+        tuple: (换行后的文本, 文本高度)
+    """
     # 创建字体对象
     font = ImageFont.truetype(font, fontsize)
 
@@ -220,6 +254,14 @@ def wrap_text(text, max_width, font, fontsize=60):
 
 @contextmanager
 def manage_clip(clip):
+    """
+    视频片段资源管理器
+    Args:
+        clip: 视频片段对象
+
+    Yields:
+        VideoFileClip: 视频片段对象
+    """
     try:
         yield clip
     finally:
@@ -232,6 +274,7 @@ def generate_video_v2(
         audio_path: str,
         subtitle_path: str,
         output_file: str,
+        list_script: list,
         params: Union[VideoParams, VideoClipParams],
         progress_callback=None,
 ):
@@ -335,6 +378,7 @@ def generate_video_v2(
             update_progress("字幕处理完成")
 
             # 合并音频和导出
+            logger.info("开始导出视频 (此步骤耗时较长请耐心等待)")
             video_clip = video_clip.set_audio(final_audio)
             video_clip.write_videofile(
                 output_file,
@@ -356,7 +400,17 @@ def generate_video_v2(
 
 
 def process_audio_tracks(original_audio, new_audio, params, video_duration):
-    """处理所有音轨"""
+    """
+    处理所有音轨(原声、配音、背景音乐)
+    Args:
+        original_audio: 原始音频
+        new_audio: 新音频
+        params: 视频参数
+        video_duration: 视频时长
+
+    Returns:
+        CompositeAudioClip: 合成后的音频
+    """
     audio_tracks = []
 
     if original_audio is not None:
@@ -379,7 +433,17 @@ def process_audio_tracks(original_audio, new_audio, params, video_duration):
 
 
 def process_subtitles(subtitle_path, video_clip, video_duration, create_text_clip):
-    """处理字幕"""
+    """
+    处理字幕
+    Args:
+        subtitle_path: 字幕文件路径
+        video_clip: 视频片段
+        video_duration: 视频时长
+        create_text_clip: 创建文本片段的回调函数
+
+    Returns:
+        CompositeVideoClip: 添加字幕后的视频
+    """
     if not (subtitle_path and os.path.exists(subtitle_path)):
         return video_clip
 
@@ -403,6 +467,15 @@ def process_subtitles(subtitle_path, video_clip, video_duration, create_text_cli
 
 
 def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
+    """
+    预处理视频素材
+    Args:
+        materials: 素材信息列表
+        clip_duration: 片段时长(秒)
+
+    Returns:
+        List[MaterialInfo]: 处理后的素材信息列表
+    """
     for material in materials:
         if not material.url:
             continue
@@ -430,12 +503,12 @@ def preprocess_video(materials: List[MaterialInfo], clip_duration=4):
             # 使用resize方法来添加缩放效果。这里使用了lambda函数来使得缩放效果随时间变化。
             # 假设我们想要从原始大小逐渐放大到120%的大小。
             # t代表当前时间，clip.duration为视频总时长，这里是3秒。
-            # 注意：1 表示100%的大小，所以1.2表示120%的大小
+            # 注意：1 表示100%的大小所以1.2表示120%的大小
             zoom_clip = clip.resize(
                 lambda t: 1 + (clip_duration * 0.03) * (t / clip.duration)
             )
 
-            # 如果需要，可以创建一个包含缩放剪辑的复合视频剪辑
+            # 如果需要，可以创建一个包含缩放剪辑的复合频剪辑
             # （这在您想要在视频中添加其他元素时非常有用）
             final_clip = CompositeVideoClip([zoom_clip])
 
@@ -511,7 +584,7 @@ def combine_clip_videos(combined_video_path: str,
         video_clip = concatenate_videoclips(clips)
         video_clip = video_clip.set_fps(30)
 
-        logger.info("开始合并视频...")
+        logger.info("开始合并视频... (过程中出现 UserWarning: 不必理会)")
         video_clip.write_videofile(
             filename=combined_video_path,
             threads=threads,
@@ -521,7 +594,7 @@ def combine_clip_videos(combined_video_path: str,
             temp_audiofile=os.path.join(output_dir, "temp-audio.m4a")
         )
     finally:
-        # 确保资源被正确���放
+        # 确保资源被正确放
         video_clip.close()
         for clip in clips:
             clip.close()
@@ -531,7 +604,16 @@ def combine_clip_videos(combined_video_path: str,
 
 
 def resize_video_with_padding(clip, target_width: int, target_height: int):
-    """辅助函数：调整视频尺寸并添加黑边"""
+    """
+    调整视频尺寸并添加黑边
+    Args:
+        clip: 视频片段
+        target_width: 目标宽度
+        target_height: 目标高度
+
+    Returns:
+        CompositeVideoClip: 调整尺寸后的视频
+    """
     clip_ratio = clip.w / clip.h
     target_ratio = target_width / target_height
 
@@ -559,7 +641,18 @@ def resize_video_with_padding(clip, target_width: int, target_height: int):
 
 
 def validate_params(video_path, audio_path, output_file, params):
-    """验证输入参数"""
+    """
+    验证输入参数
+    Args:
+        video_path: 视频文件路径
+        audio_path: 音频文件路径
+        output_file: 输出文件路径
+        params: 视频参数
+
+    Raises:
+        FileNotFoundError: 文件不存在时抛出
+        ValueError: 参数无效时抛出
+    """
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"视频文件不存在: {video_path}")
 
@@ -592,21 +685,21 @@ if __name__ == "__main__":
         },
         {
             "timestamp": "00:45-01:01",
-            "picture": "好的以下是视频画面的客观描述：\n\n视频显示了一个人在森林里挖掘。\n\n第一个镜头是地面特写，显示出松散的泥土、碎石和落叶。光线照在部分区域。\n\n第二个镜头中，一模糊不清的蹲一个树根旁挖掘，一个橄榄绿色的背包放在地上。树根缠绕着常春藤。\n\n第三个镜头显示该人在一个更开阔的区域挖掘，那里有一些树根，以及部分倒的树干。他起来像是在挖掘一个较大的坑。\n\n第四个镜头是特写镜头，显示该人用工具清理土坑的墙壁。\n\n第五个镜头是土坑内部的特写镜头，可以看到土质的纹理，有一些小树根和其它植被的残留物。",
-            "narration": "现在，这位勇敢的挖掘者就像个“现代版的土豆农夫”，在森林里开辟新天地。的目标是什么？挖出一个宝藏还一块“树根披萨”？小心哦，别让树根追着你喊：“不要挖我，我也是有故事的！”",
+            "picture": "好的以下是视频画面的客观描述：\n\n视频显示了一个人在森林里挖掘。\n\n第一个镜头是地面特写，显示出松��的泥土、碎石和落叶。光线照在部分区域。\n\n第二个镜头中，一模糊不清的蹲一个树根旁挖掘，一个橄榄绿色的背包放在地上。树根缠绕着常春藤。\n\n第三个镜头显示该人在一个更开阔的区域挖掘，那里有一些树根，以及部分倒的树干。他起来像是在挖掘一个较大的坑。\n\n第四个镜头是特写镜头，显示该人用工具清理土坑的墙壁。\n\n第五个镜头是土坑内部的特写镜头，可以看到土质的纹理，有一些小树根和它植被的残留物。",
+            "narration": "现在，这位勇敢的挖掘者就像个“现代版的土豆农夫”，在林里开辟新天地。的目标是什么？挖一个宝藏还块“树根披萨”？小心哦，别让树根追着你喊：“不要挖我，我也是有故事的！”",
             "OST": 2,
             "new_timestamp": "00:00:33,000-00:00:49,000"
         },
         {
             "timestamp": "01:07-01:25",
-            "picture": "好，以下是视频画面的客观描述：\n\n画面1：特写镜头，显示出一丛带有水珠的深绿色灌木叶片。叶片呈椭圆形，边缘光滑。背景是树根和泥土。\n\n画面2：一个留着胡子的男人正在一个森林中土坑里挖掘。他穿着黑色T恤和卡其色裤子，跪在地上，用具挖掘泥土。周围环绕着树木、树根和灌木。一个倒下的树干横跨土坑上方。\n\n画面3：同一个男人坐在他刚才挖的坑的边缘，看着前方。他的表情似乎略带沉思。背景与画面2相同。\n\n画面4：一个广角镜头显示出他挖出的坑。这是一个不规则形状的土坑，在树木繁茂的斜坡上。土壤呈深棕色，可见树根。\n\n画面5：同一个男人跪在地上，用一把小斧头砍一根木头。他穿着与前几个画面相同的衣服。地面上覆盖着落叶。周围是树木和灌木。",
+            "picture": "好，以下是视频画面的客观描述：\n\n画面1：特写镜头，显示出一丛带有水珠的深绿色灌木叶片。叶片呈椭圆形，边缘光滑。背景是树根和泥土。\n\n画面2：一个留着胡子的男人正在一个森林中土坑里挖掘。他穿着黑色T恤和卡其色裤子，跪在地，用具挖掘泥土。周围环绕着树木、树根和灌木。一个倒下的树干横跨土坑上方。\n\n画面3：同一个男人坐在他刚才挖的坑的边缘，看着前方。他的表情似乎略带沉思。背景与画面2相同。\n\n画面4：一个广角镜头显示出他挖出的坑。这是一个不规则形状的土坑，在树木繁茂的斜坡上。土壤呈深棕色，可见树根。\n\n画面5：同一个男人跪在地上，用一把小斧头砍一根木头。他穿着与前几个画面相同的衣服。地面上覆盖着落叶。周围是树木和灌木。",
             "narration": "“哎呀，这片灌木叶子滴水如雨，感觉像是大自然的洗发水广告！但我这位‘挖宝达人’似乎更适合拍个‘森林里的单身狗’真人秀。等会儿，我要给树根唱首歌，听说它们爱音乐！”",
             "OST": 2,
             "new_timestamp": "00:00:49,000-00:01:07,000"
         },
         {
             "timestamp": "01:36-01:53",
-            "picture": "好的，以下是视频画面内容的客观描述：\n\n视频包含三个镜头：\n\n**镜头一：**个小型、浅水池塘，位于树林中。池塘的水看起来浑浊，呈绿褐色。池塘周围遍布泥土和落叶。多根树枝和树干横跨池塘，部分浸没在水中。周围的植被茂密，主要是深色树木和灌木。\n\n**镜头二：**距拍摄树深处，阳光透过树叶洒落在植被上。镜头中可见粗大的树干、树枝和各种绿叶植物。部分树枝似乎被砍断，切口可见。\n\n**镜头三：**近距离特写镜头，聚焦在树枝和绿叶上。叶片呈圆形，颜色为鲜绿色，有些叶片上有缺损。树枝颜色较深，呈现深褐色。背景是模糊的树林。\n",
+            "picture": "好的，以下是视频画面内容的客观描述：\n\n视频包含三个镜头：\n\n**镜头一：**个小型、浅水池塘，位于树林中。池塘的水看起来浑浊，呈绿褐色。池塘周围遍布泥土和落叶。多根树枝和树干横跨池塘，部分浸没在水中。周围的植被茂密主要是深色树木和灌木。\n\n**镜头二：**距拍摄树深处，阳光透过树叶洒落在植被上。镜头中可见粗大的树干、树枝和各种绿叶植物。部分树枝似乎被砍断，切口可见。\n\n**镜头三：**近距离特写镜头，聚焦在树枝和绿叶上。叶片呈圆形，颜色为鲜绿色，有些叶片上有缺损。树枝颜色较深，呈现深褐色。背景是模糊的树林。\n",
             "narration": "“好吧，看来我们的‘挖宝达人’终于找到了一‘宝藏’——一个色泽如同绿豆汤的池塘！我敢打赌，这里不仅是小鱼儿的游乐场更是树枝们的‘水疗中心’！下次来这里，我得带上浮潜装备！”",
             "OST": 2,
             "new_timestamp": "00:01:07,000-00:01:24,000"
@@ -639,8 +732,9 @@ if __name__ == "__main__":
     output_file = "../../storage/tasks/123/final-123.mp4"
 
     generate_video_v2(video_path=video_path,
-                       audio_path=audio_path,
-                       subtitle_path=subtitle_path,
-                       output_file=output_file,
-                       params=cfg
+                      audio_path=audio_path,
+                      subtitle_path=subtitle_path,
+                      output_file=output_file,
+                      params=cfg,
+                      list_script=list_script,
                       )

@@ -40,7 +40,7 @@ def to_json(obj):
             # 如果对象是二进制数据，转换为base64编码的字符串
             elif isinstance(o, bytes):
                 return "*** binary data ***"
-            # 如果���象是字典，递归处理每个键值对
+            # 如果象是字典，递归处理每个键值对
             elif isinstance(o, dict):
                 return {k: serialize(v) for k, v in o.items()}
             # 如果对象是列表或元组，递归处理每个元素
@@ -56,7 +56,7 @@ def to_json(obj):
         # 使用serialize函数处理输入对象
         serialized_obj = serialize(obj)
 
-        # 序列化处理后的对象为JSON���符串
+        # 序列化处理后的对象为JSON符串
         return json.dumps(serialized_obj, ensure_ascii=False, indent=4)
     except Exception as e:
         return None
@@ -354,15 +354,25 @@ def seconds_to_time(seconds: float) -> str:
 
 
 def calculate_total_duration(scenes):
+    """
+    计算场景列表的总时长
+    
+    Args:
+        scenes: 场景列表，每个场景包含 timestamp 字段，格式如 "00:00:28,350-00:00:41,000"
+        
+    Returns:
+        float: 总时长（秒）
+    """
     total_seconds = 0
     
     for scene in scenes:
         start, end = scene['timestamp'].split('-')
-        start_time = datetime.strptime(start, '%M:%S')
-        end_time = datetime.strptime(end, '%M:%S')
+        # 使用 time_to_seconds 函数处理更精确的时间格式
+        start_seconds = time_to_seconds(start)
+        end_seconds = time_to_seconds(end)
         
-        duration = end_time - start_time
-        total_seconds += duration.total_seconds()
+        duration = end_seconds - start_seconds
+        total_seconds += duration
     
     return total_seconds
 
@@ -485,7 +495,7 @@ def clear_keyframes_cache(video_path: str = None):
             return
             
         if video_path:
-            # ���理指定视频的缓存
+            # 理指定视频的缓存
             video_hash = md5(video_path + str(os.path.getmtime(video_path)))
             video_keyframes_dir = os.path.join(keyframes_dir, video_hash)
             if os.path.exists(video_keyframes_dir):
