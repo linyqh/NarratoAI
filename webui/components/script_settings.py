@@ -68,8 +68,9 @@ def get_batch_timestamps(batch_files, prev_batch_files=None):
         将时间字符串转换为 HH:MM:SS,mmm 格式
         
         Args:
-            time_str: 9位数字字符串,格式为 MMSSSMMM
-                     例如: 000050100 表示 00分50秒100毫秒
+            time_str: 9位数字字符串,格式为 HHMMSSMMM
+                     例如: 000010000 表示 00时00分10秒000毫秒
+                          000043039 表示 00时00分43秒039毫秒
         
         Returns:
             str: HH:MM:SS,mmm 格式的时间戳
@@ -79,22 +80,12 @@ def get_batch_timestamps(batch_files, prev_batch_files=None):
                 logger.warning(f"Invalid timestamp format: {time_str}")
                 return "00:00:00,000"
             
-            # 提取分钟、秒和毫秒
-            minutes = int(time_str[-9:-6])  # 取后9位的前3位作为分钟
-            seconds = int(time_str[-6:-3])  # 取中间3位作为秒数
-            milliseconds = int(time_str[-3:])  # 取最后3位作为毫秒
+            # 从时间戳中提取时、分、秒和毫秒
+            hours = int(time_str[0:2])      # 前2位作为小时
+            minutes = int(time_str[2:4])    # 第3-4位作为分钟
+            seconds = int(time_str[4:6])    # 第5-6位作为秒数
+            milliseconds = int(time_str[6:]) # 最后3位作为毫秒
             
-            # 处理进位
-            if seconds >= 60:
-                minutes += seconds // 60
-                seconds = seconds % 60
-            
-            if minutes >= 60:
-                hours = minutes // 60
-                minutes = minutes % 60
-            else:
-                hours = 0
-                
             return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
             
         except ValueError as e:
@@ -113,7 +104,7 @@ def get_batch_timestamps(batch_files, prev_batch_files=None):
     last_timestamp = format_timestamp(last_time)
     timestamp_range = f"{first_timestamp}-{last_timestamp}"
     
-    logger.debug(f"解析时间戳: {first_frame} -> {first_timestamp}, {last_frame} -> {last_timestamp}")
+    # logger.debug(f"解析时间戳: {first_frame} -> {first_timestamp}, {last_frame} -> {last_timestamp}")
     return first_timestamp, last_timestamp, timestamp_range
 
 def get_batch_files(keyframe_files, result, batch_size=5):
@@ -410,7 +401,7 @@ def generate_script(tr, params):
                             skip_seconds=0
                         )
                     
-                    # 获取所有关键帧文件路径
+                    # 获取所有关键文件路径
                     for filename in sorted(os.listdir(video_keyframes_dir)):
                         if filename.endswith('.jpg'):
                             keyframe_files.append(os.path.join(video_keyframes_dir, filename))
@@ -446,7 +437,7 @@ def generate_script(tr, params):
                     vision_base_url = st.session_state.get('vision_gemini_base_url')
                     
                     if not vision_api_key or not vision_model:
-                        raise ValueError("未配置 Gemini API Key 或者 模型，请在基础设置中配置")
+                        raise ValueError("未配置 Gemini API Key 或者 型，请在基础设置配置")
 
                     analyzer = vision_analyzer.VisionAnalyzer(
                         model_name=vision_model,
@@ -484,7 +475,7 @@ def generate_script(tr, params):
                         # 获取当前批次的文件列表 keyframe_001136_000045.jpg 将 000045 精度提升到 毫秒
                         batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
                         logger.debug(f"批次 {result['batch_index']} 处理完成，共 {len(batch_files)} 张图片")
-                        logger.debug(batch_files)
+                        # logger.debug(batch_files)
                         
                         first_timestamp, last_timestamp, _ = get_batch_timestamps(batch_files, prev_batch_files)
                         logger.debug(f"处理时间戳: {first_timestamp}-{last_timestamp}")
@@ -767,7 +758,7 @@ def crop_video(tr, params):
         utils.cut_video(params, update_progress)
         time.sleep(0.5)
         progress_bar.progress(100)
-        status_text.text("剪辑完成！")
+        status_text.text("剪完成！")
         st.success("视频剪辑成功完成！")
     except Exception as e:
         st.error(f"剪辑过程中发生错误: {str(e)}")
