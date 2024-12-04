@@ -3,7 +3,7 @@ import os
 import sys
 from uuid import uuid4
 from app.config import config
-from webui.components import basic_settings, video_settings, audio_settings, subtitle_settings, script_settings, review_settings
+from webui.components import basic_settings, video_settings, audio_settings, subtitle_settings, script_settings, review_settings, merge_settings
 from webui.utils import cache, file_utils
 from app.utils import utils
 from app.models.schema import VideoClipParams, VideoAspect
@@ -178,7 +178,9 @@ def main():
     
     # 渲染基础设置面板
     basic_settings.render_basic_settings(tr)
-    
+    # 渲染合并设置
+    merge_settings.render_merge_settings(tr)
+
     # 渲染主面板
     panel = st.columns(3)
     with panel[0]:
