@@ -15,7 +15,7 @@
     "Crop Video": "裁剪视频",
     "Video File": "视频文件（:blue[1️⃣支持上传视频文件(限制2G) 2️⃣大文件建议直接导入 ./resource/videos 目录]）",
     "Plot Description": "剧情描述 (:blue[可从 https://www.tvmao.com/ 获取])",
-    "Generate Video Keywords": "点击使用AI根据**文案**生成【视频关键��】",
+    "Generate Video Keywords": "点击使用AI根据**文案**生成【视频关键】",
     "Please Enter the Video Subject": "请先填写视频文案",
     "Generating Video Script and Keywords": "AI正在生成视频文案和关键词...",
     "Generating Video Keywords": "AI正在生成视频关键词...",
@@ -95,7 +95,7 @@
     "Check Format": "脚本格式检查",
     "Script Loaded Successfully": "脚本加载成功",
     "Script format check passed": "脚本格式检查通过",
-    "Script format check failed": "脚本格式检查失��",
+    "Script format check failed": "脚本格式检查失败",
     "Failed to Load Script": "加载脚本失败",
     "Failed to Save Script": "保存脚本失败",
     "Script saved successfully": "脚本保存成功",
@@ -133,6 +133,11 @@
     "Unsupported provider": "不支持的提供商",
     "0: Keep the audio only, 1: Keep the original sound only, 2: Keep the original sound and audio": "0: 仅保留音频，1: 仅保留原声，2: 保留原声和音频",
     "Text model is not available": "文案生成模型不可用",
-    "Text model is available": "文案生成模型可用"
+    "Text model is available": "文案生成模型可用",
+    "Upload Script": "上传脚本",
+    "Upload Script File": "上传脚本文件",
+    "Script Uploaded Successfully": "脚本上传成功",
+    "Invalid JSON format": "无效的JSON格式",
+    "Upload failed": "上传失败"
   }
 }

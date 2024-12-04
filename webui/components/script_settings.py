@@ -107,6 +107,7 @@ def get_batch_timestamps(batch_files, prev_batch_files=None):
     # logger.debug(f"解析时间戳: {first_frame} -> {first_timestamp}, {last_frame} -> {last_timestamp}")
     return first_timestamp, last_timestamp, timestamp_range
 
+
 def get_batch_files(keyframe_files, result, batch_size=5):
     """
     获取当前批次的图片文件
@@ -114,6 +115,7 @@ def get_batch_files(keyframe_files, result, batch_size=5):
     batch_start = result['batch_index'] * batch_size
     batch_end = min(batch_start + batch_size, len(keyframe_files))
     return keyframe_files[batch_start:batch_end]
+
 
 def render_script_panel(tr):
     """渲染脚本配置面板"""
@@ -136,7 +138,11 @@ def render_script_panel(tr):
 
 def render_script_file(tr, params):
     """渲染脚本文件选择"""
-    script_list = [(tr("None"), ""), (tr("Auto Generate"), "auto")]
+    script_list = [
+        (tr("None"), ""), 
+        (tr("Auto Generate"), "auto"), 
+        (tr("Upload Script"), "upload_script")  # 新增上传脚本选项
+    ]
 
     # 获取已有脚本文件
     suffix = "*.json"
@@ -166,7 +172,7 @@ def render_script_file(tr, params):
 
     selected_script_index = st.selectbox(
         tr("Script Files"),
-        index=selected_index,  # 使用找到的索引
+        index=selected_index,
         options=range(len(script_list)),
         format_func=lambda x: script_list[x][0]
     )
@@ -175,10 +181,50 @@ def render_script_file(tr, params):
     st.session_state['video_clip_json_path'] = script_path
     params.video_clip_json_path = script_path
 
+    # 处理脚本上传
+    if script_path == "upload_script":
+        uploaded_file = st.file_uploader(
+            tr("Upload Script File"),
+            type=["json"],
+            accept_multiple_files=False,
+        )
+
+        if uploaded_file is not None:
+            try:
+                # 读取上传的JSON内容并验证格式
+                script_content = uploaded_file.read().decode('utf-8')
+                json_data = json.loads(script_content)
+                
+                # 保存到脚本目录
+                script_file_path = os.path.join(script_dir, uploaded_file.name)
+                file_name, file_extension = os.path.splitext(uploaded_file.name)
+                
+                # 如果文件已存在,添加时间戳
+                if os.path.exists(script_file_path):
+                    timestamp = time.strftime("%Y%m%d%H%M%S")
+                    file_name_with_timestamp = f"{file_name}_{timestamp}"
+                    script_file_path = os.path.join(script_dir, file_name_with_timestamp + file_extension)
+
+                # 写入文件
+                with open(script_file_path, "w", encoding='utf-8') as f:
+                    json.dump(json_data, f, ensure_ascii=False, indent=2)
+                
+                # 更新状态
+                st.success(tr("Script Uploaded Successfully"))
+                st.session_state['video_clip_json_path'] = script_file_path
+                params.video_clip_json_path = script_file_path
+                time.sleep(1)
+                st.rerun()
+                
+            except json.JSONDecodeError:
+                st.error(tr("Invalid JSON format"))
+            except Exception as e:
+                st.error(f"{tr('Upload failed')}: {str(e)}")
+
 
 def render_video_file(tr, params):
     """渲染视频文件选择"""
-    video_list = [(tr("None"), ""), (tr("Upload Local Files"), "local")]
+    video_list = [(tr("None"), ""), (tr("Upload Local Files"), "upload_local")]
 
     # 获取已有视频文件
     for suffix in ["*.mp4", "*.mov", "*.avi", "*.mkv"]:
@@ -198,7 +244,7 @@ def render_video_file(tr, params):
     st.session_state['video_origin_path'] = video_path
     params.video_origin_path = video_path
 
-    if video_path == "local":
+    if video_path == "upload_local":
         uploaded_file = st.file_uploader(
             tr("Upload Local Files"),
             type=["mp4", "mov", "avi", "flv", "mkv"],
