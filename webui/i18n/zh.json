@@ -166,6 +166,17 @@
     "Subtitle Path": "字幕路径",
     "Enable Proxy": "启用代理",
     "QwenVL model is available": "QwenVL 模型可用",
-    "QwenVL model is not available": "QwenVL 模型不可用"
+    "QwenVL model is not available": "QwenVL 模型不可用",
+    "System settings": "系统设置",
+    "Clear Cache": "清理缓存",
+    "Cache cleared": "缓存清理完成",
+    "storage directory does not exist": "storage目录不存在",
+    "Failed to clear cache": "清理缓存失败",
+    "Clear frames": "清理关键帧",
+    "Clear clip videos": "清理裁剪视频",
+    "Clear tasks": "清理任务",
+    "Directory cleared": "目录清理完成",
+    "Directory does not exist": "目录不存在",
+    "Failed to clear directory": "清理目录失败"
   }
 }
