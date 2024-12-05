@@ -163,6 +163,9 @@
     "Error processing subtitle files. Please check if the subtitles are valid SRT files.": "处理字幕文件时出错。请检查字幕是否为有效的SRT文件。",
     "Preview Merged Video": "预览合并后的视频",
     "Video Path": "视频路径",
-    "Subtitle Path": "字幕路径"
+    "Subtitle Path": "字幕路径",
+    "Enable Proxy": "启用代理",
+    "QwenVL model is available": "QwenVL 模型可用",
+    "QwenVL model is not available": "QwenVL 模型不可用"
   }
 }

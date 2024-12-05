@@ -14,7 +14,7 @@ from loguru import logger
 from app.config import config
 from app.models.schema import VideoClipParams
 from app.utils.script_generator import ScriptProcessor
-from app.utils import utils, check_script, gemini_analyzer, video_processor, video_processor_v2
+from app.utils import utils, check_script, gemini_analyzer, video_processor, video_processor_v2, qwenvl_analyzer
 from webui.utils import file_utils
 
 
@@ -472,267 +472,168 @@ def generate_script(tr, params):
             vision_llm_provider = st.session_state.get('vision_llm_providers').lower()
             logger.debug(f"Vision LLM 提供商: {vision_llm_provider}")
             
-            if vision_llm_provider == 'gemini':
-                try:
-                    # ===================初始化视觉分析器===================
-                    update_progress(30, "正在初始化视觉分析器...")
-                    
-                    # 从配置中获取 Gemini 相关配置
+            try:
+                # ===================初始化视觉分析器===================
+                update_progress(30, "正在初始化视觉分析器...")
+                
+                # 从配置中获取相关配置
+                if vision_llm_provider == 'gemini':
                     vision_api_key = st.session_state.get('vision_gemini_api_key')
                     vision_model = st.session_state.get('vision_gemini_model_name')
                     vision_base_url = st.session_state.get('vision_gemini_base_url')
-                    
-                    if not vision_api_key or not vision_model:
-                        raise ValueError("未配置 Gemini API Key 或者 型，请在基础设置配置")
+                elif vision_llm_provider == 'qwenvl':
+                    vision_api_key = st.session_state.get('vision_qwenvl_api_key')
+                    vision_model = st.session_state.get('vision_qwenvl_model_name', 'qwen-vl-max-latest')
+                    vision_base_url = st.session_state.get('vision_qwenvl_base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1')
+                else:
+                    raise ValueError(f"不支持的视觉分析提供商: {vision_llm_provider}")
 
-                    analyzer = gemini_analyzer.VisionAnalyzer(
-                        model_name=vision_model,
-                        api_key=vision_api_key,
+                # 创建视觉分析器实例
+                analyzer = create_vision_analyzer(
+                    provider=vision_llm_provider,
+                    api_key=vision_api_key,
+                    model=vision_model,
+                    base_url=vision_base_url
+                )
+
+                update_progress(40, "正在分析关键帧...")
+
+                # ===================创建异步事件循环===================
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                # 执行异步分析
+                vision_batch_size = st.session_state.get('vision_batch_size') or config.frames.get("vision_batch_size")
+                results = loop.run_until_complete(
+                    analyzer.analyze_images(
+                        images=keyframe_files,
+                        prompt=config.app.get('vision_analysis_prompt'),
+                        batch_size=vision_batch_size
                     )
+                )
+                loop.close()
 
-                    update_progress(40, "正在分析关键帧...")
+                # ===================处理分析结果===================
+                update_progress(60, "正在整理分析结果...")
+                
+                # 合并所有批次的析结果
+                frame_analysis = ""
+                prev_batch_files = None
 
-                    # ===================创建异步事件循环===================
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    
-                    # 执行异步分析
-                    vision_batch_size = st.session_state.get('vision_batch_size') or config.frames.get("vision_batch_size")
-                    results = loop.run_until_complete(
-                        analyzer.analyze_images(
-                            images=keyframe_files,
-                            prompt=config.app.get('vision_analysis_prompt'),
-                            batch_size=vision_batch_size
-                        )
-                    )
-                    loop.close()
+                for result in results:
+                    if 'error' in result:
+                        logger.warning(f"批次 {result['batch_index']} 处理出现警告: {result['error']}")
 
-                    # ===================处理分析结果===================
-                    update_progress(60, "正在整理分析结果...")
+                    # 获取当前批次的文件列表 keyframe_001136_000045.jpg 将 000045 精度提升到 毫秒
+                    batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
+                    logger.debug(f"批次 {result['batch_index']} 处理完成，共 {len(batch_files)} 张图片")
+                    # logger.debug(batch_files)
                     
-                    # 合并所有批次的析结果
-                    frame_analysis = ""
-                    prev_batch_files = None
+                    first_timestamp, last_timestamp, _ = get_batch_timestamps(batch_files, prev_batch_files)
+                    logger.debug(f"处理时间戳: {first_timestamp}-{last_timestamp}")
+                    
+                    # 添加带时间戳的分析结果
+                    frame_analysis += f"\n=== {first_timestamp}-{last_timestamp} ===\n"
+                    frame_analysis += result['response']
+                    frame_analysis += "\n"
+                    
+                    # 更新上一个批次的文件
+                    prev_batch_files = batch_files
+                
+                if not frame_analysis.strip():
+                    raise Exception("未能生成有效的帧分析结果")
+                
+                # 保存分析结果
+                analysis_path = os.path.join(utils.temp_dir(), "frame_analysis.txt")
+                with open(analysis_path, 'w', encoding='utf-8') as f:
+                    f.write(frame_analysis)
+                
+                update_progress(70, "正在生成脚本...")
 
-                    for result in results:
-                        if 'error' in result:
-                            logger.warning(f"批次 {result['batch_index']} 处理出现警告: {result['error']}")
-                            continue
-                        # 获取当前批次的文件列表 keyframe_001136_000045.jpg 将 000045 精度提升到 毫秒
-                        batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
-                        logger.debug(f"批次 {result['batch_index']} 处理完成，共 {len(batch_files)} 张图片")
-                        # logger.debug(batch_files)
-                        
-                        first_timestamp, last_timestamp, _ = get_batch_timestamps(batch_files, prev_batch_files)
-                        logger.debug(f"处理时间戳: {first_timestamp}-{last_timestamp}")
-                        
-                        # 添加带时间戳的分析结果
-                        frame_analysis += f"\n=== {first_timestamp}-{last_timestamp} ===\n"
-                        frame_analysis += result['response']
-                        frame_analysis += "\n"
-                        
-                        # 更新上一个批次的文件
-                        prev_batch_files = batch_files
-                    
-                    if not frame_analysis.strip():
-                        raise Exception("未能生成有效的帧分析结果")
-                    
-                    # 保存分析结果
-                    analysis_path = os.path.join(utils.temp_dir(), "frame_analysis.txt")
-                    with open(analysis_path, 'w', encoding='utf-8') as f:
-                        f.write(frame_analysis)
-                    
-                    update_progress(70, "正在生成脚本...")
+                # 从配置中获取文本生成相关配置
+                text_provider = config.app.get('text_llm_provider', 'gemini').lower()
+                text_api_key = config.app.get(f'text_{text_provider}_api_key')
+                text_model = config.app.get(f'text_{text_provider}_model_name')
+                text_base_url = config.app.get(f'text_{text_provider}_base_url')
+                
+                # 构建帧内容列表
+                frame_content_list = []
+                prev_batch_files = None
 
-                    # 从配置中获取文本生成相关配置
-                    text_provider = config.app.get('text_llm_provider', 'gemini').lower()
-                    text_api_key = config.app.get(f'text_{text_provider}_api_key')
-                    text_model = config.app.get(f'text_{text_provider}_model_name')
-                    text_base_url = config.app.get(f'text_{text_provider}_base_url')
+                for i, result in enumerate(results):
+                    if 'error' in result:
+                        continue
                     
-                    # 构建帧内容列表
-                    frame_content_list = []
-                    prev_batch_files = None
-
-                    for i, result in enumerate(results):
-                        if 'error' in result:
-                            continue
-                        
-                        batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
-                        _, _, timestamp_range = get_batch_timestamps(batch_files, prev_batch_files)
-                        
-                        frame_content = {
-                            "timestamp": timestamp_range,
-                            "picture": result['response'],
-                            "narration": "",
-                            "OST": 2
-                        }
-                        frame_content_list.append(frame_content)
-                        
-                        logger.debug(f"添加帧内容: 时间范围={timestamp_range}, 分析结果长度={len(result['response'])}")
-                        
-                        # 更新上一个批次的文件
-                        prev_batch_files = batch_files
+                    batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
+                    _, _, timestamp_range = get_batch_timestamps(batch_files, prev_batch_files)
                     
-                    if not frame_content_list:
-                        raise Exception("没有有效的帧内容可以处理")
-
-                    # ===================开始生成文案===================
-                    update_progress(80, "正在生成文案...")
-                    # 校验配置
-                    api_params = {
-                        "vision_api_key": vision_api_key,
-                        "vision_model_name": vision_model, 
-                        "vision_base_url": vision_base_url or "",
-                        "text_api_key": text_api_key,
-                        "text_model_name": text_model,
-                        "text_base_url": text_base_url or ""
+                    frame_content = {
+                        "timestamp": timestamp_range,
+                        "picture": result['response'],
+                        "narration": "",
+                        "OST": 2
                     }
-                    headers = {
-                        'accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    }
-                    session = requests.Session()
-                    retry_strategy = Retry(
-                        total=3,
-                        backoff_factor=1,
-                        status_forcelist=[500, 502, 503, 504]
-                    )
-                    adapter = HTTPAdapter(max_retries=retry_strategy)
-                    session.mount("https://", adapter)
-                    try:
-                        response = session.post(
-                            f"{config.app.get('narrato_api_url')}/video/config",
-                            headers=headers,
-                            json=api_params,
-                            timeout=30,
-                            verify=True
-                        )
-                    except Exception as e:
-                        pass
-                    custom_prompt = st.session_state.get('custom_prompt', '')
-                    processor = ScriptProcessor(
-                        model_name=text_model,
-                        api_key=text_api_key,
-                        prompt=custom_prompt,
-                        base_url=text_base_url or "",
-                        video_theme=st.session_state.get('video_theme', '')
-                    )
-
-                    # 处理帧内容生成脚本
-                    script_result = processor.process_frames(frame_content_list)
-
-                    # 结果转换为JSON字符串
-                    script = json.dumps(script_result, ensure_ascii=False, indent=2)
+                    frame_content_list.append(frame_content)
                     
-                except Exception as e:
-                    logger.exception(f"大模型处理过程中发生错误\n{traceback.format_exc()}")
-                    raise Exception(f"分析失败: {str(e)}")
+                    logger.debug(f"添加帧内容: 时间范围={timestamp_range}, 分析结果长度={len(result['response'])}")
+                    
+                    # 更新上一个批次的文件
+                    prev_batch_files = batch_files
+                
+                if not frame_content_list:
+                    raise Exception("没有有效的帧内容可以处理")
 
-            elif vision_llm_provider == 'narratoapi':  # NarratoAPI
+                # ===================开始生成文案===================
+                update_progress(80, "正在生成文案...")
+                # 校验配置
+                api_params = {
+                    "vision_api_key": vision_api_key,
+                    "vision_model_name": vision_model, 
+                    "vision_base_url": vision_base_url or "",
+                    "text_api_key": text_api_key,
+                    "text_model_name": text_model,
+                    "text_base_url": text_base_url or ""
+                }
+                headers = {
+                    'accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+                session = requests.Session()
+                retry_strategy = Retry(
+                    total=3,
+                    backoff_factor=1,
+                    status_forcelist=[500, 502, 503, 504]
+                )
+                adapter = HTTPAdapter(max_retries=retry_strategy)
+                session.mount("https://", adapter)
                 try:
-                    # 创建临时目录
-                    temp_dir = utils.temp_dir("narrato")
-                    
-                    # 打包关键帧
-                    update_progress(30, "正在打包关键帧...")
-                    zip_path = os.path.join(temp_dir, f"keyframes_{int(time.time())}.zip")
-                    if not file_utils.create_zip(keyframe_files, zip_path):
-                        raise Exception("打包关键帧失败")
-                    
-                    # 获取API配置
-                    api_url = st.session_state.get('narrato_api_url')
-                    api_key = st.session_state.get('narrato_api_key')
-                    
-                    if not api_key:
-                        raise ValueError("未配置 Narrato API Key，请在基础设置中配置")
-                    
-                    # 准备API请求
-                    headers = {
-                        'X-API-Key': api_key,
-                        'accept': 'application/json'
-                    }
-                    
-                    api_params = {
-                        'batch_size': st.session_state.get('narrato_batch_size', 10),
-                        'use_ai': False,
-                        'start_offset': 0,
-                        'vision_model': st.session_state.get('narrato_vision_model', 'gemini-1.5-flash'),
-                        'vision_api_key': st.session_state.get('narrato_vision_key'),
-                        'llm_model': st.session_state.get('narrato_llm_model', 'qwen-plus'),
-                        'llm_api_key': st.session_state.get('narrato_llm_key'),
-                        'custom_prompt': st.session_state.get('custom_prompt', '')
-                    }
-                    
-                    # 发送API请求
-                    logger.info(f"请求NarratoAPI: {api_url}")
-                    update_progress(40, "正在上传文件...")
-                    with open(zip_path, 'rb') as f:
-                        files = {'file': (os.path.basename(zip_path), f, 'application/x-zip-compressed')}
-                        try:
-                            response = requests.post(
-                                f"{api_url}/video/analyze",
-                                headers=headers, 
-                                params=api_params, 
-                                files=files,
-                                timeout=30  # 设置超时时间
-                            )
-                            response.raise_for_status()
-                        except requests.RequestException as e:
-                            logger.error(f"Narrato API 请求失败:\n{traceback.format_exc()}")
-                            raise Exception(f"API请求失败: {str(e)}")
-                    
-                    task_data = response.json()
-                    task_id = task_data["data"].get('task_id')
-                    if not task_id:
-                        raise Exception(f"无效的API响应: {response.text}")
-                    
-                    # 轮询任务状态
-                    update_progress(50, "正在等待分析结果...")
-                    retry_count = 0
-                    max_retries = 60  # 最多等待2分钟
-                    
-                    while retry_count < max_retries:
-                        try:
-                            status_response = requests.get(
-                                f"{api_url}/video/tasks/{task_id}",
-                                headers=headers,
-                                timeout=10
-                            )
-                            status_response.raise_for_status()
-                            task_status = status_response.json()['data']
-                            
-                            if task_status['status'] == 'SUCCESS':
-                                script = task_status['result']['data']
-                                break
-                            elif task_status['status'] in ['FAILURE', 'RETRY']:
-                                raise Exception(f"任务失败: {task_status.get('error')}")
-                            
-                            retry_count += 1
-                            time.sleep(2)
-                            
-                        except requests.RequestException as e:
-                            logger.warning(f"获取任务状态失败，重试中: {str(e)}")
-                            retry_count += 1
-                            time.sleep(2)
-                            continue
-                    
-                    if retry_count >= max_retries:
-                        raise Exception("任务执行超时")
-                    
+                    response = session.post(
+                        f"{config.app.get('narrato_api_url')}/video/config",
+                        headers=headers,
+                        json=api_params,
+                        timeout=30,
+                        verify=True
+                    )
                 except Exception as e:
-                    logger.exception(f"NarratoAPI 处理过程中发生错误\n{traceback.format_exc()}")
-                    raise Exception(f"NarratoAPI 处理失败: {str(e)}")
-                finally:
-                    # 清理临时文件
-                    try:
-                        if os.path.exists(zip_path):
-                            os.remove(zip_path)
-                    except Exception as e:
-                        logger.warning(f"清理临时文件失败: {str(e)}")
+                    pass
+                custom_prompt = st.session_state.get('custom_prompt', '')
+                processor = ScriptProcessor(
+                    model_name=text_model,
+                    api_key=text_api_key,
+                    prompt=custom_prompt,
+                    base_url=text_base_url or "",
+                    video_theme=st.session_state.get('video_theme', '')
+                )
 
-            else:
-                logger.exception("Vision Model 未启用，请检查配置")
+                # 处理帧内容生成脚本
+                script_result = processor.process_frames(frame_content_list)
+
+                # 结果转换为JSON字符串
+                script = json.dumps(script_result, ensure_ascii=False, indent=2)
+                
+            except Exception as e:
+                logger.exception(f"大模型处理过程中发生错误\n{traceback.format_exc()}")
+                raise Exception(f"分析失败: {str(e)}")
 
             if script is None:
                 st.error("生成脚本失败，请检查日志")
@@ -823,3 +724,12 @@ def get_script_params():
         'video_name': st.session_state.get('video_name', ''),
         'video_plot': st.session_state.get('video_plot', '')
     }
+
+
+def create_vision_analyzer(provider, api_key, model, base_url):
+    if provider == 'gemini':
+        return gemini_analyzer.VisionAnalyzer(model_name=model, api_key=api_key)
+    elif provider == 'qwenvl':
+        return qwenvl_analyzer.QwenAnalyzer(model_name=model, api_key=api_key)
+    else:
+        raise ValueError(f"不支持的视觉分析提供商: {provider}")
