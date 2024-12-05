@@ -23,9 +23,11 @@ node_modules
 # 模型目录
 /models/
 ./models/*
-resource/scripts/*
-resource/videos/*
-resource/songs/*
-resource/fonts/*
-resource/srt/*
+resource/scripts/*.json
+resource/videos/*.mp4
+resource/songs/*.mp3
+resource/songs/*.flac
+resource/fonts/*.ttc
+resource/fonts/*.ttf
+resource/srt/*.srt
 app/models/faster-whisper-large-v2/*
