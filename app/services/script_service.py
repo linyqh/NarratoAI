@@ -6,7 +6,7 @@ import requests
 from loguru import logger
 from typing import List, Dict, Any, Callable
 
-from app.utils import utils, vision_analyzer, video_processor, video_processor_v2
+from app.utils import utils, gemini_analyzer, video_processor, video_processor_v2
 from app.utils.script_generator import ScriptProcessor
 from app.config import config
 
@@ -149,7 +149,7 @@ class ScriptGenerator:
         if not vision_api_key or not vision_model:
             raise ValueError("未配置 Gemini API Key 或者模型")
 
-        analyzer = vision_analyzer.VisionAnalyzer(
+        analyzer = gemini_analyzer.VisionAnalyzer(
             model_name=vision_model,
             api_key=vision_api_key,
         )

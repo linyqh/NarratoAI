@@ -14,7 +14,7 @@ from loguru import logger
 from app.config import config
 from app.models.schema import VideoClipParams
 from app.utils.script_generator import ScriptProcessor
-from app.utils import utils, check_script, vision_analyzer, video_processor, video_processor_v2
+from app.utils import utils, check_script, gemini_analyzer, video_processor, video_processor_v2
 from webui.utils import file_utils
 
 
@@ -485,7 +485,7 @@ def generate_script(tr, params):
                     if not vision_api_key or not vision_model:
                         raise ValueError("未配置 Gemini API Key 或者 型，请在基础设置配置")
 
-                    analyzer = vision_analyzer.VisionAnalyzer(
+                    analyzer = gemini_analyzer.VisionAnalyzer(
                         model_name=vision_model,
                         api_key=vision_api_key,
                     )
