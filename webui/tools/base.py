@@ -6,10 +6,27 @@ from app.utils import gemini_analyzer, qwenvl_analyzer
 
 
 def create_vision_analyzer(provider, api_key, model, base_url):
+    """
+    创建视觉分析器实例
+    
+    Args:
+        provider: 提供商名称 ('gemini' 或 'qwenvl')
+        api_key: API密钥
+        model: 模型名称
+        base_url: API基础URL
+        
+    Returns:
+        VisionAnalyzer 或 QwenAnalyzer 实例
+    """
     if provider == 'gemini':
         return gemini_analyzer.VisionAnalyzer(model_name=model, api_key=api_key)
     elif provider == 'qwenvl':
-        return qwenvl_analyzer.QwenAnalyzer(model_name=model, api_key=api_key)
+        # 只传入必要的参数
+        return qwenvl_analyzer.QwenAnalyzer(
+            model_name=model, 
+            api_key=api_key,
+            base_url=base_url
+        )
     else:
         raise ValueError(f"不支持的视觉分析提供商: {provider}")
 

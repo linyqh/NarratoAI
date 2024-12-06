@@ -34,3 +34,4 @@ tenacity>=9.0.0
 tiktoken==0.8.0
 yt-dlp==2024.11.18
 pysrt==1.1.2
+httpx==0.27.2

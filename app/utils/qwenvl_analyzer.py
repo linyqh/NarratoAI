@@ -16,28 +16,38 @@ import traceback
 class QwenAnalyzer:
     """千问视觉分析器类"""
 
-    def __init__(self, model_name: str = "qwen-vl-max-latest", api_key: str = None):
+    def __init__(self, model_name: str = "qwen-vl-max-latest", api_key: str = None, base_url: str = None):
         """
         初始化千问视觉分析器
+        
         Args:
             model_name: 模型名称，默认使用 qwen-vl-max-latest
             api_key: 阿里云API密钥
+            base_url: API基础URL，如果为None则使用默认值
         """
         if not api_key:
             raise ValueError("必须提供API密钥")
 
         self.model_name = model_name
         self.api_key = api_key
+        self.base_url = base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
         # 配置API客户端
         self._configure_client()
 
     def _configure_client(self):
-        """配置API客户端"""
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
-        )
+        """
+        配置API客户端
+        使用最简化的参数配置，避免不必要的参数
+        """
+        try:
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url
+            )
+        except Exception as e:
+            logger.error(f"初始化OpenAI客户端失败: {str(e)}")
+            raise
 
     def _image_to_base64(self, image: PIL.Image.Image) -> str:
         """
@@ -141,7 +151,7 @@ class QwenAnalyzer:
 
                     while retry_count < 3:
                         try:
-                            # 在每个批次处理前添加小延迟
+                            # 在每个批次处理前��加小延迟
                             if i > 0:
                                 await asyncio.sleep(2)
 
@@ -199,7 +209,7 @@ class QwenAnalyzer:
         for i, result in enumerate(results):
             response_text = result['response']
 
-            # 如果有图片路径信息，使用它来生成文件名
+            # 如果有图片路径信息，���用它来生成文件名
             if result.get('image_paths'):
                 image_paths = result['image_paths']
                 img_name_start = Path(image_paths[0]).stem.split('_')[-1]
