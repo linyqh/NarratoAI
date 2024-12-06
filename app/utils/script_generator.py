@@ -374,22 +374,65 @@ class ScriptProcessor:
 记住：要敢于用"温和的违反"制造笑点，但要把握好尺度，让观众在轻松愉快中感受到乐趣。"""
 
     def calculate_duration_and_word_count(self, time_range: str) -> int:
+        """
+        计算时间范围的持续时长并估算合适的字数
+        
+        Args:
+            time_range: 时间范围字符串,格式为 "HH:MM:SS,mmm-HH:MM:SS,mmm"
+                       例如: "00:00:50,100-00:01:21,500"
+        
+        Returns:
+            int: 估算的合适字数
+                  基于经验公式: 每0.35秒可以说一个字
+                  例如: 10秒可以说约28个字 (10/0.35≈28.57)
+        """
         try:
             start_str, end_str = time_range.split('-')
-
-            def time_to_seconds(time_str):
-                minutes, seconds = map(int, time_str.split(':'))
-                return minutes * 60 + seconds
-
+            
+            def time_to_seconds(time_str: str) -> float:
+                """
+                将时间字符串转换为秒数(带毫秒精度)
+                
+                Args:
+                    time_str: 时间字符串,格式为 "HH:MM:SS,mmm"
+                             例如: "00:00:50,100" 表示50.1秒
+                
+                Returns:
+                    float: 转换后的秒数(带毫秒)
+                """
+                try:
+                    # 处理毫秒部分
+                    time_part, ms_part = time_str.split(',')
+                    hours, minutes, seconds = map(int, time_part.split(':'))
+                    milliseconds = int(ms_part)
+                    
+                    # 转换为秒
+                    total_seconds = (hours * 3600) + (minutes * 60) + seconds + (milliseconds / 1000)
+                    return total_seconds
+                    
+                except ValueError as e:
+                    logger.warning(f"时间格式解析错误: {time_str}, error: {e}")
+                    return 0.0
+            
+            # 计算开始和结束时间的秒数
             start_seconds = time_to_seconds(start_str)
             end_seconds = time_to_seconds(end_str)
+            
+            # 计算持续时间(秒)
             duration = end_seconds - start_seconds
-            word_count = int(duration / 0.35)
-
+            
+            # 根据经验公式计算字数: 每0.5秒一个字
+            word_count = int(duration / 0.4)
+            
+            # 确保字数在合理范围内
+            word_count = max(10, min(word_count, 500))  # 限制在10-500字之间
+            
+            logger.debug(f"时间范围 {time_range} 的持续时间为 {duration:.3f}秒, 估算字数: {word_count}")
             return word_count
+            
         except Exception as e:
-            logger.info(f"时间格式转换错误: {traceback.format_exc()}")
-            return 100
+            logger.warning(f"字数计算错误: {traceback.format_exc()}")
+            return 100  # 发生错误时返回默认字数
 
     def process_frames(self, frame_content_list: List[Dict]) -> List[Dict]:
         for frame_content in frame_content_list:
@@ -406,22 +449,47 @@ class ScriptProcessor:
     def _save_results(self, frame_content_list: List[Dict]):
         """保存处理结果，并添加新的时间戳"""
         try:
-            # 转换秒数为 MM:SS 格式
-            def seconds_to_time(seconds):
-                minutes = seconds // 60
-                remaining_seconds = seconds % 60
-                return f"{minutes:02d}:{remaining_seconds:02d}"
+            def format_timestamp(seconds: float) -> str:
+                """将秒数转换为 HH:MM:SS,mmm 格式"""
+                hours = int(seconds // 3600)
+                minutes = int((seconds % 3600) // 60)
+                seconds_remainder = seconds % 60
+                whole_seconds = int(seconds_remainder)
+                milliseconds = int((seconds_remainder - whole_seconds) * 1000)
+                
+                return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d},{milliseconds:03d}"
 
             # 计算新的时间戳
-            current_time = 0  # 当前时间点（秒）
+            current_time = 0.0  # 当前时间点（秒，包含毫秒）
 
             for frame in frame_content_list:
                 # 获取原始时间戳的持续时间
                 start_str, end_str = frame['timestamp'].split('-')
 
-                def time_to_seconds(time_str):
-                    minutes, seconds = map(int, time_str.split(':'))
-                    return minutes * 60 + seconds
+                def time_to_seconds(time_str: str) -> float:
+                    """将时间字符串转换为秒数（包含毫秒）"""
+                    try:
+                        if ',' in time_str:
+                            time_part, ms_part = time_str.split(',')
+                            ms = float(ms_part) / 1000
+                        else:
+                            time_part = time_str
+                            ms = 0
+
+                        parts = time_part.split(':')
+                        if len(parts) == 3:  # HH:MM:SS
+                            h, m, s = map(float, parts)
+                            seconds = h * 3600 + m * 60 + s
+                        elif len(parts) == 2:  # MM:SS
+                            m, s = map(float, parts)
+                            seconds = m * 60 + s
+                        else:  # SS
+                            seconds = float(parts[0])
+
+                        return seconds + ms
+                    except Exception as e:
+                        logger.error(f"时间格式转换错误 {time_str}: {str(e)}")
+                        return 0.0
 
                 # 计算当前片段的持续时间
                 start_seconds = time_to_seconds(start_str)
@@ -429,8 +497,8 @@ class ScriptProcessor:
                 duration = end_seconds - start_seconds
 
                 # 设置新的时间戳
-                new_start = seconds_to_time(current_time)
-                new_end = seconds_to_time(current_time + duration)
+                new_start = format_timestamp(current_time)
+                new_end = format_timestamp(current_time + duration)
                 frame['new_timestamp'] = f"{new_start}-{new_end}"
 
                 # 更新当前时间点
@@ -443,7 +511,7 @@ class ScriptProcessor:
             with open(file_name, 'w', encoding='utf-8') as file:
                 json.dump(frame_content_list, file, ensure_ascii=False, indent=4)
 
-            logger.info(f"保存脚本成功，总时长: {seconds_to_time(current_time)}")
+            logger.info(f"保存脚本成功，总时长: {format_timestamp(current_time)}")
 
         except Exception as e:
             logger.error(f"保存结果时发生错误: {str(e)}\n{traceback.format_exc()}")

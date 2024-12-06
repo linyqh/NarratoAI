@@ -40,7 +40,7 @@ def to_json(obj):
             # 如果对象是二进制数据，转换为base64编码的字符串
             elif isinstance(o, bytes):
                 return "*** binary data ***"
-            # 如果对象是字典，递归处理每个键值对
+            # 如果象是字典，递归处理每个键值对
             elif isinstance(o, dict):
                 return {k: serialize(v) for k, v in o.items()}
             # 如果对象是列表或元组，递归处理每个元素
@@ -56,7 +56,7 @@ def to_json(obj):
         # 使用serialize函数处理输入对象
         serialized_obj = serialize(obj)
 
-        # 序列化处理后的对象为JSON���符串
+        # 序列化处理后的对象为JSON符串
         return json.dumps(serialized_obj, ensure_ascii=False, indent=4)
     except Exception as e:
         return None
@@ -119,6 +119,15 @@ def song_dir(sub_dir: str = ""):
 
 def public_dir(sub_dir: str = ""):
     d = resource_dir(f"public")
+    if sub_dir:
+        d = os.path.join(d, sub_dir)
+    if not os.path.exists(d):
+        os.makedirs(d)
+    return d
+
+
+def srt_dir(sub_dir: str = ""):
+    d = resource_dir(f"srt")
     if sub_dir:
         d = os.path.join(d, sub_dir)
     if not os.path.exists(d):
@@ -302,15 +311,49 @@ def get_current_country():
 
 
 def time_to_seconds(time_str: str) -> float:
-    parts = time_str.split(':')
-    if len(parts) == 2:
-        m, s = map(float, parts)
-        return m * 60 + s
-    elif len(parts) == 3:
-        h, m, s = map(float, parts)
-        return h * 3600 + m * 60 + s
-    else:
-        raise ValueError(f"Invalid time format: {time_str}")
+    """
+    将时间字符串转换为秒数，支持多种格式：
+    - "HH:MM:SS,mmm" -> 小时:分钟:秒,毫秒
+    - "MM:SS,mmm" -> 分钟:秒,毫秒
+    - "SS,mmm" -> 秒,毫秒
+    - "SS-mmm" -> 秒-毫秒
+    
+    Args:
+        time_str: 时间字符串
+        
+    Returns:
+        float: 转换后的秒数(包含毫秒)
+    """
+    try:
+        # 处理带有'-'的毫秒格式
+        if '-' in time_str:
+            time_part, ms_part = time_str.split('-')
+            ms = float(ms_part) / 1000
+        # 处理带有','的毫秒格式
+        elif ',' in time_str:
+            time_part, ms_part = time_str.split(',')
+            ms = float(ms_part) / 1000
+        else:
+            time_part = time_str
+            ms = 0
+
+        # 分割时间部分
+        parts = time_part.split(':')
+        
+        if len(parts) == 3:  # HH:MM:SS
+            h, m, s = map(float, parts)
+            seconds = h * 3600 + m * 60 + s
+        elif len(parts) == 2:  # MM:SS
+            m, s = map(float, parts)
+            seconds = m * 60 + s
+        else:  # SS
+            seconds = float(parts[0])
+
+        return seconds + ms
+        
+    except (ValueError, IndexError) as e:
+        logger.error(f"时间格式转换错误 {time_str}: {str(e)}")
+        return 0.0
 
 
 def seconds_to_time(seconds: float) -> str:
@@ -320,15 +363,25 @@ def seconds_to_time(seconds: float) -> str:
 
 
 def calculate_total_duration(scenes):
+    """
+    计算场景列表的总时长
+    
+    Args:
+        scenes: 场景列表，每个场景包含 timestamp 字段，格式如 "00:00:28,350-00:00:41,000"
+        
+    Returns:
+        float: 总时长（秒）
+    """
     total_seconds = 0
     
     for scene in scenes:
         start, end = scene['timestamp'].split('-')
-        start_time = datetime.strptime(start, '%M:%S')
-        end_time = datetime.strptime(end, '%M:%S')
+        # 使用 time_to_seconds 函数处理更精确的时间格式
+        start_seconds = time_to_seconds(start)
+        end_seconds = time_to_seconds(end)
         
-        duration = end_time - start_time
-        total_seconds += duration.total_seconds()
+        duration = end_seconds - start_seconds
+        total_seconds += duration
     
     return total_seconds
 
@@ -451,7 +504,7 @@ def clear_keyframes_cache(video_path: str = None):
             return
             
         if video_path:
-            # ���理指定视频的缓存
+            # 理指定视频的缓存
             video_hash = md5(video_path + str(os.path.getmtime(video_path)))
             video_keyframes_dir = os.path.join(keyframes_dir, video_hash)
             if os.path.exists(video_keyframes_dir):
@@ -520,3 +573,21 @@ def download_font(url: str, font_path: str):
     except Exception as e:
         logger.error(f"下载字体文件失败: {e}")
         raise
+
+def init_imagemagick():
+    """初始化 ImageMagick 配置"""
+    try:
+        # 检查 ImageMagick 是否已安装
+        import subprocess
+        result = subprocess.run(['magick', '-version'], capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error("ImageMagick 未安装或配置不正确")
+            return False
+            
+        # 设置 IMAGEMAGICK_BINARY 环境变量
+        os.environ['IMAGEMAGICK_BINARY'] = 'magick'
+        
+        return True
+    except Exception as e:
+        logger.error(f"初始化 ImageMagick 失败: {str(e)}")
+        return False

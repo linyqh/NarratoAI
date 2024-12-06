@@ -10,6 +10,7 @@ from google.api_core import exceptions
 import google.generativeai as genai
 import PIL.Image
 import traceback
+from app.utils import utils
 
 
 class VisionAnalyzer:
@@ -146,14 +147,34 @@ class VisionAnalyzer:
             response_text = result['response']
             image_paths = result['image_paths']
 
-            img_name_start = Path(image_paths[0]).stem.split('_')[-1]
-            img_name_end = Path(image_paths[-1]).stem.split('_')[-1]
-            txt_path = os.path.join(output_dir, f"frame_{img_name_start}_{img_name_end}.txt")
+            # 从文件名中提取时间戳并转换为标准格式
+            def format_timestamp(img_path):
+                # 从文件名中提取时间部分
+                timestamp = Path(img_path).stem.split('_')[-1]
+                try:
+                    # 将时间转换为秒
+                    seconds = utils.time_to_seconds(timestamp.replace('_', ':'))
+                    # 转换为 HH:MM:SS,mmm 格式
+                    hours = int(seconds // 3600)
+                    minutes = int((seconds % 3600) // 60)
+                    seconds_remainder = seconds % 60
+                    whole_seconds = int(seconds_remainder)
+                    milliseconds = int((seconds_remainder - whole_seconds) * 1000)
+                    
+                    return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d},{milliseconds:03d}"
+                except Exception as e:
+                    logger.error(f"时间戳格式转换错误: {timestamp}, {str(e)}")
+                    return timestamp
+
+            start_timestamp = format_timestamp(image_paths[0])
+            end_timestamp = format_timestamp(image_paths[-1])
+            
+            txt_path = os.path.join(output_dir, f"frame_{start_timestamp}_{end_timestamp}.txt")
 
             # 保存结果到txt文件
             with open(txt_path, 'w', encoding='utf-8') as f:
                 f.write(response_text.strip())
-            print(f"已保存分析结果到: {txt_path}")
+            logger.info(f"已保存分析结果到: {txt_path}")
 
     def load_images(self, image_paths: List[str]) -> List[PIL.Image.Image]:
         """

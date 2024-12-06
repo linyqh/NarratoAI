@@ -11,6 +11,7 @@ from edge_tts.submaker import mktimestamp
 from xml.sax.saxutils import unescape
 from edge_tts import submaker, SubMaker
 from moviepy.video.tools import subtitles
+import time
 
 from app.config import config
 from app.utils import utils
@@ -989,6 +990,9 @@ Gender: Female
 
 Name: zh-CN-XiaoxiaoMultilingualNeural-V2
 Gender: Female
+
+Name: zh-CN-YunxiNeural-V2
+Gender: Male
     """.strip()
     voices = []
     name = ""
@@ -1034,8 +1038,8 @@ def is_azure_v2_voice(voice_name: str):
 def tts(
     text: str, voice_name: str, voice_rate: float, voice_pitch: float, voice_file: str
 ) -> [SubMaker, None]:
-    # if is_azure_v2_voice(voice_name):
-    #     return azure_tts_v2(text, voice_name, voice_file)
+    if is_azure_v2_voice(voice_name):
+        return azure_tts_v2(text, voice_name, voice_file)
     return azure_tts_v1(text, voice_name, voice_rate, voice_pitch, voice_file)
 
 
@@ -1068,33 +1072,47 @@ def azure_tts_v1(
     pitch_str = convert_pitch_to_percent(voice_pitch)
     for i in range(3):
         try:
-            logger.info(f"start, voice name: {voice_name}, try: {i + 1}")
+            logger.info(f"第 {i+1} 次使用 edge_tts 生成音频")
 
-            async def _do() -> SubMaker:
+            async def _do() -> tuple[SubMaker, bytes]:
                 communicate = edge_tts.Communicate(text, voice_name, rate=rate_str, pitch=pitch_str, proxy=config.proxy.get("http"))
                 sub_maker = edge_tts.SubMaker()
-                with open(voice_file, "wb") as file:
-                    async for chunk in communicate.stream():
-                        if chunk["type"] == "audio":
-                            file.write(chunk["data"])
-                        elif chunk["type"] == "WordBoundary":
-                            sub_maker.create_sub(
-                                (chunk["offset"], chunk["duration"]), chunk["text"]
-                            )
-                return sub_maker
-            # 判断音频文件是否一件存在
+                audio_data = bytes()  # 用于存储音频数据
+                
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        audio_data += chunk["data"]
+                    elif chunk["type"] == "WordBoundary":
+                        sub_maker.create_sub(
+                            (chunk["offset"], chunk["duration"]), chunk["text"]
+                        )
+                return sub_maker, audio_data
+
+            # 判断音频文件是否已存在
             if os.path.exists(voice_file):
                 logger.info(f"voice file exists, skip tts: {voice_file}")
                 continue
-            sub_maker = asyncio.run(_do())
-            if not sub_maker or not sub_maker.subs:
-                logger.warning(f"failed, sub_maker is None or sub_maker.subs is None")
+
+            # 获取音频数据和字幕信息
+            sub_maker, audio_data = asyncio.run(_do())
+            
+            # 验证数据是否有效
+            if not sub_maker or not sub_maker.subs or not audio_data:
+                logger.warning(f"failed, invalid data generated")
+                if i < 2:
+                    time.sleep(1)
                 continue
+
+            # 数据有效，写入文件
+            with open(voice_file, "wb") as file:
+                file.write(audio_data)
 
             logger.info(f"completed, output file: {voice_file}")
             return sub_maker
         except Exception as e:
-            logger.error(f"failed, error: {str(e)}")
+            logger.error(f"生成音频文件时出错: {str(e)}")
+            if i < 2:
+                time.sleep(1)
     return None
 
 
@@ -1130,14 +1148,6 @@ def azure_tts_v2(text: str, voice_name: str, voice_file: str) -> [SubMaker, None
             sub_maker = SubMaker()
 
             def speech_synthesizer_word_boundary_cb(evt: speechsdk.SessionEventArgs):
-                # print('WordBoundary event:')
-                # print('\tBoundaryType: {}'.format(evt.boundary_type))
-                # print('\tAudioOffset: {}ms'.format((evt.audio_offset + 5000)))
-                # print('\tDuration: {}'.format(evt.duration))
-                # print('\tText: {}'.format(evt.text))
-                # print('\tTextOffset: {}'.format(evt.text_offset))
-                # print('\tWordLength: {}'.format(evt.word_length))
-
                 duration = _format_duration_to_offset(str(evt.duration))
                 offset = _format_duration_to_offset(evt.audio_offset)
                 sub_maker.subs.append(evt.text)
@@ -1183,9 +1193,13 @@ def azure_tts_v2(text: str, voice_name: str, voice_file: str) -> [SubMaker, None
                     logger.error(
                         f"azure v2 speech synthesis error: {cancellation_details.error_details}"
                     )
+            if i < 2:  # 如果不是最后一次重试，则等待1秒
+                time.sleep(1)
             logger.info(f"completed, output file: {voice_file}")
         except Exception as e:
             logger.error(f"failed, error: {str(e)}")
+            if i < 2:  # 如果不是最后一次重试，则等待1秒
+                time.sleep(1)
     return None
 
 
@@ -1443,7 +1457,7 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
 
             if sub_maker is None:
                 logger.error(f"无法为时间戳 {timestamp} 生成音频; "
-                             f"如果您在中国，请使用VPN。或者手动选择 zh-CN-YunyangNeural 等角色；"
+                             f"如果您在中国，请使用VPN; "
                              f"或者使用其他 tts 引擎")
                 continue
 
@@ -1460,17 +1474,12 @@ if __name__ == "__main__":
     voice_name = parse_voice_name(voice_name)
     print(voice_name)
 
-    with open("../../resource/scripts/test.json", 'r', encoding='utf-8') as f:
+    with open("../../resource/scripts/2024-1203-205442.json", 'r', encoding='utf-8') as f:
         data = json.load(f)
 
-    audio_files, sub_maker_list = tts_multiple(task_id="12312312", list_script=data, voice_name=voice_name, voice_rate=1)
+    audio_files, sub_maker_list = tts_multiple(task_id="12312312", list_script=data, voice_name=voice_name, voice_rate=1, voice_pitch=1)
 
     full_text = " ".join([item['narration'] for item in data if not item['OST']])
     subtitle_file = os.path.join(utils.task_dir("12312312"), "subtitle_multiple.srt")
     create_subtitle_from_multiple(full_text, sub_maker_list, data, subtitle_file)
     print(f"生成的音频文件列表: {audio_files}")
-    print(f"生成的字幕文件: {subtitle_file}")
-
-    # text = " ".join([item['narration'] for item in data])
-    # sub_marks = tts(text=text, voice_name=voice_name, voice_rate=1, voice_file="../../storage/tasks/12312312/aaa.mp3")
-    # create_subtitle(text=text, sub_maker=sub_marks, subtitle_file="../../storage/tasks/12312312/subtitle_123.srt")

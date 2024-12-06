@@ -366,6 +366,8 @@ class VideoClipParams(BaseModel):
     custom_position: float = Field(default=70.0, description="自定义位置")
 
     n_threads: Optional[int] = 8    # 线程数，有助于提升视频处理速度
+    tts_volume: float = 1.0  # TTS音频音量
+    video_volume: float = 0.1  # 视频原声音量
 
 class VideoTranscriptionRequest(BaseModel):
     video_name: str

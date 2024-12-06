@@ -20,7 +20,7 @@ def render_audio_panel(tr):
 def render_tts_settings(tr):
     """渲染TTS(文本转语音)设置"""
     # 获取支持的语音列表
-    support_locales = ["zh-CN", "zh-HK", "zh-TW", "en-US"]
+    support_locales = ["zh-CN"]
     voices = voice.get_all_azure_voices(filter_locals=support_locales)
     
     # 创建友好的显示名称

@@ -52,18 +52,34 @@ def render_language_settings(tr):
 
 def render_proxy_settings(tr):
     """渲染代理设置"""
-    proxy_url_http = config.proxy.get("http", "") or os.getenv("VPN_PROXY_URL", "")
-    proxy_url_https = config.proxy.get("https", "") or os.getenv("VPN_PROXY_URL", "")
+    # 获取当前代理状态
+    proxy_enabled = config.proxy.get("enabled", True)
+    proxy_url_http = config.proxy.get("http")
+    proxy_url_https = config.proxy.get("https")
 
-    HTTP_PROXY = st.text_input(tr("HTTP_PROXY"), value=proxy_url_http)
-    HTTPS_PROXY = st.text_input(tr("HTTPs_PROXY"), value=proxy_url_https)
+    # 添加代理开关
+    proxy_enabled = st.checkbox(tr("Enable Proxy"), value=proxy_enabled)
+    
+    # 保存代理开关状态
+    config.proxy["enabled"] = proxy_enabled
 
-    if HTTP_PROXY:
-        config.proxy["http"] = HTTP_PROXY
-        os.environ["HTTP_PROXY"] = HTTP_PROXY
-    if HTTPS_PROXY:
-        config.proxy["https"] = HTTPS_PROXY
-        os.environ["HTTPS_PROXY"] = HTTPS_PROXY
+    # 只有在代理启用时才显示代理设置输入框
+    if proxy_enabled:
+        HTTP_PROXY = st.text_input(tr("HTTP_PROXY"), value=proxy_url_http)
+        HTTPS_PROXY = st.text_input(tr("HTTPs_PROXY"), value=proxy_url_https)
+
+        if HTTP_PROXY:
+            config.proxy["http"] = HTTP_PROXY
+            os.environ["HTTP_PROXY"] = HTTP_PROXY
+        if HTTPS_PROXY:
+            config.proxy["https"] = HTTPS_PROXY
+            os.environ["HTTPS_PROXY"] = HTTPS_PROXY
+    else:
+        # 当代理被禁用时，清除环境变量和配置
+        os.environ.pop("HTTP_PROXY", None)
+        os.environ.pop("HTTPS_PROXY", None)
+        config.proxy["http"] = ""
+        config.proxy["https"] = ""
 
 
 def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
@@ -90,6 +106,28 @@ def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
         except Exception as e:
             return False, f"{tr('gemini model is not available')}: {str(e)}"
 
+    elif provider.lower() == 'qwenvl':
+        from openai import OpenAI
+        try:
+            client = OpenAI(
+                api_key=api_key,
+                base_url=base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            )
+            
+            # 发送一个简单的测试请求
+            response = client.chat.completions.create(
+                model=model_name or "qwen-vl-max-latest",
+                messages=[{"role": "user", "content": "直接回复我文本'当前网络可用'"}]
+            )
+            
+            if response and response.choices:
+                return True, tr("QwenVL model is available")
+            else:
+                return False, tr("QwenVL model returned invalid response")
+                
+        except Exception as e:
+            return False, f"{tr('QwenVL model is not available')}: {str(e)}"
+            
     elif provider.lower() == 'narratoapi':
         import requests
         try:
@@ -116,7 +154,7 @@ def render_vision_llm_settings(tr):
     st.subheader(tr("Vision Model Settings"))
 
     # 视频分析模型提供商选择
-    vision_providers = ['Gemini', 'NarratoAPI(待发布)', 'QwenVL(待发布)']
+    vision_providers = ['Gemini', 'QwenVL', 'NarratoAPI(待发布)']
     saved_vision_provider = config.app.get("vision_llm_provider", "Gemini").lower()
     saved_provider_index = 0
 
@@ -142,18 +180,33 @@ def render_vision_llm_settings(tr):
     # 渲染视觉模型配置输入框
     st_vision_api_key = st.text_input(tr("Vision API Key"), value=vision_api_key, type="password")
     
-    # 当选择 Gemini 时禁用 base_url 输入
-    if vision_provider.lower() == 'gemini':
+    # 根据不同提供商设置默认值和帮助信息
+    if vision_provider == 'gemini':
         st_vision_base_url = st.text_input(
             tr("Vision Base URL"), 
             value=vision_base_url,
             disabled=True,
             help=tr("Gemini API does not require a base URL")
         )
+        st_vision_model_name = st.text_input(
+            tr("Vision Model Name"), 
+            value=vision_model_name or "gemini-1.5-flash",
+            help=tr("Default: gemini-1.5-flash")
+        )
+    elif vision_provider == 'qwenvl':
+        st_vision_base_url = st.text_input(
+            tr("Vision Base URL"), 
+            value=vision_base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            help=tr("Default: https://dashscope.aliyuncs.com/compatible-mode/v1")
+        )
+        st_vision_model_name = st.text_input(
+            tr("Vision Model Name"), 
+            value=vision_model_name or "qwen-vl-max-latest",
+            help=tr("Default: qwen-vl-max-latest")
+        )
     else:
         st_vision_base_url = st.text_input(tr("Vision Base URL"), value=vision_base_url)
-        
-    st_vision_model_name = st.text_input(tr("Vision Model Name"), value=vision_model_name)
+        st_vision_model_name = st.text_input(tr("Vision Model Name"), value=vision_model_name)
 
     # 在配置输入框后添加测试按钮
     if st.button(tr("Test Connection"), key="test_vision_connection"):
@@ -174,88 +227,13 @@ def render_vision_llm_settings(tr):
     # 保存视觉模型配置
     if st_vision_api_key:
         config.app[f"vision_{vision_provider}_api_key"] = st_vision_api_key
-        st.session_state[f"vision_{vision_provider}_api_key"] = st_vision_api_key  # 用于script_settings.py
+        st.session_state[f"vision_{vision_provider}_api_key"] = st_vision_api_key
     if st_vision_base_url:
         config.app[f"vision_{vision_provider}_base_url"] = st_vision_base_url
         st.session_state[f"vision_{vision_provider}_base_url"] = st_vision_base_url
     if st_vision_model_name:
         config.app[f"vision_{vision_provider}_model_name"] = st_vision_model_name
         st.session_state[f"vision_{vision_provider}_model_name"] = st_vision_model_name
-
-    # # NarratoAPI 特殊配置
-    # if vision_provider == 'narratoapi':
-    #     st.subheader(tr("Narrato Additional Settings"))
-    #
-    #     # Narrato API 基础配置
-    #     narrato_api_key = st.text_input(
-    #         tr("Narrato API Key"),
-    #         value=config.app.get("narrato_api_key", ""),
-    #         type="password",
-    #         help="用于访问 Narrato API 的密钥"
-    #     )
-    #     if narrato_api_key:
-    #         config.app["narrato_api_key"] = narrato_api_key
-    #         st.session_state['narrato_api_key'] = narrato_api_key
-    #
-    #     narrato_api_url = st.text_input(
-    #         tr("Narrato API URL"),
-    #         value=config.app.get("narrato_api_url", "http://127.0.0.1:8000/api/v1/video/analyze")
-    #     )
-    #     if narrato_api_url:
-    #         config.app["narrato_api_url"] = narrato_api_url
-    #         st.session_state['narrato_api_url'] = narrato_api_url
-    #
-    #     # 视频分析模型配置
-    #     st.markdown("##### " + tr("Vision Model Settings"))
-    #     narrato_vision_model = st.text_input(
-    #         tr("Vision Model Name"),
-    #         value=config.app.get("narrato_vision_model", "gemini-1.5-flash")
-    #     )
-    #     narrato_vision_key = st.text_input(
-    #         tr("Vision Model API Key"),
-    #         value=config.app.get("narrato_vision_key", ""),
-    #         type="password",
-    #         help="用于视频分析的模 API Key"
-    #     )
-    #
-    #     if narrato_vision_model:
-    #         config.app["narrato_vision_model"] = narrato_vision_model
-    #         st.session_state['narrato_vision_model'] = narrato_vision_model
-    #     if narrato_vision_key:
-    #         config.app["narrato_vision_key"] = narrato_vision_key
-    #         st.session_state['narrato_vision_key'] = narrato_vision_key
-    #
-    #     # 文案生成模型配置
-    #     st.markdown("##### " + tr("Text Generation Model Settings"))
-    #     narrato_llm_model = st.text_input(
-    #         tr("LLM Model Name"),
-    #         value=config.app.get("narrato_llm_model", "qwen-plus")
-    #     )
-    #     narrato_llm_key = st.text_input(
-    #         tr("LLM Model API Key"),
-    #         value=config.app.get("narrato_llm_key", ""),
-    #         type="password",
-    #         help="用于文案生成的模型 API Key"
-    #     )
-    #
-    #     if narrato_llm_model:
-    #         config.app["narrato_llm_model"] = narrato_llm_model
-    #         st.session_state['narrato_llm_model'] = narrato_llm_model
-    #     if narrato_llm_key:
-    #         config.app["narrato_llm_key"] = narrato_llm_key
-    #         st.session_state['narrato_llm_key'] = narrato_llm_key
-    #
-    #     # 批处理配置
-    #     narrato_batch_size = st.number_input(
-    #         tr("Batch Size"),
-    #         min_value=1,
-    #         max_value=50,
-    #         value=config.app.get("narrato_batch_size", 10),
-    #         help="每批处理的图片数量"
-    #     )
-    #     if narrato_batch_size:
-    #         config.app["narrato_batch_size"] = narrato_batch_size
-    #         st.session_state['narrato_batch_size'] = narrato_batch_size
 
 
 def test_text_model_connection(api_key, base_url, model_name, provider, tr):
@@ -327,6 +305,7 @@ def test_text_model_connection(api_key, base_url, model_name, provider, tr):
             
     except Exception as e:
         return False, f"{tr('Connection failed')}: {str(e)}"
+
 
 def render_text_llm_settings(tr):
     """渲染文案生成模型设置"""

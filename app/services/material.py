@@ -3,6 +3,7 @@ import subprocess
 import random
 import traceback
 from urllib.parse import urlencode
+from datetime import datetime
 
 import requests
 from typing import List
@@ -254,70 +255,105 @@ def download_videos(
 def time_to_seconds(time_str: str) -> float:
     """
     将时间字符串转换为秒数
-    支持格式：
-    1. "MM:SS" (分:秒)
-    2. "SS" (纯秒数)
+    支持格式: 'HH:MM:SS,mmm' (时:分:秒,毫秒)
+    
+    Args:
+        time_str: 时间字符串,如 "00:00:20,100"
+        
+    Returns:
+        float: 转换后的秒数(包含毫秒)
     """
-    parts = time_str.split(':')
-    if len(parts) == 2:
-        minutes, seconds = map(float, parts)
-        return minutes * 60 + seconds
-    return float(time_str)
+    try:
+        # 处理毫秒部分
+        if ',' in time_str:
+            time_part, ms_part = time_str.split(',')
+            ms = int(ms_part) / 1000
+        else:
+            time_part = time_str
+            ms = 0
+
+        # 处理时分秒
+        parts = time_part.split(':')
+        if len(parts) == 3:  # HH:MM:SS
+            h, m, s = map(int, parts)
+            seconds = h * 3600 + m * 60 + s
+        else:
+            raise ValueError("时间格式必须为 HH:MM:SS,mmm")
+
+        return seconds + ms
+        
+    except ValueError as e:
+        logger.error(f"时间格式错误: {time_str}")
+        raise ValueError(f"时间格式错误: 必须为 HH:MM:SS,mmm 格式") from e
 
 
 def format_timestamp(seconds: float) -> str:
     """
-    将秒数转换为 "MM:SS" 格式的时间字符串
+    将秒数转换为可读的时间格式 (HH:MM:SS,mmm)
+    
+    Args:
+        seconds: 秒数(可包含毫秒)
+        
+    Returns:
+        str: 格式化的时间字符串,如 "00:00:20,100"
     """
-    minutes = int(seconds) // 60
-    secs = int(seconds) % 60
-    return f"{minutes:02d}:{secs:02d}"
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds_remain = seconds % 60
+    whole_seconds = int(seconds_remain)
+    milliseconds = int((seconds_remain - whole_seconds) * 1000)
+    
+    return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d},{milliseconds:03d}"
 
 
 def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> dict:
     """
     保存剪辑后的视频
+    
     Args:
-        timestamp: 需要裁剪的单个时间戳，支持两种格式：
-                  1. '00:36-00:40' (分:秒-分:秒)
-                  2. 'SS-SS' (秒-秒)
+        timestamp: 需要裁剪的时间戳,格式为 'HH:MM:SS,mmm-HH:MM:SS,mmm'
+                  例如: '00:00:00,000-00:00:20,100'
         origin_video: 原视频路径
         save_dir: 存储目录
 
     Returns:
-        裁剪后的视频路径，格式为 {timestamp: video_path}
+        dict: 裁剪后的视频路径,格式为 {timestamp: video_path}
     """
+    # 使用新的路径结构
     if not save_dir:
-        save_dir = utils.storage_dir("cache_videos")
+        base_dir = os.path.join(utils.temp_dir(), "clip_video")
+        video_hash = utils.md5(origin_video)
+        save_dir = os.path.join(base_dir, video_hash)
 
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    video_id = f"vid-{timestamp.replace(':', '_')}"
-    video_path = f"{save_dir}/{video_id}.mp4"
+    # 生成更规范的视频文件名
+    video_id = f"vid-{timestamp.replace(':', '-').replace(',', '_')}"
+    video_path = os.path.join(save_dir, f"{video_id}.mp4")
 
     if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
         logger.info(f"video already exists: {video_path}")
         return {timestamp: video_path}
 
     try:
-        # 先加载视频获取总时长
+        # 加载视频获取总时长
         video = VideoFileClip(origin_video)
         total_duration = video.duration
         
-        # 获取目标时间段
+        # 解析时间戳
         start_str, end_str = timestamp.split('-')
         start = time_to_seconds(start_str)
         end = time_to_seconds(end_str)
         
-        # 验证时间段是否有效
+        # 验证时间段
         if start >= total_duration:
-            logger.warning(f"起始时间 {format_timestamp(start)} ({start:.2f}秒) 超出视频总时长 {format_timestamp(total_duration)} ({total_duration:.2f}秒)")
+            logger.warning(f"起始时间 {format_timestamp(start)} ({start:.3f}秒) 超出视频总时长 {format_timestamp(total_duration)} ({total_duration:.3f}秒)")
             video.close()
             return {}
             
         if end > total_duration:
-            logger.warning(f"结束时间 {format_timestamp(end)} ({end:.2f}秒) 超出视频总时长 {format_timestamp(total_duration)} ({total_duration:.2f}秒)，将自动调整为视频结尾")
+            logger.warning(f"结束时间 {format_timestamp(end)} ({end:.3f}秒) 超出视频总时长 {format_timestamp(total_duration)} ({total_duration:.3f}秒)，将自动调整为视频结尾")
             end = total_duration
             
         if end <= start:
@@ -328,11 +364,21 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
         # 剪辑视频
         duration = end - start
         logger.info(f"开始剪辑视频: {format_timestamp(start)} - {format_timestamp(end)}，时长 {format_timestamp(duration)}")
+        
+        # 剪辑视频
         subclip = video.subclip(start, end)
         
         try:
             # 检查视频是否有音频轨道并写入文件
-            subclip.write_videofile(video_path, audio=(subclip.audio is not None), logger=None)
+            subclip.write_videofile(
+                video_path,
+                codec='libx264',
+                audio_codec='aac',
+                temp_audiofile='temp-audio.m4a',
+                remove_temp=True,
+                audio=(subclip.audio is not None),
+                logger=None
+            )
             
             # 验证生成的视频文件
             if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
@@ -363,12 +409,12 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
     return {}
 
 
-def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, progress_callback=None):
+def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, progress_callback=None) -> dict:
     """
     剪辑视频
     Args:
         task_id: 任务id
-        timestamp_terms: 需要剪辑的时间戳列表，如:['00:00-00:20', '00:36-00:40', '07:07-07:22']
+        timestamp_terms: 需要剪辑的时间戳列表，如:['00:00:00,000-00:00:20,100', '00:00:43,039-00:00:46,959']
         origin_video: 原视频路径
         progress_callback: 进度回调函数
 
@@ -379,11 +425,6 @@ def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, pro
     total_items = len(timestamp_terms)
     for index, item in enumerate(timestamp_terms):
         material_directory = config.app.get("material_directory", "").strip()
-        if material_directory == "task":
-            material_directory = utils.task_dir(task_id)
-        elif material_directory and not os.path.isdir(material_directory):
-            material_directory = ""
-
         try:
             saved_video_path = save_clip_video(timestamp=item, origin_video=origin_video, save_dir=material_directory)
             if saved_video_path:
@@ -396,6 +437,7 @@ def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, pro
         except Exception as e:
             logger.error(f"视频裁剪失败: {utils.to_json(item)} =>\n{str(traceback.format_exc())}")
             return {}
+            
     logger.success(f"裁剪 {len(video_paths)} videos")
     return video_paths
 
@@ -455,29 +497,3 @@ def merge_videos(video_paths, ost_list):
                     os.remove(silent_video)
 
     return output_file
-
-
-# 使用示例
-# if __name__ == "__main__":
-#     video_paths = ['/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-01_17-01_37.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-00_00-00_06.mp4',
-#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-00_06-00_09.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-01_03-01_10.mp4',
-#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-01_10-01_17.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-00_24-00_27.mp4',
-#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-01_28-01_36.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-00_32-00_41.mp4',
-#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-01_36-01_58.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-00_12-00_15.mp4',
-#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-00_09-00_12.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-02_12-02_25.mp4',
-#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-02_03-02_12.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-01_58-02_03.mp4',
-#                    '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-03_14-03_18.mp4', '/Users/apple/Desktop/home/NarratoAI/storage/cache_videos/vid-03_18-03_20.mp4']
-#
-#     ost_list = [True, False, False, False, False, False, False, False, True, False, False, False, False, False, False,
-#                 False]
-#
-#     result = merge_videos(video_paths, ost_list)
-#     if result:
-#         print(f"合并后的视频文件：{result}")
-#     else:
-#         print("视频合并失败")
-#
-
-
-if __name__ == "__main__":
-    save_clip_video('00:50-01:41', 'E:\\projects\\NarratoAI\\resource\\videos\\WeChat_20241110144511.mp4')
