@@ -419,11 +419,11 @@ def extract_audio_and_create_subtitle(video_file: str, subtitle_file: str = "") 
 
 
 if __name__ == "__main__":
-    task_id = "12121"
+    task_id = "123456"
     task_dir = utils.task_dir(task_id)
-    subtitle_file = f"{task_dir}/subtitle.srt"
+    subtitle_file = f"{task_dir}/subtitle_123456.srt"
     audio_file = f"{task_dir}/audio.wav"
-    video_file = f"{task_dir}/duanju_demo.mp4"
+    video_file = "/Users/apple/Desktop/home/NarratoAI/resource/videos/merged_video_1702.mp4"
 
     extract_audio_and_create_subtitle(video_file, subtitle_file)
 

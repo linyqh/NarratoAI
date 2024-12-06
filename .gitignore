@@ -29,5 +29,6 @@ resource/songs/*.mp3
 resource/songs/*.flac
 resource/fonts/*.ttc
 resource/fonts/*.ttf
+resource/fonts/*.otf
 resource/srt/*.srt
 app/models/faster-whisper-large-v2/*

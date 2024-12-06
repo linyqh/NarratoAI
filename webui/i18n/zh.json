@@ -177,6 +177,17 @@
     "Clear tasks": "清理任务",
     "Directory cleared": "目录清理完成",
     "Directory does not exist": "目录不存在",
-    "Failed to clear directory": "清理目录失败"
+    "Failed to clear directory": "清理目录失败",
+    "Subtitle Preview": "字幕预览",
+    "One-Click Transcribe": "一键转录",
+    "Transcribing...": "正在转录中...",
+    "Transcription Complete!": "转录完成！",
+    "Transcription Failed. Please try again.": "转录失败，请重试。",
+    "API rate limit exceeded. Please wait about an hour and try again.": "API 调用次数已达到限制，请等待约一小时后再试。",
+    "Resources exhausted. Please try again later.": "资源已耗尽，请稍后再试。",
+    "Transcription Failed": "转录失败",
+    "Mergeable Files": "可合并文件数",
+    "Subtitle Content": "字幕内容",
+    "Merge Result Preview": "合并结果预览"
   }
 }
