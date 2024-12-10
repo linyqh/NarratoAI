@@ -7,7 +7,6 @@ import asyncio
 from loguru import logger
 from typing import List
 from datetime import datetime
-from edge_tts.submaker import mktimestamp
 from xml.sax.saxutils import unescape
 from edge_tts import submaker, SubMaker
 from moviepy.video.tools import subtitles
@@ -1199,7 +1198,7 @@ def azure_tts_v2(text: str, voice_name: str, voice_file: str) -> [SubMaker, None
         except Exception as e:
             logger.error(f"failed, error: {str(e)}")
             if i < 2:  # 如果不是最后一次重试，则等待1秒
-                time.sleep(1)
+                time.sleep(3)
     return None
 
 
@@ -1318,96 +1317,6 @@ def create_subtitle_from_multiple(text: str, sub_maker_list: List[SubMaker], lis
         traceback.print_exc()
 
 
-def create_subtitle(sub_maker: submaker.SubMaker, text: str, subtitle_file: str):
-    """
-    优化字幕文件
-    1. 将字幕文件按照标点符号分割成多行
-    2. 逐行匹配字幕文件中的文本
-    3. 生成新的字幕文件
-    """
-
-    text = _format_text(text)
-
-    def formatter(idx: int, start_time: float, end_time: float, sub_text: str) -> str:
-        """
-        1
-        00:00:00,000 --> 00:00:02,360
-        跑步是一项简单易行的运动
-        """
-        start_t = mktimestamp(start_time).replace(".", ",")
-        end_t = mktimestamp(end_time).replace(".", ",")
-        return f"{idx}\n" f"{start_t} --> {end_t}\n" f"{sub_text}\n"
-
-    start_time = -1.0
-    sub_items = []
-    sub_index = 0
-
-    script_lines = utils.split_string_by_punctuations(text)
-
-    def match_line(_sub_line: str, _sub_index: int):
-        if len(script_lines) <= _sub_index:
-            return ""
-
-        _line = script_lines[_sub_index]
-        if _sub_line == _line:
-            return script_lines[_sub_index].strip()
-
-        _sub_line_ = re.sub(r"[^\w\s]", "", _sub_line)
-        _line_ = re.sub(r"[^\w\s]", "", _line)
-        if _sub_line_ == _line_:
-            return _line_.strip()
-
-        _sub_line_ = re.sub(r"\W+", "", _sub_line)
-        _line_ = re.sub(r"\W+", "", _line)
-        if _sub_line_ == _line_:
-            return _line.strip()
-
-        return ""
-
-    sub_line = ""
-
-    try:
-        for _, (offset, sub) in enumerate(zip(sub_maker.offset, sub_maker.subs)):
-            _start_time, end_time = offset
-            if start_time < 0:
-                start_time = _start_time
-
-            sub = unescape(sub)
-            sub_line += sub
-            sub_text = match_line(sub_line, sub_index)
-            if sub_text:
-                sub_index += 1
-                line = formatter(
-                    idx=sub_index,
-                    start_time=start_time,
-                    end_time=end_time,
-                    sub_text=sub_text,
-                )
-                sub_items.append(line)
-                start_time = -1.0
-                sub_line = ""
-
-        if len(sub_items) == len(script_lines):
-            with open(subtitle_file, "w", encoding="utf-8") as file:
-                file.write("\n".join(sub_items) + "\n")
-            try:
-                sbs = subtitles.file_to_subtitles(subtitle_file, encoding="utf-8")
-                duration = max([tb for ((ta, tb), txt) in sbs])
-                logger.info(
-                    f"completed, subtitle file created: {subtitle_file}, duration: {duration}"
-                )
-            except Exception as e:
-                logger.error(f"failed, error: {str(e)}")
-                os.remove(subtitle_file)
-        else:
-            logger.warning(
-                f"failed, sub_items len: {len(sub_items)}, script_lines len: {len(script_lines)}"
-            )
-
-    except Exception as e:
-        logger.error(f"failed, error: {str(e)}")
-
-
 def get_audio_duration(sub_maker: submaker.SubMaker):
     """
     获取音频时长
@@ -1466,20 +1375,3 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
             logger.info(f"已生成音频文件: {audio_file}")
 
     return audio_files, sub_maker_list
-
-
-if __name__ == "__main__":
-    voice_name = "zh-CN-YunyangNeural"
-    # voice_name = "af-ZA-AdriNeural"
-    voice_name = parse_voice_name(voice_name)
-    print(voice_name)
-
-    with open("../../resource/scripts/2024-1203-205442.json", 'r', encoding='utf-8') as f:
-        data = json.load(f)
-
-    audio_files, sub_maker_list = tts_multiple(task_id="12312312", list_script=data, voice_name=voice_name, voice_rate=1, voice_pitch=1)
-
-    full_text = " ".join([item['narration'] for item in data if not item['OST']])
-    subtitle_file = os.path.join(utils.task_dir("12312312"), "subtitle_multiple.srt")
-    create_subtitle_from_multiple(full_text, sub_maker_list, data, subtitle_file)
-    print(f"生成的音频文件列表: {audio_files}")

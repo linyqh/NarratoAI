@@ -149,6 +149,7 @@ def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
     else:
         return False, f"{tr('Unsupported provider')}: {provider}"
 
+
 def render_vision_llm_settings(tr):
     """渲染视频分析模型设置"""
     st.subheader(tr("Vision Model Settings"))
@@ -196,7 +197,7 @@ def render_vision_llm_settings(tr):
     elif vision_provider == 'qwenvl':
         st_vision_base_url = st.text_input(
             tr("Vision Base URL"), 
-            value=vision_base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            value=vision_base_url,
             help=tr("Default: https://dashscope.aliyuncs.com/compatible-mode/v1")
         )
         st_vision_model_name = st.text_input(

@@ -11,8 +11,13 @@
     vision_gemini_api_key = ""
     vision_gemini_model_name = "gemini-1.5-flash"
 
+    ########## Vision Qwen API Key
+    vision_qwenvl_api_key = ""
+    vision_qwenvl_model_name = "qwen-vl-max-latest"
+    vision_qwenvl_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
     ########### Vision NarratoAPI Key
-    narrato_api_key = ""
+    narrato_api_key = "0N0iEjU77aTqPW4d9YHCmTW2mPrfgWjDmaWAz1lTVTM"
     narrato_api_url = "https://narratoinsight.scsmtech.cn/api/v1"
     narrato_vision_model = "gemini-1.5-flash"
     narrato_vision_key = ""
@@ -32,9 +37,7 @@
     ########## OpenAI API Key
     # Get your API key at https://platform.openai.com/api-keys
     text_openai_api_key = ""
-    # No need to set it unless you want to use your own proxy
-    text_openai_base_url = ""
-    # Check your available models at https://platform.openai.com/account/limits
+    text_openai_base_url = "https://api.openai.com/v1"
     text_openai_model_name = "gpt-4o-mini"
 
     ########## Moonshot API Key
@@ -66,7 +69,8 @@
     # https://tongyi.aliyun.com/qianwen/
     # https://help.aliyun.com/zh/dashscope/developer-reference/model-introduction
     text_qwen_api_key = ""
-    text_qwen_model_name = "qwen-max"
+    text_qwen_model_name = "qwen-plus-1127"
+    text_qwen_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     ########## DeepSeek API Key
     # Visit https://platform.deepseek.com/api_keys to get your API key

@@ -117,6 +117,47 @@ def song_dir(sub_dir: str = ""):
     return d
 
 
+def get_bgm_file(bgm_type: str = "random", bgm_file: str = ""):
+    """
+    获取背景音乐文件路径
+    Args:
+        bgm_type: 背景音乐类型，可选值: random(随机), ""(无背景音乐)
+        bgm_file: 指定的背景音乐文件路径
+
+    Returns:
+        str: 背景音乐文件路径
+    """
+    import glob
+    import random
+    if not bgm_type:
+        return ""
+
+    if bgm_file and os.path.exists(bgm_file):
+        return bgm_file
+
+    if bgm_type == "random":
+        song_dir_path = song_dir()
+
+        # 检查目录是否存在
+        if not os.path.exists(song_dir_path):
+            logger.warning(f"背景音乐目录不存在: {song_dir_path}")
+            return ""
+
+        # 支持 mp3 和 flac 格式
+        mp3_files = glob.glob(os.path.join(song_dir_path, "*.mp3"))
+        flac_files = glob.glob(os.path.join(song_dir_path, "*.flac"))
+        files = mp3_files + flac_files
+
+        # 检查是否找到音乐文件
+        if not files:
+            logger.warning(f"在目录 {song_dir_path} 中没有找到 MP3 或 FLAC 文件")
+            return ""
+
+        return random.choice(files)
+
+    return ""
+
+
 def public_dir(sub_dir: str = ""):
     d = resource_dir(f"public")
     if sub_dir:
@@ -339,7 +380,7 @@ def time_to_seconds(time_str: str) -> float:
 
         # 分割时间部分
         parts = time_part.split(':')
-        
+
         if len(parts) == 3:  # HH:MM:SS
             h, m, s = map(float, parts)
             seconds = h * 3600 + m * 60 + s
@@ -350,7 +391,7 @@ def time_to_seconds(time_str: str) -> float:
             seconds = float(parts[0])
 
         return seconds + ms
-        
+
     except (ValueError, IndexError) as e:
         logger.error(f"时间格式转换错误 {time_str}: {str(e)}")
         return 0.0
@@ -373,16 +414,16 @@ def calculate_total_duration(scenes):
         float: 总时长（秒）
     """
     total_seconds = 0
-    
+
     for scene in scenes:
         start, end = scene['timestamp'].split('-')
         # 使用 time_to_seconds 函数处理更精确的时间格式
         start_seconds = time_to_seconds(start)
         end_seconds = time_to_seconds(end)
-        
+
         duration = end_seconds - start_seconds
         total_seconds += duration
-    
+
     return total_seconds
 
 
@@ -502,7 +543,7 @@ def clear_keyframes_cache(video_path: str = None):
         keyframes_dir = os.path.join(temp_dir(), "keyframes")
         if not os.path.exists(keyframes_dir):
             return
-            
+
         if video_path:
             # 理指定视频的缓存
             video_hash = md5(video_path + str(os.path.getmtime(video_path)))
@@ -516,7 +557,7 @@ def clear_keyframes_cache(video_path: str = None):
             import shutil
             shutil.rmtree(keyframes_dir)
             logger.info("已清理所有关键帧缓存")
-            
+
     except Exception as e:
         logger.error(f"清理关键帧缓存失败: {e}")
 
@@ -527,15 +568,16 @@ def init_resources():
         # 创建字体目录
         font_dir = os.path.join(root_dir(), "resource", "fonts")
         os.makedirs(font_dir, exist_ok=True)
-        
+
         # 检查字体文件
         font_files = [
-            ("SourceHanSansCN-Regular.otf", "https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf"),
+            ("SourceHanSansCN-Regular.otf",
+             "https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf"),
             ("simhei.ttf", "C:/Windows/Fonts/simhei.ttf"),  # Windows 黑体
             ("simkai.ttf", "C:/Windows/Fonts/simkai.ttf"),  # Windows 楷体
             ("simsun.ttc", "C:/Windows/Fonts/simsun.ttc"),  # Windows 宋体
         ]
-        
+
         # 优先使用系统字体
         system_font_found = False
         for font_name, source in font_files:
@@ -547,15 +589,16 @@ def init_resources():
                     logger.info(f"已复制系统字体: {font_name}")
                 system_font_found = True
                 break
-        
+
         # 如果没有找到系统字体，则下载思源黑体
         if not system_font_found:
             source_han_path = os.path.join(font_dir, "SourceHanSansCN-Regular.otf")
             if not os.path.exists(source_han_path):
                 download_font(font_files[0][1], source_han_path)
-                
+
     except Exception as e:
         logger.error(f"初始化资源文件失败: {e}")
+
 
 def download_font(url: str, font_path: str):
     """下载字体文件"""
@@ -564,15 +607,16 @@ def download_font(url: str, font_path: str):
         import requests
         response = requests.get(url)
         response.raise_for_status()
-        
+
         with open(font_path, 'wb') as f:
             f.write(response.content)
-            
+
         logger.info(f"字体文件下载成功: {font_path}")
-        
+
     except Exception as e:
         logger.error(f"下载字体文件失败: {e}")
         raise
+
 
 def init_imagemagick():
     """初始化 ImageMagick 配置"""
@@ -583,10 +627,10 @@ def init_imagemagick():
         if result.returncode != 0:
             logger.error("ImageMagick 未安装或配置不正确")
             return False
-            
+
         # 设置 IMAGEMAGICK_BINARY 环境变量
         os.environ['IMAGEMAGICK_BINARY'] = 'magick'
-        
+
         return True
     except Exception as e:
         logger.error(f"初始化 ImageMagick 失败: {str(e)}")

@@ -345,29 +345,29 @@ class VideoClipParams(BaseModel):
     # video_concat_mode: Optional[VideoConcatMode] = VideoConcatMode.random.value
 
     voice_name: Optional[str] = Field(default="zh-CN-YunjianNeural", description="语音名称")
-    voice_volume: Optional[float] = Field(default=1.0, description="语音音量")
+    voice_volume: Optional[float] = Field(default=1.0, description="解说语音音量")
     voice_rate: Optional[float] = Field(default=1.0, description="语速")
     voice_pitch: Optional[float] = Field(default=1.0, description="语调")
 
     bgm_name: Optional[str] = Field(default="random", description="背景音乐名称")
     bgm_type: Optional[str] = Field(default="random", description="背景音乐类型")
     bgm_file: Optional[str] = Field(default="", description="背景音乐文件")
-    bgm_volume: Optional[float] = Field(default=0.2, description="背景音乐音量")
 
-    subtitle_enabled: Optional[bool] = Field(default=True, description="是否启用字幕")
-    subtitle_position: Optional[str] = Field(default="bottom", description="字幕位置")  # top, bottom, center
-    font_name: Optional[str] = Field(default="STHeitiMedium.ttc", description="字体名称")
-    text_fore_color: Optional[str] = Field(default="#FFFFFF", description="文字前景色")
-    text_background_color: Optional[str] = Field(default="transparent", description="文字背景色")
+    subtitle_enabled: bool = True
+    font_name: str = "SimHei"  # 默认使用黑体
+    font_size: int = 36
+    text_fore_color: str = "white"              # 文本前景色
+    text_back_color: Optional[str] = None       # 文本背景色
+    stroke_color: str = "black"                 # 描边颜色
+    stroke_width: float = 1.5                   # 描边宽度
+    subtitle_position: str = "bottom"  # top, bottom, center, custom
 
-    font_size: int = Field(default=60, description="文字大小")
-    stroke_color: Optional[str] = Field(default="#000000", description="文字描边颜色")
-    stroke_width: float = Field(default=1.5, description="文字描边宽度")
-    custom_position: float = Field(default=70.0, description="自定义位置")
+    n_threads: Optional[int] = Field(default=16, description="解说语音音量")    # 线程数，有助于提升视频处理速度
 
-    n_threads: Optional[int] = 8    # 线程数，有助于提升视频处理速度
-    tts_volume: float = 1.0  # TTS音频音量
-    video_volume: float = 0.1  # 视频原声音量
+    tts_volume: Optional[float] = Field(default=1.0, description="解说语音音量（后处理）")
+    original_volume: Optional[float] = Field(default=1.0, description="视频原声音量")
+    bgm_volume: Optional[float] = Field(default=0.6, description="背景音乐音量")
+
 
 class VideoTranscriptionRequest(BaseModel):
     video_name: str
@@ -375,6 +375,7 @@ class VideoTranscriptionRequest(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
+
 
 class VideoTranscriptionResponse(BaseModel):
     transcription: str
