@@ -335,7 +335,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     volume_config = {
         'original': params.original_volume,  # 原声音量80%
         'bgm': params.bgm_volume,  # BGM音量20%
-        'narration': params.tts_volume  # 解说音量100%
+        'narration': params.tts_volume or params.voice_volume,  # 解说音量100%
     }
     font_path = utils.font_dir(params.font_name)
     video.generate_video_v3(

@@ -208,5 +208,5 @@ def get_audio_params():
         'voice_pitch': st.session_state.get('voice_pitch', 1.0),
         'bgm_type': st.session_state.get('bgm_type', 'random'),
         'bgm_file': st.session_state.get('bgm_file', ''),
-        'bgm_volume': st.session_state.get('bgm_volume', 0.2),
+        'bgm_volume': st.session_state.get('bgm_volume', 0.3),
     }

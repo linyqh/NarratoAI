@@ -280,11 +280,11 @@ def calculate_subtitle_position(position, video_height: int, text_height: int = 
 def generate_video_v3(
         video_path: str,
         subtitle_style: dict,
+        volume_config: dict,
         subtitle_path: Optional[str] = None,
         bgm_path: Optional[str] = None,
         narration_path: Optional[str] = None,
         output_path: str = "output.mp4",
-        volume_config: dict = None,
         font_path: Optional[str] = None
 ) -> None:
     """
@@ -314,17 +314,6 @@ def generate_video_v3(
     # 检查视频文件是否存在
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"视频文件不存在: {video_path}")
-
-    # 设置默认音量配置
-    default_volume = {
-        'original': 1.0,  # 原声音量
-        'bgm': 0.3,  # BGM音量
-        'narration': 1.0  # 解说音量
-    }
-
-    # 更新音量配置
-    if volume_config:
-        default_volume.update(volume_config)
 
     # 加载视频
     video = VideoFileClip(video_path)
@@ -405,8 +394,9 @@ def generate_video_v3(
     audio_clips = []
 
     # 添加原声（设置音量）
+    logger.debug(f"音量配置: {volume_config}")
     if video.audio is not None:
-        original_audio = video.audio.volumex(default_volume['original'])
+        original_audio = video.audio.volumex(volume_config['original'])
         audio_clips.append(original_audio)
 
     # 添加BGM（如果提供）
@@ -416,12 +406,12 @@ def generate_video_v3(
             bgm = loop_audio_clip(bgm, video.duration)
         else:
             bgm = bgm.subclip(0, video.duration)
-        bgm = bgm.volumex(default_volume['bgm'])
+        bgm = bgm.volumex(volume_config['bgm'])
         audio_clips.append(bgm)
 
     # 添加解说音频（如果提供）
     if narration_path:
-        narration = AudioFileClip(narration_path).volumex(default_volume['narration'])
+        narration = AudioFileClip(narration_path).volumex(volume_config['narration'])
         audio_clips.append(narration)
 
     # 合成最终视频（包含字幕）

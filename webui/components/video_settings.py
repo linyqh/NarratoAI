@@ -50,11 +50,13 @@ def render_video_config(tr, params):
         step=0.01,
         help=tr("Adjust the volume of the original audio")
     )
+    st.session_state['original_volume'] = params.original_volume
 
 
 def get_video_params():
     """获取视频参数"""
     return {
         'video_aspect': st.session_state.get('video_aspect', VideoAspect.portrait.value),
-        'video_quality': st.session_state.get('video_quality', '1080p')
+        'video_quality': st.session_state.get('video_quality', '1080p'),
+        'original_volume': st.session_state.get('original_volume', 0.7)
     }
