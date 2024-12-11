@@ -157,55 +157,6 @@ def get_video_materials(task_id, params, video_terms, audio_duration):
         return downloaded_videos
 
 
-def generate_final_videos(
-        task_id, params, downloaded_videos, audio_file, subtitle_path
-):
-    final_video_paths = []
-    combined_video_paths = []
-    video_concat_mode = (
-        params.video_concat_mode if params.video_count == 1 else VideoConcatMode.random
-    )
-
-    _progress = 50
-    for i in range(params.video_count):
-        index = i + 1
-        combined_video_path = path.join(
-            utils.task_dir(task_id), f"combined-{index}.mp4"
-        )
-        logger.info(f"\n\n## combining video: {index} => {combined_video_path}")
-        video.combine_videos(
-            combined_video_path=combined_video_path,
-            video_paths=downloaded_videos,
-            audio_file=audio_file,
-            video_aspect=params.video_aspect,
-            video_concat_mode=video_concat_mode,
-            max_clip_duration=params.video_clip_duration,
-            threads=params.n_threads,
-        )
-
-        _progress += 50 / params.video_count / 2
-        sm.state.update_task(task_id, progress=_progress)
-
-        final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
-
-        logger.info(f"\n\n## generating video: {index} => {final_video_path}")
-        video.generate_video(
-            video_path=combined_video_path,
-            audio_path=audio_file,
-            subtitle_path=subtitle_path,
-            output_file=final_video_path,
-            params=params,
-        )
-
-        _progress += 50 / params.video_count / 2
-        sm.state.update_task(task_id, progress=_progress)
-
-        final_video_paths.append(final_video_path)
-        combined_video_paths.append(combined_video_path)
-
-    return final_video_paths, combined_video_paths
-
-
 def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: dict):
     """后台任务（自动剪辑视频进行剪辑）"""
     logger.info(f"\n\n## 开始任务: {task_id}")
@@ -253,7 +204,12 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         segment for segment in list_script 
         if segment['OST'] in [0, 2]
     ]
-    # logger.debug(f"tts_segments: {tts_segments}")
+    logger.debug(f"需要生成TTS的片段数: {len(tts_segments)}")
+    
+    # 初始化音频文件路径
+    audio_files = []
+    final_audio = ""
+    
     if tts_segments:
         audio_files, sub_maker_list = voice.tts_multiple(
             task_id=task_id,
@@ -267,36 +223,54 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
             sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
             logger.error("TTS转换音频失败, 可能是网络不可用! 如果您在中国, 请使用VPN.")
             return
+
+        if audio_files:
+            logger.info(f"合并音频文件: {audio_files}")
+            try:
+                # 传入OST信息以便正确处理音频
+                final_audio = audio_merger.merge_audio_files(
+                    task_id=task_id,
+                    audio_files=audio_files,
+                    total_duration=total_duration,
+                    list_script=list_script  # 传入完整脚本以便处理OST
+                )
+                logger.info("音频文件合并成功")
+            except Exception as e:
+                logger.error(f"合并音频文件失败: {str(e)}")
+                final_audio = ""
     else:
-        audio_files = []
-        
-    logger.info(f"合并音频文件:\n{audio_files}")
-    # 传入OST信息以便正确处理音频
-    final_audio = audio_merger.merge_audio_files(
-        task_id=task_id, 
-        audio_files=audio_files, 
-        total_duration=total_duration, 
-        list_script=list_script  # 传入完整脚本以便处理OST
-    )
+        # 如果没有需要生成TTS的片段，创建一个空白音频文件
+        # 这样可以确保后续的音频处理能正确进行
+        logger.info("没有需要生成TTS的片段，将保留原声和背景音乐")
+        final_audio = path.join(utils.task_dir(task_id), "empty.mp3")
+        try:
+            from moviepy.editor import AudioClip
+            # 创建一个与视频等长的空白音频
+            empty_audio = AudioClip(make_frame=lambda t: 0, duration=total_duration)
+            empty_audio.write_audiofile(final_audio, fps=44100)
+            logger.info(f"已创建空白音频文件: {final_audio}")
+        except Exception as e:
+            logger.error(f"创建空白音频文件失败: {str(e)}")
+            final_audio = ""
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=30)
 
-    # 只为OST=0或2的片段生成字幕
     subtitle_path = ""
     if params.subtitle_enabled:
-        subtitle_path = path.join(utils.task_dir(task_id), f"subtitle.srt")
-        subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
-        logger.info(f"\n\n## 3. 生成字幕、提供程序是: {subtitle_provider}")
-         
-        subtitle.create(
-            audio_file=final_audio,
-            subtitle_file=subtitle_path,
-        )
+        if audio_files:
+            subtitle_path = path.join(utils.task_dir(task_id), f"subtitle.srt")
+            subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
+            logger.info(f"\n\n## 3. 生成字幕、提供程序是: {subtitle_provider}")
 
-        subtitle_lines = subtitle.file_to_subtitles(subtitle_path)
-        if not subtitle_lines:
-            logger.warning(f"字幕文件无效: {subtitle_path}")
-            subtitle_path = ""
+            subtitle.create(
+                audio_file=final_audio,
+                subtitle_file=subtitle_path,
+            )
+
+            subtitle_lines = subtitle.file_to_subtitles(subtitle_path)
+            if not subtitle_lines:
+                logger.warning(f"字幕文件无效: {subtitle_path}")
+                subtitle_path = ""
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=40)
 
@@ -335,14 +309,44 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
 
     logger.info(f"\n\n## 6. 最后合成: {index} => {final_video_path}")
-    # 传入OST信息以便正确处理音频和视频
-    video.generate_video_v2(
+    
+    # 获取背景音乐
+    bgm_path = None
+    if params.bgm_type or params.bgm_file:
+        try:
+            bgm_path = utils.get_bgm_file(bgm_type=params.bgm_type, bgm_file=params.bgm_file)
+            if bgm_path:
+                logger.info(f"使用背景音乐: {bgm_path}")
+        except Exception as e:
+            logger.error(f"获取背景音乐失败: {str(e)}")
+
+    # 示例：自定义字幕样式
+    subtitle_style = {
+        'fontsize': params.font_size,  # 字体大小
+        'color': params.text_fore_color,  # 字体颜色
+        'stroke_color': params.stroke_color,  # 描边颜色
+        'stroke_width': params.stroke_width,  # 描边宽度, 范围0-10
+        'bg_color': params.text_back_color,   # 半透明黑色背景
+        'position': (params.subtitle_position, 0.2),  # 距离顶部60%的位置
+        'method': 'caption'  # 渲染方法
+    }
+
+    # 示例：自定义音量配置
+    volume_config = {
+        'original': params.original_volume,  # 原声音量80%
+        'bgm': params.bgm_volume,  # BGM音量20%
+        'narration': params.tts_volume or params.voice_volume,  # 解说音量100%
+    }
+    font_path = utils.font_dir(params.font_name)
+    video.generate_video_v3(
         video_path=combined_video_path,
-        audio_path=final_audio,
         subtitle_path=subtitle_path,
-        output_file=final_video_path,
-        params=params,
-        list_script=list_script  # 传入完整脚本以便处理OST
+        bgm_path=bgm_path,
+        narration_path=final_audio,
+        output_path=final_video_path,
+        volume_config=volume_config,  # 添加音量配置
+        subtitle_style=subtitle_style,
+        font_path=font_path
     )
 
     _progress += 50 / 2
@@ -359,6 +363,40 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     }
     sm.state.update_task(task_id, state=const.TASK_STATE_COMPLETE, progress=100, **kwargs)
     return kwargs
+
+
+def validate_params(video_path, audio_path, output_file, params):
+    """
+    验证输入参数
+    Args:
+        video_path: 视频文件路径
+        audio_path: 音频文件路径（可以为空字符串）
+        output_file: 输出文件路径
+        params: 视频参数
+
+    Raises:
+        FileNotFoundError: 文件不存在时抛出
+        ValueError: 参数无效时抛出
+    """
+    if not video_path:
+        raise ValueError("视频路径不能为空")
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"视频文件不存在: {video_path}")
+        
+    # 如果提供了音频路径，则验证文件是否存在
+    if audio_path and not os.path.exists(audio_path):
+        raise FileNotFoundError(f"音频文件不存在: {audio_path}")
+        
+    if not output_file:
+        raise ValueError("输出文件路径不能为空")
+    
+    # 确保输出目录存在
+    output_dir = os.path.dirname(output_file)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        
+    if not params:
+        raise ValueError("视频参数不能为空")
 
 
 if __name__ == "__main__":

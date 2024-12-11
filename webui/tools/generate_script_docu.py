@@ -13,7 +13,7 @@ from urllib3.util.retry import Retry
 from app.config import config
 from app.utils.script_generator import ScriptProcessor
 from app.utils import utils, video_processor, video_processor_v2, qwenvl_analyzer
-from webui.tools.base import create_vision_analyzer, get_batch_files, get_batch_timestamps
+from webui.tools.base import create_vision_analyzer, get_batch_files, get_batch_timestamps, chekc_video_config
 
 
 def generate_script_docu(tr, params):
@@ -117,8 +117,7 @@ def generate_script_docu(tr, params):
                 elif vision_llm_provider == 'qwenvl':
                     vision_api_key = st.session_state.get('vision_qwenvl_api_key')
                     vision_model = st.session_state.get('vision_qwenvl_model_name', 'qwen-vl-max-latest')
-                    vision_base_url = st.session_state.get('vision_qwenvl_base_url',
-                                                           'https://dashscope.aliyuncs.com/compatible-mode/v1')
+                    vision_base_url = st.session_state.get('vision_qwenvl_base_url')
                 else:
                     raise ValueError(f"不支持的视觉分析提供商: {vision_llm_provider}")
 
@@ -228,28 +227,7 @@ def generate_script_docu(tr, params):
                     "text_model_name": text_model,
                     "text_base_url": text_base_url or ""
                 }
-                headers = {
-                    'accept': 'application/json',
-                    'Content-Type': 'application/json'
-                }
-                session = requests.Session()
-                retry_strategy = Retry(
-                    total=3,
-                    backoff_factor=1,
-                    status_forcelist=[500, 502, 503, 504]
-                )
-                adapter = HTTPAdapter(max_retries=retry_strategy)
-                session.mount("https://", adapter)
-                try:
-                    response = session.post(
-                        f"{config.app.get('narrato_api_url')}/video/config",
-                        headers=headers,
-                        json=api_params,
-                        timeout=30,
-                        verify=True
-                    )
-                except Exception as e:
-                    pass
+                chekc_video_config(api_params)
                 custom_prompt = st.session_state.get('custom_prompt', '')
                 processor = ScriptProcessor(
                     model_name=text_model,

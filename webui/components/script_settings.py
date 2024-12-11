@@ -2,12 +2,15 @@ import os
 import glob
 import json
 import time
+import traceback
 import streamlit as st
+from loguru import logger
 
 from app.config import config
 from app.models.schema import VideoClipParams
 from app.utils import utils, check_script
 from webui.tools.generate_script_docu import generate_script_docu
+from webui.tools.generate_script_short import generate_script_short
 
 
 def render_script_panel(tr):
@@ -34,6 +37,7 @@ def render_script_file(tr, params):
     script_list = [
         (tr("None"), ""), 
         (tr("Auto Generate"), "auto"), 
+        (tr("Short Generate"), "short"),
         (tr("Upload Script"), "upload_script")  # 新增上传脚本选项
     ]
 
@@ -216,7 +220,9 @@ def render_script_buttons(tr, params):
     script_path = st.session_state.get('video_clip_json_path', '')
     if script_path == "auto":
         button_name = tr("Generate Video Script")
-    elif script_path:
+    elif script_path == "short":
+        button_name = tr("Generate Short Video Script")
+    elif script_path.endswith("json"):
         button_name = tr("Load Video Script")
     else:
         button_name = tr("Please Select Script File")
@@ -224,6 +230,8 @@ def render_script_buttons(tr, params):
     if st.button(button_name, key="script_action", disabled=not script_path):
         if script_path == "auto":
             generate_script_docu(tr, params)
+        elif script_path == "short":
+            generate_script_short(tr, params)
         else:
             load_script(tr, script_path)
 
@@ -275,6 +283,7 @@ def load_script(tr, script_path):
             st.success(tr("Script loaded successfully"))
             st.rerun()
     except Exception as e:
+        logger.error(f"加载脚本文件时发生错误\n{traceback.format_exc()}")
         st.error(f"{tr('Failed to load script')}: {str(e)}")
 
 
@@ -332,3 +341,14 @@ def crop_video(tr, params):
         time.sleep(2)
         progress_bar.empty()
         status_text.empty()
+
+
+def get_script_params():
+    """获取脚本参数"""
+    return {
+        'video_language': st.session_state.get('video_language', ''),
+        'video_clip_json_path': st.session_state.get('video_clip_json_path', ''),
+        'video_origin_path': st.session_state.get('video_origin_path', ''),
+        'video_name': st.session_state.get('video_name', ''),
+        'video_plot': st.session_state.get('video_plot', '')
+    }

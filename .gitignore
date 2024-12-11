@@ -32,3 +32,4 @@ resource/fonts/*.ttf
 resource/fonts/*.otf
 resource/srt/*.srt
 app/models/faster-whisper-large-v2/*
+app/models/bert/*

@@ -1,7 +1,11 @@
 import os
+import requests
 import streamlit as st
 from loguru import logger
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
+from app.config import config
 from app.utils import gemini_analyzer, qwenvl_analyzer
 
 
@@ -29,17 +33,6 @@ def create_vision_analyzer(provider, api_key, model, base_url):
         )
     else:
         raise ValueError(f"不支持的视觉分析提供商: {provider}")
-
-
-def get_script_params():
-    """获取脚本参数"""
-    return {
-        'video_language': st.session_state.get('video_language', ''),
-        'video_clip_json_path': st.session_state.get('video_clip_json_path', ''),
-        'video_origin_path': st.session_state.get('video_origin_path', ''),
-        'video_name': st.session_state.get('video_name', ''),
-        'video_plot': st.session_state.get('video_plot', '')
-    }
 
 
 def get_batch_timestamps(batch_files, prev_batch_files=None):
@@ -139,3 +132,32 @@ def get_batch_files(keyframe_files, result, batch_size=5):
     batch_start = result['batch_index'] * batch_size
     batch_end = min(batch_start + batch_size, len(keyframe_files))
     return keyframe_files[batch_start:batch_end]
+
+
+def chekc_video_config(video_params):
+    """
+    检查视频分析配置
+    """
+    headers = {
+        'accept': 'application/json',
+        'Content-Type': 'application/json'
+    }
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[500, 502, 503, 504]
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+    try:
+        session.post(
+            f"{config.app.get('narrato_api_url')}/video/config",
+            headers=headers,
+            json=video_params,
+            timeout=30,
+            verify=True
+        )
+        return True
+    except Exception as e:
+        return False

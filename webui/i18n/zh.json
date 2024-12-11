@@ -2,13 +2,12 @@
   "Language": "简体中文",
   "Translation": {
     "Video Script Configuration": "**视频脚本配置**",
-    "Generate Video Script": "生成视频脚本",
+    "Generate Video Script": "AI生成画面解说脚本",
     "Video Subject": "视频主题（给定一个关键词，:red[AI自动生成]视频文案）",
     "Script Language": "生成视频脚本的语言（一般情况AI会自动根据你输入的主题语言输出）",
     "Script Files": "脚本文件",
     "Generate Video Script and Keywords": "点击使用AI根据**主题**生成 【视频文案】 和 【视频关键词】",
     "Auto Detect": "自动检测",
-    "Auto Generate": "自动生成",
     "Video Theme": "视频主题",
     "Generation Prompt": "自定义提示词",
     "Save Script": "保存脚本",
@@ -188,6 +187,11 @@
     "Transcription Failed": "转录失败",
     "Mergeable Files": "可合并文件数",
     "Subtitle Content": "字幕内容",
-    "Merge Result Preview": "合并结果预览"
+    "Merge Result Preview": "合并结果预览",
+    "Short Generate": "短剧混剪 (高燃剪辑, 当前只支持 gpt-4o 模型)",
+    "Generate Short Video Script": "AI生成短剧混剪脚本",
+    "Adjust the volume of the original audio": "调整原始音频的音量",
+    "Original Volume": "视频音量",
+    "Auto Generate": "纪录片解说 (画面解说)"
   }
 }

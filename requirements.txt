@@ -1,7 +1,6 @@
 requests~=2.31.0
 moviepy==2.0.0.dev2
 faster-whisper~=1.0.1
-edge_tts~=6.1.15
 uvicorn~=0.27.1
 fastapi~=0.115.4
 tomli~=2.0.1
@@ -35,3 +34,5 @@ tiktoken==0.8.0
 yt-dlp==2024.11.18
 pysrt==1.1.2
 httpx==0.27.2
+transformers==4.47.0
+edge-tts==6.1.19
