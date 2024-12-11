@@ -45,9 +45,9 @@ def render_video_config(tr, params):
     params.original_volume = st.slider(
         tr("Original Volume"),
         min_value=0.0,
-        max_value=2.0,
-        value=1.0,
-        step=0.1,
+        max_value=1.0,
+        value=0.7,
+        step=0.01,
         help=tr("Adjust the volume of the original audio")
     )
 

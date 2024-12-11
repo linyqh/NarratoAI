@@ -327,7 +327,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         'stroke_color': params.stroke_color,  # 描边颜色
         'stroke_width': params.stroke_width,  # 描边宽度, 范围0-10
         'bg_color': params.text_back_color,   # 半透明黑色背景
-        'position': ('center', 0.2),  # 距离顶部60%的位置
+        'position': (params.subtitle_position, 0.2),  # 距离顶部60%的位置
         'method': 'caption'  # 渲染方法
     }
 

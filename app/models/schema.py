@@ -362,7 +362,7 @@ class VideoClipParams(BaseModel):
     stroke_width: float = 1.5                   # 描边宽度
     subtitle_position: str = "bottom"  # top, bottom, center, custom
 
-    n_threads: Optional[int] = Field(default=16, description="解说语音音量")    # 线程数，有助于提升视频处理速度
+    n_threads: Optional[int] = Field(default=16, description="解说语音音量")    # 线程���，有助于提升视频处理速度
 
     tts_volume: Optional[float] = Field(default=1.0, description="解说语音音量（后处理）")
     original_volume: Optional[float] = Field(default=1.0, description="视频原声音量")
@@ -379,3 +379,10 @@ class VideoTranscriptionRequest(BaseModel):
 
 class VideoTranscriptionResponse(BaseModel):
     transcription: str
+
+
+class SubtitlePosition(str, Enum):
+    TOP = "top"
+    CENTER = "center"
+    BOTTOM = "bottom"
+

@@ -16,7 +16,7 @@ from moviepy.editor import (
 )
 
 
-from app.models.schema import VideoAspect
+from app.models.schema import VideoAspect, SubtitlePosition
 
 
 def wrap_text(text, max_width, font, fontsize=60):
@@ -171,7 +171,6 @@ def combine_clip_videos(combined_video_path: str,
         video_clip.write_videofile(
             filename=combined_video_path,
             threads=threads,
-            logger=None,
             audio_codec="aac",
             fps=30,
             temp_audiofile=os.path.join(output_dir, "temp-audio.m4a")
@@ -248,16 +247,44 @@ def loop_audio_clip(audio_clip: AudioFileClip, target_duration: float) -> AudioF
     return extended_audio.subclip(0, target_duration)
 
 
+def calculate_subtitle_position(position, video_height: int, text_height: int = 0) -> tuple:
+    """
+    计算字幕在视频中的具体位置
+    
+    Args:
+        position: 位置配置，可以是 SubtitlePosition 枚举值或表示距顶部百分比的浮点数
+        video_height: 视频高度
+        text_height: 字幕文本高度
+    
+    Returns:
+        tuple: (x, y) 坐标
+    """
+    margin = 50  # 字幕距离边缘的边距
+    
+    if isinstance(position, (int, float)):
+        # 百分比位置
+        return ('center', int(video_height * position))
+    
+    # 预设位置
+    if position == SubtitlePosition.TOP:
+        return ('center', margin)
+    elif position == SubtitlePosition.CENTER:
+        return ('center', video_height // 2)
+    elif position == SubtitlePosition.BOTTOM:
+        return ('center', video_height - margin - text_height)
+    
+    # 默认底部
+    return ('center', video_height - margin - text_height)
+
+
 def generate_video_v3(
         video_path: str,
+        subtitle_style: dict,
         subtitle_path: Optional[str] = None,
         bgm_path: Optional[str] = None,
         narration_path: Optional[str] = None,
         output_path: str = "output.mp4",
-        # 音量相关参数
         volume_config: dict = None,
-        # 字幕相关参数
-        subtitle_style: dict = None,
         font_path: Optional[str] = None
 ) -> None:
     """
@@ -280,7 +307,7 @@ def generate_video_v3(
             - stroke_color: 描边颜色
             - stroke_width: 描边宽度
             - bg_color: 背景色
-            - position: 位置支持 'top'/'center'/'bottom' 或 (x,y) 坐标
+            - position: 位置支持 SubtitlePosition 枚举值或 0-1 之间的浮点数（表示距顶部的百分比）
             - method: 文字渲染方法
         font_path: 字体文件路径（.ttf/.otf 等格式）
     """
@@ -308,25 +335,7 @@ def generate_video_v3(
         if os.path.exists(subtitle_path):
             # 检查字体文件
             if font_path and not os.path.exists(font_path):
-                logger.info(f"警告：字体文件不存在: {font_path}，将使用系统默认字体")
-                font_path = 'Arial'
-
-            # 设置默认字幕样式
-            default_style = {
-                'font': font_path if font_path else 'Arial',
-                'fontsize': 24,
-                'color': 'white',
-                'stroke_color': 'black',
-                'stroke_width': 1,
-                'bg_color': None,
-                'position': ('center', 'bottom'),
-                'method': 'label'
-            }
-
-            if subtitle_style:
-                if font_path and 'font' not in subtitle_style:
-                    subtitle_style['font'] = font_path
-                default_style.update(subtitle_style)
+                logger.warning(f"警告：字体文件不存在: {font_path}")
 
             try:
                 subs = pysrt.open(subtitle_path)
@@ -354,32 +363,37 @@ def generate_video_v3(
                             logger.info(f"警告：第 {index + 1} 条字幕处理后为空，已跳过")
                             continue
 
-                        # 计算位置
-                        if isinstance(default_style['position'], tuple):
-                            pos_x, pos_y = default_style['position']
-                            if isinstance(pos_y, float):
-                                y_pos = int(video.h * pos_y)
-                                position = (pos_x, y_pos)
-                            else:
-                                position = default_style['position']
-                        else:
-                            position = default_style['position']
+                        # 创建临时 TextClip 来获取文本高度
+                        temp_clip = TextClip(
+                            subtitle_text,
+                            font=font_path,
+                            fontsize=subtitle_style['fontsize'],
+                            color=subtitle_style['color']
+                        )
+                        text_height = temp_clip.h
+                        temp_clip.close()
 
-                        # 创建基本的 TextClip
+                        # 计算字幕位置
+                        position = calculate_subtitle_position(
+                            subtitle_style['position'],
+                            video.h,
+                            text_height
+                        )
+
+                        # 创建最终的 TextClip
                         text_clip = (TextClip(
                             subtitle_text,
-                            font=default_style['font'],
-                            fontsize=default_style['fontsize'],
-                            color=default_style['color']
+                            font=font_path,
+                            fontsize=subtitle_style['fontsize'],
+                            color=subtitle_style['color']
                         )
-                                     .set_position(position)
-                                     .set_duration(end_time - start_time)
-                                     .set_start(start_time))
-
+                            .set_position(position)
+                            .set_duration(end_time - start_time)
+                            .set_start(start_time))
                         subtitle_clips.append(text_clip)
 
                     except Exception as e:
-                        logger.info(f"警告：创建第 {index + 1} 条字幕时出错: {str(e)}")
+                        logger.error(f"警告：创建第 {index + 1} 条字幕时出错: {traceback.format_exc()}")
 
                 logger.info(f"成功创建 {len(subtitle_clips)} 条字幕剪辑")
             except Exception as e:

@@ -98,9 +98,9 @@ def render_voice_parameters(tr):
     voice_volume = st.slider(
         tr("Speech Volume"),
         min_value=0.0,
-        max_value=2.0,
+        max_value=1.0,
         value=1.0,
-        step=0.1,
+        step=0.01,
         help=tr("Adjust the volume of the original audio")
     )
     st.session_state['voice_volume'] = voice_volume
@@ -191,9 +191,9 @@ def render_bgm_settings(tr):
     bgm_volume = st.slider(
         tr("Background Music Volume"),
         min_value=0.0,
-        max_value=2.0,
-        value=1.0,
-        step=0.1,
+        max_value=1.0,
+        value=0.3,
+        step=0.01,
         help=tr("Adjust the volume of the original audio")
     )
     st.session_state['bgm_volume'] = bgm_volume
