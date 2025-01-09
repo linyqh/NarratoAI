@@ -38,6 +38,14 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 - 2024.11.10 发布官方文档，详情参见 [官方文档](https://p9mf6rjv3c.feishu.cn/wiki/SP8swLLZki5WRWkhuFvc2CyInDg)
 - 2024.11.10 发布新版本 v0.3.5；优化视频剪辑流程，
 
+## 公告 📢
+_**注意⚠️：近期在 x (推特) 上发现有人冒充作者在 pump.fun 平台上发行代币！ 这是骗子！！！ 不要被割了韭菜
+！！！目前 NarratoAI 没有在 x(推特) 上做任何官方宣传，注意甄别**_
+
+下面是此人 x(推特) 首页截图
+
+<img src="https://github.com/user-attachments/assets/c492ab99-52cd-4ba2-8695-1bd2073ecf12" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
+
 ## 未来计划 🥳
 - [x] windows 整合包发布
 - [x] 优化剧情生成流程，提升生成效果
