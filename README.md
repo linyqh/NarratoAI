@@ -65,6 +65,7 @@ _**注意⚠️：近期在 x (推特) 上发现有人冒充作者在 pump.fun �
 
 - 建议最低 CPU 4核或以上，内存 8G 或以上，显卡非必须
 - Windows 10 或 MacOS 11.0 以上系统
+- [Python 3.10+](https://www.python.org/downloads/)
 
 ## 反馈建议 📢
 
