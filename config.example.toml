@@ -17,7 +17,7 @@
     vision_qwenvl_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     ########### Vision NarratoAPI Key
-    narrato_api_key = "0N0iEjU77aTqPW4d9YHCmTW2mPrfgWjDmaWAz1lTVTM"
+    narrato_api_key = "4nh5cJdPGe__NbDlhX3MgzRdGUNL5iyAllcJrr3_nno"
     narrato_api_url = "https://narratoinsight.scsmtech.cn/api/v1"
     narrato_vision_model = "gemini-1.5-flash"
     narrato_vision_key = ""
