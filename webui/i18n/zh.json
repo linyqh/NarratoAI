@@ -188,7 +188,7 @@
     "Mergeable Files": "可合并文件数",
     "Subtitle Content": "字幕内容",
     "Merge Result Preview": "合并结果预览",
-    "Short Generate": "短剧混剪 (高燃剪辑, 当前只支持 gpt-4o 模型)",
+    "Short Generate": "短剧混剪 (高燃剪辑)",
     "Generate Short Video Script": "AI生成短剧混剪脚本",
     "Adjust the volume of the original audio": "调整原始音频的音量",
     "Original Volume": "视频音量",

@@ -75,8 +75,8 @@
     ########## DeepSeek API Key
     # Visit https://platform.deepseek.com/api_keys to get your API key
     text_deepseek_api_key = ""
-    text_deepseek_base_url = "https://api.deepseek.com"
-    text_deepseek_model_name = "deepseek-chat"
+    text_deepseek_base_url = "https://api.siliconflow.cn/v1"
+    text_deepseek_model_name = "deepseek-ai/DeepSeek-V3"
 
     # 字幕提供商、可选，支持 whisper 和 faster-whisper-large-v2"whisper"
     # 默认为 faster-whisper-large-v2 模型地址：https://huggingface.co/guillaumekln/faster-whisper-large-v2
