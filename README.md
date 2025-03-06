@@ -32,11 +32,26 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 </div>
 
 ## 最新资讯
+- 2025.03.06 支持 DeepSeek R1 和 DeepSeek V3 模型进行短剧混剪
 - 2024.12.16 发布新版本 0.3.9， 支持阿里 Qwen2-VL 模型理解视频；支持短剧混剪
 - 2024.11.24 开通 discord 社群：https://discord.com/invite/V2pbAqqQNb
 - 2024.11.11 迁移开源社群，欢迎加入！ [加入官方社群](https://github.com/linyqh/NarratoAI/wiki)
 - 2024.11.10 发布官方文档，详情参见 [官方文档](https://p9mf6rjv3c.feishu.cn/wiki/SP8swLLZki5WRWkhuFvc2CyInDg)
 - 2024.11.10 发布新版本 v0.3.5；优化视频剪辑流程，
+
+## 重磅福利 🎉
+即日起全面支持DeepSeek模型！注册即享2000万免费Token（价值14元平台配额），剪辑10分钟视频仅需0.1元！  
+
+🔥 快速领福利：  
+1️⃣ 点击链接注册：https://cloud.siliconflow.cn/i/pyOKqFCV  
+2️⃣ 使用手机号登录，**务必填写邀请码：pyOKqFCV**  
+3️⃣ 领取14元配额，极速体验高性价比AI剪辑  
+
+💡 小成本大创作：  
+硅基流动API Key一键接入，智能剪辑效率翻倍！  
+（注：邀请码为福利领取唯一凭证，注册后自动到账）  
+
+立即行动，用「pyOKqFCV」解锁你的AI生产力！
 
 ## 公告 📢
 _**注意⚠️：近期在 x (推特) 上发现有人冒充作者在 pump.fun 平台上发行代币！ 这是骗子！！！ 不要被割了韭菜
