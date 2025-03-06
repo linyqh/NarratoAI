@@ -1,5 +1,5 @@
 [app]
-    project_version="0.3.9"
+    project_version="0.5.2"
     # 支持视频理解的大模型提供商
     #   gemini
     #   NarratoAPI
@@ -73,7 +73,7 @@
     text_qwen_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     ########## DeepSeek API Key
-    # Visit https://platform.deepseek.com/api_keys to get your API key
+    # 使用 硅基流动 第三方 API Key，使用手机号注册：https://cloud.siliconflow.cn/i/pyOKqFCV
     text_deepseek_api_key = ""
     text_deepseek_base_url = "https://api.siliconflow.cn/v1"
     text_deepseek_model_name = "deepseek-ai/DeepSeek-V3"

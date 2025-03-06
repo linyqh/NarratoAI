@@ -32,8 +32,8 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 </div>
 
 ## 最新资讯
-- 2025.03.06 支持 DeepSeek R1 和 DeepSeek V3 模型进行短剧混剪
-- 2024.12.16 发布新版本 0.3.9， 支持阿里 Qwen2-VL 模型理解视频；支持短剧混剪
+- 2025.03.06 发布新版本 0.5.2，支持 DeepSeek R1 和 DeepSeek V3 模型进行短剧混剪
+- 2024.12.16 发布新版本 0.3.9，支持阿里 Qwen2-VL 模型理解视频；支持短剧混剪
 - 2024.11.24 开通 discord 社群：https://discord.com/invite/V2pbAqqQNb
 - 2024.11.11 迁移开源社群，欢迎加入！ [加入官方社群](https://github.com/linyqh/NarratoAI/wiki)
 - 2024.11.10 发布官方文档，详情参见 [官方文档](https://p9mf6rjv3c.feishu.cn/wiki/SP8swLLZki5WRWkhuFvc2CyInDg)
