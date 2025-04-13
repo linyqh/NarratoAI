@@ -53,7 +53,7 @@ def render_language_settings(tr):
 def render_proxy_settings(tr):
     """渲染代理设置"""
     # 获取当前代理状态
-    proxy_enabled = config.proxy.get("enabled", True)
+    proxy_enabled = config.proxy.get("enabled", False)
     proxy_url_http = config.proxy.get("http")
     proxy_url_https = config.proxy.get("https")
 

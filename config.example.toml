@@ -1,20 +1,19 @@
 [app]
-    project_version="0.5.2"
+    project_version="0.5.3"
     # 支持视频理解的大模型提供商
     #   gemini
-    #   NarratoAPI
-    #   qwen2-vl (待增加)
-    vision_llm_provider="gemini"
+    #   qwenvl
+    vision_llm_provider="qwenvl"
     vision_analysis_prompt = "你是资深视频内容分析专家，擅长分析视频画面信息，分析下面视频画面内容，只输出客观的画面描述不要给任何总结或评价"
 
     ########## Vision Gemini API Key
     vision_gemini_api_key = ""
-    vision_gemini_model_name = "gemini-1.5-flash"
+    vision_gemini_model_name = "gemini-2.0-flash"
 
-    ########## Vision Qwen API Key
+    ########## Vision Qwen API Key (默认使用“硅基流动”的QwenVL模型)
     vision_qwenvl_api_key = ""
-    vision_qwenvl_model_name = "qwen-vl-max-latest"
-    vision_qwenvl_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    vision_qwenvl_model_name = "Qwen/Qwen2.5-VL-32B-Instruct"
+    vision_qwenvl_base_url = "https://api.siliconflow.cn/v1"
 
     ########### Vision NarratoAPI Key
     narrato_api_key = "ggyY91BAO-_ULvAqKum3XexcyN1G3dP86DEzvjZDcrg"
@@ -26,19 +25,23 @@
 
     # 用于生成文案的大模型支持的提供商 (Supported providers):
     #   openai (默认)
+    #   deepseek (默认使用“硅基流动”的模型)
     #   moonshot (月之暗面)
-    #   oneapi
-    #   g4f
-    #   azure
     #   qwen (通义千问)
     #   gemini
-    text_llm_provider="openai"
+    text_llm_provider="deepseek"
 
     ########## OpenAI API Key
     # Get your API key at https://platform.openai.com/api-keys
     text_openai_api_key = ""
     text_openai_base_url = "https://api.openai.com/v1"
     text_openai_model_name = "gpt-4o-mini"
+
+    ########## DeepSeek API Key
+    # 使用 硅基流动 第三方 API Key，使用手机号注册：https://cloud.siliconflow.cn/i/pyOKqFCV
+    text_deepseek_api_key = ""
+    text_deepseek_base_url = "https://api.siliconflow.cn/v1"
+    text_deepseek_model_name = "deepseek-ai/DeepSeek-V3"
 
     ########## Moonshot API Key
     # Visit https://platform.moonshot.cn/console/api-keys to get your API key.
@@ -72,11 +75,6 @@
     text_qwen_model_name = "qwen-plus-1127"
     text_qwen_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
-    ########## DeepSeek API Key
-    # 使用 硅基流动 第三方 API Key，使用手机号注册：https://cloud.siliconflow.cn/i/pyOKqFCV
-    text_deepseek_api_key = ""
-    text_deepseek_base_url = "https://api.siliconflow.cn/v1"
-    text_deepseek_model_name = "deepseek-ai/DeepSeek-V3"
 
     # 字幕提供商、可选，支持 whisper 和 faster-whisper-large-v2"whisper"
     # 默认为 faster-whisper-large-v2 模型地址：https://huggingface.co/guillaumekln/faster-whisper-large-v2

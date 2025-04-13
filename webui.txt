@@ -48,6 +48,8 @@ pause
 rem set HF_ENDPOINT=https://hf-mirror.com
 streamlit run webui.py --browser.serverAddress="127.0.0.1" --server.enableCORS=True  --server.maxUploadSize=2048 --browser.gatherUsageStats=False
 
+streamlit run webui.py --server.maxUploadSize=2048
+
 请求0：
 curl -X 'POST' \
   'http://127.0.0.1:8080/api/v2/youtube/download' \

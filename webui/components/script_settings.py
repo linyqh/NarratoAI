@@ -25,8 +25,17 @@ def render_script_panel(tr):
         # 渲染视频文件选择
         render_video_file(tr, params)
 
-        # 渲染视频主题和提示词
-        render_video_details(tr)
+        # 获取当前选择的脚本类型
+        script_path = st.session_state.get('video_clip_json_path', '')
+        
+        # 根据脚本类型显示不同的布局
+        if script_path == "short":
+            # Short Generate模式下显示的内容
+            render_short_generate_options(tr)
+        else:
+            # 其他模式下保持原有布局
+            # 渲染视频主题和提示词
+            render_video_details(tr)
 
         # 渲染脚本操作按钮
         render_script_buttons(tr, params)
@@ -166,6 +175,23 @@ def render_video_file(tr, params):
                 st.rerun()
 
 
+def render_short_generate_options(tr):
+    """
+    渲染Short Generate模式下的特殊选项
+    在Short Generate模式下，替换原有的输入框为自定义片段选项
+    """
+    # 显示自定义片段数量选择器
+    custom_clips = st.number_input(
+        tr("自定义片段"),
+        min_value=1,
+        max_value=20,
+        value=st.session_state.get('custom_clips', 5),
+        help=tr("设置需要生成的短视频片段数量"),
+        key="custom_clips_input"
+    )
+    st.session_state['custom_clips'] = custom_clips
+
+
 def render_video_details(tr):
     """渲染视频主题和提示词"""
     video_theme = st.text_input(tr("Video Theme"))
@@ -182,42 +208,46 @@ def render_video_details(tr):
 
 def render_script_buttons(tr, params):
     """渲染脚本操作按钮"""
-    # 新增三个输入框，放在同一行
-    input_cols = st.columns(3)
+    # 获取当前选择的脚本类型
+    script_path = st.session_state.get('video_clip_json_path', '')
     
-    with input_cols[0]:
-        skip_seconds = st.number_input(
-            "skip_seconds",
-            min_value=0,
-            value=st.session_state.get('skip_seconds', config.frames.get('skip_seconds', 0)),
-            help=tr("Skip the first few seconds"),
-            key="skip_seconds_input"
-        )
-        st.session_state['skip_seconds'] = skip_seconds
+    # 根据脚本类型显示不同的设置
+    if script_path != "short":
+        # 非短视频模式下显示原有的三个输入框
+        input_cols = st.columns(3)
         
-    with input_cols[1]:
-        threshold = st.number_input(
-            "threshold",
-            min_value=0,
-            value=st.session_state.get('threshold', config.frames.get('threshold', 30)),
-            help=tr("Difference threshold"),
-            key="threshold_input"
-        )
-        st.session_state['threshold'] = threshold
-        
-    with input_cols[2]:
-        vision_batch_size = st.number_input(
-            "vision_batch_size",
-            min_value=1,
-            max_value=20,
-            value=st.session_state.get('vision_batch_size', config.frames.get('vision_batch_size', 5)),
-            help=tr("Vision processing batch size"),
-            key="vision_batch_size_input"
-        )
-        st.session_state['vision_batch_size'] = vision_batch_size
+        with input_cols[0]:
+            skip_seconds = st.number_input(
+                "skip_seconds",
+                min_value=0,
+                value=st.session_state.get('skip_seconds', config.frames.get('skip_seconds', 0)),
+                help=tr("Skip the first few seconds"),
+                key="skip_seconds_input"
+            )
+            st.session_state['skip_seconds'] = skip_seconds
+            
+        with input_cols[1]:
+            threshold = st.number_input(
+                "threshold",
+                min_value=0,
+                value=st.session_state.get('threshold', config.frames.get('threshold', 30)),
+                help=tr("Difference threshold"),
+                key="threshold_input"
+            )
+            st.session_state['threshold'] = threshold
+            
+        with input_cols[2]:
+            vision_batch_size = st.number_input(
+                "vision_batch_size",
+                min_value=1,
+                max_value=20,
+                value=st.session_state.get('vision_batch_size', config.frames.get('vision_batch_size', 5)),
+                help=tr("Vision processing batch size"),
+                key="vision_batch_size_input"
+            )
+            st.session_state['vision_batch_size'] = vision_batch_size
 
     # 生成/加载按钮
-    script_path = st.session_state.get('video_clip_json_path', '')
     if script_path == "auto":
         button_name = tr("Generate Video Script")
     elif script_path == "short":
@@ -231,7 +261,10 @@ def render_script_buttons(tr, params):
         if script_path == "auto":
             generate_script_docu(tr, params)
         elif script_path == "short":
-            generate_script_short(tr, params)
+            # 获取自定义片段数量参数
+            custom_clips = st.session_state.get('custom_clips', 5)
+            # 直接将custom_clips作为参数传递，而不是通过params对象
+            generate_script_short(tr, params, custom_clips)
         else:
             load_script(tr, script_path)
 

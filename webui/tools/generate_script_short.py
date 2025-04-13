@@ -11,9 +11,14 @@ from app.config import config
 from webui.tools.base import chekc_video_config
 
 
-def generate_script_short(tr, params):
+def generate_script_short(tr, params, custom_clips=5):
     """
-    生成 纪录片 视频脚本
+    生成短视频脚本
+    
+    Args:
+        tr: 翻译函数
+        params: 视频参数对象
+        custom_clips: 自定义片段数量，默认为5
     """
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -62,6 +67,7 @@ def generate_script_short(tr, params):
                 base_url=text_base_url,
                 narrato_api_key=narrato_api_key,
                 bert_path="app/models/bert/",
+                custom_clips=custom_clips,
             )
 
             if script is None:
