@@ -33,7 +33,7 @@ def create(audio_file, subtitle_file: str = ""):
     """
     global model, device, compute_type
     if not model:
-        model_path = f"{utils.root_dir()}/app/models/faster-whisper-large-v2"
+        model_path = f"{utils.root_dir()}/app/models/faster-whisper-large-v3"
         model_bin_file = f"{model_path}/model.bin"
         if not os.path.isdir(model_path) or not os.path.isfile(model_bin_file):
             logger.error(
@@ -403,7 +403,7 @@ def extract_audio_and_create_subtitle(video_file: str, subtitle_file: str = "") 
         logger.info("音频提取完成，开始生成字幕")
         
         # 使用create函数生成字幕
-        create(audio_file, subtitle_file)
+        create("/Users/apple/Desktop/WhisperX-zhuanlu/1_qyn2-2_Vocals.wav", subtitle_file)
         
         # 删除临时音频文件
         if os.path.exists(audio_file):
@@ -422,8 +422,8 @@ if __name__ == "__main__":
     task_id = "123456"
     task_dir = utils.task_dir(task_id)
     subtitle_file = f"{task_dir}/subtitle_123456.srt"
-    audio_file = f"{task_dir}/audio.wav"
-    video_file = "/Users/apple/Desktop/home/NarratoAI/resource/videos/merged_video_1702.mp4"
+    audio_file = "/Users/apple/Desktop/WhisperX-zhuanlu/1_qyn2-2_Vocals.wav"
+    video_file = "/Users/apple/Desktop/home/NarratoAI/storage/temp/merge/qyn2-2-720p.mp4"
 
     extract_audio_and_create_subtitle(video_file, subtitle_file)
 
