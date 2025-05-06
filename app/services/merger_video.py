@@ -9,14 +9,11 @@
 '''
 
 import os
-import subprocess
-import logging
-from enum import Enum
-from typing import List, Optional, Tuple, Dict, Any
 import shutil
-
-# 设置日志
-logger = logging.getLogger(__name__)
+import subprocess
+from enum import Enum
+from typing import List, Optional, Tuple
+from loguru import logger
 
 
 class VideoAspect(Enum):
@@ -221,7 +218,6 @@ def process_single_video(
 
     # 执行命令
     try:
-        logger.info(f"处理视频 {input_path} -> {output_path}")
         subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return output_path
     except subprocess.CalledProcessError as e:
