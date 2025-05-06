@@ -20,7 +20,9 @@ class VideoConcatMode(str, Enum):
 
 class VideoAspect(str, Enum):
     landscape = "16:9"
+    landscape_2 = "4:3"
     portrait = "9:16"
+    portrait_2 = "3:4"
     square = "1:1"
 
     def to_resolution(self):

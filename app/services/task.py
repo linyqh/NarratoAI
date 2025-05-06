@@ -9,7 +9,8 @@ from loguru import logger
 from app.config import config
 from app.models import const
 from app.models.schema import VideoConcatMode, VideoParams, VideoClipParams
-from app.services import llm, material, subtitle, video, voice, audio_merger, subtitle_merger, clip_video
+from app.services import (llm, material, subtitle, video, voice, audio_merger,
+                          subtitle_merger, clip_video, merger_video)
 from app.services import state as sm
 from app.utils import utils
 
@@ -292,11 +293,10 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     combined_video_path = path.join(utils.task_dir(task_id), f"merger.mp4")
     logger.info(f"\n\n## 5. 合并视频: => {combined_video_path}")
 
-    video.combine_clip_videos(
-        combined_video_path=combined_video_path,
+    merger_video.combine_clip_videos(
+        output_video_path=combined_video_path,
         video_paths=subclip_videos,
         video_ost_list=video_ost,
-        list_script=list_script,
         video_aspect=params.video_aspect,
         threads=params.n_threads  # 多线程
     )

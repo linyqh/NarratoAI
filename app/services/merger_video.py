@@ -18,16 +18,22 @@ from loguru import logger
 
 class VideoAspect(Enum):
     """视频宽高比枚举"""
-    portrait = "portrait"  # 竖屏 9:16
-    landscape = "landscape"  # 横屏 16:9
-    square = "square"  # 方形 1:1
+    landscape = "16:9"  # 横屏 16:9
+    landscape_2 = "4:3"
+    portrait = "9:16"   # 竖屏 9:16
+    portrait_2 = "3:4"
+    square = "1:1"      # 方形 1:1
 
     def to_resolution(self) -> Tuple[int, int]:
         """根据宽高比返回标准分辨率"""
         if self == VideoAspect.portrait:
             return 1080, 1920  # 竖屏 9:16
+        elif self == VideoAspect.portrait_2:
+            return 720, 1280   # 竖屏 4:3
         elif self == VideoAspect.landscape:
             return 1920, 1080  # 横屏 16:9
+        elif self == VideoAspect.landscape_2:
+            return 1280, 720   # 横屏 4:3
         elif self == VideoAspect.square:
             return 1080, 1080  # 方形 1:1
         else:
