@@ -9,7 +9,7 @@ from loguru import logger
 from app.config import config
 from app.models import const
 from app.models.schema import VideoConcatMode, VideoParams, VideoClipParams
-from app.services import llm, material, subtitle, video, voice, audio_merger
+from app.services import llm, material, subtitle, video, voice, audio_merger, subtitle_merger, clip_video
 from app.services import state as sm
 from app.utils import utils
 
@@ -158,18 +158,25 @@ def get_video_materials(task_id, params, video_terms, audio_duration):
 
 
 def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: dict):
-    """后台任务（自动剪辑视频进行剪辑）"""
+    """
+    后台任务（自动剪辑视频进行剪辑）
+    Args:
+        task_id: 任务ID
+        params: 视频参数
+        subclip_path_videos: 视频片段路径
+    """
     logger.info(f"\n\n## 开始任务: {task_id}")
-    
-    # 初始化 ImageMagick
-    if not utils.init_imagemagick():
-        logger.warning("ImageMagick 初始化失败，字幕可能无法正常显示")
-    
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=5)
+    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=0)
 
-    # tts 角色名称
-    voice_name = voice.parse_voice_name(params.voice_name)
+    # # 初始化 ImageMagick
+    # if not utils.init_imagemagick():
+    #     logger.warning("ImageMagick 初始化失败，字幕可能无法正常显示")
 
+    # # tts 角色名称
+    # voice_name = voice.parse_voice_name(params.voice_name)
+    """
+    1. 加载剪辑脚本
+    """
     logger.info("\n\n## 1. 加载视频脚本")
     video_script_path = path.join(params.video_clip_json_path)
     
@@ -187,111 +194,102 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
                 logger.debug(f"解说时间戳列表: \n{time_list}")
                 
                 # 获取视频总时长(单位 s)
-                last_timestamp = list_script[-1]['new_timestamp']
-                end_time = last_timestamp.split("-")[1]
-                total_duration = utils.time_to_seconds(end_time)
-                
+                last_timestamp = list_script[-1]['timestamp'].split("-")[1]
+                total_duration = utils.time_to_seconds(last_timestamp)
+
         except Exception as e:
-            logger.error(f"无法读取视频json脚本，请检查配置是否正确。{e}")
-            raise ValueError("无法读取视频json脚本，请检查配置是否正确")
+            logger.error(f"无法读取视频json脚本，请检查脚本格式是否正确")
+            raise ValueError("无法读取视频json脚本，请检查脚本格式是否正确")
     else:
         logger.error(f"video_script_path: {video_script_path} \n\n", traceback.format_exc())
         raise ValueError("解说脚本不存在！请检查配置是否正确。")
 
+    """
+    2. 使用 TTS 生成音频素材
+    """
     logger.info("\n\n## 2. 根据OST设置生成音频列表")
-    # 只为OST=0或2的片段生成TTS音频
+    # 只为OST=0 or 2的判断生成音频， OST=0 仅保留解说 OST=2 保留解说和原声
     tts_segments = [
         segment for segment in list_script 
         if segment['OST'] in [0, 2]
     ]
     logger.debug(f"需要生成TTS的片段数: {len(tts_segments)}")
-    
-    # 初始化音频文件路径
-    audio_files = []
-    final_audio = ""
-    
-    if tts_segments:
-        audio_files, sub_maker_list = voice.tts_multiple(
-            task_id=task_id,
-            list_script=tts_segments,  # 只传入需要TTS的片段
-            voice_name=voice_name,
-            voice_rate=params.voice_rate,
-            voice_pitch=params.voice_pitch,
-            force_regenerate=True
-        )
-        if audio_files is None:
-            sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-            logger.error("TTS转换音频失败, 可能是网络不可用! 如果您在中国, 请使用VPN.")
-            return
 
-        if audio_files:
-            logger.info(f"合并音频文件: {audio_files}")
-            try:
-                # 传入OST信息以便正确处理音频
-                final_audio = audio_merger.merge_audio_files(
-                    task_id=task_id,
-                    audio_files=audio_files,
-                    total_duration=total_duration,
-                    list_script=list_script  # 传入完整脚本以便处理OST
-                )
-                logger.info("音频文件合并成功")
-            except Exception as e:
-                logger.error(f"合并音频文件失败: {str(e)}")
-                final_audio = ""
-    else:
-        # 如果没有需要生成TTS的片段，创建一个空白音频文件
-        # 这样可以确保后续的音频处理能正确进行
-        logger.info("没有需要生成TTS的片段，将保留原声和背景音乐")
-        final_audio = path.join(utils.task_dir(task_id), "empty.mp3")
+    tts_results = voice.tts_multiple(
+        task_id=task_id,
+        list_script=tts_segments,  # 只传入需要TTS的片段
+        voice_name=params.voice_name,
+        voice_rate=params.voice_rate,
+        voice_pitch=params.voice_pitch,
+        force_regenerate=True
+    )
+    audio_files = [
+        tts_result["audio_file"] for tts_result in tts_results
+    ]
+    subtitle_files = [
+        tts_result["subtitle_file"] for tts_result in tts_results
+    ]
+    if tts_results:
+        logger.info(f"合并音频/字幕文件")
         try:
-            from moviepy.editor import AudioClip
-            # 创建一个与视频等长的空白音频
-            empty_audio = AudioClip(make_frame=lambda t: 0, duration=total_duration)
-            empty_audio.write_audiofile(final_audio, fps=44100)
-            logger.info(f"已创建空白音频文件: {final_audio}")
-        except Exception as e:
-            logger.error(f"创建空白音频文件失败: {str(e)}")
-            final_audio = ""
-
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=30)
-
-    subtitle_path = ""
-    if params.subtitle_enabled:
-        if audio_files:
-            subtitle_path = path.join(utils.task_dir(task_id), f"subtitle.srt")
-            subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
-            logger.info(f"\n\n## 3. 生成字幕、提供程序是: {subtitle_provider}")
-
-            subtitle.create(
-                audio_file=final_audio,
-                subtitle_file=subtitle_path,
+            # 合并音频文件
+            merged_audio_path = audio_merger.merge_audio_files(
+                task_id=task_id,
+                audio_files=audio_files,
+                total_duration=total_duration,
+                list_script=list_script  # 传入完整脚本以便处理OST
             )
+            logger.info(f"音频文件合并成功->{merged_audio_path}")
+            # 合并字幕文件
+            merged_subtitle_path = subtitle_merger.merge_subtitle_files(
+                subtitle_files=subtitle_files,
+            )
+            logger.info(f"字幕文件合并成功->{merged_subtitle_path}")
+        except Exception as e:
+            logger.error(f"合并音频文件失败: {str(e)}")
+            merged_audio_path = ""
+            merged_subtitle_path = ""
+    else:
+        logger.error("TTS转换音频失败, 可能是网络不可用! 如果您在中国, 请使用VPN.")
+        return
+    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=20)
 
-            subtitle_lines = subtitle.file_to_subtitles(subtitle_path)
+    """
+    3. (可选) 使用 whisper 生成字幕
+    """
+    if merged_subtitle_path is None:
+        if audio_files:
+            merged_subtitle_path = path.join(utils.task_dir(task_id), f"subtitle.srt")
+            subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
+            logger.info(f"\n\n使用 {subtitle_provider} 生成字幕")
+            
+            subtitle.create(
+                audio_file=merged_audio_path,
+                subtitle_file=merged_subtitle_path,
+            )
+            subtitle_lines = subtitle.file_to_subtitles(merged_subtitle_path)
             if not subtitle_lines:
-                logger.warning(f"字幕文件无效: {subtitle_path}")
-                subtitle_path = ""
+                logger.warning(f"字幕文件无效: {merged_subtitle_path}")
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=40)
 
+    """
+    4. 裁剪视频 - 将超出音频长度的视频进行裁剪
+    """
     logger.info("\n\n## 4. 裁剪视频")
+    result = clip_video.clip_video(params.video_origin_path, tts_results)
+    subclip_path_videos.update(result)
     subclip_videos = [x for x in subclip_path_videos.values()]
-    # logger.debug(f"\n\n## 裁剪后的视频文件列表: \n{subclip_videos}")
 
-    if not subclip_videos:
-        sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-        logger.error(
-            "裁剪视频失败，可能是 ImageMagick 不可用")
-        return
+    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=60)
 
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=50)
-
+    """
+    5. 合并视频
+    """
     final_video_paths = []
     combined_video_paths = []
 
-    _progress = 50
-    index = 1
-    combined_video_path = path.join(utils.task_dir(task_id), f"combined.mp4")
+    combined_video_path = path.join(utils.task_dir(task_id), f"merger.mp4")
     logger.info(f"\n\n## 5. 合并视频: => {combined_video_path}")
 
     video.combine_clip_videos(
@@ -302,14 +300,15 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         video_aspect=params.video_aspect,
         threads=params.n_threads  # 多线程
     )
+    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=80)
 
-    _progress += 50 / 2
-    sm.state.update_task(task_id, progress=_progress)
 
-    final_video_path = path.join(utils.task_dir(task_id), f"final-{index}.mp4")
+    """
+    6. 合并字幕/BGM/配音/视频
+    """
+    final_video_path = path.join(utils.task_dir(task_id), f"combined.mp4")
+    logger.info(f"\n\n## 6. 最后一步: 合并字幕/BGM/配音/视频 -> {final_video_path}")
 
-    logger.info(f"\n\n## 6. 最后合成: {index} => {final_video_path}")
-    
     # 获取背景音乐
     bgm_path = None
     if params.bgm_type or params.bgm_file:
@@ -340,17 +339,14 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     font_path = utils.font_dir(params.font_name)
     video.generate_video_v3(
         video_path=combined_video_path,
-        subtitle_path=subtitle_path,
+        subtitle_path=merged_subtitle_path,
         bgm_path=bgm_path,
-        narration_path=final_audio,
+        narration_path=merged_audio_path,
         output_path=final_video_path,
         volume_config=volume_config,  # 添加音量配置
         subtitle_style=subtitle_style,
         font_path=font_path
     )
-
-    _progress += 50 / 2
-    sm.state.update_task(task_id, progress=_progress)
 
     final_video_paths.append(final_video_path)
     combined_video_paths.append(combined_video_path)
@@ -400,35 +396,20 @@ def validate_params(video_path, audio_path, output_file, params):
 
 
 if __name__ == "__main__":
-    # task_id = "test123"
-    # subclip_path_videos = {'00:41-01:58': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-00_41-01_58.mp4',
-    #                        '00:06-00:15': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-00_06-00_15.mp4',
-    #                        '01:10-01:17': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-01_10-01_17.mp4',
-    #                        '00:47-01:03': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-00_47-01_03.mp4',
-    #                        '01:03-01:10': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-01_03-01_10.mp4',
-    #                        '02:40-03:08': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-02_40-03_08.mp4',
-    #                        '03:02-03:20': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-03_02-03_20.mp4',
-    #                        '03:18-03:20': 'E:\\projects\\NarratoAI\\storage\\cache_videos/vid-03_18-03_20.mp4'}
-    #
-    # params = VideoClipParams(
-    #     video_clip_json_path="E:\\projects\\NarratoAI\\resource/scripts/test003.json",
-    #     video_origin_path="E:\\projects\\NarratoAI\\resource/videos/1.mp4",
-    # )
-    # start_subclip(task_id, params, subclip_path_videos=subclip_path_videos)
+    task_id = "qyn2-2-demo"
 
-    task_id = "test456"
-    subclip_path_videos = {'01:10-01:17': './storage/cache_videos/vid-01_10-01_17.mp4',
-                           '01:58-02:04': './storage/cache_videos/vid-01_58-02_04.mp4',
-                           '02:25-02:31': './storage/cache_videos/vid-02_25-02_31.mp4',
-                           '01:28-01:33': './storage/cache_videos/vid-01_28-01_33.mp4',
-                           '03:14-03:18': './storage/cache_videos/vid-03_14-03_18.mp4',
-                           '00:24-00:28': './storage/cache_videos/vid-00_24-00_28.mp4',
-                           '03:02-03:08': './storage/cache_videos/vid-03_02-03_08.mp4',
-                           '00:41-00:44': './storage/cache_videos/vid-00_41-00_44.mp4',
-                           '02:12-02:25': './storage/cache_videos/vid-02_12-02_25.mp4'}
+    # 提前裁剪是为了方便检查视频
+    subclip_path_videos = {
+        '00:00:00-00:01:15': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-00-00-00-01-15.mp4',
+        '00:01:15-00:04:40': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-01-15-00-04-40.mp4',
+        '00:04:41-00:04:58': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-04-41-00-04-58.mp4',
+        '00:04:58-00:05:45': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-04-58-00-05-45.mp4',
+        '00:05:45-00:06:00': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-05-45-00-06-00.mp4',
+        '00:06:00-00:06:03': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-06-00-00-06-03.mp4',
+    }
 
     params = VideoClipParams(
-        video_clip_json_path="/Users/apple/Desktop/home/NarratoAI/resource/scripts/test004.json",
-        video_origin_path="/Users/apple/Desktop/home/NarratoAI/resource/videos/1.mp4",
+        video_clip_json_path="/Users/apple/Desktop/home/NarratoAI/resource/scripts/demo.json",
+        video_origin_path="/Users/apple/Desktop/home/NarratoAI/resource/videos/qyn2-2无片头片尾.mp4",
     )
-    start_subclip(task_id, params, subclip_path_videos=subclip_path_videos)
+    start_subclip(task_id, params, subclip_path_videos)

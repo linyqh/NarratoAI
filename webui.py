@@ -3,7 +3,8 @@ import os
 import sys
 from uuid import uuid4
 from app.config import config
-from webui.components import basic_settings, video_settings, audio_settings, subtitle_settings, script_settings, review_settings, merge_settings, system_settings
+from webui.components import basic_settings, video_settings, audio_settings, subtitle_settings, script_settings, \
+    review_settings, merge_settings, system_settings
 from webui.utils import cache, file_utils
 from app.utils import utils
 from app.models.schema import VideoClipParams, VideoAspect
@@ -28,6 +29,7 @@ hide_streamlit_style = """
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
+
 def init_log():
     """初始化日志配置"""
     from loguru import logger
@@ -41,11 +43,11 @@ def init_log():
             "torch.cuda.is_available()",
             "CUDA initialization"
         ]
-        
+
         for msg in ignore_messages:
             if msg in record["message"]:
                 return ""
-            
+
         file_path = record["file"].path
         relative_path = os.path.relpath(file_path, config.root_dir)
         record["file"].path = f"./{relative_path}"
@@ -74,6 +76,7 @@ def init_log():
         filter=log_filter
     )
 
+
 def init_global_state():
     """初始化全局状态"""
     if 'video_clip_json' not in st.session_state:
@@ -85,6 +88,7 @@ def init_global_state():
     if 'subclip_videos' not in st.session_state:
         st.session_state['subclip_videos'] = {}
 
+
 def tr(key):
     """翻译函数"""
     i18n_dir = os.path.join(os.path.dirname(__file__), "webui", "i18n")
@@ -92,13 +96,14 @@ def tr(key):
     loc = locales.get(st.session_state['ui_language'], {})
     return loc.get("Translation", {}).get(key, key)
 
+
 def render_generate_button():
     """渲染生成按钮和处理逻辑"""
     if st.button(tr("Generate Video"), use_container_width=True, type="primary"):
         try:
             from app.services import task as tm
             import torch
-            
+
             # 重置日志容器和记录
             log_container = st.empty()
             log_records = []
@@ -152,7 +157,7 @@ def render_generate_button():
 
             video_files = result.get("videos", [])
             st.success(tr("视生成完成"))
-            
+
             try:
                 if video_files:
                     player_cols = st.columns(len(video_files) * 2 + 1)
@@ -167,15 +172,16 @@ def render_generate_button():
         finally:
             PerformanceMonitor.cleanup_resources()
 
+
 def main():
     """主函数"""
     init_log()
     init_global_state()
     utils.init_resources()
-    
+
     st.title(f"NarratoAI :sunglasses:📽️")
     st.write(tr("Get Help"))
-    
+
     # 渲染基础设置面板
     basic_settings.render_basic_settings(tr)
     # 渲染合并设置
@@ -192,12 +198,13 @@ def main():
         subtitle_settings.render_subtitle_panel(tr)
         # 渲染系统设置面板
         system_settings.render_system_panel(tr)
-    
+
     # 渲染视频审查面板
     review_settings.render_review_panel(tr)
-    
+
     # 渲染生成按钮和处理逻辑
     render_generate_button()
+
 
 if __name__ == "__main__":
     main()

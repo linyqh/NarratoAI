@@ -443,4 +443,3 @@ def generate_video_v3(
         bgm.close()
     if narration_path:
         narration.close()
-

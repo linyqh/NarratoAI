@@ -46,7 +46,7 @@ def merge_audio_files(task_id: str, audio_files: list, total_duration: float, li
             tts_audio = AudioSegment.from_file(audio_file)
 
             # 获取片段的开始和结束时间
-            start_time, end_time = segment['new_timestamp'].split('-')
+            start_time, end_time = segment['timestamp'].split('-')
             start_seconds = utils.time_to_seconds(start_time)
             end_seconds = utils.time_to_seconds(end_time)
 
