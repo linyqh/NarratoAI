@@ -248,7 +248,8 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     clip_result = clip_video.clip_video(params.video_origin_path, tts_results)
     subclip_path_videos.update(clip_result)
     # 更新 list_script 中的时间戳
-    list_script = update_script.update_script_timestamps(list_script, clip_result)
+    tts_clip_result = {tts_result['timestamp']: tts_result['audio_file'] for tts_result in tts_results}
+    list_script = update_script.update_script_timestamps(list_script, clip_result, tts_clip_result)
     subclip_videos = [x for x in subclip_path_videos.values()]
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=60)
@@ -257,7 +258,6 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     4. 合并音频和字幕
     """
     logger.info("\n\n## 4. 合并音频和字幕")
-
     subtitle_files = [
         tts_result["subtitle_file"] for tts_result in tts_results
     ]

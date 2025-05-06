@@ -26,13 +26,13 @@ def extract_timestamp_from_video_path(video_path: str) -> str:
     # 使用正则表达式从文件名中提取时间戳
     filename = os.path.basename(video_path)
     match = re.search(r'vid-(\d{2}-\d{2}-\d{2})-(\d{2}-\d{2}-\d{2})\.mp4', filename)
-    
+
     if match:
         # 提取并格式化时间戳
         start_time = match.group(1).replace('-', ':')
         end_time = match.group(2).replace('-', ':')
         return f"{start_time}-{end_time}"
-    
+
     return ""
 
 
@@ -48,58 +48,69 @@ def calculate_duration(timestamp: str) -> float:
     """
     try:
         start_time, end_time = timestamp.split('-')
-        
+
         # 解析时间
         start_h, start_m, start_s = map(int, start_time.split(':'))
         end_h, end_m, end_s = map(int, end_time.split(':'))
-        
+
         # 转换为秒
         start_seconds = start_h * 3600 + start_m * 60 + start_s
         end_seconds = end_h * 3600 + end_m * 60 + end_s
-        
+
         # 计算时间差（秒）
         return round(end_seconds - start_seconds, 2)
     except (ValueError, AttributeError):
         return 0.0
 
 
-def update_script_timestamps(script_list: List[Dict[str, Any]], tts_result: Dict[str, str]) -> List[Dict[str, Any]]:
+def update_script_timestamps(script_list: List[Dict[str, Any]], video_result: Dict[str, str], audio_result: Dict[str, str] = None) -> List[Dict[str, Any]]:
     """
-    根据 tts_res 中的视频文件更新 list_script 中的时间戳，并添加持续时间
+    根据 video_result 中的视频文件更新 script_list 中的时间戳，添加持续时间，并根据 audio_result 添加音频路径
     
     Args:
         script_list: 原始脚本列表
-        tts_result: TTS 结果字典，键为原时间戳，值为视频文件路径
+        video_result: 视频结果字典，键为原时间戳，值为视频文件路径
+        audio_result: 音频结果字典，键为原时间戳，值为音频文件路径
     
     Returns:
         更新后的脚本列表
     """
     # 创建副本，避免修改原始数据
     updated_script = []
-    
-    # 建立原始时间戳到新时间戳的映射
+
+    # 建立原始时间戳到视频路径和新时间戳的映射
     timestamp_mapping = {}
-    for orig_timestamp, video_path in tts_result.items():
+    for orig_timestamp, video_path in video_result.items():
         new_timestamp = extract_timestamp_from_video_path(video_path)
         if new_timestamp:
-            timestamp_mapping[orig_timestamp] = new_timestamp
-    
+            timestamp_mapping[orig_timestamp] = {
+                'new_timestamp': new_timestamp,
+                'video_path': video_path
+            }
+
     # 更新脚本中的时间戳
     for item in script_list:
         item_copy = item.copy()
-        if item_copy.get('timestamp') in timestamp_mapping:
+        orig_timestamp = item_copy.get('timestamp', '')
+
+        # 初始化音频路径为空字符串
+        item_copy['audio'] = ""
+
+        # 如果提供了音频结果字典且时间戳存在于音频结果中，直接使用对应的音频路径
+        if audio_result and orig_timestamp in audio_result:
+            item_copy['audio'] = audio_result[orig_timestamp]
+
+        if orig_timestamp in timestamp_mapping:
             # 更新时间戳
-            new_timestamp = timestamp_mapping[item_copy['timestamp']]
-            item_copy['timestamp'] = new_timestamp
-            
-            # 计算并添加持续时间
-            item_copy['duration'] = calculate_duration(new_timestamp)
-        elif 'timestamp' in item_copy:
-            # 对于未更新的时间戳，也计算并添加持续时间
+            item_copy['timestamp'] = timestamp_mapping[orig_timestamp]['new_timestamp']
+            # 计算持续时间
             item_copy['duration'] = calculate_duration(item_copy['timestamp'])
-            
+        elif orig_timestamp:
+            # 对于未更新的时间戳，也计算并添加持续时间
+            item_copy['duration'] = calculate_duration(orig_timestamp)
+
         updated_script.append(item_copy)
-    
+
     return updated_script
 
 
@@ -122,13 +133,19 @@ if __name__ == '__main__':
                      'narration': '但想见庆帝，哪有那么容易？范闲艺高人胆大，竟然选择了最激进的方式——闯宫！', 'OST': 0},
         {'picture': '画面切换到范闲蒙面闯入皇宫，被侍卫包围的场景。', 'timestamp': '00:06:00-00:06:03',
          'narration': '抓刺客', 'OST': 1}]
-    tts_res = {
+    video_res = {
         '00:00:00-00:01:15': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/0ac14d474144b54d614c26a5c87cffe7/vid-00-00-00-00-00-26.mp4',
         '00:01:15-00:04:40': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/0ac14d474144b54d614c26a5c87cffe7/vid-00-01-15-00-01-29.mp4',
         '00:04:58-00:05:45': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/0ac14d474144b54d614c26a5c87cffe7/vid-00-04-58-00-05-20.mp4',
         '00:05:45-00:06:00': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/0ac14d474144b54d614c26a5c87cffe7/vid-00-05-45-00-05-53.mp4'}
+    audio_res = {
+        '00:00:00-00:01:15': '/Users/apple/Desktop/home/NarratoAI/storage/tasks/qyn2-2-demo/audio_00_00_00-00_01_15.mp3',
+        '00:01:15-00:04:40': '/Users/apple/Desktop/home/NarratoAI/storage/tasks/qyn2-2-demo/audio_00_01_15-00_04_40.mp3',
+        '00:04:58-00:05:45': '/Users/apple/Desktop/home/NarratoAI/storage/tasks/qyn2-2-demo/audio_00_04_58-00_05_45.mp3',
+        '00:05:45-00:06:00': '/Users/apple/Desktop/home/NarratoAI/storage/tasks/qyn2-2-demo/audio_00_05_45-00_06_00.mp3'}
     
     # 更新并打印结果
-    updated_list_script = update_script_timestamps(list_script, tts_res)
+    updated_list_script = update_script_timestamps(list_script, video_res, audio_res)
     for item in updated_list_script:
-        print(f"Picture: {item['picture'][:20]}... | Timestamp: {item['timestamp']} | Duration: {item['duration']} 秒")
+        print(
+            f"Picture: {item['picture'][:20]}... | Timestamp: {item['timestamp']} | Duration: {item['duration']} 秒 | Audio: {item['audio']}")
