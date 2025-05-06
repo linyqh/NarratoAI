@@ -10,7 +10,7 @@ from app.config import config
 from app.models import const
 from app.models.schema import VideoConcatMode, VideoParams, VideoClipParams
 from app.services import (llm, material, subtitle, video, voice, audio_merger,
-                          subtitle_merger, clip_video, merger_video)
+                          subtitle_merger, clip_video, merger_video, update_script)
 from app.services import state as sm
 from app.utils import utils
 
@@ -193,11 +193,6 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
                 logger.debug(f"解说完整脚本: \n{video_script}")
                 logger.debug(f"解说 OST 列表: \n{video_ost}")
                 logger.debug(f"解说时间戳列表: \n{time_list}")
-                
-                # 获取视频总时长(单位 s)
-                last_timestamp = list_script[-1]['timestamp'].split("-")[1]
-                total_duration = utils.time_to_seconds(last_timestamp)
-
         except Exception as e:
             logger.error(f"无法读取视频json脚本，请检查脚本格式是否正确")
             raise ValueError("无法读取视频json脚本，请检查脚本格式是否正确")
@@ -224,19 +219,54 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         voice_pitch=params.voice_pitch,
         force_regenerate=True
     )
-    audio_files = [
-        tts_result["audio_file"] for tts_result in tts_results
-    ]
+
+    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=20)
+
+    # """
+    # 3. (可选) 使用 whisper 生成字幕
+    # """
+    # if merged_subtitle_path is None:
+    #     if audio_files:
+    #         merged_subtitle_path = path.join(utils.task_dir(task_id), f"subtitle.srt")
+    #         subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
+    #         logger.info(f"\n\n使用 {subtitle_provider} 生成字幕")
+    #
+    #         subtitle.create(
+    #             audio_file=merged_audio_path,
+    #             subtitle_file=merged_subtitle_path,
+    #         )
+    #         subtitle_lines = subtitle.file_to_subtitles(merged_subtitle_path)
+    #         if not subtitle_lines:
+    #             logger.warning(f"字幕文件无效: {merged_subtitle_path}")
+    #
+    # sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=40)
+
+    """
+    3. 裁剪视频 - 将超出音频长度的视频进行裁剪
+    """
+    logger.info("\n\n## 3. 裁剪视频")
+    clip_result = clip_video.clip_video(params.video_origin_path, tts_results)
+    subclip_path_videos.update(clip_result)
+    # 更新 list_script 中的时间戳
+    list_script = update_script.update_script_timestamps(list_script, clip_result)
+    subclip_videos = [x for x in subclip_path_videos.values()]
+
+    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=60)
+
+    """
+    4. 合并音频和字幕
+    """
+    logger.info("\n\n## 4. 合并音频和字幕")
+
     subtitle_files = [
         tts_result["subtitle_file"] for tts_result in tts_results
     ]
+    total_duration = sum([script["duration"] for script in list_script])
     if tts_results:
-        logger.info(f"合并音频/字幕文件")
         try:
             # 合并音频文件
             merged_audio_path = audio_merger.merge_audio_files(
                 task_id=task_id,
-                audio_files=audio_files,
                 total_duration=total_duration,
                 list_script=list_script  # 传入完整脚本以便处理OST
             )
@@ -253,39 +283,9 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     else:
         logger.error("TTS转换音频失败, 可能是网络不可用! 如果您在中国, 请使用VPN.")
         return
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=20)
 
     """
-    3. (可选) 使用 whisper 生成字幕
-    """
-    if merged_subtitle_path is None:
-        if audio_files:
-            merged_subtitle_path = path.join(utils.task_dir(task_id), f"subtitle.srt")
-            subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
-            logger.info(f"\n\n使用 {subtitle_provider} 生成字幕")
-            
-            subtitle.create(
-                audio_file=merged_audio_path,
-                subtitle_file=merged_subtitle_path,
-            )
-            subtitle_lines = subtitle.file_to_subtitles(merged_subtitle_path)
-            if not subtitle_lines:
-                logger.warning(f"字幕文件无效: {merged_subtitle_path}")
-
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=40)
-
-    """
-    4. 裁剪视频 - 将超出音频长度的视频进行裁剪
-    """
-    logger.info("\n\n## 4. 裁剪视频")
-    result = clip_video.clip_video(params.video_origin_path, tts_results)
-    subclip_path_videos.update(result)
-    subclip_videos = [x for x in subclip_path_videos.values()]
-
-    sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=60)
-
-    """
-    5. 合并视频
+    6. 合并视频
     """
     final_video_paths = []
     combined_video_paths = []

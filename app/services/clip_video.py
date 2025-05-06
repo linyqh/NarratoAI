@@ -12,13 +12,9 @@ import os
 import subprocess
 import json
 import hashlib
-import logging
+from loguru import logger
 from typing import Dict, List, Optional
 from pathlib import Path
-
-# 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
 
 def parse_timestamp(timestamp: str) -> tuple:
@@ -174,7 +170,7 @@ def clip_video(
         # 执行FFmpeg命令
         try:
             logger.info(f"裁剪视频片段: {timestamp} -> {start_time}到{calculated_end_time}")
-            logger.debug(f"执行命令: {' '.join(ffmpeg_cmd)}")
+            # logger.debug(f"执行命令: {' '.join(ffmpeg_cmd)}")
 
             process = subprocess.run(
                 ffmpeg_cmd,
@@ -185,7 +181,6 @@ def clip_video(
             )
 
             result[timestamp] = output_path
-            logger.info(f"成功裁剪视频片段: {timestamp} -> {output_path}")
 
         except subprocess.CalledProcessError as e:
             logger.error(f"裁剪视频片段失败: {timestamp}")
@@ -217,10 +212,18 @@ if __name__ == "__main__":
                    'audio_file': '/Users/apple/Desktop/home/NarratoAI/storage/tasks/qyn2-2-demo/audio_00_05_45-00_06_00.mp3',
                    'subtitle_file': '/Users/apple/Desktop/home/NarratoAI/storage/tasks/qyn2-2-demo/subtitle_00_05_45-00_06_00.srt',
                    'duration': 7.675, 'text': '但想见庆帝，哪有那么容易？范闲艺高人胆大，竟然选择了最激进的方式——闯宫！'}]
+    subclip_path_videos = {
+        '00:00:00-00:01:15': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-00-00-00-01-15.mp4',
+        '00:01:15-00:04:40': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-01-15-00-04-40.mp4',
+        '00:04:41-00:04:58': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-04-41-00-04-58.mp4',
+        '00:04:58-00:05:45': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-04-58-00-05-45.mp4',
+        '00:05:45-00:06:00': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-05-45-00-06-00.mp4',
+        '00:06:00-00:06:03': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-06-00-00-06-03.mp4',
+    }
 
     # 使用方法示例
     try:
-        result = clip_video(video_origin_path, tts_result)
+        result = clip_video(video_origin_path, tts_result, subclip_path_videos)
         print("裁剪结果:")
         print(json.dumps(result, indent=4, ensure_ascii=False))
     except Exception as e:
