@@ -17,9 +17,11 @@ from app.utils import utils, video_processor, qwenvl_analyzer
 from webui.tools.base import create_vision_analyzer, get_batch_files, get_batch_timestamps, chekc_video_config
 
 
-def generate_script_docu(tr, params):
+def generate_script_docu(params):
     """
     生成 纪录片 视频脚本
+    要求: 原视频无字幕无配音
+    适合场景: 纪录片、动物搞笑解说、荒野建造等
     """
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -69,8 +71,7 @@ def generate_script_docu(tr, params):
                     # 处理视频并提取关键帧
                     processor.process_video_pipeline(
                         output_dir=video_keyframes_dir,
-                        skip_seconds=st.session_state.get('skip_seconds'),
-                        threshold=st.session_state.get('threshold')
+                        interval_seconds=st.session_state.get('frame_interval_input'),
                     )
 
                     # 获取所有关键文件路径
@@ -194,6 +195,7 @@ def generate_script_docu(tr, params):
                     _, _, timestamp_range = get_batch_timestamps(batch_files, prev_batch_files)
 
                     frame_content = {
+                        "_id": i + 1,
                         "timestamp": timestamp_range,
                         "picture": result['response'],
                         "narration": "",

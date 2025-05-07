@@ -47,7 +47,7 @@ def render_script_file(tr, params):
         (tr("None"), ""), 
         (tr("Auto Generate"), "auto"), 
         (tr("Short Generate"), "short"),
-        (tr("Upload Script"), "upload_script")  # 新增上传脚本选项
+        (tr("Upload Script"), "upload_script")
     ]
 
     # 获取已有脚本文件
@@ -214,38 +214,16 @@ def render_script_buttons(tr, params):
     # 根据脚本类型显示不同的设置
     if script_path != "short":
         # 非短视频模式下显示原有的三个输入框
-        input_cols = st.columns(3)
+        input_cols = st.columns(2)
         
         with input_cols[0]:
-            skip_seconds = st.number_input(
-                "skip_seconds",
+            st.number_input(
+                tr("Frame Interval (seconds)"),
                 min_value=0,
-                value=st.session_state.get('skip_seconds', config.frames.get('skip_seconds', 0)),
-                help=tr("Skip the first few seconds"),
-                key="skip_seconds_input"
+                value=st.session_state.get('frame_interval_input', config.frames.get('frame_interval_input', 5)),
+                help=tr("Frame Interval (seconds) (More keyframes consume more tokens)"),
+                key="frame_interval_input"
             )
-            st.session_state['skip_seconds'] = skip_seconds
-            
-        with input_cols[1]:
-            threshold = st.number_input(
-                "threshold",
-                min_value=0,
-                value=st.session_state.get('threshold', config.frames.get('threshold', 30)),
-                help=tr("Difference threshold"),
-                key="threshold_input"
-            )
-            st.session_state['threshold'] = threshold
-            
-        with input_cols[2]:
-            vision_batch_size = st.number_input(
-                "vision_batch_size",
-                min_value=1,
-                max_value=20,
-                value=st.session_state.get('vision_batch_size', config.frames.get('vision_batch_size', 5)),
-                help=tr("Vision processing batch size"),
-                key="vision_batch_size_input"
-            )
-            st.session_state['vision_batch_size'] = vision_batch_size
 
     # 生成/加载按钮
     if script_path == "auto":
@@ -259,7 +237,8 @@ def render_script_buttons(tr, params):
 
     if st.button(button_name, key="script_action", disabled=not script_path):
         if script_path == "auto":
-            generate_script_docu(tr, params)
+            # 执行纪录片视频脚本生成（视频无字幕无配音）
+            generate_script_docu(params)
         elif script_path == "short":
             # 获取自定义片段数量参数
             custom_clips = st.session_state.get('custom_clips', 5)

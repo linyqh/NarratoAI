@@ -22,6 +22,7 @@ class ScriptGenerator:
         video_path: str,
         video_theme: str = "",
         custom_prompt: str = "",
+        frame_interval_input: int = 5,
         skip_seconds: int = 0,
         threshold: int = 30,
         vision_batch_size: int = 5,

@@ -292,10 +292,7 @@ class VideoProcessor:
     def process_video_pipeline(self,
                               output_dir: str,
                               skip_seconds: float = 0.0,
-                              threshold: int = 20,  # 此参数保留但不使用
-                              compressed_width: int = 320,  # 此参数保留但不使用
-                              keep_temp: bool = False,  # 此参数保留但不使用
-                              interval_seconds: float = 5.0,
+                              interval_seconds: float = 5.0,  # 帧提取间隔（秒）
                               use_hw_accel: bool = True) -> None:
         """
         执行简化的视频处理流程，直接从原视频按固定时间间隔提取帧
@@ -303,9 +300,6 @@ class VideoProcessor:
         Args:
             output_dir: 输出目录
             skip_seconds: 跳过视频开头的秒数
-            threshold: 保留参数，不使用
-            compressed_width: 保留参数，不使用
-            keep_temp: 保留参数，不使用
             interval_seconds: 帧提取间隔（秒）
             use_hw_accel: 是否使用硬件加速
         """
@@ -314,7 +308,7 @@ class VideoProcessor:
         
         try:
             # 直接从原视频提取关键帧
-            logger.info("从视频直接提取关键帧...")
+            logger.info(f"从视频间隔 {interval_seconds} 秒提取关键帧...")
             self.extract_frames_by_interval(
                 output_dir,
                 interval_seconds=interval_seconds,

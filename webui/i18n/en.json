@@ -85,6 +85,7 @@
     "TTS Provider": "TTS Provider",
     "Hide Log": "Hide Log",
     "Upload Local Files": "Upload Local Files",
-    "File Uploaded Successfully": "File Uploaded Successfully"
+    "File Uploaded Successfully": "File Uploaded Successfully",
+    "Frame Interval (seconds)": "Frame Interval (seconds) (More keyframes consume more tokens)"
   }
 }

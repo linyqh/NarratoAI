@@ -192,6 +192,8 @@
     "Generate Short Video Script": "AI生成短剧混剪脚本",
     "Adjust the volume of the original audio": "调整原始音频的音量",
     "Original Volume": "视频音量",
-    "Auto Generate": "纪录片解说 (画面解说)"
+    "Auto Generate": "纪录片解说 (画面解说)",
+    "Frame Interval (seconds)": "帧间隔 (秒)",
+    "Frame Interval (seconds) (More keyframes consume more tokens)": "帧间隔 (秒) (更多关键帧消耗更多令牌)"
   }
 }
