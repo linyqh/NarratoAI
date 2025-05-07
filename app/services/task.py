@@ -287,16 +287,16 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
 
     combined_video_path = path.join(utils.task_dir(task_id), f"merger.mp4")
     logger.info(f"\n\n## 5. 合并视频: => {combined_video_path}")
-    videos_clips = [new_script['video_path'] for new_script in new_script_list]
+    # 如果 new_script_list 中没有 video，则使用 subclip_path_videos 中的视频
+    video_clips = [new_script['video'] if new_script.get('video') else subclip_path_videos.get(new_script.get('_id', '')) for new_script in new_script_list]
     merger_video.combine_clip_videos(
         output_video_path=combined_video_path,
-        video_paths=videos_clips,
+        video_paths=video_clips,
         video_ost_list=video_ost,
         video_aspect=params.video_aspect,
-        threads=params.n_threads  # 多线程
+        threads=params.n_threads
     )
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=80)
-
 
     """
     6. 合并字幕/BGM/配音/视频
@@ -395,12 +395,12 @@ if __name__ == "__main__":
 
     # 提前裁剪是为了方便检查视频
     subclip_path_videos = {
-        '00:00:00-00:01:15': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-00-00-00-01-15.mp4',
-        '00:01:15-00:04:40': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-01-15-00-04-40.mp4',
-        '00:04:41-00:04:58': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-04-41-00-04-58.mp4',
-        '00:04:58-00:05:45': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-04-58-00-05-45.mp4',
-        '00:05:45-00:06:00': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-05-45-00-06-00.mp4',
-        '00:06:00-00:06:03': '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-06-00-00-06-03.mp4',
+        1: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-00-00-00-01-15.mp4',
+        2: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-01-15-00-04-40.mp4',
+        3: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-04-41-00-04-58.mp4',
+        4: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-04-58-00-05-45.mp4',
+        5: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-05-45-00-06-00.mp4',
+        6: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-06-00-00-06-03.mp4',
     }
 
     params = VideoClipParams(
