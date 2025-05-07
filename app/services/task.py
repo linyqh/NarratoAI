@@ -250,7 +250,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     subclip_clip_result = {
         tts_result['_id']: tts_result['subtitle_file'] for tts_result in tts_results
     }
-    list_script = update_script.update_script_timestamps(list_script, video_clip_result, tts_clip_result, subclip_clip_result)
+    new_script_list = update_script.update_script_timestamps(list_script, video_clip_result, tts_clip_result, subclip_clip_result)
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=60)
 
@@ -258,24 +258,19 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     4. 合并音频和字幕
     """
     logger.info("\n\n## 4. 合并音频和字幕")
-    subtitle_files = [
-        tts_result["subtitle_file"] for tts_result in tts_results
-    ]
-    total_duration = sum([script["duration"] for script in list_script])
+    total_duration = sum([script["duration"] for script in new_script_list])
     if tts_results:
         try:
             # 合并音频文件
             merged_audio_path = audio_merger.merge_audio_files(
                 task_id=task_id,
                 total_duration=total_duration,
-                list_script=list_script
+                list_script=new_script_list
             )
             logger.info(f"音频文件合并成功->{merged_audio_path}")
-            # # 合并字幕文件
-            # merged_subtitle_path = subtitle_merger.merge_subtitle_files(
-            #     subtitle_files=subtitle_files,
-            # )
-            # logger.info(f"字幕文件合并成功->{merged_subtitle_path}")
+            # 合并字幕文件
+            merged_subtitle_path = subtitle_merger.merge_subtitle_files(new_script_list)
+            logger.info(f"字幕文件合并成功->{merged_subtitle_path}")
         except Exception as e:
             logger.error(f"合并音频文件失败: {str(e)}")
             merged_audio_path = ""
@@ -292,10 +287,10 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
 
     combined_video_path = path.join(utils.task_dir(task_id), f"merger.mp4")
     logger.info(f"\n\n## 5. 合并视频: => {combined_video_path}")
-
+    videos_clips = [new_script['video_path'] for new_script in new_script_list]
     merger_video.combine_clip_videos(
         output_video_path=combined_video_path,
-        video_paths=subclip_videos,
+        video_paths=videos_clips,
         video_ost_list=video_ost,
         video_aspect=params.video_aspect,
         threads=params.n_threads  # 多线程
