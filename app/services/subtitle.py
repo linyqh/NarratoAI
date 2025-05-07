@@ -8,7 +8,7 @@ from faster_whisper import WhisperModel
 from timeit import default_timer as timer
 from loguru import logger
 import google.generativeai as genai
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 import os
 
 from app.config import config

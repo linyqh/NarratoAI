@@ -10,7 +10,7 @@ from app.config import config
 from app.models import const
 from app.models.schema import VideoConcatMode, VideoParams, VideoClipParams
 from app.services import (llm, material, subtitle, video, voice, audio_merger,
-                          subtitle_merger, clip_video, merger_video, update_script)
+                          subtitle_merger, clip_video, merger_video, update_script, generate_video)
 from app.services import state as sm
 from app.utils import utils
 
@@ -301,49 +301,35 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     """
     6. 合并字幕/BGM/配音/视频
     """
-    final_video_path = path.join(utils.task_dir(task_id), f"combined.mp4")
-    logger.info(f"\n\n## 6. 最后一步: 合并字幕/BGM/配音/视频 -> {final_video_path}")
+    output_video_path = path.join(utils.task_dir(task_id), f"combined.mp4")
+    logger.info(f"\n\n## 6. 最后一步: 合并字幕/BGM/配音/视频 -> {output_video_path}")
 
-    # 获取背景音乐
-    bgm_path = None
-    if params.bgm_type or params.bgm_file:
-        try:
-            bgm_path = utils.get_bgm_file(bgm_type=params.bgm_type, bgm_file=params.bgm_file)
-            if bgm_path:
-                logger.info(f"使用背景音乐: {bgm_path}")
-        except Exception as e:
-            logger.error(f"获取背景音乐失败: {str(e)}")
+    bgm_path = '/Users/apple/Desktop/home/NarratoAI/resource/songs/bgm.mp3'
+    # bgm_path = params.bgm_file
 
-    # 示例：自定义字幕样式
-    subtitle_style = {
-        'fontsize': params.font_size,  # 字体大小
-        'color': params.text_fore_color,  # 字体颜色
-        'stroke_color': params.stroke_color,  # 描边颜色
-        'stroke_width': params.stroke_width,  # 描边宽度, 范围0-10
-        'bg_color': params.text_back_color,   # 半透明黑色背景
-        'position': (params.subtitle_position, 0.2),  # 距离顶部60%的位置
-        'method': 'caption'  # 渲染方法
+    # 调用示例
+    options = {
+        'voice_volume': params.tts_volume,  # 配音音量
+        'bgm_volume': params.bgm_volume,  # 背景音乐音量
+        'original_audio_volume': params.original_volume,  # 视频原声音量，0表示不保留
+        'keep_original_audio': True,  # 是否保留原声
+        'subtitle_font': 'MicrosoftYaHeiNormal.ttc',  # 这里使用相对字体路径，会自动在 font_dir() 目录下查找
+        'subtitle_font_size': params.font_size,
+        'subtitle_color': '#FFFFFF',
+        'subtitle_bg_color': None,  # 直接使用None表示透明背景
+        'subtitle_position': params.subtitle_position,
+        'threads': params.n_threads
     }
-
-    # 示例：自定义音量配置
-    volume_config = {
-        'original': params.original_volume,  # 原声音量80%
-        'bgm': params.bgm_volume,  # BGM音量20%
-        'narration': params.tts_volume or params.voice_volume,  # 解说音量100%
-    }
-    font_path = utils.font_dir(params.font_name)
-    video.generate_video_v3(
+    generate_video.merge_materials(
         video_path=combined_video_path,
+        audio_path=merged_audio_path,
         subtitle_path=merged_subtitle_path,
         bgm_path=bgm_path,
-        narration_path=merged_audio_path,
-        output_path=final_video_path,
-        volume_config=volume_config,  # 添加音量配置
-        subtitle_style=subtitle_style,
-        font_path=font_path
+        output_path=output_video_path,
+        options=options
     )
 
-    final_video_paths.append(final_video_path)
+    final_video_paths.append(output_video_path)
     combined_video_paths.append(combined_video_path)
 
     logger.success(f"任务 {task_id} 已完成, 生成 {len(final_video_paths)} 个视频.")

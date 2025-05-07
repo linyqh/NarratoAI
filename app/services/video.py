@@ -4,10 +4,10 @@ import pysrt
 from typing import Optional
 from typing import List
 from loguru import logger
-from moviepy.editor import *
+from moviepy import *
 from PIL import ImageFont
 from contextlib import contextmanager
-from moviepy.editor import (
+from moviepy import (
     VideoFileClip,
     AudioFileClip,
     TextClip,
