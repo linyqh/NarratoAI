@@ -1,6 +1,6 @@
 import traceback
 
-import pysrt
+# import pysrt
 from typing import Optional
 from typing import List
 from loguru import logger

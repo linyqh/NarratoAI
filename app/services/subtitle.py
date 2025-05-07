@@ -4,7 +4,7 @@ import re
 import traceback
 from typing import Optional
 
-from faster_whisper import WhisperModel
+# from faster_whisper import WhisperModel
 from timeit import default_timer as timer
 from loguru import logger
 import google.generativeai as genai
@@ -45,12 +45,25 @@ def create(audio_file, subtitle_file: str = ""):
             )
             return None
 
-        # 尝试使用 CUDA，如果失败则回退到 CPU
+        # 首先使用CPU模式，不触发CUDA检查
+        use_cuda = False
         try:
-            import torch
-            if torch.cuda.is_available():
+            # 在函数中延迟导入torch，而不是在全局范围内
+            # 使用安全的方式检查CUDA可用性
+            def check_cuda_available():
                 try:
-                    logger.info(f"尝试使用 CUDA 加载模型: {model_path}")
+                    import torch
+                    return torch.cuda.is_available()
+                except (ImportError, RuntimeError) as e:
+                    logger.warning(f"检查CUDA可用性时出错: {e}")
+                    return False
+                
+            # 仅当明确需要时才检查CUDA
+            use_cuda = check_cuda_available()
+            
+            if use_cuda:
+                logger.info(f"尝试使用 CUDA 加载模型: {model_path}")
+                try:
                     model = WhisperModel(
                         model_size_or_path=model_path,
                         device="cuda",
@@ -63,18 +76,18 @@ def create(audio_file, subtitle_file: str = ""):
                 except Exception as e:
                     logger.warning(f"CUDA 加载失败，错误信息: {str(e)}")
                     logger.warning("回退到 CPU 模式")
-                    device = "cpu"
-                    compute_type = "int8"
+                    use_cuda = False
             else:
-                logger.info("未检测到 CUDA，使用 CPU 模式")
-                device = "cpu"
-                compute_type = "int8"
-        except ImportError:
-            logger.warning("未安装 torch，使用 CPU 模式")
+                logger.info("使用 CPU 模式")
+        except Exception as e:
+            logger.warning(f"CUDA检查过程出错: {e}")
+            logger.warning("默认使用CPU模式")
+            use_cuda = False
+
+        # 如果CUDA不可用或加载失败，使用CPU
+        if not use_cuda:
             device = "cpu"
             compute_type = "int8"
-
-        if device == "cpu":
             logger.info(f"使用 CPU 加载模型: {model_path}")
             model = WhisperModel(
                 model_size_or_path=model_path,

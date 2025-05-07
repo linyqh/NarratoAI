@@ -2,7 +2,7 @@
 合并视频和字幕文件
 """
 from moviepy import VideoFileClip, concatenate_videoclips
-import pysrt
+# import pysrt
 import os
 
 

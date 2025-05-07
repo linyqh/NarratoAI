@@ -5,6 +5,7 @@ import time
 import asyncio
 import traceback
 import requests
+from app.utils import video_processor
 import streamlit as st
 from loguru import logger
 from requests.adapters import HTTPAdapter
@@ -12,7 +13,7 @@ from urllib3.util.retry import Retry
 
 from app.config import config
 from app.utils.script_generator import ScriptProcessor
-from app.utils import utils, video_processor, video_processor_v2, qwenvl_analyzer
+from app.utils import utils, video_processor, qwenvl_analyzer
 from webui.tools.base import create_vision_analyzer, get_batch_files, get_batch_timestamps, chekc_video_config
 
 
@@ -64,21 +65,13 @@ def generate_script_docu(tr, params):
                     os.makedirs(video_keyframes_dir, exist_ok=True)
 
                     # 初始化视频处理器
-                    if config.frames.get("version") == "v2":
-                        processor = video_processor_v2.VideoProcessor(params.video_origin_path)
-                        # 处理视频并提取关键帧
-                        processor.process_video_pipeline(
-                            output_dir=video_keyframes_dir,
-                            skip_seconds=st.session_state.get('skip_seconds'),
-                            threshold=st.session_state.get('threshold')
-                        )
-                    else:
-                        processor = video_processor.VideoProcessor(params.video_origin_path)
-                        # 处理视频并提取关键帧
-                        processor.process_video(
-                            output_dir=video_keyframes_dir,
-                            skip_seconds=0
-                        )
+                    processor = video_processor.VideoProcessor(params.video_origin_path)
+                    # 处理视频并提取关键帧
+                    processor.process_video_pipeline(
+                        output_dir=video_keyframes_dir,
+                        skip_seconds=st.session_state.get('skip_seconds'),
+                        threshold=st.session_state.get('threshold')
+                    )
 
                     # 获取所有关键文件路径
                     for filename in sorted(os.listdir(video_keyframes_dir)):

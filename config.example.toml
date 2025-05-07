@@ -1,5 +1,5 @@
 [app]
-    project_version="0.5.3"
+    project_version="0.6.0"
     # 支持视频理解的大模型提供商
     #   gemini
     #   qwenvl

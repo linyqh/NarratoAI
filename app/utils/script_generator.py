@@ -2,7 +2,7 @@ import os
 import json
 import traceback
 from loguru import logger
-import tiktoken
+# import tiktoken
 from typing import List, Dict
 from datetime import datetime
 from openai import OpenAI
@@ -94,12 +94,12 @@ class OpenAIGenerator(BaseGenerator):
             "user": "script_generator"
         }
         
-        # 初始化token计数器
-        try:
-            self.encoding = tiktoken.encoding_for_model(self.model_name)
-        except KeyError:
-            logger.warning(f"未找到模型 {self.model_name} 的专用编码器，使用默认编码器")
-            self.encoding = tiktoken.get_encoding("cl100k_base")
+        # # 初始化token计数器
+        # try:
+        #     self.encoding = tiktoken.encoding_for_model(self.model_name)
+        # except KeyError:
+        #     logger.warning(f"未找到模型 {self.model_name} 的专用编码器，使用默认编码器")
+        #     self.encoding = tiktoken.get_encoding("cl100k_base")
 
     def _generate(self, messages: list, params: dict) -> any:
         """实现OpenAI特定的生成逻辑"""

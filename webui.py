@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 import sys
-from uuid import uuid4
+from loguru import logger
 from app.config import config
 from webui.components import basic_settings, video_settings, audio_settings, subtitle_settings, script_settings, \
     review_settings, merge_settings, system_settings
@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="auto",
     menu_items={
         "Report a bug": "https://github.com/linyqh/NarratoAI/issues",
-        'About': f"# NarratoAI:sunglasses: 📽️ \n #### Version: v{config.project_version} \n "
+        'About': f"# Narrato:blue[AI] :sunglasses: 📽️ \n #### Version: v{config.project_version} \n "
                  f"自动化影视解说视频详情请移步：https://github.com/linyqh/NarratoAI"
     },
 )
@@ -37,17 +37,7 @@ def init_log():
     _lvl = "DEBUG"
 
     def format_record(record):
-        # 增加更多需要过滤的警告消息
-        ignore_messages = [
-            "Examining the path of torch.classes raised",
-            "torch.cuda.is_available()",
-            "CUDA initialization"
-        ]
-
-        for msg in ignore_messages:
-            if msg in record["message"]:
-                return ""
-
+        # 简化日志格式化处理，不尝试按特定字符串过滤torch相关内容
         file_path = record["file"].path
         relative_path = os.path.relpath(file_path, config.root_dir)
         record["file"].path = f"./{relative_path}"
@@ -59,22 +49,52 @@ def init_log():
                   '- <level>{message}</>' + "\n"
         return _format
 
-    # 优化日志过滤器
-    def log_filter(record):
-        ignore_messages = [
-            "Examining the path of torch.classes raised",
-            "torch.cuda.is_available()",
-            "CUDA initialization"
-        ]
-        return not any(msg in record["message"] for msg in ignore_messages)
-
+    # 替换为更简单的过滤方式，避免在过滤时访问message内容
+    # 此处先不设置复杂的过滤器，等应用启动后再动态添加
     logger.add(
         sys.stdout,
         level=_lvl,
         format=format_record,
-        colorize=True,
-        filter=log_filter
+        colorize=True
     )
+
+    # 应用启动后，可以再添加更复杂的过滤器
+    def setup_advanced_filters():
+        """在应用完全启动后设置高级过滤器"""
+        try:
+            for handler_id in logger._core.handlers:
+                logger.remove(handler_id)
+                
+            # 重新添加带有高级过滤的处理器
+            def advanced_filter(record):
+                """更复杂的过滤器，在应用启动后安全使用"""
+                ignore_messages = [
+                    "Examining the path of torch.classes raised",
+                    "torch.cuda.is_available()",
+                    "CUDA initialization"
+                ]
+                return not any(msg in record["message"] for msg in ignore_messages)
+                
+            logger.add(
+                sys.stdout,
+                level=_lvl,
+                format=format_record,
+                colorize=True,
+                filter=advanced_filter
+            )
+        except Exception as e:
+            # 如果过滤器设置失败，确保日志仍然可用
+            logger.add(
+                sys.stdout,
+                level=_lvl,
+                format=format_record,
+                colorize=True
+            )
+            logger.error(f"设置高级日志过滤器失败: {e}")
+    
+    # 将高级过滤器设置放到启动主逻辑后
+    import threading
+    threading.Timer(5.0, setup_advanced_filters).start()
 
 
 def init_global_state():
@@ -177,11 +197,18 @@ def main():
     """主函数"""
     init_log()
     init_global_state()
-    utils.init_resources()
+    
+    # 仅初始化基本资源，避免过早地加载依赖PyTorch的资源
+    # 检查是否能分解utils.init_resources()为基本资源和高级资源(如依赖PyTorch的资源)
+    try:
+        utils.init_resources()
+    except Exception as e:
+        logger.warning(f"资源初始化时出现警告: {e}")
 
-    st.title(f"NarratoAI :sunglasses:📽️")
+    st.title(f"Narrato:blue[AI]:sunglasses: 📽️")
     st.write(tr("Get Help"))
 
+    # 首先渲染不依赖PyTorch的UI部分
     # 渲染基础设置面板
     basic_settings.render_basic_settings(tr)
     # 渲染合并设置
@@ -196,13 +223,16 @@ def main():
         audio_settings.render_audio_panel(tr)
     with panel[2]:
         subtitle_settings.render_subtitle_panel(tr)
-        # 渲染系统设置面板
-        system_settings.render_system_panel(tr)
-
+    
     # 渲染视频审查面板
     review_settings.render_review_panel(tr)
-
-    # 渲染生成按钮和处理逻辑
+    
+    # 放到最后渲染可能使用PyTorch的部分
+    # 渲染系统设置面板
+    with panel[2]:
+        system_settings.render_system_panel(tr)
+        
+    # 放到最后渲染生成按钮和处理逻辑
     render_generate_button()
 
 
