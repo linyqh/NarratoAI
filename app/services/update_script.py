@@ -122,14 +122,15 @@ def update_script_timestamps(
         # 更新时间戳和计算持续时间
         if item_id and item_id in id_timestamp_mapping:
             # 根据ID找到对应的新时间戳
-            item_copy['timestamp'] = id_timestamp_mapping[item_id]['new_timestamp']
-            item_copy['duration'] = calculate_duration(item_copy['timestamp'])
+            item_copy['sourceTimeRange'] = id_timestamp_mapping[item_id]['new_timestamp']
+            item_copy['duration'] = calculate_duration(item_copy['sourceTimeRange'])
         elif orig_timestamp in id_timestamp_mapping:
             # 根据原始时间戳找到对应的新时间戳
-            item_copy['timestamp'] = id_timestamp_mapping[orig_timestamp]['new_timestamp']
-            item_copy['duration'] = calculate_duration(item_copy['timestamp'])
+            item_copy['sourceTimeRange'] = id_timestamp_mapping[orig_timestamp]['new_timestamp']
+            item_copy['duration'] = calculate_duration(item_copy['sourceTimeRange'])
         elif orig_timestamp:
             # 对于未更新的时间戳，也计算并添加持续时间
+            item_copy['sourceTimeRange'] = orig_timestamp
             item_copy['duration'] = calculate_duration(orig_timestamp)
 
         updated_script.append(item_copy)
@@ -201,4 +202,4 @@ if __name__ == '__main__':
     updated_list_script = update_script_timestamps(list_script, video_res, audio_res, sub_res)
     for item in updated_list_script:
         print(
-            f"ID: {item['_id']} | Picture: {item['picture'][:20]}... | Timestamp: {item['timestamp']} | Duration: {item['duration']} 秒 | Audio: {item['audio']} | Subtitle: {item['subtitle']}")
+            f"ID: {item['_id']} | Picture: {item['picture'][:20]}... | Timestamp: {item['timestamp']} | SourceTimeRange: {item['sourceTimeRange']} | Duration: {item['duration']} 秒 | Audio: {item['audio']} | Subtitle: {item['subtitle']}")
