@@ -377,20 +377,18 @@ def validate_params(video_path, audio_path, output_file, params):
 
 
 if __name__ == "__main__":
-    task_id = "qyn2-2-demo"
+    task_id = "demo"
 
     # 提前裁剪是为了方便检查视频
     subclip_path_videos = {
-        1: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-00-00-00-01-15.mp4',
-        2: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-01-15-00-04-40.mp4',
-        3: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-04-41-00-04-58.mp4',
-        4: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-04-58-00-05-45.mp4',
-        5: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-05-45-00-06-00.mp4',
-        6: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-06-00-00-06-03.mp4',
+        1: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/588c37cba4e2e62714c24c4c9054fc51/vid-00-00-00_000-00-00-27_000.mp4',
+        2: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/588c37cba4e2e62714c24c4c9054fc51/vid-00-00-30_000-00-00-57_000.mp4',
+        3: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/588c37cba4e2e62714c24c4c9054fc51/vid-00-01-00_000-00-01-27_000.mp4',
+        4: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/588c37cba4e2e62714c24c4c9054fc51/vid-00-01-30_000-00-01-57_000.mp4',
     }
 
     params = VideoClipParams(
-        video_clip_json_path="/Users/apple/Desktop/home/NarratoAI/resource/scripts/demo.json",
-        video_origin_path="/Users/apple/Desktop/home/NarratoAI/resource/videos/qyn2-2无片头片尾.mp4",
+        video_clip_json_path="/Users/apple/Desktop/home/NarratoAI/resource/scripts/2025-0507-185159.json",
+        video_origin_path="/Users/apple/Desktop/home/NarratoAI/resource/videos/test.mp4",
     )
     start_subclip(task_id, params, subclip_path_videos)

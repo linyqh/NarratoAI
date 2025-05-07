@@ -21,16 +21,25 @@ def extract_timestamp_from_video_path(video_path: str) -> str:
         video_path: 视频文件路径
     
     Returns:
-        提取出的时间戳，格式为 'HH:MM:SS-HH:MM:SS'
+        提取出的时间戳，格式为 'HH:MM:SS-HH:MM:SS' 或 'HH:MM:SS,sss-HH:MM:SS,sss'
     """
     # 使用正则表达式从文件名中提取时间戳
     filename = os.path.basename(video_path)
-    match = re.search(r'vid-(\d{2}-\d{2}-\d{2})-(\d{2}-\d{2}-\d{2})\.mp4', filename)
-
-    if match:
+    
+    # 匹配新格式: vid_00-00-00-000@00-00-20-250.mp4
+    match_new = re.search(r'vid_(\d{2})-(\d{2})-(\d{2})-(\d{3})@(\d{2})-(\d{2})-(\d{2})-(\d{3})\.mp4', filename)
+    if match_new:
+        # 提取并格式化时间戳（包含毫秒）
+        start_h, start_m, start_s, start_ms = match_new.group(1), match_new.group(2), match_new.group(3), match_new.group(4)
+        end_h, end_m, end_s, end_ms = match_new.group(5), match_new.group(6), match_new.group(7), match_new.group(8)
+        return f"{start_h}:{start_m}:{start_s},{start_ms}-{end_h}:{end_m}:{end_s},{end_ms}"
+    
+    # 匹配旧格式: vid-00-00-00-00-00-00.mp4
+    match_old = re.search(r'vid-(\d{2}-\d{2}-\d{2})-(\d{2}-\d{2}-\d{2})\.mp4', filename)
+    if match_old:
         # 提取并格式化时间戳
-        start_time = match.group(1).replace('-', ':')
-        end_time = match.group(2).replace('-', ':')
+        start_time = match_old.group(1).replace('-', ':')
+        end_time = match_old.group(2).replace('-', ':')
         return f"{start_time}-{end_time}"
 
     return ""
@@ -41,7 +50,7 @@ def calculate_duration(timestamp: str) -> float:
     计算时间戳范围的持续时间（秒）
     
     Args:
-        timestamp: 格式为 'HH:MM:SS-HH:MM:SS' 的时间戳
+        timestamp: 格式为 'HH:MM:SS-HH:MM:SS' 或 'HH:MM:SS,sss-HH:MM:SS,sss' 的时间戳
     
     Returns:
         持续时间（秒）
@@ -49,13 +58,28 @@ def calculate_duration(timestamp: str) -> float:
     try:
         start_time, end_time = timestamp.split('-')
 
-        # 解析时间
-        start_h, start_m, start_s = map(int, start_time.split(':'))
-        end_h, end_m, end_s = map(int, end_time.split(':'))
+        # 处理毫秒部分
+        if ',' in start_time:
+            start_parts = start_time.split(',')
+            start_time_parts = start_parts[0].split(':')
+            start_ms = float('0.' + start_parts[1]) if len(start_parts) > 1 else 0
+            start_h, start_m, start_s = map(int, start_time_parts)
+        else:
+            start_h, start_m, start_s = map(int, start_time.split(':'))
+            start_ms = 0
+
+        if ',' in end_time:
+            end_parts = end_time.split(',')
+            end_time_parts = end_parts[0].split(':')
+            end_ms = float('0.' + end_parts[1]) if len(end_parts) > 1 else 0
+            end_h, end_m, end_s = map(int, end_time_parts)
+        else:
+            end_h, end_m, end_s = map(int, end_time.split(':'))
+            end_ms = 0
 
         # 转换为秒
-        start_seconds = start_h * 3600 + start_m * 60 + start_s
-        end_seconds = end_h * 3600 + end_m * 60 + end_s
+        start_seconds = start_h * 3600 + start_m * 60 + start_s + start_ms
+        end_seconds = end_h * 3600 + end_m * 60 + end_s + end_ms
 
         # 计算时间差（秒）
         return round(end_seconds - start_seconds, 2)
@@ -177,51 +201,51 @@ if __name__ == '__main__':
     list_script = [
         {
             'picture': '【解说】好的，各位，欢迎回到我的频道！《庆余年 2》刚开播就给了我们一个王炸！范闲在北齐"死"了？这怎么可能！',
-            'timestamp': '00:00:00-00:01:15',
+            'timestamp': '00:00:00,001-00:01:15,001',
             'narration': '好的各位，欢迎回到我的频道！《庆余年 2》刚开播就给了我们一个王炸！范闲在北齐"死"了？这怎么可能！上集片尾那个巨大的悬念，这一集就立刻揭晓了！范闲假死归来，他面临的第一个，也是最大的难关，就是如何面对他最敬爱的，同时也是最可怕的那个人——庆帝！',
             'OST': 0,
             '_id': 1
         },
         {
             'picture': '【解说】上一集我们看到，范闲在北齐遭遇了惊天变故，生死不明！',
-            'timestamp': '00:01:15-00:04:40',
+            'timestamp': '00:01:15,001-00:04:40,001',
             'narration': '但我们都知道，他绝不可能就这么轻易退场！第二集一开场，范闲就已经秘密回到了京都。他的生死传闻，可不像我们想象中那样只是小范围流传，而是…',
             'OST': 0,
             '_id': 2
         },
         {
             'picture': '画面切到王启年小心翼翼地向范闲汇报。',
-            'timestamp': '00:04:41-00:04:58',
+            'timestamp': '00:04:41,001-00:04:58,001',
             'narration': '我发现大人的死讯不光是在民间,在官场上也它传开了,所以呢,所以啊,可不是什么好事,将来您跟陛下怎么交代,这可是欺君之罪',
             'OST': 1,
             '_id': 3
         },
         {
             'picture': '【解说】"欺君之罪"！在封建王朝，这可是抄家灭族的大罪！搁一般人，肯定脚底抹油溜之大吉了。',
-            'timestamp': '00:04:58-00:05:45',
+            'timestamp': '00:04:58,001-00:05:45,001',
             'narration': '"欺君之罪"！在封建王朝，这可是抄家灭族的大罪！搁一般人，肯定脚底抹油溜之大吉了。但范闲是谁啊？他偏要反其道而行之！他竟然决定，直接去见庆帝！冒着天大的风险，用"假死"这个事实去赌庆帝的态度！',
             'OST': 0,
             '_id': 4
         },
         {
             'picture': '【解说】但想见庆帝，哪有那么容易？范闲艺高人胆大，竟然选择了最激进的方式——闯宫！',
-            'timestamp': '00:05:45-00:06:00',
+            'timestamp': '00:05:45,001-00:06:00,001',
             'narration': '但想见庆帝，哪有那么容易？范闲艺高人胆大，竟然选择了最激进的方式——闯宫！',
             'OST': 0,
             '_id': 5
         },
         {
             'picture': '画面切换到范闲蒙面闯入皇宫，被侍卫包围的场景。',
-            'timestamp': '00:06:00-00:06:03',
+            'timestamp': '00:06:00,001-00:06:03,001',
             'narration': '抓刺客',
             'OST': 1,
             '_id': 6
         }]
     video_res = {
-        1: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/2c0c2ae91b4f58596634a0b2f64d3eb0/vid-00-00-00-00-00-26.mp4',
-        2: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/2c0c2ae91b4f58596634a0b2f64d3eb0/vid-00-01-15-00-01-29.mp4',
-        4: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/2c0c2ae91b4f58596634a0b2f64d3eb0/vid-00-04-58-00-05-20.mp4',
-        5: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/2c0c2ae91b4f58596634a0b2f64d3eb0/vid-00-05-45-00-05-53.mp4'}
+        1: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/fc3db5844d1ba7d7d838be52c0dac1bd/vid_00-00-00-000@00-00-20-250.mp4',
+        2: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/fc3db5844d1ba7d7d838be52c0dac1bd/vid_00-00-30-000@00-00-48-950.mp4',
+        4: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/fc3db5844d1ba7d7d838be52c0dac1bd/vid_00-01-00-000@00-01-15-688.mp4',
+        5: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/fc3db5844d1ba7d7d838be52c0dac1bd/vid_00-01-30-000@00-01-49-512.mp4'}
     audio_res = {
         1: '/Users/apple/Desktop/home/NarratoAI/storage/tasks/qyn2-2-demo/audio_00_00_00-00_01_15.mp3',
         2: '/Users/apple/Desktop/home/NarratoAI/storage/tasks/qyn2-2-demo/audio_00_01_15-00_04_40.mp3',

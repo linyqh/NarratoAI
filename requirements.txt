@@ -6,6 +6,7 @@ streamlit~=1.45.0
 watchdog==6.0.0
 loguru~=0.7.3
 tomli~=2.2.1
+pydub==0.25.1
 
 openai~=1.77.0
 google-generativeai>=0.8.5

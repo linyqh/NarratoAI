@@ -22,10 +22,10 @@ def parse_timestamp(timestamp: str) -> tuple:
     解析时间戳字符串，返回开始和结束时间
     
     Args:
-        timestamp: 格式为'HH:MM:SS-HH:MM:SS'的时间戳字符串
+        timestamp: 格式为'HH:MM:SS-HH:MM:SS'或'HH:MM:SS,sss-HH:MM:SS,sss'的时间戳字符串
         
     Returns:
-        tuple: (开始时间, 结束时间) 格式为'HH:MM:SS'
+        tuple: (开始时间, 结束时间) 格式为'HH:MM:SS'或'HH:MM:SS,sss'
     """
     start_time, end_time = timestamp.split('-')
     return start_time, end_time
@@ -36,21 +36,40 @@ def calculate_end_time(start_time: str, duration: float, extra_seconds: float = 
     根据开始时间和持续时间计算结束时间
     
     Args:
-        start_time: 开始时间，格式为'HH:MM:SS'
+        start_time: 开始时间，格式为'HH:MM:SS'或'HH:MM:SS,sss'(带毫秒)
         duration: 持续时间，单位为秒
         extra_seconds: 额外添加的秒数，默认为1秒
         
     Returns:
-        str: 计算后的结束时间，格式为'HH:MM:SS'
+        str: 计算后的结束时间，格式与输入格式相同
     """
-    h, m, s = map(int, start_time.split(':'))
-    total_seconds = h * 3600 + m * 60 + s + duration + extra_seconds
-
+    # 检查是否包含毫秒
+    has_milliseconds = ',' in start_time
+    milliseconds = 0
+    
+    if has_milliseconds:
+        time_part, ms_part = start_time.split(',')
+        h, m, s = map(int, time_part.split(':'))
+        milliseconds = int(ms_part)
+    else:
+        h, m, s = map(int, start_time.split(':'))
+    
+    # 转换为总毫秒数
+    total_milliseconds = ((h * 3600 + m * 60 + s) * 1000 + milliseconds + 
+                          int((duration + extra_seconds) * 1000))
+    
+    # 计算新的时、分、秒、毫秒
+    ms_new = total_milliseconds % 1000
+    total_seconds = total_milliseconds // 1000
     h_new = int(total_seconds // 3600)
     m_new = int((total_seconds % 3600) // 60)
     s_new = int(total_seconds % 60)
-
-    return f"{h_new:02d}:{m_new:02d}:{s_new:02d}"
+    
+    # 返回与输入格式一致的时间字符串
+    if has_milliseconds:
+        return f"{h_new:02d}:{m_new:02d}:{s_new:02d},{ms_new:03d}"
+    else:
+        return f"{h_new:02d}:{m_new:02d}:{s_new:02d}"
 
 
 def check_hardware_acceleration() -> Optional[str]:
@@ -144,24 +163,30 @@ def clip_video(
     result = {}
 
     for item in tts_result:
-        _id = item["_id"]
+        _id = item.get("_id", item.get("timestamp", "unknown"))
         timestamp = item["timestamp"]
         start_time, _ = parse_timestamp(timestamp)
 
         # 根据持续时间计算真正的结束时间（加上1秒余量）
         duration = item["duration"]
         calculated_end_time = calculate_end_time(start_time, duration)
+        
+        # 转换为FFmpeg兼容的时间格式（逗号替换为点）
+        ffmpeg_start_time = start_time.replace(',', '.')
+        ffmpeg_end_time = calculated_end_time.replace(',', '.')
 
-        # 格式化输出文件名
-        output_filename = f"vid-{start_time.replace(':', '-')}-{calculated_end_time.replace(':', '-')}.mp4"
+        # 格式化输出文件名（使用连字符替代冒号和逗号）
+        safe_start_time = start_time.replace(':', '-').replace(',', '-')
+        safe_end_time = calculated_end_time.replace(':', '-').replace(',', '-')
+        output_filename = f"vid_{safe_start_time}@{safe_end_time}.mp4"
         output_path = os.path.join(output_dir, output_filename)
 
         # 构建FFmpeg命令
         ffmpeg_cmd = [
             "ffmpeg", "-y", *hwaccel_args,
             "-i", video_origin_path,
-            "-ss", start_time,
-            "-to", calculated_end_time,
+            "-ss", ffmpeg_start_time,
+            "-to", ffmpeg_end_time,
             "-c:v", "h264_videotoolbox" if hwaccel == "videotoolbox" else "libx264",
             "-c:a", "aac",
             "-strict", "experimental",
@@ -170,7 +195,7 @@ def clip_video(
 
         # 执行FFmpeg命令
         try:
-            logger.info(f"裁剪视频片段: {timestamp} -> {start_time}到{calculated_end_time}")
+            logger.info(f"裁剪视频片段: {timestamp} -> {ffmpeg_start_time}到{ffmpeg_end_time}")
             # logger.debug(f"执行命令: {' '.join(ffmpeg_cmd)}")
 
             process = subprocess.run(

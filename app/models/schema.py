@@ -368,7 +368,7 @@ class VideoClipParams(BaseModel):
 
     tts_volume: Optional[float] = Field(default=1.0, description="解说语音音量（后处理）")
     original_volume: Optional[float] = Field(default=1.0, description="视频原声音量")
-    bgm_volume: Optional[float] = Field(default=0.6, description="背景音乐音量")
+    bgm_volume: Optional[float] = Field(default=0.3, description="背景音乐音量")
 
 
 class VideoTranscriptionRequest(BaseModel):
