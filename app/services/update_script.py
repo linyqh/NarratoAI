@@ -67,7 +67,8 @@ def update_script_timestamps(
     script_list: List[Dict[str, Any]], 
     video_result: Dict[Union[str, int], str], 
     audio_result: Dict[Union[str, int], str] = None,
-    subtitle_result: Dict[Union[str, int], str] = None
+    subtitle_result: Dict[Union[str, int], str] = None,
+    calculate_edited_timerange: bool = True
 ) -> List[Dict[str, Any]]:
     """
     根据 video_result 中的视频文件更新 script_list 中的时间戳，添加持续时间，
@@ -78,6 +79,7 @@ def update_script_timestamps(
         video_result: 视频结果字典，键为原时间戳或_id，值为视频文件路径
         audio_result: 音频结果字典，键为原时间戳或_id，值为音频文件路径
         subtitle_result: 字幕结果字典，键为原时间戳或_id，值为字幕文件路径
+        calculate_edited_timerange: 是否计算并添加成品视频中的时间范围
     
     Returns:
         更新后的脚本列表
@@ -95,6 +97,9 @@ def update_script_timestamps(
                 'video_path': video_path
             }
 
+    # 计算累积时长，用于生成成品视频中的时间范围
+    accumulated_duration = 0.0
+    
     # 更新脚本中的时间戳
     for item in script_list:
         item_copy = item.copy()
@@ -120,18 +125,41 @@ def update_script_timestamps(
                 item_copy['subtitle'] = subtitle_result[orig_timestamp]
 
         # 更新时间戳和计算持续时间
+        current_duration = 0.0
         if item_id and item_id in id_timestamp_mapping:
             # 根据ID找到对应的新时间戳
             item_copy['sourceTimeRange'] = id_timestamp_mapping[item_id]['new_timestamp']
-            item_copy['duration'] = calculate_duration(item_copy['sourceTimeRange'])
+            current_duration = calculate_duration(item_copy['sourceTimeRange'])
+            item_copy['duration'] = current_duration
         elif orig_timestamp in id_timestamp_mapping:
             # 根据原始时间戳找到对应的新时间戳
             item_copy['sourceTimeRange'] = id_timestamp_mapping[orig_timestamp]['new_timestamp']
-            item_copy['duration'] = calculate_duration(item_copy['sourceTimeRange'])
+            current_duration = calculate_duration(item_copy['sourceTimeRange'])
+            item_copy['duration'] = current_duration
         elif orig_timestamp:
             # 对于未更新的时间戳，也计算并添加持续时间
             item_copy['sourceTimeRange'] = orig_timestamp
-            item_copy['duration'] = calculate_duration(orig_timestamp)
+            current_duration = calculate_duration(orig_timestamp)
+            item_copy['duration'] = current_duration
+            
+        # 计算片段在成品视频中的时间范围
+        if calculate_edited_timerange and current_duration > 0:
+            start_time_seconds = accumulated_duration
+            end_time_seconds = accumulated_duration + current_duration
+            
+            # 将秒数转换为 HH:MM:SS 格式
+            start_h = int(start_time_seconds // 3600)
+            start_m = int((start_time_seconds % 3600) // 60)
+            start_s = int(start_time_seconds % 60)
+            
+            end_h = int(end_time_seconds // 3600)
+            end_m = int((end_time_seconds % 3600) // 60)
+            end_s = int(end_time_seconds % 60)
+            
+            item_copy['editedTimeRange'] = f"{start_h:02d}:{start_m:02d}:{start_s:02d}-{end_h:02d}:{end_m:02d}:{end_s:02d}"
+            
+            # 更新累积时长
+            accumulated_duration = end_time_seconds
 
         updated_script.append(item_copy)
 
@@ -202,4 +230,6 @@ if __name__ == '__main__':
     updated_list_script = update_script_timestamps(list_script, video_res, audio_res, sub_res)
     for item in updated_list_script:
         print(
-            f"ID: {item['_id']} | Picture: {item['picture'][:20]}... | Timestamp: {item['timestamp']} | SourceTimeRange: {item['sourceTimeRange']} | Duration: {item['duration']} 秒 | Audio: {item['audio']} | Subtitle: {item['subtitle']}")
+            f"ID: {item['_id']} | Picture: {item['picture'][:20]}... | Timestamp: {item['timestamp']} | " +
+            f"SourceTimeRange: {item['sourceTimeRange']} | EditedTimeRange: {item.get('editedTimeRange', '')} | " +
+            f"Duration: {item['duration']} 秒 | Audio: {item['audio']} | Subtitle: {item['subtitle']}")
