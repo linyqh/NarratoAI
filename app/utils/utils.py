@@ -506,7 +506,7 @@ def cut_video(params, progress_callback=None):
         st.session_state['subclip_videos'] = subclip_videos
         for i, video_script in enumerate(video_script_list):
             try:
-                video_script['path'] = subclip_videos[video_script['timestamp']]
+                video_script['path'] = subclip_videos[i+1]
             except KeyError as err:
                 logger.error(f"裁剪视频失败: {err}")
 

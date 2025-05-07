@@ -446,7 +446,7 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> st
         ]
         
         # 执行FFmpeg命令
-        logger.info(f"裁剪视频片段: {timestamp} -> {ffmpeg_start_time}到{ffmpeg_end_time}")
+        # logger.info(f"裁剪视频片段: {timestamp} -> {ffmpeg_start_time}到{ffmpeg_end_time}")
         # logger.debug(f"执行命令: {' '.join(ffmpeg_cmd)}")
         
         process = subprocess.run(
@@ -478,7 +478,7 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> st
         if os.path.exists(video_path):
             os.remove(video_path)
         return ''
-                
+
     except Exception as e:
         logger.error(f"视频剪辑过程中发生错误: \n{str(traceback.format_exc())}")
         if os.path.exists(video_path):
@@ -505,7 +505,6 @@ def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, pro
         try:
             saved_video_path = save_clip_video(timestamp=item, origin_video=origin_video, save_dir=material_directory)
             if saved_video_path:
-                logger.info(f"video saved: {saved_video_path}")
                 video_paths.update({index+1:saved_video_path})
             
             # 更新进度
@@ -516,6 +515,7 @@ def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, pro
             return {}
             
     logger.success(f"裁剪 {len(video_paths)} videos")
+    # logger.debug(json.dumps(video_paths, indent=4, ensure_ascii=False))
     return video_paths
 
 

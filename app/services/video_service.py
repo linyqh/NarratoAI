@@ -4,8 +4,6 @@ from loguru import logger
 from typing import Dict, List, Optional, Tuple
 
 from app.services import material
-from app.models.schema import VideoClipParams
-from app.utils import utils
 
 
 class VideoService:

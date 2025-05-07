@@ -1197,11 +1197,14 @@ def azure_tts_v2(text: str, voice_name: str, voice_file: str) -> Union[SubMaker,
 
 
 def _format_text(text: str) -> str:
-    # text = text.replace("\n", " ")
+    text = text.replace("\n", " ")
+    text = text.replace("\"", " ")
     text = text.replace("[", " ")
     text = text.replace("]", " ")
     text = text.replace("(", " ")
     text = text.replace(")", " ")
+    text = text.replace("）", " ")
+    text = text.replace("（", " ")
     text = text.replace("{", " ")
     text = text.replace("}", " ")
     text = text.strip()
@@ -1394,8 +1397,10 @@ def create_subtitle(sub_maker: submaker.SubMaker, text: str, subtitle_file: str)
                 logger.error(f"failed, error: {str(e)}")
                 os.remove(subtitle_file)
         else:
-            logger.warning(
+            logger.error(
                 f"字幕创建失败, 字幕长度: {len(sub_items)}, script_lines len: {len(script_lines)}"
+                f"\nsub_items:{json.dumps(sub_items, indent=4, ensure_ascii=False)}"
+                f"\nscript_lines:{json.dumps(script_lines, indent=4, ensure_ascii=False)}"
             )
 
     except Exception as e:
