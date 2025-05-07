@@ -166,6 +166,8 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         params: 视频参数
         subclip_path_videos: 视频片段路径
     """
+    global merged_audio_path, merged_subtitle_path
+
     logger.info(f"\n\n## 开始任务: {task_id}")
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=0)
 
@@ -259,7 +261,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     """
     logger.info("\n\n## 4. 合并音频和字幕")
     total_duration = sum([script["duration"] for script in new_script_list])
-    if tts_results:
+    if tts_segments:
         try:
             # 合并音频文件
             merged_audio_path = audio_merger.merge_audio_files(
@@ -273,11 +275,10 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
             logger.info(f"字幕文件合并成功->{merged_subtitle_path}")
         except Exception as e:
             logger.error(f"合并音频文件失败: {str(e)}")
-            merged_audio_path = ""
-            merged_subtitle_path = ""
     else:
-        logger.error("TTS转换音频失败, 可能是网络不可用! 如果您在中国, 请使用VPN.")
-        return
+        logger.warning("没有需要合并的音频/字幕")
+        merged_audio_path = ""
+        merged_subtitle_path = ""
 
     """
     5. 合并视频
@@ -289,6 +290,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     logger.info(f"\n\n## 5. 合并视频: => {combined_video_path}")
     # 如果 new_script_list 中没有 video，则使用 subclip_path_videos 中的视频
     video_clips = [new_script['video'] if new_script.get('video') else subclip_path_videos.get(new_script.get('_id', '')) for new_script in new_script_list]
+
     merger_video.combine_clip_videos(
         output_video_path=combined_video_path,
         video_paths=video_clips,
@@ -381,14 +383,15 @@ if __name__ == "__main__":
 
     # 提前裁剪是为了方便检查视频
     subclip_path_videos = {
-        1: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/588c37cba4e2e62714c24c4c9054fc51/vid-00-00-00_000-00-00-27_000.mp4',
-        2: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/588c37cba4e2e62714c24c4c9054fc51/vid-00-00-30_000-00-00-57_000.mp4',
-        3: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/588c37cba4e2e62714c24c4c9054fc51/vid-00-01-00_000-00-01-27_000.mp4',
-        4: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/588c37cba4e2e62714c24c4c9054fc51/vid-00-01-30_000-00-01-57_000.mp4',
+        1: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/113343d127b5a09d0bf84b68bd1b3b97/vid_00-00-05-390@00-00-57-980.mp4',
+        2: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/113343d127b5a09d0bf84b68bd1b3b97/vid_00-00-28-900@00-00-43-700.mp4',
+        3: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/113343d127b5a09d0bf84b68bd1b3b97/vid_00-01-17-840@00-01-27-600.mp4',
+        4: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/113343d127b5a09d0bf84b68bd1b3b97/vid_00-02-35-460@00-02-52-380.mp4',
+        5: '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/113343d127b5a09d0bf84b68bd1b3b97/vid_00-06-59-520@00-07-29-500.mp4',
     }
 
     params = VideoClipParams(
-        video_clip_json_path="/Users/apple/Desktop/home/NarratoAI/resource/scripts/2025-0507-185159.json",
-        video_origin_path="/Users/apple/Desktop/home/NarratoAI/resource/videos/test.mp4",
+        video_clip_json_path="/Users/apple/Desktop/home/NarratoAI/resource/scripts/2025-0507-223311.json",
+        video_origin_path="/Users/apple/Desktop/home/NarratoAI/resource/videos/merged_video_4938.mp4",
     )
     start_subclip(task_id, params, subclip_path_videos)

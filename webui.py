@@ -8,7 +8,7 @@ from webui.components import basic_settings, video_settings, audio_settings, sub
 from webui.utils import cache, file_utils
 from app.utils import utils
 from app.models.schema import VideoClipParams, VideoAspect
-from webui.utils.performance import PerformanceMonitor
+
 
 # 初始化配置 - 必须是第一个 Streamlit 命令
 st.set_page_config(
@@ -186,9 +186,6 @@ def render_generate_button():
 
         file_utils.open_task_folder(config.root_dir, task_id)
         logger.info(tr("视频生成完成"))
-
-        # finally:
-        #     PerformanceMonitor.cleanup_resources()
 
 
 def main():

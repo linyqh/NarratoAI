@@ -7,7 +7,7 @@ from datetime import datetime
 import json
 
 import requests
-from typing import List
+from typing import List, Optional
 from loguru import logger
 from moviepy.video.io.VideoFileClip import VideoFileClip
 
@@ -307,7 +307,50 @@ def format_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d},{milliseconds:03d}"
 
 
-def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> dict:
+def _detect_hardware_acceleration() -> Optional[str]:
+    """
+    检测系统可用的硬件加速器
+    
+    Returns:
+        Optional[str]: 硬件加速参数，如果不支持则返回None
+    """
+    # 检查NVIDIA GPU支持
+    try:
+        nvidia_check = subprocess.run(
+            ["ffmpeg", "-hwaccel", "cuda", "-i", "/dev/null", "-f", "null", "-"],
+            stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+        )
+        if nvidia_check.returncode == 0:
+            return "cuda"
+    except Exception:
+        pass
+
+    # 检查MacOS videotoolbox支持
+    try:
+        videotoolbox_check = subprocess.run(
+            ["ffmpeg", "-hwaccel", "videotoolbox", "-i", "/dev/null", "-f", "null", "-"],
+            stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+        )
+        if videotoolbox_check.returncode == 0:
+            return "videotoolbox"
+    except Exception:
+        pass
+
+    # 检查Intel Quick Sync支持
+    try:
+        qsv_check = subprocess.run(
+            ["ffmpeg", "-hwaccel", "qsv", "-i", "/dev/null", "-f", "null", "-"],
+            stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+        )
+        if qsv_check.returncode == 0:
+            return "qsv"
+    except Exception:
+        pass
+
+    return None
+
+
+def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> str:
     """
     保存剪辑后的视频
     
@@ -329,20 +372,25 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    # 生成更规范的视频文件名
-    video_id = f"vid-{timestamp.replace(':', '-').replace(',', '_')}"
-    video_path = os.path.join(save_dir, f"{video_id}.mp4")
+    # 解析时间戳
+    start_str, end_str = timestamp.split('-')
+    
+    # 格式化输出文件名（使用连字符替代冒号和逗号）
+    safe_start_time = start_str.replace(':', '-').replace(',', '-')
+    safe_end_time = end_str.replace(':', '-').replace(',', '-')
+    output_filename = f"vid_{safe_start_time}@{safe_end_time}.mp4"
+    video_path = os.path.join(save_dir, output_filename)
 
     # 如果视频已存在，直接返回
     if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
         logger.info(f"视频已存在: {video_path}")
-        return {timestamp: video_path}
+        return video_path
 
     try:
         # 检查视频是否存在
         if not os.path.exists(origin_video):
             logger.error(f"源视频文件不存在: {origin_video}")
-            return {}
+            return ''
             
         # 获取视频总时长
         try:
@@ -351,17 +399,16 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
             total_duration = float(subprocess.check_output(probe_cmd).decode('utf-8').strip())
         except subprocess.CalledProcessError as e:
             logger.error(f"获取视频时长失败: {str(e)}")
-            return {}
+            return ''
         
-        # 解析时间戳
-        start_str, end_str = timestamp.split('-')
+        # 计算时间点
         start = time_to_seconds(start_str)
         end = time_to_seconds(end_str)
         
         # 验证时间段
         if start >= total_duration:
             logger.warning(f"起始时间 {format_timestamp(start)} ({start:.3f}秒) 超出视频总时长 {format_timestamp(total_duration)} ({total_duration:.3f}秒)")
-            return {}
+            return ''
             
         if end > total_duration:
             logger.warning(f"结束时间 {format_timestamp(end)} ({end:.3f}秒) 超出视频总时长 {format_timestamp(total_duration)} ({total_duration:.3f}秒)，将自动调整为视频结尾")
@@ -369,73 +416,38 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
             
         if end <= start:
             logger.warning(f"结束时间 {format_timestamp(end)} 必须大于起始时间 {format_timestamp(start)}")
-            return {}
+            return ''
             
         # 计算剪辑时长
         duration = end - start
-        logger.info(f"开始剪辑视频: {format_timestamp(start)} - {format_timestamp(end)}，时长 {format_timestamp(duration)}")
+        # logger.info(f"开始剪辑视频: {format_timestamp(start)} - {format_timestamp(end)}，时长 {format_timestamp(duration)}")
         
         # 检测可用的硬件加速选项
         hwaccel = _detect_hardware_acceleration()
-        
-        # 构建ffmpeg命令
-        ffmpeg_cmd = ["ffmpeg", "-y"]
-        
-        # 添加硬件加速参数（如果可用）
+        hwaccel_args = []
         if hwaccel:
-            if hwaccel == "cuda":
-                ffmpeg_cmd.extend(["-hwaccel", "cuda"])
-            elif hwaccel == "videotoolbox":  # macOS
-                ffmpeg_cmd.extend(["-hwaccel", "videotoolbox"])
-            elif hwaccel == "qsv":  # Intel Quick Sync
-                ffmpeg_cmd.extend(["-hwaccel", "qsv"])
-            elif hwaccel == "vaapi":  # Linux VA-API
-                ffmpeg_cmd.extend(["-hwaccel", "vaapi", "-vaapi_device", "/dev/dri/renderD128"])
-            elif hwaccel == "dxva2":  # Windows DXVA2
-                ffmpeg_cmd.extend(["-hwaccel", "dxva2"])
+            hwaccel_args = ["-hwaccel", hwaccel]
             logger.info(f"使用硬件加速: {hwaccel}")
         
-        # 设置输入选项和精确剪辑时间范围
-        ffmpeg_cmd.extend([
-            "-ss", str(start),  # 从这个时间点开始
-            "-t", str(duration),  # 剪辑的持续时间
-            "-i", origin_video,  # 输入文件
-            "-map_metadata", "-1"  # 移除元数据
-        ])
+        # 转换为FFmpeg兼容的时间格式（逗号替换为点）
+        ffmpeg_start_time = start_str.replace(',', '.')
+        ffmpeg_end_time = end_str.replace(',', '.')
         
-        # 设置视频编码参数
-        if hwaccel == "cuda":
-            ffmpeg_cmd.extend(["-c:v", "h264_nvenc", "-preset", "p4", "-profile:v", "high"])
-        elif hwaccel == "videotoolbox":
-            ffmpeg_cmd.extend(["-c:v", "h264_videotoolbox", "-profile:v", "high"])
-        elif hwaccel == "qsv":
-            ffmpeg_cmd.extend(["-c:v", "h264_qsv", "-preset", "medium"])
-        elif hwaccel == "vaapi":
-            ffmpeg_cmd.extend(["-c:v", "h264_vaapi", "-profile", "high"])
-        else:
-            ffmpeg_cmd.extend(["-c:v", "libx264", "-preset", "medium", "-profile:v", "high"])
-            
-        # 音频编码参数（检查是否有音频流）
-        audio_check_cmd = ["ffprobe", "-i", origin_video, "-show_streams", "-select_streams", "a", 
-                           "-loglevel", "error", "-print_format", "json"]
-        audio_result = subprocess.run(audio_check_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        audio_info = json.loads(audio_result.stdout) if audio_result.stdout else {"streams": []}
-        has_audio = len(audio_info.get("streams", [])) > 0
+        # 构建FFmpeg命令
+        ffmpeg_cmd = [
+            "ffmpeg", "-y", *hwaccel_args,
+            "-i", origin_video,
+            "-ss", ffmpeg_start_time,
+            "-to", ffmpeg_end_time,
+            "-c:v", "h264_videotoolbox" if hwaccel == "videotoolbox" else "libx264",
+            "-c:a", "aac",
+            "-strict", "experimental",
+            video_path
+        ]
         
-        if has_audio:
-            ffmpeg_cmd.extend(["-c:a", "aac", "-b:a", "128k"])
-        else:
-            ffmpeg_cmd.extend(["-an"])  # 没有音频
-            
-        # 设置输出视频参数
-        ffmpeg_cmd.extend([
-            "-pix_fmt", "yuv420p",  # 兼容性更好的颜色格式
-            "-movflags", "+faststart",  # 优化MP4文件结构以便快速开始播放
-            video_path  # 输出文件
-        ])
-        
-        # 执行ffmpeg命令
-        logger.debug(f"执行命令: {' '.join(ffmpeg_cmd)}")
+        # 执行FFmpeg命令
+        logger.info(f"裁剪视频片段: {timestamp} -> {ffmpeg_start_time}到{ffmpeg_end_time}")
+        # logger.debug(f"执行命令: {' '.join(ffmpeg_cmd)}")
         
         process = subprocess.run(
             ffmpeg_cmd, 
@@ -450,7 +462,7 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
             logger.error(f"视频剪辑失败: {process.stderr}")
             if os.path.exists(video_path):
                 os.remove(video_path)
-            return {}
+            return ''
         
         # 验证生成的视频文件
         if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
@@ -460,68 +472,18 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> di
             
             if validate_result.returncode == 0:
                 logger.info(f"视频剪辑成功: {video_path}")
-                return {timestamp: video_path}
+                return video_path
                 
         logger.error("视频文件验证失败")
         if os.path.exists(video_path):
             os.remove(video_path)
-        return {}
+        return ''
                 
     except Exception as e:
         logger.error(f"视频剪辑过程中发生错误: \n{str(traceback.format_exc())}")
         if os.path.exists(video_path):
             os.remove(video_path)
-        return {}
-    
-    return {}
-
-
-def _detect_hardware_acceleration() -> str:
-    """
-    检测系统可用的硬件加速器
-    
-    Returns:
-        str: 可用的硬件加速类型，如果没有找到返回空字符串
-    """
-    import platform
-    system = platform.system().lower()
-    
-    # 测试常见的硬件加速类型
-    acceleration_types = []
-    
-    if system == 'darwin':  # macOS
-        acceleration_types = ["videotoolbox"]
-    elif system == 'linux':
-        acceleration_types = ["vaapi", "cuda", "nvenc"]
-    elif system == 'windows':
-        acceleration_types = ["cuda", "nvenc", "dxva2", "qsv"]
-    
-    for accel in acceleration_types:
-        test_cmd = [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel", "error",
-            "-hwaccel", accel,
-            "-i", "/dev/null",  # 这不是实际文件，但是足以测试硬件加速器是否可用
-            "-f", "null",
-            "-"
-        ]
-        
-        try:
-            result = subprocess.run(test_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1)
-            # 某些硬件加速器会报错，但仍然可以使用，我们主要检查的是CUDA和类似的错误
-            stderr = result.stderr.decode('utf-8', errors='ignore')
-            if result.returncode == 0 or (
-                "No such file or directory" in stderr and 
-                not any(x in stderr for x in ["Invalid", "Error", "not supported"])
-            ):
-                logger.info(f"检测到可用的硬件加速器: {accel}")
-                return accel
-        except (subprocess.SubprocessError, OSError):
-            continue
-    
-    logger.info("未检测到可用的硬件加速器，将使用软件编码")
-    return ""
+        return ''
 
 
 def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, progress_callback=None) -> dict:
@@ -544,7 +506,7 @@ def clip_videos(task_id: str, timestamp_terms: List[str], origin_video: str, pro
             saved_video_path = save_clip_video(timestamp=item, origin_video=origin_video, save_dir=material_directory)
             if saved_video_path:
                 logger.info(f"video saved: {saved_video_path}")
-                video_paths.update(saved_video_path)
+                video_paths.update({index+1:saved_video_path})
             
             # 更新进度
             if progress_callback:

@@ -354,12 +354,11 @@ def crop_video(tr, params):
         utils.cut_video(params, update_progress)
         time.sleep(0.5)
         progress_bar.progress(100)
-        status_text.text("剪完成！")
         st.success("视频剪辑成功完成！")
     except Exception as e:
         st.error(f"剪辑过程中发生错误: {str(e)}")
     finally:
-        time.sleep(2)
+        time.sleep(1)
         progress_bar.empty()
         status_text.empty()
 
