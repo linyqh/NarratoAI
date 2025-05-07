@@ -69,7 +69,7 @@ def merge_audio_files(task_id: str, total_duration: float, list_script: list):
             continue
 
     # 保存合并后的音频文件
-    output_audio_path = os.path.join(utils.task_dir(task_id), "final_audio.mp3")
+    output_audio_path = os.path.join(utils.task_dir(task_id), "merger_audio.mp3")
     final_audio.export(output_audio_path, format="mp3")
     logger.info(f"合并后的音频文件已保存: {output_audio_path}")
 

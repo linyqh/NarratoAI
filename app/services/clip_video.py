@@ -144,6 +144,7 @@ def clip_video(
     result = {}
 
     for item in tts_result:
+        _id = item["_id"]
         timestamp = item["timestamp"]
         start_time, _ = parse_timestamp(timestamp)
 
@@ -180,7 +181,7 @@ def clip_video(
                 check=True
             )
 
-            result[timestamp] = output_path
+            result[_id] = output_path
 
         except subprocess.CalledProcessError as e:
             logger.error(f"裁剪视频片段失败: {timestamp}")

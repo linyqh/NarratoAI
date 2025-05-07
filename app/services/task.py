@@ -217,7 +217,6 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         voice_name=params.voice_name,
         voice_rate=params.voice_rate,
         voice_pitch=params.voice_pitch,
-        force_regenerate=True
     )
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=20)
@@ -245,12 +244,13 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     3. 裁剪视频 - 将超出音频长度的视频进行裁剪
     """
     logger.info("\n\n## 3. 裁剪视频")
-    clip_result = clip_video.clip_video(params.video_origin_path, tts_results)
-    subclip_path_videos.update(clip_result)
+    video_clip_result = clip_video.clip_video(params.video_origin_path, tts_results)
     # 更新 list_script 中的时间戳
-    tts_clip_result = {tts_result['timestamp']: tts_result['audio_file'] for tts_result in tts_results}
-    list_script = update_script.update_script_timestamps(list_script, clip_result, tts_clip_result)
-    subclip_videos = [x for x in subclip_path_videos.values()]
+    tts_clip_result = {tts_result['_id']: tts_result['audio_file'] for tts_result in tts_results}
+    subclip_clip_result = {
+        tts_result['_id']: tts_result['subtitle_file'] for tts_result in tts_results
+    }
+    list_script = update_script.update_script_timestamps(list_script, video_clip_result, tts_clip_result, subclip_clip_result)
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=60)
 
@@ -268,14 +268,14 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
             merged_audio_path = audio_merger.merge_audio_files(
                 task_id=task_id,
                 total_duration=total_duration,
-                list_script=list_script  # 传入完整脚本以便处理OST
+                list_script=list_script
             )
             logger.info(f"音频文件合并成功->{merged_audio_path}")
-            # 合并字幕文件
-            merged_subtitle_path = subtitle_merger.merge_subtitle_files(
-                subtitle_files=subtitle_files,
-            )
-            logger.info(f"字幕文件合并成功->{merged_subtitle_path}")
+            # # 合并字幕文件
+            # merged_subtitle_path = subtitle_merger.merge_subtitle_files(
+            #     subtitle_files=subtitle_files,
+            # )
+            # logger.info(f"字幕文件合并成功->{merged_subtitle_path}")
         except Exception as e:
             logger.error(f"合并音频文件失败: {str(e)}")
             merged_audio_path = ""
@@ -285,7 +285,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         return
 
     """
-    6. 合并视频
+    5. 合并视频
     """
     final_video_paths = []
     combined_video_paths = []

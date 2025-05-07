@@ -1411,7 +1411,7 @@ def get_audio_duration(sub_maker: submaker.SubMaker):
     return sub_maker.offset[-1][1] / 10000000
 
 
-def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: float, voice_pitch: float, force_regenerate: bool = True):
+def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: float, voice_pitch: float):
     """
     根据JSON文件中的多段文本进行TTS转换
     
@@ -1419,7 +1419,6 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
     :param list_script: 脚本列表
     :param voice_name: 语音名称
     :param voice_rate: 语音速率
-    :param force_regenerate: 是否强制重新生成已存在的音频文件
     :return: 生成的音频文件列表
     """
     voice_name = parse_voice_name(voice_name)
@@ -1427,22 +1426,11 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
     tts_results = []
 
     for item in list_script:
-        tts_item = {
-            "audio_file": "",
-            "subtitle_file": "",
-            "duration": 0,
-        }
         if item['OST'] != 1:
             # 将时间戳中的冒号替换为下划线
             timestamp = item['timestamp'].replace(':', '_')
             audio_file = os.path.join(output_dir, f"audio_{timestamp}.mp3")
             subtitle_file = os.path.join(output_dir, f"subtitle_{timestamp}.srt")
-            
-            # # 检查文件是否已存在，如存在且不强制重新生成，则跳过
-            # if os.path.exists(audio_file) and not force_regenerate:
-            #     logger.info(f"音频文件已存在，跳过生成: {audio_file}")
-            #     tts_item["audio_file"] = audio_file
-            #     continue
 
             text = item['narration']
 
@@ -1464,6 +1452,7 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                 _, duration = create_subtitle(sub_maker=sub_maker, text=text, subtitle_file=subtitle_file)
 
             tts_results.append({
+                "_id": item['_id'],
                 "timestamp": item['timestamp'],
                 "audio_file": audio_file,
                 "subtitle_file": subtitle_file,
