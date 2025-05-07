@@ -131,8 +131,18 @@ def create_ffmpeg_concat_file(video_paths: List[str], concat_file_path: str) -> 
     """
     with open(concat_file_path, 'w', encoding='utf-8') as f:
         for video_path in video_paths:
-            # 使用绝对路径并转义特殊字符
-            abs_path = os.path.abspath(video_path).replace('\\', '\\\\').replace(':', '\\:')
+            # 获取绝对路径
+            abs_path = os.path.abspath(video_path)
+            # 在Windows上将反斜杠替换为正斜杠
+            if os.name == 'nt':  # Windows系统
+                abs_path = abs_path.replace('\\', '/')
+            else:  # Unix/Mac系统
+                # 转义特殊字符
+                abs_path = abs_path.replace('\\', '\\\\').replace(':', '\\:')
+            
+            # 处理路径中的单引号 (如果有)
+            abs_path = abs_path.replace("'", "\\'")
+            
             f.write(f"file '{abs_path}'\n")
     return concat_file_path
 
