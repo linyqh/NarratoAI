@@ -109,6 +109,7 @@ def update_script_timestamps(
         # 初始化音频和字幕路径为空字符串
         item_copy['audio'] = ""
         item_copy['subtitle'] = ""
+        item_copy['video'] = ""  # 初始化视频路径为空字符串
 
         # 如果提供了音频结果字典且ID存在于音频结果中，直接使用对应的音频路径
         if audio_result:
@@ -123,6 +124,12 @@ def update_script_timestamps(
                 item_copy['subtitle'] = subtitle_result[item_id]
             elif orig_timestamp in subtitle_result:
                 item_copy['subtitle'] = subtitle_result[orig_timestamp]
+
+        # 添加视频路径
+        if item_id and item_id in video_result:
+            item_copy['video'] = video_result[item_id]
+        elif orig_timestamp in video_result:
+            item_copy['video'] = video_result[orig_timestamp]
 
         # 更新时间戳和计算持续时间
         current_duration = 0.0
@@ -232,4 +239,4 @@ if __name__ == '__main__':
         print(
             f"ID: {item['_id']} | Picture: {item['picture'][:20]}... | Timestamp: {item['timestamp']} | " +
             f"SourceTimeRange: {item['sourceTimeRange']} | EditedTimeRange: {item.get('editedTimeRange', '')} | " +
-            f"Duration: {item['duration']} 秒 | Audio: {item['audio']} | Subtitle: {item['subtitle']}")
+            f"Duration: {item['duration']} 秒 | Audio: {item['audio']} | Video: {item['video']} | Subtitle: {item['subtitle']}")
