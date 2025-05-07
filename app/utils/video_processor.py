@@ -84,7 +84,7 @@ class VideoProcessor:
             }
 
     def extract_frames_by_interval(self, output_dir: str, interval_seconds: float = 5.0, 
-                                  use_hw_accel: bool = True, skip_seconds: float = 0.0) -> List[int]:
+                                  use_hw_accel: bool = True) -> List[int]:
         """
         按指定时间间隔提取视频帧
 
@@ -92,7 +92,6 @@ class VideoProcessor:
             output_dir: 输出目录
             interval_seconds: 帧提取间隔（秒）
             use_hw_accel: 是否使用硬件加速
-            skip_seconds: 跳过视频开头的秒数
 
         Returns:
             List[int]: 提取的帧号列表
@@ -101,7 +100,7 @@ class VideoProcessor:
             os.makedirs(output_dir)
         
         # 计算起始时间和帧提取点
-        start_time = skip_seconds
+        start_time = 0
         end_time = self.duration
         extraction_times = []
         
@@ -291,7 +290,6 @@ class VideoProcessor:
 
     def process_video_pipeline(self,
                               output_dir: str,
-                              skip_seconds: float = 0.0,
                               interval_seconds: float = 5.0,  # 帧提取间隔（秒）
                               use_hw_accel: bool = True) -> None:
         """
@@ -299,7 +297,6 @@ class VideoProcessor:
         
         Args:
             output_dir: 输出目录
-            skip_seconds: 跳过视频开头的秒数
             interval_seconds: 帧提取间隔（秒）
             use_hw_accel: 是否使用硬件加速
         """
@@ -312,8 +309,7 @@ class VideoProcessor:
             self.extract_frames_by_interval(
                 output_dir,
                 interval_seconds=interval_seconds,
-                use_hw_accel=use_hw_accel,
-                skip_seconds=skip_seconds
+                use_hw_accel=use_hw_accel
             )
             
             logger.info(f"处理完成！视频帧已保存在: {output_dir}")

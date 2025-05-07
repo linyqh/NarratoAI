@@ -115,7 +115,6 @@
     "Text Generation Model Settings": "文案生成模型设置",
     "LLM Model Name": "大语言模型名称",
     "LLM Model API Key": "大语言模型 API 密钥",
-    "Batch Size": "批处理大小",
     "Text Model Provider": "文案生成模型提供商",
     "Text API Key": "文案生成 API 密钥",
     "Text Base URL": "文案生成接口地址",
@@ -194,6 +193,8 @@
     "Original Volume": "视频音量",
     "Auto Generate": "纪录片解说 (画面解说)",
     "Frame Interval (seconds)": "帧间隔 (秒)",
-    "Frame Interval (seconds) (More keyframes consume more tokens)": "帧间隔 (秒) (更多关键帧消耗更多令牌)"
+    "Frame Interval (seconds) (More keyframes consume more tokens)": "帧间隔 (秒) (更多关键帧消耗更多令牌)",
+    "Batch Size": "批处理大小",
+    "Batch Size (More keyframes consume more tokens)": "批处理大小, 每批处理越少消耗 token 越多"
   }
 }

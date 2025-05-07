@@ -4,7 +4,6 @@
     #   gemini
     #   qwenvl
     vision_llm_provider="qwenvl"
-    vision_analysis_prompt = "你是资深视频内容分析专家，擅长分析视频画面信息，分析下面视频画面内容，只输出客观的画面描述不要给任何总结或评价"
 
     ########## Vision Gemini API Key
     vision_gemini_api_key = ""
@@ -181,4 +180,4 @@
     threshold = 30
     version = "v2"
     # 大模型单次处理的关键帧数量
-    vision_batch_size = 5
+    vision_batch_size = 10

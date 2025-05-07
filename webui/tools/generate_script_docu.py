@@ -9,7 +9,6 @@ from app.utils import video_processor
 import streamlit as st
 from loguru import logger
 from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 from app.config import config
 from app.utils.script_generator import ScriptProcessor
@@ -38,8 +37,9 @@ def generate_script_docu(params):
             if not params.video_origin_path:
                 st.error("请先选择视频文件")
                 return
-
-            # ===================提取键帧===================
+            """
+            1. 提取键帧
+            """
             update_progress(10, "正在提取关键帧...")
 
             # 创建临时目录用于存储关键帧
@@ -95,9 +95,11 @@ def generate_script_docu(params):
 
                     raise Exception(f"关键帧提取失败: {str(e)}")
 
-            # 根据不同的 LLM 提供商处理
+            """
+            2. 视觉分析
+            """
             vision_llm_provider = st.session_state.get('vision_llm_providers').lower()
-            logger.debug(f"Vision LLM 提供商: {vision_llm_provider}")
+            logger.debug(f"VLM 视觉大模型提供商: {vision_llm_provider}")
 
             try:
                 # ===================初始化视觉分析器===================
@@ -131,10 +133,32 @@ def generate_script_docu(params):
 
                 # 执行异步分析
                 vision_batch_size = st.session_state.get('vision_batch_size') or config.frames.get("vision_batch_size")
+                vision_analysis_prompt = """
+我提供了 %s 张视频帧，它们按时间顺序排列，代表一个连续的视频片段。请仔细分析每一帧的内容，并关注帧与帧之间的变化，以理解整个片段的活动。
+
+首先，请详细描述每一帧的关键视觉信息（包含：主要内容、人物、动作和场景）。
+然后，基于所有帧的分析，请用**简洁的语言**总结整个视频片段中发生的主要活动或事件流程。
+
+请务必使用 JSON 格式输出你的结果。JSON 结构应如下：
+{
+  "frame_observations": [
+    {
+      "frame_number": 1, // 或其他标识帧的方式
+      "observation": "描述每张视频帧中的主要内容、人物、动作和场景。"
+    },
+    // ... 更多帧的观察 ...
+  ],
+  "overall_activity_summary": "在这里填写你总结的整个片段的主要活动，保持简洁。"
+}
+
+请务必不要遗漏视频帧，我提供了 %s 张视频帧，frame_observations 必须包含 %s 个元素
+
+请只返回 JSON 字符串，不要包含任何其他解释性文字。
+                """
                 results = loop.run_until_complete(
                     analyzer.analyze_images(
                         images=keyframe_files,
-                        prompt=config.app.get('vision_analysis_prompt'),
+                        prompt=vision_analysis_prompt,
                         batch_size=vision_batch_size
                     )
                 )

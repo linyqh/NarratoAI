@@ -220,9 +220,18 @@ def render_script_buttons(tr, params):
             st.number_input(
                 tr("Frame Interval (seconds)"),
                 min_value=0,
-                value=st.session_state.get('frame_interval_input', config.frames.get('frame_interval_input', 5)),
+                value=st.session_state.get('frame_interval_input', config.frames.get('frame_interval_input', 3)),
                 help=tr("Frame Interval (seconds) (More keyframes consume more tokens)"),
                 key="frame_interval_input"
+            )
+        
+        with input_cols[1]:
+            st.number_input(
+                tr("Batch Size"),
+                min_value=0,
+                value=st.session_state.get('vision_batch_size', config.frames.get('vision_batch_size', 10)),
+                help=tr("Batch Size (More keyframes consume more tokens)"),
+                key="vision_batch_size"
             )
 
     # 生成/加载按钮
