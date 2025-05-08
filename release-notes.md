@@ -2,6 +2,7 @@
 
 ## Latest Changes
 
+* Dev 0.6.0 . PR [#134](https://github.com/linyqh/NarratoAI/pull/134) by [@linyqh](https://github.com/linyqh).
 * Dev-0.3.9. PR [#73](https://github.com/linyqh/NarratoAI/pull/73) by [@linyqh](https://github.com/linyqh).
 * 0.3.9 版本发布. PR [#71](https://github.com/linyqh/NarratoAI/pull/71) by [@linyqh](https://github.com/linyqh).
 * docs: add Japanese README. PR [#66](https://github.com/linyqh/NarratoAI/pull/66) by [@eltociear](https://github.com/eltociear).
