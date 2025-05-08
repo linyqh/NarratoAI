@@ -376,7 +376,7 @@ def generate_script_docu(params):
             if script is None:
                 st.error("生成脚本失败，请检查日志")
                 st.stop()
-            logger.info(f"脚本生成完成")
+            logger.success(f"剪辑脚本生成完成")
             if isinstance(script, list):
                 st.session_state['video_clip_json'] = script
             elif isinstance(script, str):

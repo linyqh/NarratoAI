@@ -12,6 +12,7 @@ import json
 import os
 import traceback
 from openai import OpenAI
+from loguru import logger
 
 
 def parse_frame_analysis_to_markdown(json_file_path):
@@ -184,24 +185,45 @@ def generate_narration(markdown_content, api_key, base_url, model):
         )
         
         # 使用SDK发送请求
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "你是一名专业的视频解说文案撰写专家。"},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            response_format={"type": "json_object"},
-        )
-        
-        # 提取生成的文案
-        if response.choices and len(response.choices) > 0:
-            narration_script = response.choices[0].message.content
-            # 打印消耗的tokens
-            print(response.usage.total_tokens)
-            return narration_script
+        if model not in ["deepseek-reasoner"]:
+            # deepseek-reasoner 不支持 json 输出
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "你是一名专业的短视频解说文案撰写专家。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=1.5,
+                response_format={"type": "json_object"},
+            )
+            # 提取生成的文案
+            if response.choices and len(response.choices) > 0:
+                narration_script = response.choices[0].message.content
+                # 打印消耗的tokens
+                logger.debug(f"消耗的tokens: {response.usage.total_tokens}")
+                return narration_script
+            else:
+                return "生成解说文案失败: 未获取到有效响应"
         else:
-            return "生成解说文案失败: 未获取到有效响应"
+            # 不支持 json 输出，需要多一步处理 ```json ``` 的步骤
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "你是一名专业的短视频解说文案撰写专家。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=1.5,
+            )
+            # 提取生成的文案
+            if response.choices and len(response.choices) > 0:
+                narration_script = response.choices[0].message.content
+                # 打印消耗的tokens
+                logger.debug(f"文案消耗的tokens: {response.usage.total_tokens}")
+                # 清理 narration_script 字符串前后的 ```json ``` 字符串
+                narration_script = narration_script.replace("```json", "").replace("```", "")
+                return narration_script
+            else:
+                return "生成解说文案失败: 未获取到有效响应"
     
     except Exception as e:
         return f"调用API生成解说文案时出错: {traceback.format_exc()}"
@@ -209,9 +231,9 @@ def generate_narration(markdown_content, api_key, base_url, model):
 
 if __name__ == '__main__':
     text_provider = 'openai'
-    text_api_key = "sk-lyxttmuwgcmocfmupotkaenxnfofednrqappdrypwtrboang"
-    text_model = "deepseek-ai/DeepSeek-R1"
-    text_base_url = "https://api.siliconflow.cn/v1"
+    text_api_key = "sk-6f7bb9d1cbee4012921268ecfe733851"
+    text_model = "deepseek-reasoner"
+    text_base_url = "https://api.deepseek.com"
     video_frame_description_path = "/Users/apple/Desktop/home/NarratoAI/storage/temp/analysis/frame_analysis_20250508_1139.json"
 
     # 测试新的JSON文件
