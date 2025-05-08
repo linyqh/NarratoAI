@@ -4,7 +4,7 @@
 <h3 align="center">一站式 AI 影视解说+自动化剪辑工具🎬🎞️ </h3>
 
 
-<h3>📖 <a href="README-cn.md">English</a> | 简体中文 | <a href="README-ja.md">日本語</a> </h3>
+<h3>📖 <a href="README-en.md">English</a> | 简体中文 | <a href="README-ja.md">日本語</a> </h3>
 <div align="center">
 
 [//]: # (  <a href="https://trendshift.io/repositories/8731" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8731" alt="harry0703%2FNarratoAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>)
@@ -83,7 +83,7 @@ _**注意⚠️：近期在 x (推特) 上发现有人冒充作者在 pump.fun �
 ## 配置要求 📦
 
 - 建议最低 CPU 4核或以上，内存 8G 或以上，显卡非必须
-- Windows 10 或 MacOS 11.0 以上系统
+- Windows 10/11 或 MacOS 11.0 以上系统
 - [Python 3.10+](https://www.python.org/downloads/)
 
 ## 反馈建议 📢

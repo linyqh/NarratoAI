@@ -30,7 +30,7 @@ class QwenAnalyzer:
 
         self.model_name = model_name
         self.api_key = api_key
-        self.base_url = base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        self.base_url = base_url
 
         # 配置API客户端
         self._configure_client()
@@ -80,7 +80,7 @@ class QwenAnalyzer:
             # 添加文本提示
             content.append({
                 "type": "text",
-                "text": prompt
+                "text": prompt % (len(content), len(content), len(content))
             })
 
             # 调用API
@@ -102,7 +102,7 @@ class QwenAnalyzer:
     async def analyze_images(self,
                              images: Union[List[str], List[PIL.Image.Image]],
                              prompt: str,
-                             batch_size: int = 5) -> List[Dict]:
+                             batch_size: int) -> List[Dict]:
         """
         批量分析多张图片
         Args:
@@ -118,7 +118,6 @@ class QwenAnalyzer:
 
             # 加载图片
             if isinstance(images[0], str):
-                logger.info("正在加载图片...")
                 images = self.load_images(images)
 
             # 验证图片列表
@@ -141,9 +140,14 @@ class QwenAnalyzer:
 
             images = valid_images
             results = []
-            total_batches = (len(images) + batch_size - 1) // batch_size
+            # 视频帧总数除以批量处理大小，如果有小数则+1
+            batches_needed = len(images) // batch_size
+            if len(images) % batch_size > 0:
+                batches_needed += 1
+                
+            logger.debug(f"视频帧总数:{len(images)}, 每批处理 {batch_size} 帧, 需要访问 VLM {batches_needed} 次")
 
-            with tqdm(total=total_batches, desc="分析进度") as pbar:
+            with tqdm(total=batches_needed, desc="分析进度") as pbar:
                 for i in range(0, len(images), batch_size):
                     batch = images[i:i + batch_size]
                     batch_paths = valid_paths[i:i + batch_size] if valid_paths else None
@@ -151,9 +155,9 @@ class QwenAnalyzer:
 
                     while retry_count < 3:
                         try:
-                            # 在每个批次处理前��加小延迟
-                            if i > 0:
-                                await asyncio.sleep(2)
+                            # 在每个批次处理前添加小延迟
+                            # if i > 0:
+                            #     await asyncio.sleep(0.5)
 
                             # 确保每个批次的图片都是有效的
                             valid_batch = [img for img in batch if isinstance(img, PIL.Image.Image)]
@@ -209,7 +213,7 @@ class QwenAnalyzer:
         for i, result in enumerate(results):
             response_text = result['response']
 
-            # 如果有图片路径信息，���用它来生成文件名
+            # 如果有图片路径信息，用它来生成文件名
             if result.get('image_paths'):
                 image_paths = result['image_paths']
                 img_name_start = Path(image_paths[0]).stem.split('_')[-1]

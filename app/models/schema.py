@@ -20,7 +20,9 @@ class VideoConcatMode(str, Enum):
 
 class VideoAspect(str, Enum):
     landscape = "16:9"
+    landscape_2 = "4:3"
     portrait = "9:16"
+    portrait_2 = "3:4"
     square = "1:1"
 
     def to_resolution(self):
@@ -360,13 +362,14 @@ class VideoClipParams(BaseModel):
     text_back_color: Optional[str] = None       # 文本背景色
     stroke_color: str = "black"                 # 描边颜色
     stroke_width: float = 1.5                   # 描边宽度
-    subtitle_position: str = "bottom"  # top, bottom, center, custom
+    subtitle_position: str = "bottom"   # top, bottom, center, custom
+    custom_position: float = 70.0       # 自定义位置
 
-    n_threads: Optional[int] = Field(default=16, description="解说语音音量")    # 线程���，有助于提升视频处理速度
+    n_threads: Optional[int] = Field(default=16, description="线程数")    # 线程数，有助于提升视频处理速度
 
     tts_volume: Optional[float] = Field(default=1.0, description="解说语音音量（后处理）")
     original_volume: Optional[float] = Field(default=1.0, description="视频原声音量")
-    bgm_volume: Optional[float] = Field(default=0.6, description="背景音乐音量")
+    bgm_volume: Optional[float] = Field(default=0.3, description="背景音乐音量")
 
 
 class VideoTranscriptionRequest(BaseModel):

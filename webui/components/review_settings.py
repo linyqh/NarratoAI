@@ -33,7 +33,7 @@ def render_video_item(tr, video_list, subclip_videos, index):
     video_script = video_list[index]
 
     # 显示时间戳
-    timestamp = video_script.get('timestamp', '')
+    timestamp = video_script.get('_id', '')
     st.text_area(
         tr("Timestamp"),
         value=timestamp,

@@ -4,11 +4,11 @@ import re
 import traceback
 from typing import Optional
 
-from faster_whisper import WhisperModel
+# from faster_whisper import WhisperModel
 from timeit import default_timer as timer
 from loguru import logger
 import google.generativeai as genai
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 import os
 
 from app.config import config
@@ -33,7 +33,7 @@ def create(audio_file, subtitle_file: str = ""):
     """
     global model, device, compute_type
     if not model:
-        model_path = f"{utils.root_dir()}/app/models/faster-whisper-large-v2"
+        model_path = f"{utils.root_dir()}/app/models/faster-whisper-large-v3"
         model_bin_file = f"{model_path}/model.bin"
         if not os.path.isdir(model_path) or not os.path.isfile(model_bin_file):
             logger.error(
@@ -45,12 +45,25 @@ def create(audio_file, subtitle_file: str = ""):
             )
             return None
 
-        # 尝试使用 CUDA，如果失败则回退到 CPU
+        # 首先使用CPU模式，不触发CUDA检查
+        use_cuda = False
         try:
-            import torch
-            if torch.cuda.is_available():
+            # 在函数中延迟导入torch，而不是在全局范围内
+            # 使用安全的方式检查CUDA可用性
+            def check_cuda_available():
                 try:
-                    logger.info(f"尝试使用 CUDA 加载模型: {model_path}")
+                    import torch
+                    return torch.cuda.is_available()
+                except (ImportError, RuntimeError) as e:
+                    logger.warning(f"检查CUDA可用性时出错: {e}")
+                    return False
+                
+            # 仅当明确需要时才检查CUDA
+            use_cuda = check_cuda_available()
+            
+            if use_cuda:
+                logger.info(f"尝试使用 CUDA 加载模型: {model_path}")
+                try:
                     model = WhisperModel(
                         model_size_or_path=model_path,
                         device="cuda",
@@ -63,18 +76,18 @@ def create(audio_file, subtitle_file: str = ""):
                 except Exception as e:
                     logger.warning(f"CUDA 加载失败，错误信息: {str(e)}")
                     logger.warning("回退到 CPU 模式")
-                    device = "cpu"
-                    compute_type = "int8"
+                    use_cuda = False
             else:
-                logger.info("未检测到 CUDA，使用 CPU 模式")
-                device = "cpu"
-                compute_type = "int8"
-        except ImportError:
-            logger.warning("未安装 torch，使用 CPU 模式")
+                logger.info("使用 CPU 模式")
+        except Exception as e:
+            logger.warning(f"CUDA检查过程出错: {e}")
+            logger.warning("默认使用CPU模式")
+            use_cuda = False
+
+        # 如果CUDA不可用或加载失败，使用CPU
+        if not use_cuda:
             device = "cpu"
             compute_type = "int8"
-
-        if device == "cpu":
             logger.info(f"使用 CPU 加载模型: {model_path}")
             model = WhisperModel(
                 model_size_or_path=model_path,
@@ -403,7 +416,7 @@ def extract_audio_and_create_subtitle(video_file: str, subtitle_file: str = "") 
         logger.info("音频提取完成，开始生成字幕")
         
         # 使用create函数生成字幕
-        create(audio_file, subtitle_file)
+        create("/Users/apple/Desktop/WhisperX-zhuanlu/1_qyn2-2_Vocals.wav", subtitle_file)
         
         # 删除临时音频文件
         if os.path.exists(audio_file):
@@ -422,8 +435,8 @@ if __name__ == "__main__":
     task_id = "123456"
     task_dir = utils.task_dir(task_id)
     subtitle_file = f"{task_dir}/subtitle_123456.srt"
-    audio_file = f"{task_dir}/audio.wav"
-    video_file = "/Users/apple/Desktop/home/NarratoAI/resource/videos/merged_video_1702.mp4"
+    audio_file = "/Users/apple/Desktop/WhisperX-zhuanlu/1_qyn2-2_Vocals.wav"
+    video_file = "/Users/apple/Desktop/home/NarratoAI/storage/temp/merge/qyn2-2-720p.mp4"
 
     extract_audio_and_create_subtitle(video_file, subtitle_file)
 

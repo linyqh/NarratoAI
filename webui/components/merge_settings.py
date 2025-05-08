@@ -285,8 +285,8 @@ def render_merge_settings(tr):
                             error_message = str(e)
                             if "moviepy" in error_message.lower():
                                 st.error(tr("Error processing video files. Please check if the videos are valid MP4 files."))
-                            elif "pysrt" in error_message.lower():
-                                st.error(tr("Error processing subtitle files. Please check if the subtitles are valid SRT files."))
+                            # elif "pysrt" in error_message.lower():
+                            #     st.error(tr("Error processing subtitle files. Please check if the subtitles are valid SRT files."))
                             else:
                                 st.error(f"{tr('Error during merge')}: {error_message}")
                 

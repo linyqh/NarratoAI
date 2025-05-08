@@ -7,7 +7,7 @@ from typing import List
 from loguru import logger
 from openai import OpenAI
 from openai import AzureOpenAI
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 from openai.types.chat import ChatCompletion
 import google.generativeai as gemini
 from googleapiclient.errors import ResumableUploadError

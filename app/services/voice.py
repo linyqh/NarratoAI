@@ -5,10 +5,11 @@ import traceback
 import edge_tts
 import asyncio
 from loguru import logger
-from typing import List
+from typing import List, Union
 from datetime import datetime
 from xml.sax.saxutils import unescape
 from edge_tts import submaker, SubMaker
+from edge_tts.submaker import mktimestamp
 from moviepy.video.tools import subtitles
 import time
 
@@ -1036,7 +1037,7 @@ def is_azure_v2_voice(voice_name: str):
 
 def tts(
     text: str, voice_name: str, voice_rate: float, voice_pitch: float, voice_file: str
-) -> [SubMaker, None]:
+) -> Union[SubMaker, None]:
     if is_azure_v2_voice(voice_name):
         return azure_tts_v2(text, voice_name, voice_file)
     return azure_tts_v1(text, voice_name, voice_rate, voice_pitch, voice_file)
@@ -1064,7 +1065,7 @@ def convert_pitch_to_percent(rate: float) -> str:
 
 def azure_tts_v1(
     text: str, voice_name: str, voice_rate: float, voice_pitch: float, voice_file: str
-) -> [SubMaker, None]:
+) -> Union[SubMaker, None]:
     voice_name = parse_voice_name(voice_name)
     text = text.strip()
     rate_str = convert_rate_to_percent(voice_rate)
@@ -1087,11 +1088,6 @@ def azure_tts_v1(
                         )
                 return sub_maker, audio_data
 
-            # 判断音频文件是否已存在
-            if os.path.exists(voice_file):
-                logger.info(f"voice file exists, skip tts: {voice_file}")
-                continue
-
             # 获取音频数据和字幕信息
             sub_maker, audio_data = asyncio.run(_do())
             
@@ -1105,8 +1101,6 @@ def azure_tts_v1(
             # 数据有效，写入文件
             with open(voice_file, "wb") as file:
                 file.write(audio_data)
-
-            logger.info(f"completed, output file: {voice_file}")
             return sub_maker
         except Exception as e:
             logger.error(f"生成音频文件时出错: {str(e)}")
@@ -1115,7 +1109,7 @@ def azure_tts_v1(
     return None
 
 
-def azure_tts_v2(text: str, voice_name: str, voice_file: str) -> [SubMaker, None]:
+def azure_tts_v2(text: str, voice_name: str, voice_file: str) -> Union[SubMaker, None]:
     voice_name = is_azure_v2_voice(voice_name)
     if not voice_name:
         logger.error(f"invalid voice name: {voice_name}")
@@ -1203,11 +1197,14 @@ def azure_tts_v2(text: str, voice_name: str, voice_file: str) -> [SubMaker, None
 
 
 def _format_text(text: str) -> str:
-    # text = text.replace("\n", " ")
+    text = text.replace("\n", " ")
+    text = text.replace("\"", " ")
     text = text.replace("[", " ")
     text = text.replace("]", " ")
     text = text.replace("(", " ")
     text = text.replace(")", " ")
+    text = text.replace("）", " ")
+    text = text.replace("（", " ")
     text = text.replace("{", " ")
     text = text.replace("}", " ")
     text = text.strip()
@@ -1240,7 +1237,7 @@ def create_subtitle_from_multiple(text: str, sub_maker_list: List[SubMaker], lis
             if script_item['OST']:
                 continue
 
-            start_time, end_time = script_item['new_timestamp'].split('-')
+            start_time, end_time = script_item['timestamp'].split('-')
             if sub_maker_index >= len(sub_maker_list):
                 logger.error(f"Sub maker list index out of range: {sub_maker_index}")
                 break
@@ -1317,6 +1314,99 @@ def create_subtitle_from_multiple(text: str, sub_maker_list: List[SubMaker], lis
         traceback.print_exc()
 
 
+def create_subtitle(sub_maker: submaker.SubMaker, text: str, subtitle_file: str):
+    """
+    优化字幕文件
+    1. 将字幕文件按照标点符号分割成多行
+    2. 逐行匹配字幕文件中的文本
+    3. 生成新的字幕文件
+    """
+
+    text = _format_text(text)
+
+    def formatter(idx: int, start_time: float, end_time: float, sub_text: str) -> str:
+        """
+        1
+        00:00:00,000 --> 00:00:02,360
+        跑步是一项简单易行的运动
+        """
+        start_t = mktimestamp(start_time).replace(".", ",")
+        end_t = mktimestamp(end_time).replace(".", ",")
+        return f"{idx}\n" f"{start_t} --> {end_t}\n" f"{sub_text}\n"
+
+    start_time = -1.0
+    sub_items = []
+    sub_index = 0
+
+    script_lines = utils.split_string_by_punctuations(text)
+
+    def match_line(_sub_line: str, _sub_index: int):
+        if len(script_lines) <= _sub_index:
+            return ""
+
+        _line = script_lines[_sub_index]
+        if _sub_line == _line:
+            return script_lines[_sub_index].strip()
+
+        _sub_line_ = re.sub(r"[^\w\s]", "", _sub_line)
+        _line_ = re.sub(r"[^\w\s]", "", _line)
+        if _sub_line_ == _line_:
+            return _line_.strip()
+
+        _sub_line_ = re.sub(r"\W+", "", _sub_line)
+        _line_ = re.sub(r"\W+", "", _line)
+        if _sub_line_ == _line_:
+            return _line.strip()
+
+        return ""
+
+    sub_line = ""
+
+    try:
+        for _, (offset, sub) in enumerate(zip(sub_maker.offset, sub_maker.subs)):
+            _start_time, end_time = offset
+            if start_time < 0:
+                start_time = _start_time
+
+            sub = unescape(sub)
+            sub_line += sub
+            sub_text = match_line(sub_line, sub_index)
+            if sub_text:
+                sub_index += 1
+                line = formatter(
+                    idx=sub_index,
+                    start_time=start_time,
+                    end_time=end_time,
+                    sub_text=sub_text,
+                )
+                sub_items.append(line)
+                start_time = -1.0
+                sub_line = ""
+
+        if len(sub_items) == len(script_lines):
+            with open(subtitle_file, "w", encoding="utf-8") as file:
+                file.write("\n".join(sub_items) + "\n")
+            try:
+                sbs = subtitles.file_to_subtitles(subtitle_file, encoding="utf-8")
+                duration = max([tb for ((ta, tb), txt) in sbs])
+                logger.info(
+                    f"已创建字幕文件: {subtitle_file}, duration: {duration}"
+                )
+                return subtitle_file, duration
+            except Exception as e:
+                logger.error(f"failed, error: {str(e)}")
+                os.remove(subtitle_file)
+        else:
+            logger.error(
+                f"字幕创建失败, 字幕长度: {len(sub_items)}, script_lines len: {len(script_lines)}"
+                f"\nsub_items:{json.dumps(sub_items, indent=4, ensure_ascii=False)}"
+                f"\nscript_lines:{json.dumps(script_lines, indent=4, ensure_ascii=False)}"
+            )
+
+    except Exception as e:
+        logger.error(f"failed, error: {str(e)}")
+
+
 def get_audio_duration(sub_maker: submaker.SubMaker):
     """
     获取音频时长
@@ -1326,7 +1416,7 @@ def get_audio_duration(sub_maker: submaker.SubMaker):
     return sub_maker.offset[-1][1] / 10000000
 
 
-def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: float, voice_pitch: float, force_regenerate: bool = True):
+def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: float, voice_pitch: float):
     """
     根据JSON文件中的多段文本进行TTS转换
     
@@ -1334,25 +1424,18 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
     :param list_script: 脚本列表
     :param voice_name: 语音名称
     :param voice_rate: 语音速率
-    :param force_regenerate: 是否强制重新生成已存在的音频文件
     :return: 生成的音频文件列表
     """
     voice_name = parse_voice_name(voice_name)
     output_dir = utils.task_dir(task_id)
-    audio_files = []
-    sub_maker_list = []
+    tts_results = []
 
     for item in list_script:
         if item['OST'] != 1:
             # 将时间戳中的冒号替换为下划线
-            timestamp = item['new_timestamp'].replace(':', '_')
+            timestamp = item['timestamp'].replace(':', '_')
             audio_file = os.path.join(output_dir, f"audio_{timestamp}.mp3")
-            
-            # 检查文件是否已存在，如存在且不强制重新生成，则跳过
-            if os.path.exists(audio_file) and not force_regenerate:
-                logger.info(f"音频文件已存在，跳过生成: {audio_file}")
-                audio_files.append(audio_file)
-                continue
+            subtitle_file = os.path.join(output_dir, f"subtitle_{timestamp}.srt")
 
             text = item['narration']
 
@@ -1369,9 +1452,18 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                              f"如果您在中国，请使用VPN; "
                              f"或者使用其他 tts 引擎")
                 continue
+            else:
+                # 为当前片段生成字幕文件
+                _, duration = create_subtitle(sub_maker=sub_maker, text=text, subtitle_file=subtitle_file)
 
-            audio_files.append(audio_file)
-            sub_maker_list.append(sub_maker)
+            tts_results.append({
+                "_id": item['_id'],
+                "timestamp": item['timestamp'],
+                "audio_file": audio_file,
+                "subtitle_file": subtitle_file,
+                "duration": duration,
+                "text": text,
+            })
             logger.info(f"已生成音频文件: {audio_file}")
 
-    return audio_files, sub_maker_list
+    return tts_results

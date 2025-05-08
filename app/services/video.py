@@ -1,13 +1,13 @@
 import traceback
 
-import pysrt
+# import pysrt
 from typing import Optional
 from typing import List
 from loguru import logger
-from moviepy.editor import *
+from moviepy import *
 from PIL import ImageFont
 from contextlib import contextmanager
-from moviepy.editor import (
+from moviepy import (
     VideoFileClip,
     AudioFileClip,
     TextClip,
@@ -103,86 +103,6 @@ def manage_clip(clip):
     finally:
         clip.close()
         del clip
-
-
-def combine_clip_videos(combined_video_path: str,
-                        video_paths: List[str],
-                        video_ost_list: List[int],
-                        list_script: list,
-                        video_aspect: VideoAspect = VideoAspect.portrait,
-                        threads: int = 2,
-                        ) -> str:
-    """
-    合并子视频
-    Args:
-        combined_video_path: 合并后的存储路径
-        video_paths: 子视频路径列表
-        video_ost_list: 原声播放列表 (0: 不保留原声, 1: 只保留原声, 2: 保留原声并保留解说)
-        list_script: 剪辑脚本
-        video_aspect: 屏幕比例
-        threads: 线程数
-
-    Returns:
-        str: 合并后的视频路径
-    """
-    from app.utils.utils import calculate_total_duration
-    audio_duration = calculate_total_duration(list_script)
-    logger.info(f"音频的最大持续时间: {audio_duration} s")
-
-    output_dir = os.path.dirname(combined_video_path)
-    aspect = VideoAspect(video_aspect)
-    video_width, video_height = aspect.to_resolution()
-
-    clips = []
-    for video_path, video_ost in zip(video_paths, video_ost_list):
-        try:
-            clip = VideoFileClip(video_path)
-
-            if video_ost == 0:  # 不保留原声
-                clip = clip.without_audio()
-            # video_ost 为 1 或 2 时都保留原声，不需要特殊处理
-
-            clip = clip.set_fps(30)
-
-            # 处理视频尺寸
-            clip_w, clip_h = clip.size
-            if clip_w != video_width or clip_h != video_height:
-                clip = resize_video_with_padding(
-                    clip,
-                    target_width=video_width,
-                    target_height=video_height
-                )
-                logger.info(f"视频 {video_path} 已调整尺寸为 {video_width} x {video_height}")
-
-            clips.append(clip)
-
-        except Exception as e:
-            logger.error(f"处理视频 {video_path} 时出错: {str(e)}")
-            continue
-
-    if not clips:
-        raise ValueError("没有有效的视频片段可以合并")
-
-    try:
-        video_clip = concatenate_videoclips(clips)
-        video_clip = video_clip.set_fps(30)
-
-        logger.info("开始合并视频... (过程中出现 UserWarning: 不必理会)")
-        video_clip.write_videofile(
-            filename=combined_video_path,
-            threads=threads,
-            audio_codec="aac",
-            fps=30,
-            temp_audiofile=os.path.join(output_dir, "temp-audio.m4a")
-        )
-    finally:
-        # 确保资源被正确放
-        video_clip.close()
-        for clip in clips:
-            clip.close()
-
-    logger.success("视频合并完成")
-    return combined_video_path
 
 
 def resize_video_with_padding(clip, target_width: int, target_height: int):
@@ -443,4 +363,3 @@ def generate_video_v3(
         bgm.close()
     if narration_path:
         narration.close()
-

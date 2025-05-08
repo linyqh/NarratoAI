@@ -3,10 +3,11 @@ import json
 import time
 import asyncio
 import requests
+from app.utils import video_processor
 from loguru import logger
 from typing import List, Dict, Any, Callable
 
-from app.utils import utils, gemini_analyzer, video_processor, video_processor_v2
+from app.utils import utils, gemini_analyzer, video_processor
 from app.utils.script_generator import ScriptProcessor
 from app.config import config
 
@@ -21,6 +22,7 @@ class ScriptGenerator:
         video_path: str,
         video_theme: str = "",
         custom_prompt: str = "",
+        frame_interval_input: int = 5,
         skip_seconds: int = 0,
         threshold: int = 30,
         vision_batch_size: int = 5,
@@ -105,20 +107,13 @@ class ScriptGenerator:
         os.makedirs(video_keyframes_dir, exist_ok=True)
         
         try:
-            if config.frames.get("version") == "v2":
-                processor = video_processor_v2.VideoProcessor(video_path)
-                processor.process_video_pipeline(
-                    output_dir=video_keyframes_dir,
-                    skip_seconds=skip_seconds,
-                    threshold=threshold
-                )
-            else:
-                processor = video_processor.VideoProcessor(video_path)
-                processor.process_video(
-                    output_dir=video_keyframes_dir,
-                    skip_seconds=skip_seconds
-                )
-                
+            processor = video_processor.VideoProcessor(video_path)
+            processor.process_video_pipeline(
+                output_dir=video_keyframes_dir,
+                skip_seconds=skip_seconds,
+                threshold=threshold
+            )
+
             for filename in sorted(os.listdir(video_keyframes_dir)):
                 if filename.endswith('.jpg'):
                     keyframe_files.append(os.path.join(video_keyframes_dir, filename))

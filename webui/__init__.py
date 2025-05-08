@@ -8,7 +8,7 @@ from webui.components import (
     audio_settings,
     subtitle_settings
 )
-from webui.utils import cache, file_utils, performance
+from webui.utils import cache, file_utils
 
 __all__ = [
     'config',
@@ -17,6 +17,5 @@ __all__ = [
     'audio_settings',
     'subtitle_settings',
     'cache',
-    'file_utils',
-    'performance'
+    'file_utils'
 ] 
