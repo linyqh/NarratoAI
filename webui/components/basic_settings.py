@@ -1,7 +1,10 @@
+import traceback
+
 import streamlit as st
 import os
 from app.config import config
 from app.utils import utils
+from loguru import logger
 
 
 def render_basic_settings(tr):
@@ -266,7 +269,7 @@ def test_text_model_connection(api_key, base_url, model_name, provider, tr):
             elif provider.lower() == 'moonshot':
                 base_url = "https://api.moonshot.cn/v1"
             elif provider.lower() == 'deepseek':
-                base_url = "https://api.deepseek.com/v1"
+                base_url = "https://api.deepseek.com"
                 
         # 构建测试URL
         test_url = f"{base_url.rstrip('/')}/chat/completions"
@@ -288,7 +291,7 @@ def test_text_model_connection(api_key, base_url, model_name, provider, tr):
             "messages": [
                 {"role": "user", "content": "直接回复我文本'当前网络可用'"}
             ],
-            "max_tokens": 10
+            "stream": False
         }
         
         # 发送测试请求
@@ -296,7 +299,6 @@ def test_text_model_connection(api_key, base_url, model_name, provider, tr):
             test_url,
             headers=headers,
             json=test_data,
-            timeout=10
         )
         
         if response.status_code == 200:
@@ -313,7 +315,7 @@ def render_text_llm_settings(tr):
     st.subheader(tr("Text Generation Model Settings"))
 
     # 文案生成模型提供商选择
-    text_providers = ['DeepSeek', 'OpenAI', 'Qwen', 'Moonshot', 'Gemini']
+    text_providers = ['DeepSeek', 'OpenAI', 'Siliconflow', 'Qwen', 'Moonshot', 'Gemini']
     saved_text_provider = config.app.get("text_llm_provider", "DeepSeek").lower()
     saved_provider_index = 0
 
@@ -331,9 +333,9 @@ def render_text_llm_settings(tr):
     config.app["text_llm_provider"] = text_provider
 
     # 获取已保存的文本模型配置
-    text_api_key = config.app.get(f"text_{text_provider}_api_key", "")
-    text_base_url = config.app.get(f"text_{text_provider}_base_url", "")
-    text_model_name = config.app.get(f"text_{text_provider}_model_name", "")
+    text_api_key = config.app.get(f"text_{text_provider}_api_key")
+    text_base_url = config.app.get(f"text_{text_provider}_base_url")
+    text_model_name = config.app.get(f"text_{text_provider}_model_name")
 
     # 渲染文本模型配置输入框
     st_text_api_key = st.text_input(tr("Text API Key"), value=text_api_key, type="password")
@@ -342,6 +344,8 @@ def render_text_llm_settings(tr):
 
     # 添加测试按钮
     if st.button(tr("Test Connection"), key="test_text_connection"):
+        logger.debug(st_text_base_url)
+        logger.debug(st_text_model_name)
         with st.spinner(tr("Testing connection...")):
             success, message = test_text_model_connection(
                 api_key=st_text_api_key,
@@ -364,11 +368,11 @@ def render_text_llm_settings(tr):
     if st_text_model_name:
         config.app[f"text_{text_provider}_model_name"] = st_text_model_name
 
-    # Cloudflare 特殊配置
-    if text_provider == 'cloudflare':
-        st_account_id = st.text_input(
-            tr("Account ID"),
-            value=config.app.get(f"text_{text_provider}_account_id", "")
-        )
-        if st_account_id:
-            config.app[f"text_{text_provider}_account_id"] = st_account_id
+    # # Cloudflare 特殊配置
+    # if text_provider == 'cloudflare':
+    #     st_account_id = st.text_input(
+    #         tr("Account ID"),
+    #         value=config.app.get(f"text_{text_provider}_account_id", "")
+    #     )
+    #     if st_account_id:
+    #         config.app[f"text_{text_provider}_account_id"] = st_account_id

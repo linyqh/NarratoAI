@@ -342,83 +342,32 @@ def generate_script_docu(params):
                 """
                 4. 生成文案
                 """
-                update_progress(70, "正在生成脚本...")
-
+                logger.info("开始准备生成解说文案")
+                update_progress(80, "正在生成文案...")
+                from app.services.generate_narration_script import parse_frame_analysis_to_markdown, generate_narration
                 # 从配置中获取文本生成相关配置
                 text_provider = config.app.get('text_llm_provider', 'gemini').lower()
                 text_api_key = config.app.get(f'text_{text_provider}_api_key')
                 text_model = config.app.get(f'text_{text_provider}_model_name')
                 text_base_url = config.app.get(f'text_{text_provider}_base_url')
 
-                # 构建帧内容列表
-                frame_content_list = []
-                prev_batch_files = None
+                # 整理帧分析数据
+                markdown_output = parse_frame_analysis_to_markdown(analysis_json_path)
 
-                # 使用合并后的观察结果构建帧内容列表
-                if merged_frame_observations:
-                    for obs in merged_frame_observations:
-                        frame_content = {
-                            "_id": obs.get("frame_number", 0),  # 使用全局连续的帧编号作为ID
-                            "timestamp": obs.get("timestamp", ""),
-                            "picture": obs.get("observation", ""),
-                            "narration": "",
-                            "OST": 2,
-                            "timestamp_seconds": obs.get("timestamp_seconds", 0)
-                        }
-                        frame_content_list.append(frame_content)
-                        logger.debug(f"添加帧内容: ID={obs.get('frame_number', 0)}, 时间={obs.get('timestamp', '')}, 描述长度={len(obs.get('observation', ''))}")
-                else:
-                    # 兼容旧的处理方式，如果没有合并后的观察结果
-                    for i, result in enumerate(results):
-                        if 'error' in result:
-                            continue
-
-                        batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
-                        _, _, timestamp_range = get_batch_timestamps(batch_files, prev_batch_files)
-
-                        frame_content = {
-                            "_id": i + 1,
-                            "timestamp": timestamp_range,
-                            "picture": result['response'],
-                            "narration": "",
-                            "OST": 2
-                        }
-                        frame_content_list.append(frame_content)
-
-                        logger.debug(f"添加帧内容: 时间范围={timestamp_range}, 分析结果长度={len(result['response'])}")
-
-                        # 更新上一个批次的文件
-                        prev_batch_files = batch_files
-
-                if not frame_content_list:
-                    raise Exception("没有有效的帧内容可以处理")
-
-                # ===================开始生成文案===================
-                update_progress(80, "正在生成文案...")
-                # 校验配置
-                api_params = {
-                    "vision_api_key": vision_api_key,
-                    "vision_model_name": vision_model,
-                    "vision_base_url": vision_base_url or "",
-                    "text_api_key": text_api_key,
-                    "text_model_name": text_model,
-                    "text_base_url": text_base_url or ""
-                }
-                chekc_video_config(api_params)
-                custom_prompt = st.session_state.get('custom_prompt', '')
-                processor = ScriptProcessor(
-                    model_name=text_model,
-                    api_key=text_api_key,
-                    prompt=custom_prompt,
-                    base_url=text_base_url or "",
-                    video_theme=st.session_state.get('video_theme', '')
+                # 生成文案
+                # 生成解说文案
+                narration = generate_narration(
+                    markdown_output,
+                    text_api_key,
+                    base_url=text_base_url,
+                    model=text_model
                 )
-
-                # 处理帧内容生成脚本
-                script_result = processor.process_frames(frame_content_list)
-
+                narration_dict = json.loads(narration)['items']
+                # 为 narration_dict 中每个 item 新增一个 OST: 2 的字段, 代表保留原声和配音
+                narration_dict = [{**item, "OST": 2} for item in narration_dict]
+                logger.debug(f"解说文案创作完成:\n{"\n".join([item['narration'] for item in narration_dict])}")
                 # 结果转换为JSON字符串
-                script = json.dumps(script_result, ensure_ascii=False, indent=2)
+                script = json.dumps(narration_dict, ensure_ascii=False, indent=2)
 
             except Exception as e:
                 logger.exception(f"大模型处理过程中发生错误\n{traceback.format_exc()}")
