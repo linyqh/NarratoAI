@@ -177,8 +177,15 @@ def generate_script_docu(params):
                 overall_activity_summaries = []  # 合并所有批次的整体总结
                 prev_batch_files = None
                 frame_counter = 1  # 初始化帧计数器，用于给所有帧分配连续的序号
-                logger.debug(json.dumps(results, indent=4, ensure_ascii=False))
+                # logger.debug(json.dumps(results, indent=4, ensure_ascii=False))
+                # 确保分析目录存在
+                analysis_dir = os.path.join(utils.storage_dir(), "temp", "analysis")
+                os.makedirs(analysis_dir, exist_ok=True)
+                origin_res = os.path.join(analysis_dir, "frame_analysis.json")
+                with open(origin_res, 'w', encoding='utf-8') as f:
+                    json.dump(results, f, ensure_ascii=False, indent=2)
                 
+                # 开始处理
                 for result in results:
                     if 'error' in result:
                         logger.warning(f"批次 {result['batch_index']} 处理出现警告: {result['error']}")
@@ -222,8 +229,23 @@ def generate_script_docu(params):
                                     if len(timestamp_parts) >= 3:
                                         timestamp_str = timestamp_parts[-1].split('.')[0]
                                         try:
-                                            timestamp_seconds = int(timestamp_str) / 1000  # 转换为秒
-                                            formatted_time = utils.format_time(timestamp_seconds)  # 格式化时间戳
+                                            # 修正时间戳解析逻辑
+                                            # 格式为000100000，表示00:01:00,000，即1分钟
+                                            # 需要按照对应位数进行解析:
+                                            # 前两位是小时，中间两位是分钟，后面是秒和毫秒
+                                            if len(timestamp_str) >= 9:  # 确保格式正确
+                                                hours = int(timestamp_str[0:2])
+                                                minutes = int(timestamp_str[2:4])
+                                                seconds = int(timestamp_str[4:6])
+                                                milliseconds = int(timestamp_str[6:9])
+                                                
+                                                # 计算总秒数
+                                                timestamp_seconds = hours * 3600 + minutes * 60 + seconds + milliseconds / 1000
+                                                formatted_time = utils.format_time(timestamp_seconds)  # 格式化时间戳
+                                            else:
+                                                # 兼容旧的解析方式
+                                                timestamp_seconds = int(timestamp_str) / 1000  # 转换为秒
+                                                formatted_time = utils.format_time(timestamp_seconds)  # 格式化时间戳
                                         except ValueError:
                                             logger.warning(f"无法解析时间戳: {timestamp_str}")
                                             timestamp_seconds = 0
@@ -237,6 +259,7 @@ def generate_script_docu(params):
                                     obs["frame_path"] = file_path
                                     obs["timestamp"] = formatted_time
                                     obs["timestamp_seconds"] = timestamp_seconds
+                                    obs["batch_index"] = result['batch_index']
                                     
                                     # 使用全局递增的帧计数器替换原始的frame_number
                                     if "frame_number" in obs:
@@ -255,9 +278,28 @@ def generate_script_docu(params):
                                 
                                 # 转换为毫秒并计算持续时间（秒）
                                 try:
-                                    first_time_ms = int(first_time_str)
-                                    last_time_ms = int(last_time_str)
-                                    batch_duration = (last_time_ms - first_time_ms) / 1000
+                                    # 修正解析逻辑，与上面相同的方式解析时间戳
+                                    if len(first_time_str) >= 9 and len(last_time_str) >= 9:
+                                        # 解析第一个时间戳
+                                        first_hours = int(first_time_str[0:2])
+                                        first_minutes = int(first_time_str[2:4])
+                                        first_seconds = int(first_time_str[4:6])
+                                        first_ms = int(first_time_str[6:9])
+                                        first_time_seconds = first_hours * 3600 + first_minutes * 60 + first_seconds + first_ms / 1000
+                                        
+                                        # 解析第二个时间戳
+                                        last_hours = int(last_time_str[0:2])
+                                        last_minutes = int(last_time_str[2:4])
+                                        last_seconds = int(last_time_str[4:6])
+                                        last_ms = int(last_time_str[6:9])
+                                        last_time_seconds = last_hours * 3600 + last_minutes * 60 + last_seconds + last_ms / 1000
+                                        
+                                        batch_duration = last_time_seconds - first_time_seconds
+                                    else:
+                                        # 兼容旧的解析方式
+                                        first_time_ms = int(first_time_str)
+                                        last_time_ms = int(last_time_str)
+                                        batch_duration = (last_time_ms - first_time_ms) / 1000
                                 except ValueError:
                                     # 使用 utils.time_to_seconds 函数处理格式化的时间戳
                                     first_time_seconds = utils.time_to_seconds(first_time_str.replace('_', ':').replace('-', ','))
@@ -289,10 +331,6 @@ def generate_script_docu(params):
                 # 使用当前时间创建文件名
                 now = datetime.now()
                 timestamp_str = now.strftime("%Y%m%d_%H%M")
-                
-                # 确保分析目录存在
-                analysis_dir = os.path.join(utils.storage_dir(), "temp", "analysis")
-                os.makedirs(analysis_dir, exist_ok=True)
                 
                 # 保存完整的分析结果为JSON
                 analysis_filename = f"frame_analysis_{timestamp_str}.json"
