@@ -197,6 +197,28 @@ def time_convert_seconds_to_hmsm(seconds) -> str:
     return "{:02d}:{:02d}:{:02d},{:03d}".format(hours, minutes, seconds, milliseconds)
 
 
+def format_time(seconds: float) -> str:
+    """
+    将秒数转换为格式化的时间字符串 (HH:MM:SS,mmm)
+    
+    参数:
+        seconds: 需要转换的秒数，可以是整数或浮点数
+        
+    返回:
+        格式化的时间字符串，格式为 HH:MM:SS,mmm
+    """
+    # 计算小时、分钟、秒和毫秒
+    hours = int(seconds // 3600)
+    remaining_seconds = seconds % 3600
+    minutes = int(remaining_seconds // 60)
+    remaining_seconds = remaining_seconds % 60
+    secs = int(remaining_seconds)
+    milliseconds = int((remaining_seconds - secs) * 1000)
+    
+    # 格式化为时间字符串
+    return "{:02d}:{:02d}:{:02d},{:03d}".format(hours, minutes, secs, milliseconds)
+
+
 def text_to_srt(idx: int, msg: str, start_time: float, end_time: float) -> str:
     start_time = time_convert_seconds_to_hmsm(start_time)
     end_time = time_convert_seconds_to_hmsm(end_time)

@@ -96,7 +96,7 @@ def generate_script_docu(params):
                     raise Exception(f"关键帧提取失败: {str(e)}")
 
             """
-            2. 视觉分析
+            2. 视觉分析(批量分析每一帧)
             """
             vision_llm_provider = st.session_state.get('vision_llm_providers').lower()
             logger.debug(f"VLM 视觉大模型提供商: {vision_llm_provider}")
@@ -167,37 +167,138 @@ def generate_script_docu(params):
                 # ===================处理分析结果===================
                 update_progress(60, "正在整理分析结果...")
 
-                # 合并所有批次的析结果
+                # 合并所有批次的分析结果
                 frame_analysis = ""
+                merged_frame_observations = []  # 合并所有批次的帧观察
+                overall_activity_summaries = []  # 合并所有批次的整体总结
                 prev_batch_files = None
-
+                frame_counter = 1  # 初始化帧计数器，用于给所有帧分配连续的序号
+                logger.debug(json.dumps(results, indent=4, ensure_ascii=False))
+                
                 for result in results:
                     if 'error' in result:
                         logger.warning(f"批次 {result['batch_index']} 处理出现警告: {result['error']}")
-
-                    # 获取当前批次的文件列表 keyframe_001136_000045.jpg 将 000045 精度提升到 毫秒
+                        continue
+                        
+                    # 获取当前批次的文件列表
                     batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
                     logger.debug(f"批次 {result['batch_index']} 处理完成，共 {len(batch_files)} 张图片")
-                    # logger.debug(batch_files)
-
-                    first_timestamp, last_timestamp, _ = get_batch_timestamps(batch_files, prev_batch_files)
+                    
+                    # 获取批次的时间戳范围
+                    first_timestamp, last_timestamp, timestamp_range = get_batch_timestamps(batch_files, prev_batch_files)
                     logger.debug(f"处理时间戳: {first_timestamp}-{last_timestamp}")
-
-                    # 添加带时间戳的分析结果
-                    frame_analysis += f"\n=== {first_timestamp}-{last_timestamp} ===\n"
-                    frame_analysis += result['response']
-                    frame_analysis += "\n"
-
+                    
+                    # 解析响应中的JSON数据
+                    response_text = result['response']
+                    try:
+                        # 处理可能包含```json```格式的响应
+                        if "```json" in response_text:
+                            json_content = response_text.split("```json")[1].split("```")[0].strip()
+                        elif "```" in response_text:
+                            json_content = response_text.split("```")[1].split("```")[0].strip()
+                        else:
+                            json_content = response_text.strip()
+                            
+                        response_data = json.loads(json_content)
+                        
+                        # 提取frame_observations和overall_activity_summary
+                        if "frame_observations" in response_data:
+                            frame_obs = response_data["frame_observations"]
+                            overall_summary = response_data.get("overall_activity_summary", "")
+                            
+                            # 添加时间戳信息到每个帧观察
+                            for i, obs in enumerate(frame_obs):
+                                if i < len(batch_files):
+                                    # 从文件名中提取时间戳
+                                    file_path = batch_files[i]
+                                    file_name = os.path.basename(file_path)
+                                    # 提取时间戳字符串 (格式如: keyframe_000675_000027000.jpg)
+                                    # 格式解析: keyframe_帧序号_毫秒时间戳.jpg
+                                    timestamp_parts = file_name.split('_')
+                                    if len(timestamp_parts) >= 3:
+                                        timestamp_str = timestamp_parts[-1].split('.')[0]
+                                        try:
+                                            timestamp_seconds = int(timestamp_str) / 1000  # 转换为秒
+                                            formatted_time = utils.format_time(timestamp_seconds)  # 格式化时间戳
+                                        except ValueError:
+                                            logger.warning(f"无法解析时间戳: {timestamp_str}")
+                                            timestamp_seconds = 0
+                                            formatted_time = "00:00:00,000"
+                                    else:
+                                        logger.warning(f"文件名格式不符合预期: {file_name}")
+                                        timestamp_seconds = 0
+                                        formatted_time = "00:00:00,000"
+                                    
+                                    # 添加额外信息到帧观察
+                                    obs["frame_path"] = file_path
+                                    obs["timestamp"] = formatted_time
+                                    obs["timestamp_seconds"] = timestamp_seconds
+                                    
+                                    # 使用全局递增的帧计数器替换原始的frame_number
+                                    if "frame_number" in obs:
+                                        obs["original_frame_number"] = obs["frame_number"]  # 保留原始编号作为参考
+                                    obs["frame_number"] = frame_counter  # 赋值连续的帧编号
+                                    frame_counter += 1  # 增加帧计数器
+                                    
+                                    # 添加到合并列表
+                                    merged_frame_observations.append(obs)
+                            
+                            # 添加批次整体总结信息
+                            if overall_summary:
+                                # 从文件名中提取时间戳数值
+                                first_time_str = first_timestamp.split('_')[-1].split('.')[0]
+                                last_time_str = last_timestamp.split('_')[-1].split('.')[0]
+                                
+                                # 转换为毫秒并计算持续时间（秒）
+                                try:
+                                    first_time_ms = int(first_time_str)
+                                    last_time_ms = int(last_time_str)
+                                    batch_duration = (last_time_ms - first_time_ms) / 1000
+                                except ValueError:
+                                    # 使用 utils.time_to_seconds 函数处理格式化的时间戳
+                                    first_time_seconds = utils.time_to_seconds(first_time_str.replace('_', ':').replace('-', ','))
+                                    last_time_seconds = utils.time_to_seconds(last_time_str.replace('_', ':').replace('-', ','))
+                                    batch_duration = last_time_seconds - first_time_seconds
+                                
+                                overall_activity_summaries.append({
+                                    "batch_index": result['batch_index'],
+                                    "time_range": f"{first_timestamp}-{last_timestamp}",
+                                    "duration_seconds": batch_duration,
+                                    "summary": overall_summary
+                                })
+                    except Exception as e:
+                        logger.error(f"解析批次 {result['batch_index']} 的响应数据失败: {str(e)}")
+                        # 添加原始响应作为回退
+                        frame_analysis += f"\n=== {first_timestamp}-{last_timestamp} ===\n"
+                        frame_analysis += response_text
+                        frame_analysis += "\n"
+                    
                     # 更新上一个批次的文件
                     prev_batch_files = batch_files
-
+                
+                # 将合并后的结果转为JSON字符串
+                merged_results = {
+                    "frame_observations": merged_frame_observations,
+                    "overall_activity_summaries": overall_activity_summaries
+                }
+                
+                # 保存完整的分析结果为JSON
+                analysis_json_path = os.path.join(utils.task_dir(), "frame_analysis.json")
+                with open(analysis_json_path, 'w', encoding='utf-8') as f:
+                    json.dump(merged_results, f, ensure_ascii=False, indent=2)
+                
+                # 同时保存原始文本格式的分析结果（兼容性）
+                if not frame_analysis.strip() and merged_frame_observations:
+                    # 如果没有原始文本但有合并结果，则从合并结果生成文本
+                    frame_analysis = json.dumps(merged_results, ensure_ascii=False, indent=2)
+                
                 if not frame_analysis.strip():
                     raise Exception("未能生成有效的帧分析结果")
-
-                # 保存分析结果
-                analysis_path = os.path.join(utils.temp_dir(), "frame_analysis.txt")
-                with open(analysis_path, 'w', encoding='utf-8') as f:
-                    f.write(frame_analysis)
+                
+                # # 保存文本格式分析结果
+                # analysis_path = os.path.join(utils.temp_dir(), "frame_analysis.txt")
+                # with open(analysis_path, 'w', encoding='utf-8') as f:
+                #     f.write(frame_analysis)
 
                 update_progress(70, "正在生成脚本...")
 
@@ -211,26 +312,41 @@ def generate_script_docu(params):
                 frame_content_list = []
                 prev_batch_files = None
 
-                for i, result in enumerate(results):
-                    if 'error' in result:
-                        continue
+                # 使用合并后的观察结果构建帧内容列表
+                if merged_frame_observations:
+                    for obs in merged_frame_observations:
+                        frame_content = {
+                            "_id": obs.get("frame_number", 0),  # 使用全局连续的帧编号作为ID
+                            "timestamp": obs.get("timestamp", ""),
+                            "picture": obs.get("observation", ""),
+                            "narration": "",
+                            "OST": 2,
+                            "timestamp_seconds": obs.get("timestamp_seconds", 0)
+                        }
+                        frame_content_list.append(frame_content)
+                        logger.debug(f"添加帧内容: ID={obs.get('frame_number', 0)}, 时间={obs.get('timestamp', '')}, 描述长度={len(obs.get('observation', ''))}")
+                else:
+                    # 兼容旧的处理方式，如果没有合并后的观察结果
+                    for i, result in enumerate(results):
+                        if 'error' in result:
+                            continue
 
-                    batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
-                    _, _, timestamp_range = get_batch_timestamps(batch_files, prev_batch_files)
+                        batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
+                        _, _, timestamp_range = get_batch_timestamps(batch_files, prev_batch_files)
 
-                    frame_content = {
-                        "_id": i + 1,
-                        "timestamp": timestamp_range,
-                        "picture": result['response'],
-                        "narration": "",
-                        "OST": 2
-                    }
-                    frame_content_list.append(frame_content)
+                        frame_content = {
+                            "_id": i + 1,
+                            "timestamp": timestamp_range,
+                            "picture": result['response'],
+                            "narration": "",
+                            "OST": 2
+                        }
+                        frame_content_list.append(frame_content)
 
-                    logger.debug(f"添加帧内容: 时间范围={timestamp_range}, 分析结果长度={len(result['response'])}")
+                        logger.debug(f"添加帧内容: 时间范围={timestamp_range}, 分析结果长度={len(result['response'])}")
 
-                    # 更新上一个批次的文件
-                    prev_batch_files = batch_files
+                        # 更新上一个批次的文件
+                        prev_batch_files = batch_files
 
                 if not frame_content_list:
                     raise Exception("没有有效的帧内容可以处理")

@@ -30,7 +30,7 @@ class QwenAnalyzer:
 
         self.model_name = model_name
         self.api_key = api_key
-        self.base_url = base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        self.base_url = base_url
 
         # 配置API客户端
         self._configure_client()
