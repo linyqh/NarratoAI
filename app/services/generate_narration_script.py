@@ -231,7 +231,7 @@ def generate_narration(markdown_content, api_key, base_url, model):
 
 if __name__ == '__main__':
     text_provider = 'openai'
-    text_api_key = "sk-6f7bb9d1cbee4012921268ecfe733851"
+    text_api_key = "sk-xxx"
     text_model = "deepseek-reasoner"
     text_base_url = "https://api.deepseek.com"
     video_frame_description_path = "/Users/apple/Desktop/home/NarratoAI/storage/temp/analysis/frame_analysis_20250508_1139.json"
