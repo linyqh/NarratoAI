@@ -9,6 +9,7 @@ from app.utils import video_processor
 import streamlit as st
 from loguru import logger
 from requests.adapters import HTTPAdapter
+from datetime import datetime
 
 from app.config import config
 from app.utils.script_generator import ScriptProcessor
@@ -164,6 +165,9 @@ def generate_script_docu(params):
                 )
                 loop.close()
 
+                """
+                3. 处理分析结果（格式化为 json 数据）
+                """
                 # ===================处理分析结果===================
                 update_progress(60, "正在整理分析结果...")
 
@@ -282,24 +286,24 @@ def generate_script_docu(params):
                     "overall_activity_summaries": overall_activity_summaries
                 }
                 
+                # 使用当前时间创建文件名
+                now = datetime.now()
+                timestamp_str = now.strftime("%Y%m%d_%H%M")
+                
+                # 确保分析目录存在
+                analysis_dir = os.path.join(utils.storage_dir(), "temp", "analysis")
+                os.makedirs(analysis_dir, exist_ok=True)
+                
                 # 保存完整的分析结果为JSON
-                analysis_json_path = os.path.join(utils.task_dir(), "frame_analysis.json")
+                analysis_filename = f"frame_analysis_{timestamp_str}.json"
+                analysis_json_path = os.path.join(analysis_dir, analysis_filename)
                 with open(analysis_json_path, 'w', encoding='utf-8') as f:
                     json.dump(merged_results, f, ensure_ascii=False, indent=2)
-                
-                # 同时保存原始文本格式的分析结果（兼容性）
-                if not frame_analysis.strip() and merged_frame_observations:
-                    # 如果没有原始文本但有合并结果，则从合并结果生成文本
-                    frame_analysis = json.dumps(merged_results, ensure_ascii=False, indent=2)
-                
-                if not frame_analysis.strip():
-                    raise Exception("未能生成有效的帧分析结果")
-                
-                # # 保存文本格式分析结果
-                # analysis_path = os.path.join(utils.temp_dir(), "frame_analysis.txt")
-                # with open(analysis_path, 'w', encoding='utf-8') as f:
-                #     f.write(frame_analysis)
+                logger.info(f"分析结果已保存到: {analysis_json_path}")
 
+                """
+                4. 生成文案
+                """
                 update_progress(70, "正在生成脚本...")
 
                 # 从配置中获取文本生成相关配置
