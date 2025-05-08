@@ -306,8 +306,8 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     output_video_path = path.join(utils.task_dir(task_id), f"combined.mp4")
     logger.info(f"\n\n## 6. 最后一步: 合并字幕/BGM/配音/视频 -> {output_video_path}")
 
-    bgm_path = '/Users/apple/Desktop/home/NarratoAI/resource/songs/bgm.mp3'
-    # bgm_path = params.bgm_file
+    # bgm_path = '/Users/apple/Desktop/home/NarratoAI/resource/songs/bgm.mp3'
+    bgm_path = utils.get_bgm_file()
 
     # 调用示例
     options = {
@@ -315,11 +315,12 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         'bgm_volume': params.bgm_volume,  # 背景音乐音量
         'original_audio_volume': params.original_volume,  # 视频原声音量，0表示不保留
         'keep_original_audio': True,  # 是否保留原声
-        'subtitle_font': 'MicrosoftYaHeiNormal.ttc',  # 这里使用相对字体路径，会自动在 font_dir() 目录下查找
+        'subtitle_font': params.font_name,  # 这里使用相对字体路径，会自动在 font_dir() 目录下查找
         'subtitle_font_size': params.font_size,
-        'subtitle_color': '#FFFFFF',
+        'subtitle_color': params.text_fore_color,
         'subtitle_bg_color': None,  # 直接使用None表示透明背景
         'subtitle_position': params.subtitle_position,
+        'custom_position': params.custom_position,
         'threads': params.n_threads
     }
     generate_video.merge_materials(

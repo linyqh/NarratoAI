@@ -10,7 +10,7 @@
 
 import os
 import traceback
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any
 from loguru import logger
 from moviepy import (
     VideoFileClip,
@@ -18,7 +18,6 @@ from moviepy import (
     CompositeAudioClip,
     CompositeVideoClip,
     TextClip,
-    concatenate_videoclips,
     afx
 )
 from moviepy.video.tools.subtitles import SubtitlesClip
@@ -54,6 +53,7 @@ def merge_materials(
             - subtitle_color: 字幕颜色，默认白色
             - subtitle_bg_color: 字幕背景颜色，默认透明
             - subtitle_position: 字幕位置，可选值'bottom', 'top', 'center'，默认'bottom'
+            - custom_position: 自定义位置
             - stroke_color: 描边颜色，默认黑色
             - stroke_width: 描边宽度，默认1
             - threads: 处理线程数，默认2
@@ -71,11 +71,12 @@ def merge_materials(
     bgm_volume = options.get('bgm_volume', 0.3)
     original_audio_volume = options.get('original_audio_volume', 0.0)  # 默认为0，即不保留原声
     keep_original_audio = options.get('keep_original_audio', False)  # 是否保留原声
-    subtitle_font = options.get('subtitle_font', None)
+    subtitle_font = options.get('subtitle_font', '')
     subtitle_font_size = options.get('subtitle_font_size', 40)
     subtitle_color = options.get('subtitle_color', '#FFFFFF')
     subtitle_bg_color = options.get('subtitle_bg_color', 'transparent')
     subtitle_position = options.get('subtitle_position', 'bottom')
+    custom_position = options.get('custom_position', 70)
     stroke_color = options.get('stroke_color', '#000000')
     stroke_width = options.get('stroke_width', 1)
     threads = options.get('threads', 2)
@@ -222,6 +223,15 @@ def merge_materials(
             _clip = _clip.with_position(("center", video_height * 0.95 - _clip.h))
         elif subtitle_position == "top":
             _clip = _clip.with_position(("center", video_height * 0.05))
+        elif subtitle_position == "custom":
+            margin = 10
+            max_y = video_height - _clip.h - margin
+            min_y = margin
+            custom_y = (video_height - _clip.h) * (custom_position / 100)
+            custom_y = max(
+                min_y, min(custom_y, max_y)
+            )
+            _clip = _clip.with_position(("center", custom_y))
         else:  # center
             _clip = _clip.with_position(("center", "center"))
             
