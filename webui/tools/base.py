@@ -24,15 +24,13 @@ def create_vision_analyzer(provider, api_key, model, base_url):
     """
     if provider == 'gemini':
         return gemini_analyzer.VisionAnalyzer(model_name=model, api_key=api_key)
-    elif provider == 'qwenvl':
+    else:
         # 只传入必要的参数
         return qwenvl_analyzer.QwenAnalyzer(
             model_name=model, 
             api_key=api_key,
             base_url=base_url
         )
-    else:
-        raise ValueError(f"不支持的视觉分析提供商: {provider}")
 
 
 def get_batch_timestamps(batch_files, prev_batch_files=None):

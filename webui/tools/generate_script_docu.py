@@ -4,16 +4,12 @@ import json
 import time
 import asyncio
 import traceback
-import requests
-from app.utils import video_processor
 import streamlit as st
 from loguru import logger
-from requests.adapters import HTTPAdapter
 from datetime import datetime
 
 from app.config import config
-from app.utils.script_generator import ScriptProcessor
-from app.utils import utils, video_processor, qwenvl_analyzer
+from app.utils import utils, video_processor
 from webui.tools.base import create_vision_analyzer, get_batch_files, get_batch_timestamps, chekc_video_config
 
 
@@ -111,12 +107,10 @@ def generate_script_docu(params):
                     vision_api_key = st.session_state.get('vision_gemini_api_key')
                     vision_model = st.session_state.get('vision_gemini_model_name')
                     vision_base_url = st.session_state.get('vision_gemini_base_url')
-                elif vision_llm_provider == 'qwenvl':
-                    vision_api_key = st.session_state.get('vision_qwenvl_api_key')
-                    vision_model = st.session_state.get('vision_qwenvl_model_name', 'qwen-vl-max-latest')
-                    vision_base_url = st.session_state.get('vision_qwenvl_base_url')
                 else:
-                    raise ValueError(f"不支持的视觉分析提供商: {vision_llm_provider}")
+                    vision_api_key = st.session_state.get(f'vision_{vision_llm_provider}_api_key')
+                    vision_model = st.session_state.get(f'vision_{vision_llm_provider}_model_name')
+                    vision_base_url = st.session_state.get(f'vision_{vision_llm_provider}_base_url')
 
                 # 创建视觉分析器实例
                 analyzer = create_vision_analyzer(
@@ -354,7 +348,6 @@ def generate_script_docu(params):
                 # 整理帧分析数据
                 markdown_output = parse_frame_analysis_to_markdown(analysis_json_path)
 
-                # 生成文案
                 # 生成解说文案
                 narration = generate_narration(
                     markdown_output,
