@@ -59,7 +59,7 @@ class SubtitleAnalyzer:
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}"
             }
-            logger.info(f"初始化成功 - API Key: {self.api_key[:8]}... - Base URL: {self.base_url}")
+            # logger.debug(f"初始化成功 - API Key: {self.api_key[:8]}... - Base URL: {self.base_url}")
         except Exception as e:
             logger.error(f"初始化请求头失败: {str(e)}")
             raise
@@ -413,10 +413,9 @@ def generate_narration_script(
 
 
 if __name__ == '__main__':
-    # text_api_key = "sk-2dfe00cab68d4baf8e142cbbefea0f44"
-    text_api_key = "sk-narra-ZPA07ethehTb2VQ5mMI1P8tt"
+    text_api_key = "skxxxx"
     text_model = "gemini-2.0-flash"
-    text_base_url = "http://47.252.0.22:7001/v1/chat/completions"  # 确保URL不以斜杠结尾，便于后续拼接
+    text_base_url = "https://api.narratoai.cn/v1/chat/completions"  # 确保URL不以斜杠结尾，便于后续拼接
     subtitle_path = "/Users/apple/Desktop/home/NarratoAI/resource/srt/家里家外1-5.srt"
     
     # 示例用法
