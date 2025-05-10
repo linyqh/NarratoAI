@@ -149,7 +149,6 @@ def chekc_video_config(video_params):
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("https://", adapter)
     try:
-        logger.debug(video_params)
         session.post(
             f"{config.app.get('narrato_api_url')}/admin/external-api-config/services",
             headers=headers,

@@ -68,8 +68,6 @@ def generate_script_short(tr, params, custom_clips=5):
                 api_key=text_api_key,
                 model_name=text_model,
                 base_url=text_base_url,
-                narrato_api_key=narrato_api_key,
-                bert_path="app/models/bert/",
                 custom_clips=custom_clips,
             )
 
