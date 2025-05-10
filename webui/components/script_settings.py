@@ -11,6 +11,7 @@ from app.models.schema import VideoClipParams
 from app.utils import utils, check_script
 from webui.tools.generate_script_docu import generate_script_docu
 from webui.tools.generate_script_short import generate_script_short
+from webui.tools.generate_short_summary import generate_script_short_sunmmary
 
 
 def render_script_panel(tr):
@@ -27,15 +28,20 @@ def render_script_panel(tr):
 
         # 获取当前选择的脚本类型
         script_path = st.session_state.get('video_clip_json_path', '')
-        
+
         # 根据脚本类型显示不同的布局
         if script_path == "short":
-            # Short Generate模式下显示的内容
+            # 短剧混剪 模式下显示的内容
             render_short_generate_options(tr)
-        else:
-            # 其他模式下保持原有布局
-            # 渲染视频主题和提示词
+        elif script_path == "auto":
+            # 画面解说
             render_video_details(tr)
+        elif script_path == "summary":
+            # 短剧解说
+            short_drama_summary(tr)
+        else:
+            # 默认为空
+            pass
 
         # 渲染脚本操作按钮
         render_script_buttons(tr, params)
@@ -44,9 +50,10 @@ def render_script_panel(tr):
 def render_script_file(tr, params):
     """渲染脚本文件选择"""
     script_list = [
-        (tr("None"), ""), 
-        (tr("Auto Generate"), "auto"), 
+        (tr("None"), ""),
+        (tr("Auto Generate"), "auto"),
         (tr("Short Generate"), "short"),
+        (tr("Short Drama Summary"), "summary"),
         (tr("Upload Script"), "upload_script")
     ]
 
@@ -100,11 +107,11 @@ def render_script_file(tr, params):
                 # 读取上传的JSON内容并验证格式
                 script_content = uploaded_file.read().decode('utf-8')
                 json_data = json.loads(script_content)
-                
+
                 # 保存到脚本目录
                 script_file_path = os.path.join(script_dir, uploaded_file.name)
                 file_name, file_extension = os.path.splitext(uploaded_file.name)
-                
+
                 # 如果文件已存在,添加时间戳
                 if os.path.exists(script_file_path):
                     timestamp = time.strftime("%Y%m%d%H%M%S")
@@ -114,14 +121,14 @@ def render_script_file(tr, params):
                 # 写入文件
                 with open(script_file_path, "w", encoding='utf-8') as f:
                     json.dump(json_data, f, ensure_ascii=False, indent=2)
-                
+
                 # 更新状态
                 st.success(tr("Script Uploaded Successfully"))
                 st.session_state['video_clip_json_path'] = script_file_path
                 params.video_clip_json_path = script_file_path
                 time.sleep(1)
                 st.rerun()
-                
+
             except json.JSONDecodeError:
                 st.error(tr("Invalid JSON format"))
             except Exception as e:
@@ -193,7 +200,7 @@ def render_short_generate_options(tr):
 
 
 def render_video_details(tr):
-    """渲染视频主题和提示词"""
+    """画面解说 渲染视频主题和提示词"""
     video_theme = st.text_input(tr("Video Theme"))
     custom_prompt = st.text_area(
         tr("Generation Prompt"),
@@ -201,44 +208,84 @@ def render_video_details(tr):
         help=tr("Custom prompt for LLM, leave empty to use default prompt"),
         height=180
     )
+    # 非短视频模式下显示原有的三个输入框
+    input_cols = st.columns(2)
+
+    with input_cols[0]:
+        st.number_input(
+            tr("Frame Interval (seconds)"),
+            min_value=0,
+            value=st.session_state.get('frame_interval_input', config.frames.get('frame_interval_input', 3)),
+            help=tr("Frame Interval (seconds) (More keyframes consume more tokens)"),
+            key="frame_interval_input"
+        )
+
+    with input_cols[1]:
+        st.number_input(
+            tr("Batch Size"),
+            min_value=0,
+            value=st.session_state.get('vision_batch_size', config.frames.get('vision_batch_size', 10)),
+            help=tr("Batch Size (More keyframes consume more tokens)"),
+            key="vision_batch_size"
+        )
     st.session_state['video_theme'] = video_theme
     st.session_state['custom_prompt'] = custom_prompt
     return video_theme, custom_prompt
+
+
+def short_drama_summary(tr):
+    """短剧解说 渲染视频主题和提示词"""
+    subtitle_file = st.file_uploader(
+        tr("上传字幕文件"),
+        type=["srt"],
+        accept_multiple_files=False,
+    )
+    if subtitle_file is not None:
+        try:
+            # 读取上传的JSON内容并验证格式
+            script_content = subtitle_file.read().decode('utf-8')
+
+            # 保存到脚本目录
+            script_file_path = os.path.join(utils.subtitle_dir(), subtitle_file.name)
+            file_name, file_extension = os.path.splitext(subtitle_file.name)
+
+            # 如果文件已存在,添加时间戳
+            if os.path.exists(script_file_path):
+                timestamp = time.strftime("%Y%m%d%H%M%S")
+                file_name_with_timestamp = f"{file_name}_{timestamp}"
+                script_file_path = os.path.join(utils.subtitle_dir(), file_name_with_timestamp + file_extension)
+
+            # 写入文件
+            with open(script_file_path, "w", encoding='utf-8') as f:
+                json.dump(script_content, f, ensure_ascii=False, indent=2)
+
+            # 更新状态
+            st.success(tr("字幕上传成功"))
+            st.session_state['subtitle_path'] = script_file_path
+            time.sleep(0.1)
+            st.rerun()
+
+        except json.JSONDecodeError:
+            st.error(tr("Invalid JSON format"))
+        except Exception as e:
+            st.error(f"{tr('Upload failed')}: {str(e)}")
+    video_theme = st.text_input(tr("短剧名称"))
+    st.session_state['video_theme'] = video_theme
+    return video_theme
 
 
 def render_script_buttons(tr, params):
     """渲染脚本操作按钮"""
     # 获取当前选择的脚本类型
     script_path = st.session_state.get('video_clip_json_path', '')
-    
-    # 根据脚本类型显示不同的设置
-    if script_path != "short":
-        # 非短视频模式下显示原有的三个输入框
-        input_cols = st.columns(2)
-        
-        with input_cols[0]:
-            st.number_input(
-                tr("Frame Interval (seconds)"),
-                min_value=0,
-                value=st.session_state.get('frame_interval_input', config.frames.get('frame_interval_input', 3)),
-                help=tr("Frame Interval (seconds) (More keyframes consume more tokens)"),
-                key="frame_interval_input"
-            )
-        
-        with input_cols[1]:
-            st.number_input(
-                tr("Batch Size"),
-                min_value=0,
-                value=st.session_state.get('vision_batch_size', config.frames.get('vision_batch_size', 10)),
-                help=tr("Batch Size (More keyframes consume more tokens)"),
-                key="vision_batch_size"
-            )
 
     # 生成/加载按钮
     if script_path == "auto":
         button_name = tr("Generate Video Script")
     elif script_path == "short":
         button_name = tr("Generate Short Video Script")
+    elif script_path == "summary":
+        button_name = tr("生成短剧解说脚本")
     elif script_path.endswith("json"):
         button_name = tr("Load Video Script")
     else:
@@ -250,9 +297,13 @@ def render_script_buttons(tr, params):
             generate_script_docu(params)
         elif script_path == "short":
             # 获取自定义片段数量参数
-            custom_clips = st.session_state.get('custom_clips', 5)
+            custom_clips = st.session_state.get('custom_clips')
             # 直接将custom_clips作为参数传递，而不是通过params对象
             generate_script_short(tr, params, custom_clips)
+        elif script_path == "summary":
+            # 执行短剧解说脚本生成
+            subtitle_path = st.session_state.get('subtitle_path')
+            generate_script_short_sunmmary(params, subtitle_path)
         else:
             load_script(tr, script_path)
 
