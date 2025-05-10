@@ -4,16 +4,12 @@ import json
 import time
 import asyncio
 import traceback
-import requests
-from app.utils import video_processor
 import streamlit as st
 from loguru import logger
-from requests.adapters import HTTPAdapter
 from datetime import datetime
 
 from app.config import config
-from app.utils.script_generator import ScriptProcessor
-from app.utils import utils, video_processor, qwenvl_analyzer
+from app.utils import utils, video_processor
 from webui.tools.base import create_vision_analyzer, get_batch_files, get_batch_timestamps, chekc_video_config
 
 
@@ -100,6 +96,7 @@ def generate_script_docu(params):
             2. 视觉分析(批量分析每一帧)
             """
             vision_llm_provider = st.session_state.get('vision_llm_providers').lower()
+            llm_params = dict()
             logger.debug(f"VLM 视觉大模型提供商: {vision_llm_provider}")
 
             try:
@@ -111,14 +108,18 @@ def generate_script_docu(params):
                     vision_api_key = st.session_state.get('vision_gemini_api_key')
                     vision_model = st.session_state.get('vision_gemini_model_name')
                     vision_base_url = st.session_state.get('vision_gemini_base_url')
-                elif vision_llm_provider == 'qwenvl':
-                    vision_api_key = st.session_state.get('vision_qwenvl_api_key')
-                    vision_model = st.session_state.get('vision_qwenvl_model_name', 'qwen-vl-max-latest')
-                    vision_base_url = st.session_state.get('vision_qwenvl_base_url')
                 else:
-                    raise ValueError(f"不支持的视觉分析提供商: {vision_llm_provider}")
+                    vision_api_key = st.session_state.get(f'vision_{vision_llm_provider}_api_key')
+                    vision_model = st.session_state.get(f'vision_{vision_llm_provider}_model_name')
+                    vision_base_url = st.session_state.get(f'vision_{vision_llm_provider}_base_url')
 
                 # 创建视觉分析器实例
+                llm_params = {
+                  "vision_provider": vision_llm_provider,
+                  "vision_api_key": vision_api_key,
+                  "vision_model_name": vision_model,
+                  "vision_base_url": vision_base_url,
+                }
                 analyzer = create_vision_analyzer(
                     provider=vision_llm_provider,
                     api_key=vision_api_key,
@@ -350,11 +351,16 @@ def generate_script_docu(params):
                 text_api_key = config.app.get(f'text_{text_provider}_api_key')
                 text_model = config.app.get(f'text_{text_provider}_model_name')
                 text_base_url = config.app.get(f'text_{text_provider}_base_url')
-
+                llm_params.update({
+                    "text_provider": text_provider,
+                    "text_api_key": text_api_key,
+                    "text_model_name": text_model,
+                    "text_base_url": text_base_url
+                })
+                chekc_video_config(llm_params)
                 # 整理帧分析数据
                 markdown_output = parse_frame_analysis_to_markdown(analysis_json_path)
 
-                # 生成文案
                 # 生成解说文案
                 narration = generate_narration(
                     markdown_output,

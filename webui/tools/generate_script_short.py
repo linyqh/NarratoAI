@@ -36,9 +36,10 @@ def generate_script_short(tr, params, custom_clips=5):
             text_api_key = config.app.get(f'text_{text_provider}_api_key')
             text_model = config.app.get(f'text_{text_provider}_model_name')
             text_base_url = config.app.get(f'text_{text_provider}_base_url')
-            vision_api_key = st.session_state.get(f'vision_{text_provider}_api_key', "")
-            vision_model = st.session_state.get(f'vision_{text_provider}_model_name', "")
-            vision_base_url = st.session_state.get(f'vision_{text_provider}_base_url', "")
+            vision_llm_provider = st.session_state.get('vision_llm_providers').lower()
+            vision_api_key = st.session_state.get(f'vision_{vision_llm_provider}_api_key', "")
+            vision_model = st.session_state.get(f'vision_{vision_llm_provider}_model_name', "")
+            vision_base_url = st.session_state.get(f'vision_{vision_llm_provider}_base_url', "")
             narrato_api_key = config.app.get('narrato_api_key')
 
             update_progress(20, "开始准备生成脚本")
@@ -50,9 +51,11 @@ def generate_script_short(tr, params, custom_clips=5):
                 st.stop()
 
             api_params = {
+                "vision_provider": vision_llm_provider,
                 "vision_api_key": vision_api_key,
                 "vision_model_name": vision_model,
                 "vision_base_url": vision_base_url or "",
+                "text_provider": text_provider,
                 "text_api_key": text_api_key,
                 "text_model_name": text_model,
                 "text_base_url": text_base_url or ""
@@ -65,8 +68,6 @@ def generate_script_short(tr, params, custom_clips=5):
                 api_key=text_api_key,
                 model_name=text_model,
                 base_url=text_base_url,
-                narrato_api_key=narrato_api_key,
-                bert_path="app/models/bert/",
                 custom_clips=custom_clips,
             )
 

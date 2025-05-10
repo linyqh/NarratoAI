@@ -237,28 +237,28 @@ if __name__ == '__main__':
     video_frame_description_path = "/Users/apple/Desktop/home/NarratoAI/storage/temp/analysis/frame_analysis_20250508_1139.json"
 
     # 测试新的JSON文件
-    test_file_path = "/Users/apple/Desktop/home/NarratoAI/storage/temp/analysis/frame_analysis_20250508_1458.json"
+    test_file_path = "/Users/apple/Desktop/home/NarratoAI/storage/temp/analysis/frame_analysis_20250508_2258.json"
     markdown_output = parse_frame_analysis_to_markdown(test_file_path)
     # print(markdown_output)
     
     # 输出到文件以便检查格式
-    output_file = "/Users/apple/Desktop/home/NarratoAI/storage/temp/narration_script.md"
+    output_file = "/Users/apple/Desktop/home/NarratoAI/storage/temp/家里家外1-5.md"
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(markdown_output)
     # print(f"\n已将Markdown输出保存到: {output_file}")
     
-    # 生成解说文案
-    narration = generate_narration(
-        markdown_output, 
-        text_api_key,
-        base_url=text_base_url,
-        model=text_model
-    )
-    
-    # 保存解说文案
-    print(narration)
-    print(type(narration))
-    narration_file = "/Users/apple/Desktop/home/NarratoAI/storage/temp/final_narration_script.json"
-    with open(narration_file, 'w', encoding='utf-8') as f:
-        f.write(narration)
-    print(f"\n已将解说文案保存到: {narration_file}")
+    # # 生成解说文案
+    # narration = generate_narration(
+    #     markdown_output,
+    #     text_api_key,
+    #     base_url=text_base_url,
+    #     model=text_model
+    # )
+    #
+    # # 保存解说文案
+    # print(narration)
+    # print(type(narration))
+    # narration_file = "/Users/apple/Desktop/home/NarratoAI/storage/temp/final_narration_script.json"
+    # with open(narration_file, 'w', encoding='utf-8') as f:
+    #     f.write(narration)
+    # print(f"\n已将解说文案保存到: {narration_file}")

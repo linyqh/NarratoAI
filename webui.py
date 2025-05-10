@@ -5,7 +5,7 @@ from loguru import logger
 from app.config import config
 from webui.components import basic_settings, video_settings, audio_settings, subtitle_settings, script_settings, \
     review_settings, merge_settings, system_settings
-from webui.utils import cache, file_utils
+# from webui.utils import cache, file_utils
 from app.utils import utils
 from app.models.schema import VideoClipParams, VideoAspect
 
@@ -184,7 +184,7 @@ def render_generate_button():
         except Exception as e:
             logger.error(f"播放视频失败: {e}")
 
-        file_utils.open_task_folder(config.root_dir, task_id)
+        # file_utils.open_task_folder(config.root_dir, task_id)
         logger.info(tr("视频生成完成"))
 
 

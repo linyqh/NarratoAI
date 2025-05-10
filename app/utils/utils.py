@@ -325,6 +325,15 @@ def video_dir(sub_dir: str = ""):
     return d
 
 
+def subtitle_dir(sub_dir: str = ""):
+    d = resource_dir(f"srt")
+    if sub_dir:
+        d = os.path.join(d, sub_dir)
+    if not os.path.exists(d):
+        os.makedirs(d)
+    return d
+
+
 def split_timestamp(timestamp):
     """
     拆分时间戳
