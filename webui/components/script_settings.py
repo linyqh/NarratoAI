@@ -235,17 +235,32 @@ def render_video_details(tr):
 
 def short_drama_summary(tr):
     """短剧解说 渲染视频主题和提示词"""
+    # 检查是否已经处理过字幕文件
+    if 'subtitle_file_processed' not in st.session_state:
+        st.session_state['subtitle_file_processed'] = False
+    
     subtitle_file = st.file_uploader(
         tr("上传字幕文件"),
         type=["srt"],
         accept_multiple_files=False,
+        key="subtitle_file_uploader"  # 添加唯一key
     )
-    if subtitle_file is not None:
+    
+    # 显示当前已上传的字幕文件路径
+    if 'subtitle_path' in st.session_state and st.session_state['subtitle_path']:
+        st.info(f"已上传字幕: {os.path.basename(st.session_state['subtitle_path'])}")
+        if st.button(tr("清除已上传字幕")):
+            st.session_state['subtitle_path'] = None
+            st.session_state['subtitle_file_processed'] = False
+            st.rerun()
+    
+    # 只有当有文件上传且尚未处理时才执行处理逻辑
+    if subtitle_file is not None and not st.session_state['subtitle_file_processed']:
         try:
-            # 读取上传的JSON内容并验证格式
+            # 读取上传的SRT内容
             script_content = subtitle_file.read().decode('utf-8')
 
-            # 保存到脚本目录
+            # 保存到字幕目录
             script_file_path = os.path.join(utils.subtitle_dir(), subtitle_file.name)
             file_name, file_extension = os.path.splitext(subtitle_file.name)
 
@@ -255,20 +270,21 @@ def short_drama_summary(tr):
                 file_name_with_timestamp = f"{file_name}_{timestamp}"
                 script_file_path = os.path.join(utils.subtitle_dir(), file_name_with_timestamp + file_extension)
 
-            # 写入文件
+            # 直接写入SRT内容，不进行JSON转换
             with open(script_file_path, "w", encoding='utf-8') as f:
-                json.dump(script_content, f, ensure_ascii=False, indent=2)
+                f.write(script_content)
 
             # 更新状态
             st.success(tr("字幕上传成功"))
             st.session_state['subtitle_path'] = script_file_path
-            time.sleep(0.1)
-            st.rerun()
-
-        except json.JSONDecodeError:
-            st.error(tr("Invalid JSON format"))
+            st.session_state['subtitle_file_processed'] = True  # 标记已处理
+            
+            # 避免使用rerun，使用更新状态的方式
+            # st.rerun()
+            
         except Exception as e:
             st.error(f"{tr('Upload failed')}: {str(e)}")
+    
     video_theme = st.text_input(tr("短剧名称"))
     st.session_state['video_theme'] = video_theme
     return video_theme
