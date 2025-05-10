@@ -26,8 +26,8 @@
     vision_openai_base_url = "https://api.openai.com/v1"
 
     ########### NarratoAPI 微调模型 (未发布)
-    narrato_api_key = "ggyY91BAO-_ULvAqKum3XexcyN1G3dP86DEzvjZDcrg"
-    narrato_api_url = "https://narratoinsight.scsmtech.cn/api/v1"
+    narrato_api_key = ""
+    narrato_api_url = ""
     narrato_model = "narra-1.0-2025-05-09"
 
     # 用于生成文案的大模型支持的提供商 (Supported providers):
@@ -60,6 +60,7 @@
     ########## Gemini API Key
     text_gemini_api_key=""
     text_gemini_model_name = "gemini-2.0-flash"
+    text_gemini_base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
 
     ########## Qwen API Key
     # 访问 https://bailian.console.aliyun.com/?tab=model#/api-key 获取你的 API 密钥
