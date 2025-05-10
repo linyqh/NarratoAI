@@ -18,7 +18,7 @@ from app.config import config
 from app.services.SDE.short_drama_explanation import analyze_subtitle, generate_narration_script
 
 
-def generate_script_short_sunmmary(params, subtitle_path):
+def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperature):
     """
     生成 短剧解说 视频脚本
     要求: 提供高质量短剧字幕
@@ -71,11 +71,13 @@ def generate_script_short_sunmmary(params, subtitle_path):
 
                 # 根据剧情生成解说文案
                 narration_result = generate_narration_script(
+                    short_name=video_theme,
                     plot_analysis=analysis_result["analysis"],
                     api_key=text_api_key,
                     model=text_model,
                     base_url=text_base_url,
-                    save_result=True
+                    save_result=True,
+                    temperature=temperature
                 )
 
                 if narration_result["status"] == "success":

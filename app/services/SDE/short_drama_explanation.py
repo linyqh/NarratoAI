@@ -203,11 +203,12 @@ class SubtitleAnalyzer:
             logger.error(f"保存分析结果时发生错误: {str(e)}")
             return ""
 
-    def generate_narration_script(self, plot_analysis: str, temperature: float = 0.7) -> Dict[str, Any]:
+    def generate_narration_script(self, short_name:str, plot_analysis: str, temperature: float = 0.7) -> Dict[str, Any]:
         """
         根据剧情分析生成解说文案
         
         Args:
+            short_name: 短剧名称
             plot_analysis: 剧情分析内容
             temperature: 生成温度，控制创造性，默认0.7
             
@@ -216,8 +217,8 @@ class SubtitleAnalyzer:
         """
         try:
             # 构建完整提示词
-            prompt = plot_writing % plot_analysis
-            
+            prompt = plot_writing % (short_name, plot_analysis)
+
             # 构建请求体数据
             payload = {
                 "model": self.model,
@@ -371,6 +372,7 @@ def analyze_subtitle(
 
 
 def generate_narration_script(
+    short_name: str = None,
     plot_analysis: str = None,
     api_key: Optional[str] = None,
     model: Optional[str] = None,
@@ -383,6 +385,7 @@ def generate_narration_script(
     根据剧情分析生成解说文案的便捷函数
     
     Args:
+        short_name: 短剧名称
         plot_analysis: 剧情分析内容，直接提供
         api_key: API密钥
         model: 模型名称
@@ -403,7 +406,7 @@ def generate_narration_script(
     )
     
     # 生成解说文案
-    result = analyzer.generate_narration_script(plot_analysis, temperature)
+    result = analyzer.generate_narration_script(short_name, plot_analysis, temperature)
     
     # 保存结果
     if save_result and result["status"] == "success":

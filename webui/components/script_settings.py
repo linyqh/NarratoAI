@@ -30,12 +30,12 @@ def render_script_panel(tr):
         script_path = st.session_state.get('video_clip_json_path', '')
 
         # 根据脚本类型显示不同的布局
-        if script_path == "short":
-            # 短剧混剪 模式下显示的内容
-            render_short_generate_options(tr)
-        elif script_path == "auto":
+        if script_path == "auto":
             # 画面解说
             render_video_details(tr)
+        elif script_path == "short":
+            # 短剧混剪
+            render_short_generate_options(tr)
         elif script_path == "summary":
             # 短剧解说
             short_drama_summary(tr)
@@ -187,6 +187,7 @@ def render_short_generate_options(tr):
     渲染Short Generate模式下的特殊选项
     在Short Generate模式下，替换原有的输入框为自定义片段选项
     """
+    short_drama_summary(tr)
     # 显示自定义片段数量选择器
     custom_clips = st.number_input(
         tr("自定义片段"),
@@ -284,9 +285,13 @@ def short_drama_summary(tr):
             
         except Exception as e:
             st.error(f"{tr('Upload failed')}: {str(e)}")
-    
+
+    # 名称输入框
     video_theme = st.text_input(tr("短剧名称"))
     st.session_state['video_theme'] = video_theme
+    # 数字输入框
+    temperature = st.slider("temperature", 0.0, 2.0, 0.7)
+    st.session_state['temperature'] = temperature
     return video_theme
 
 
@@ -312,14 +317,15 @@ def render_script_buttons(tr, params):
             # 执行纪录片视频脚本生成（视频无字幕无配音）
             generate_script_docu(params)
         elif script_path == "short":
-            # 获取自定义片段数量参数
+            # 执行 短剧混剪 脚本生成
             custom_clips = st.session_state.get('custom_clips')
-            # 直接将custom_clips作为参数传递，而不是通过params对象
             generate_script_short(tr, params, custom_clips)
         elif script_path == "summary":
-            # 执行短剧解说脚本生成
+            # 执行 短剧解说 脚本生成
             subtitle_path = st.session_state.get('subtitle_path')
-            generate_script_short_sunmmary(params, subtitle_path)
+            video_theme = st.session_state.get('video_theme')
+            temperature = st.session_state.get('temperature')
+            generate_script_short_sunmmary(params, subtitle_path, video_theme, temperature)
         else:
             load_script(tr, script_path)
 
