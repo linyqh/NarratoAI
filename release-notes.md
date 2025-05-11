@@ -2,6 +2,7 @@
 
 ## Latest Changes
 
+* docs(README): 更新README. PR [#138](https://github.com/linyqh/NarratoAI/pull/138) by [@linyqh](https://github.com/linyqh).
 * Dev 0.6.0. PR [#137](https://github.com/linyqh/NarratoAI/pull/137) by [@linyqh](https://github.com/linyqh).
 * Dev 0.6.0 . PR [#134](https://github.com/linyqh/NarratoAI/pull/134) by [@linyqh](https://github.com/linyqh).
 * Dev-0.3.9. PR [#73](https://github.com/linyqh/NarratoAI/pull/73) by [@linyqh](https://github.com/linyqh).
