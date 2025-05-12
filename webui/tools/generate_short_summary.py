@@ -60,7 +60,8 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
                 api_key=text_api_key,
                 model=text_model,
                 base_url=text_base_url,
-                save_result=True
+                save_result=True,
+                temperature=temperature
             )
             """
             3. 根据剧情生成解说文案

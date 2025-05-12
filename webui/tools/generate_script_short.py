@@ -8,7 +8,6 @@ import streamlit as st
 from loguru import logger
 
 from app.config import config
-from webui.tools.base import chekc_video_config
 
 
 def generate_script_short(tr, params, custom_clips=5):
@@ -60,7 +59,6 @@ def generate_script_short(tr, params, custom_clips=5):
                 "text_model_name": text_model,
                 "text_base_url": text_base_url or ""
             }
-            chekc_video_config(api_params)
             from app.services.SDP.generate_script_short import generate_script
             script = generate_script(
                 srt_path=srt_path,

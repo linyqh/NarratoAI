@@ -10,7 +10,7 @@ from datetime import datetime
 
 from app.config import config
 from app.utils import utils, video_processor
-from webui.tools.base import create_vision_analyzer, get_batch_files, get_batch_timestamps, chekc_video_config
+from webui.tools.base import create_vision_analyzer, get_batch_files, get_batch_timestamps
 
 
 def generate_script_docu(params):
@@ -357,7 +357,6 @@ def generate_script_docu(params):
                     "text_model_name": text_model,
                     "text_base_url": text_base_url
                 })
-                chekc_video_config(llm_params)
                 # 整理帧分析数据
                 markdown_output = parse_frame_analysis_to_markdown(analysis_json_path)
 

@@ -351,7 +351,7 @@ def analyze_subtitle(
         base_url=base_url,
         custom_prompt=custom_prompt
     )
-    
+    logger.debug(f"使用模型: {analyzer.model} 开始分析, 温度: {analyzer.temperature}")
     # 分析字幕
     if subtitle_content:
         result = analyzer.analyze_subtitle(subtitle_content)
