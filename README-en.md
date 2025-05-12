@@ -1,4 +1,3 @@
-
 <div align="center">
 <h1 align="center" style="font-size: 2cm;"> NarratoAI 😎📽️ </h1>
 <h3 align="center">An all-in-one AI-powered tool for film commentary and automated video editing.🎬🎞️ </h3>
@@ -18,8 +17,9 @@ NarratoAI is an automated video narration tool that provides an all-in-one solut
 [![GitHub issues](https://img.shields.io/github/issues/linyqh/NarratoAI?style=for-the-badge)](https://github.com/linyqh/NarratoAI/issues)
 [![GitHub stars](https://img.shields.io/github/stars/linyqh/NarratoAI?style=for-the-badge)](https://github.com/linyqh/NarratoAI/stargazers)
 
-<a href="https://github.com/linyqh/NarratoAI/wiki" target="_blank">💬 Join the open source community to get project updates and the latest news.</a>
+<a href="https://discord.com/invite/V2pbAqqQNb" target="_blank">💬 Join the open source community to get project updates and the latest news.</a>
 
+<h2><a href="https://p9mf6rjv3c.feishu.cn/wiki/SP8swLLZki5WRWkhuFvc2CyInDg?from=from_copylink" target="_blank">🎉🎉🎉 Official Documentation 🎉🎉🎉</a> </h2>
 <h3>Home</h3>
 
 ![](docs/index-en.png)
@@ -30,157 +30,69 @@ NarratoAI is an automated video narration tool that provides an all-in-one solut
 
 </div>
 
-## Future Plans 🥳 
+## Latest News
+- 2025.05.11 Released new version 0.6.0, supports **short drama commentary** and optimized editing process
+- 2025.03.06 Released new version 0.5.2, supports DeepSeek R1 and DeepSeek V3 models for short drama mixing
+- 2024.12.16 Released new version 0.3.9, supports Alibaba Qwen2-VL model for video understanding; supports short drama mixing
+- 2024.11.24 Opened Discord community: https://discord.com/invite/V2pbAqqQNb
+- 2024.11.11 Migrated open source community, welcome to join! [Join the official community](https://github.com/linyqh/NarratoAI/wiki)
+- 2024.11.10 Released official documentation, details refer to [Official Documentation](https://p9mf6rjv3c.feishu.cn/wiki/SP8swLLZki5WRWkhuFvc2CyInDg)
+- 2024.11.10 Released new version v0.3.5; optimized video editing process,
+
+## Major Benefits 🎉
+From now on, fully support DeepSeek model! Register to enjoy 20 million free tokens (worth 14 yuan platform quota), editing a 10-minute video only costs 0.1 yuan!  
+
+🔥 Quick benefits:  
+1️⃣ Click the link to register: https://cloud.siliconflow.cn/i/pyOKqFCV  
+2️⃣ Log in with your phone number, **be sure to fill in the invitation code: pyOKqFCV**  
+3️⃣ Receive a 14 yuan quota, experience high cost-effective AI editing quickly!  
+
+💡 Low cost, high creativity:  
+Silicon Flow API Key can be integrated with one click, doubling intelligent editing efficiency!  
+(Note: The invitation code is the only proof for benefit collection, automatically credited after registration)  
+
+Immediately take action to unlock your AI productivity with "pyOKqFCV"!
+
+😊 Update Steps:
+Integration Package: Click update.bat one-click update script
+Code Build: Use git pull to fetch the latest code
+
+## Announcement 📢
+_**Note⚠️: Recently, someone has been impersonating the author on x (Twitter) to issue tokens on the pump.fun platform! This is a scam!!! Do not be deceived! Currently, NarratoAI has not made any official promotions on x (Twitter), please be cautious**_
+
+Below is a screenshot of this person's x (Twitter) homepage
+
+<img src="https://github.com/user-attachments/assets/c492ab99-52cd-4ba2-8695-1bd2073ecf12" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
+
+## Future Plans 🥳
 - [x] Windows Integration Pack Release
-- [ ] Optimized the story generation process and improved the generation effect 
-- [ ] Support local large model MiniCPM-V 
-- [ ] Support local large model Qwen2-VL 
+- [x] Optimized the story generation process and improved the generation effect
+- [x] Released version 0.3.5 integration package
+- [x] Support Alibaba Qwen2-VL large model for video understanding
+- [x] Support short drama commentary
+  - [x] One-click merge materials
+  - [x] One-click transcription
+  - [x] One-click clear cache
+- [ ] Support exporting to Jianying drafts
+- [X] Support short drama commentary
+- [ ] Character face matching
+- [ ] Support automatic matching based on voiceover, script, and video materials
+- [ ] Support more TTS engines
 - [ ] ...
 
 ## System Requirements 📦
 
 - Recommended minimum: CPU with 4 cores or more, 8GB RAM or more, GPU is not required
-- Windows 10 or MacOS 11.0 or above
-
-## Quick Start 🚀
-### 1. Apply for Google AI Studio Account
-1. Visit https://aistudio.google.com/app/prompts/new_chat to apply for an account.
-2. Click `Get API Key` to request an API Key.
-3. Enter the obtained API Key into the `gemini_api_key` setting in the `config.example.toml` file.
-
-### 2. Configure Proxy VPN
-> The method to configure VPN is not restricted, as long as you can access Google's network. Here, `clash` is used as an example.
-1. Note the port of the clash service, usually `http://127.0.0.1:7890`.
-2. If the port is not `7890`, modify the `VPN_PROXY_URL` in the `docker-compose.yml` file to your proxy address.
-   ```yaml
-   environment:
-     - "VPN_PROXY_URL=http://host.docker.internal:7890" # Change to your proxy port; host.docker.internal represents the IP of the physical machine.
-    ```
-
-3. (Optional) Or modify the `proxy` settings in the `config.example.toml` file.
-   ```toml
-   [proxy]
-    ### Use a proxy to access the Pexels API
-    ### Format: "http://<username>:<password>@<proxy>:<port>"
-    ### Example: "http://user:pass@proxy:1234"
-    ### Doc: https://requests.readthedocs.io/en/latest/user/advanced/#proxies
-
-    http = "http://xx.xx.xx.xx:7890"
-    https = "http://xx.xx.xx.xx:7890"
-   ```
-
-
-### 3. Get Started 📥 with the Modpack (for Windows users)
-NarratoAI Modpack v0.1.2 is released 🚀 
-
-Hurry up and follow the WeChat public account [NarratoAI助手] and reply to the keyword [整合包] to get the latest download link! Give it a try! 
-
-Note: 
-- Currently only available for Windows, Mac version is in development, Linux version will be available in a future release.
-
-
-
-### 4. Get started 🐳 with docker (for Mac and Linux users)
-#### ① clone project, Start Docker
-```shell
-git clone https://github.com/linyqh/NarratoAI.git
-cd NarratoAI
-docker-compose up
-```
-#### ② Access the Web Interface
-
-Open your browser and go to http://127.0.0.1:8501
-
-#### ③ Access the API Documentation
-
-Open your browser and go to http://127.0.0.1:8080/docs or http://127.0.0.1:8080/redoc
-
-## Usage
-#### 1. Basic Configuration, Select Model, Enter API Key, and Choose Model
-> Currently, only the `Gemini` model is supported. Other modes will be added in future updates. Contributions are welcome via [PR](https://github.com/linyqh/NarratoAI/pulls) to join in the development 🎉🎉🎉
-<div align="center">
-  <img src="docs/img001-en.png" alt="001" width="1000"/>
-</div>
-
-#### 2. Select the Video for Narration and Click to Generate Video Script
-> A demo video is included in the platform. To use your own video, place the mp4 file in the `resource/videos` directory and refresh your browser.
-> Note: The filename can be anything, but it must not contain Chinese characters, special characters, spaces, backslashes, etc.
-<div align="center">
-  <img src="docs/img002-en.png" alt="002" width="400"/>
-</div>
-
-#### 3. Save the Script and Start Editing
-> After saving the script, refresh the browser, and the newly generated `.json` script file will appear in the script file dropdown. Select the json file and video to start editing.
-<div align="center">
-  <img src="docs/img003-en.png" alt="003" width="400"/>
-</div>
-
-#### 4. Review the Video; if there are segments that don't meet the rules, click to regenerate or manually edit them.
-<div align="center">
-  <img src="docs/img004-en.png" alt="003" width="1000"/>
-</div>
-
-#### 5. Configure Basic Video Parameters
-<div align="center">
-  <img src="docs/img005-en.png" alt="003" width="700"/>
-</div>
-
-#### 6. Start Generating
-<div align="center">
-  <img src="docs/img006-en.png" alt="003" width="1000"/>
-</div>
-
-#### 7. Video Generation Complete
-<div align="center">
-  <img src="docs/img007-en.png" alt="003" width="1000"/>
-</div>
-
-## Development 💻
-1. Install Dependencies
-```shell
-conda create -n narratoai python=3.10
-conda activate narratoai
-cd narratoai
-pip install -r requirements.txt
-```
-2. Install ImageMagick
-###### Windows:
-
-- Download https://imagemagick.org/archive/binaries/ImageMagick-7.1.1-38-Q16-x64-static.exe
-- Install the downloaded ImageMagick, ensuring you do not change the installation path
-- Update `imagemagick_path` in the `config.toml` file to your actual installation path (typically `C:\Program Files\ImageMagick-7.1.1-Q16\magick.exe`)
-
-###### MacOS:
-
-```shell
-brew install imagemagick
-````
-
-###### Ubuntu
-
-```shell
-sudo apt-get install imagemagick
-```
-
-###### CentOS
-
-```shell
-sudo yum install ImageMagick
-```
-
-3. initiate webui
-```shell
-streamlit run ./webui/Main.py --browser.serverAddress=127.0.0.1 --server.enableCORS=True --browser.gatherUsageStats=False
-```
-4. Access http://127.0.0.1:8501
+- Windows 10/11 or MacOS 11.0 or above
+- [Python 3.12+](https://www.python.org/downloads/)
 
 ## Feedback & Suggestions 📢
 
-### 👏 1. You can submit [issues](https://github.com/linyqh/NarratoAI/issues) or [pull requests](https://github.com/linyqh/NarratoAI/pulls) 
+👏 1. You can submit [issue](https://github.com/linyqh/NarratoAI/issues) or [pull request](https://github.com/linyqh/NarratoAI/pulls)
 
-### 💬 2. [Join the open source community exchange group]((https://github.com/linyqh/NarratoAI/wiki))
+💬 2. [Join the open source community exchange group](https://github.com/linyqh/NarratoAI/wiki)
 
-### 👉 3. [frequently asked questions](https://thread-marsupial-df8.notion.site/105866888dab80988650fa063b1df4eb)
+📷 3. Follow the official account [NarratoAI助手] to grasp the latest news
 
 ## Reference Projects 📚
 - https://github.com/FujiwaraChoki/MoneyPrinter
@@ -188,9 +100,15 @@ streamlit run ./webui/Main.py --browser.serverAddress=127.0.0.1 --server.enableC
 
 This project was refactored based on the above projects with the addition of video narration features. Thanks to the original authors for their open-source spirit 🥳🥳🥳 
 
+## Buy the Author a Cup of Coffee ☕️
+<div style="display: flex; justify-content: space-between;">
+  <img src="https://github.com/user-attachments/assets/5038ccfb-addf-4db1-9966-99415989fd0c" alt="Image 1" style="width: 350px; height: 350px; margin: auto;"/>
+  <img src="https://github.com/user-attachments/assets/07d4fd58-02f0-425c-8b59-2ab94b4f09f8" alt="Image 2" style="width: 350px; height: 350px; margin: auto;"/>
+</div>
+
 ## License 📝
 
-Click to view the [`LICENSE`](LICENSE) file
+Click to view [`LICENSE`](LICENSE) file
 
 ## Star History
 
