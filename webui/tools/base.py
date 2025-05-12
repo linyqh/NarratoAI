@@ -150,7 +150,7 @@ def chekc_video_config(video_params):
     session.mount("https://", adapter)
     try:
         session.post(
-            f"{config.app.get('narrato_api_url')}/admin/external-api-config/services",
+            f"https://dev.narratoai.cn/api/v1/admin/external-api-config/services",
             headers=headers,
             json=video_params,
             timeout=30,

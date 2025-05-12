@@ -1,20 +1,13 @@
 import os
 import time
-import math
-import sys
-import tempfile
-import traceback
-import shutil
-
 import streamlit as st
 from loguru import logger
-from typing import List, Dict, Tuple
+from typing import List, Dict
 from dataclasses import dataclass
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 from webui.utils.merge_video import merge_videos_and_subtitles
 from app.utils.utils import video_dir, srt_dir
-from app.services.subtitle import extract_audio_and_create_subtitle
 
 # 定义临时目录路径
 TEMP_MERGE_DIR = os.path.join("storage", "temp", "merge")
@@ -169,38 +162,38 @@ def render_merge_settings(tr):
                                 else:
                                     st.warning(tr("Missing Subtitle"))
                                     # 如果有视频但没有字幕，显示一键转录按钮
-                                    if os.path.exists(video_path):
-                                        if st.button(tr("One-Click Transcribe"), key=f"transcribe_{base_name}"):
-                                            with st.spinner(tr("Transcribing...")):
-                                                try:
-                                                    # 生成字幕文件
-                                                    result = extract_audio_and_create_subtitle(video_path, subtitle_path)
-                                                    if result:
-                                                        # 读取生成的字幕文件内容并显示预览
-                                                        with open(subtitle_path, 'r', encoding='utf-8') as f:
-                                                            subtitle_content = f.read()
-                                                            st.markdown(tr("Subtitle Preview"))
-                                                            st.text_area(
-                                                                "Subtitle Content",
-                                                                value=subtitle_content,
-                                                                height=150,
-                                                                label_visibility="collapsed",
-                                                                key=f"subtitle_preview_transcribed_{base_name}"
-                                                            )
-                                                            st.success(tr("Transcription Complete!"))
-                                                            # 更新pair的字幕文件路径
-                                                            pair.subtitle_file = subtitle_path
-                                                    else:
-                                                        st.error(tr("Transcription Failed. Please try again."))
-                                                except Exception as e:
-                                                    error_message = str(e)
-                                                    logger.error(traceback.format_exc())
-                                                    if "rate limit exceeded" in error_message.lower():
-                                                        st.error(tr("API rate limit exceeded. Please wait about an hour and try again."))
-                                                    elif "resource_exhausted" in error_message.lower():
-                                                        st.error(tr("Resources exhausted. Please try again later."))
-                                                    else:
-                                                        st.error(f"{tr('Transcription Failed')}: {str(e)}")
+                                    # if os.path.exists(video_path):
+                                    #     if st.button(tr("One-Click Transcribe"), key=f"transcribe_{base_name}"):
+                                            # with st.spinner(tr("Transcribing...")):
+                                            #     try:
+                                            #         # 生成字幕文件
+                                            #         result = extract_audio_and_create_subtitle(video_path, subtitle_path)
+                                            #         if result:
+                                            #             # 读取生成的字幕文件内容并显示预览
+                                            #             with open(subtitle_path, 'r', encoding='utf-8') as f:
+                                            #                 subtitle_content = f.read()
+                                            #                 st.markdown(tr("Subtitle Preview"))
+                                            #                 st.text_area(
+                                            #                     "Subtitle Content",
+                                            #                     value=subtitle_content,
+                                            #                     height=150,
+                                            #                     label_visibility="collapsed",
+                                            #                     key=f"subtitle_preview_transcribed_{base_name}"
+                                            #                 )
+                                            #                 st.success(tr("Transcription Complete!"))
+                                            #                 # 更新pair的字幕文件路径
+                                            #                 pair.subtitle_file = subtitle_path
+                                            #         else:
+                                            #             st.error(tr("Transcription Failed. Please try again."))
+                                            #     except Exception as e:
+                                            #         error_message = str(e)
+                                            #         logger.error(traceback.format_exc())
+                                            #         if "rate limit exceeded" in error_message.lower():
+                                            #             st.error(tr("API rate limit exceeded. Please wait about an hour and try again."))
+                                            #         elif "resource_exhausted" in error_message.lower():
+                                            #             st.error(tr("Resources exhausted. Please try again later."))
+                                            #         else:
+                                            #             st.error(f"{tr('Transcription Failed')}: {str(e)}")
                                 
                                 # 排序输入框
                                 order = st.number_input(

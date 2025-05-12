@@ -143,7 +143,7 @@
     "Merge All Files": "合并所有文件",
     "Merge Function Not Implemented": "合并功能待实现",
     "No Matched Pairs Found": "未找到匹配的文件对",
-    "Missing Subtitle": "缺少对应的字幕文件",
+    "Missing Subtitle": "缺少对应的字幕文件, 请使用其他软件完成字幕转录，比如剪映等",
     "Missing Video": "缺少对应的视频文件",
     "All Uploaded Files": "所有上传的文件",
     "Order": "排序序号",

@@ -1,9 +1,9 @@
 """
 合并视频和字幕文件
 """
-from moviepy import VideoFileClip, concatenate_videoclips
-# import pysrt
 import os
+import pysrt
+from moviepy import VideoFileClip, concatenate_videoclips
 
 
 def get_video_duration(video_path):
