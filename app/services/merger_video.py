@@ -63,25 +63,55 @@ def get_hardware_acceleration_option() -> Optional[str]:
         Optional[str]: 硬件加速参数，如果不支持则返回None
     """
     try:
+        # 检测操作系统
+        is_windows = os.name == 'nt'
+        
         # 检查NVIDIA GPU支持
         nvidia_check = subprocess.run(
             ['ffmpeg', '-hide_banner', '-hwaccels'],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         output = nvidia_check.stdout.lower()
-
-        if 'cuda' in output:
+        
+        # 首先尝试获取系统信息，Windows系统使用更安全的检测方法
+        if is_windows:
+            try:
+                # 尝试检测显卡信息
+                gpu_info = subprocess.run(
+                    ['wmic', 'path', 'win32_VideoController', 'get', 'name'],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
+                )
+                gpu_info_output = gpu_info.stdout.lower()
+                
+                # 检测是否为AMD显卡
+                if 'amd' in gpu_info_output or 'radeon' in gpu_info_output:
+                    logger.info("检测到AMD显卡，为避免兼容性问题，将使用软件编码")
+                    return None
+                
+                # 检测是否为集成显卡
+                if 'intel' in gpu_info_output and ('hd graphics' in gpu_info_output or 'uhd graphics' in gpu_info_output):
+                    # 在Windows上，Intel集成显卡可能不稳定，建议使用软件编码
+                    logger.info("检测到Intel集成显卡，为避免兼容性问题，将使用软件编码")
+                    return None
+            except Exception as e:
+                logger.warning(f"获取显卡信息失败: {str(e)}，将谨慎处理硬件加速")
+        
+        # 根据ffmpeg支持的硬件加速器决定使用哪种
+        if 'cuda' in output and not is_windows:
+            # 在非Windows系统上使用CUDA
             return 'cuda'
-        elif 'nvenc' in output:
+        elif 'nvenc' in output and not is_windows:
+            # 在非Windows系统上使用NVENC
             return 'nvenc'
-        elif 'qsv' in output:  # Intel Quick Sync
+        elif 'qsv' in output and not (is_windows and ('amd' in gpu_info_output if 'gpu_info_output' in locals() else False)):
+            # 只有在非AMD系统上使用QSV
             return 'qsv'
         elif 'videotoolbox' in output:  # macOS
             return 'videotoolbox'
-        elif 'vaapi' in output:  # Linux VA-API
+        elif 'vaapi' in output and not is_windows:  # Linux VA-API
             return 'vaapi'
         else:
-            logger.info("没有找到支持的硬件加速器，将使用软件编码")
+            logger.info("没有找到支持的硬件加速器或系统不兼容，将使用软件编码")
             return None
     except Exception as e:
         logger.warning(f"检测硬件加速器时出错: {str(e)}，将使用软件编码")
@@ -175,16 +205,45 @@ def process_single_video(
     # 构建基本命令
     command = ['ffmpeg', '-y']
 
-    # 添加硬件加速参数
+    # 安全检查：如果在Windows上，则慎用硬件加速
+    is_windows = os.name == 'nt'
+    if is_windows and hwaccel:
+        logger.info("在Windows系统上检测到硬件加速请求，将进行额外的兼容性检查")
+        try:
+            # 对视频进行快速探测，检测其基本信息
+            probe_cmd = [
+                'ffprobe', '-v', 'error', 
+                '-select_streams', 'v:0', 
+                '-show_entries', 'stream=codec_name,width,height', 
+                '-of', 'csv=p=0', 
+                input_path
+            ]
+            result = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+            
+            # 如果探测成功，使用硬件加速；否则降级到软件编码
+            if result.returncode != 0:
+                logger.warning(f"视频探测失败，为安全起见，禁用硬件加速: {result.stderr}")
+                hwaccel = None
+        except Exception as e:
+            logger.warning(f"视频探测出错，禁用硬件加速: {str(e)}")
+            hwaccel = None
+
+    # 添加硬件加速参数（根据前面的安全检查可能已经被禁用）
     if hwaccel:
-        if hwaccel == 'cuda' or hwaccel == 'nvenc':
-            command.extend(['-hwaccel', 'cuda'])
-        elif hwaccel == 'qsv':
-            command.extend(['-hwaccel', 'qsv'])
-        elif hwaccel == 'videotoolbox':
-            command.extend(['-hwaccel', 'videotoolbox'])
-        elif hwaccel == 'vaapi':
-            command.extend(['-hwaccel', 'vaapi', '-vaapi_device', '/dev/dri/renderD128'])
+        try:
+            if hwaccel == 'cuda' or hwaccel == 'nvenc':
+                command.extend(['-hwaccel', 'cuda'])
+            elif hwaccel == 'qsv':
+                command.extend(['-hwaccel', 'qsv'])
+            elif hwaccel == 'videotoolbox':
+                command.extend(['-hwaccel', 'videotoolbox'])
+            elif hwaccel == 'vaapi':
+                command.extend(['-hwaccel', 'vaapi', '-vaapi_device', '/dev/dri/renderD128'])
+            logger.info(f"应用硬件加速: {hwaccel}")
+        except Exception as e:
+            logger.warning(f"应用硬件加速参数时出错: {str(e)}，将使用软件编码")
+            # 重置命令，移除可能添加了一半的硬件加速参数
+            command = ['ffmpeg', '-y']
 
     # 输入文件
     command.extend(['-i', input_path])
@@ -209,16 +268,31 @@ def process_single_video(
         '-r', '30',  # 设置帧率为30fps
     ])
 
-    # 选择编码器
-    if hwaccel == 'cuda' or hwaccel == 'nvenc':
-        command.extend(['-c:v', 'h264_nvenc', '-preset', 'p4', '-profile:v', 'high'])
-    elif hwaccel == 'qsv':
-        command.extend(['-c:v', 'h264_qsv', '-preset', 'medium'])
-    elif hwaccel == 'videotoolbox':
-        command.extend(['-c:v', 'h264_videotoolbox', '-profile:v', 'high'])
-    elif hwaccel == 'vaapi':
-        command.extend(['-c:v', 'h264_vaapi', '-profile', '100'])
-    else:
+    # 选择编码器 - 考虑到Windows和特定硬件的兼容性
+    use_software_encoder = True
+    
+    if hwaccel:
+        if hwaccel == 'cuda' or hwaccel == 'nvenc':
+            try:
+                # 在使用NVIDIA编码器前先检查其可用性
+                subprocess.run(['ffmpeg', '-hide_banner', '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                command.extend(['-c:v', 'h264_nvenc', '-preset', 'p4', '-profile:v', 'high'])
+                use_software_encoder = False
+            except Exception:
+                logger.warning("NVENC编码器不可用，将使用软件编码")
+        elif hwaccel == 'qsv' and not is_windows:  # 在Windows上避免使用QSV
+            command.extend(['-c:v', 'h264_qsv', '-preset', 'medium'])
+            use_software_encoder = False
+        elif hwaccel == 'videotoolbox':  # macOS
+            command.extend(['-c:v', 'h264_videotoolbox', '-profile:v', 'high'])
+            use_software_encoder = False
+        elif hwaccel == 'vaapi' and not is_windows:  # Linux VA-API
+            command.extend(['-c:v', 'h264_vaapi', '-profile', '100'])
+            use_software_encoder = False
+    
+    # 如果前面的条件未能应用硬件编码器，使用软件编码
+    if use_software_encoder:
+        logger.info("使用软件编码器(libx264)")
         command.extend(['-c:v', 'libx264', '-preset', 'medium', '-profile:v', 'high'])
 
     # 设置视频比特率和其他参数
@@ -234,11 +308,56 @@ def process_single_video(
 
     # 执行命令
     try:
-        subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # logger.info(f"执行FFmpeg命令: {' '.join(command)}")
+        process = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        logger.info(f"视频处理成功: {output_path}")
         return output_path
     except subprocess.CalledProcessError as e:
-        logger.error(f"处理视频失败: {e.stderr.decode() if e.stderr else str(e)}")
-        raise RuntimeError(f"处理视频失败: {str(e)}")
+        error_msg = e.stderr.decode() if e.stderr else str(e)
+        logger.error(f"处理视频失败: {error_msg}")
+        
+        # 如果使用硬件加速失败，尝试使用软件编码
+        if hwaccel:
+            logger.info("尝试使用软件编码作为备选方案")
+            try:
+                # 构建新的命令，使用软件编码
+                fallback_cmd = ['ffmpeg', '-y', '-i', input_path]
+                
+                # 保持原有的音频设置
+                if not keep_audio:
+                    fallback_cmd.extend(['-an'])
+                else:
+                    has_audio = check_video_has_audio(input_path)
+                    if has_audio:
+                        fallback_cmd.extend(['-c:a', 'aac', '-b:a', '128k'])
+                    else:
+                        fallback_cmd.extend(['-an'])
+                
+                # 保持原有的视频过滤器
+                fallback_cmd.extend([
+                    '-vf', f"{scale_filter},{pad_filter}",
+                    '-r', '30',
+                    '-c:v', 'libx264',
+                    '-preset', 'medium',
+                    '-profile:v', 'high',
+                    '-b:v', '5M',
+                    '-maxrate', '8M',
+                    '-bufsize', '10M',
+                    '-pix_fmt', 'yuv420p',
+                    output_path
+                ])
+                
+                logger.info(f"执行备选FFmpeg命令: {' '.join(fallback_cmd)}")
+                subprocess.run(fallback_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                logger.info(f"使用软件编码成功处理视频: {output_path}")
+                return output_path
+            except subprocess.CalledProcessError as fallback_error:
+                fallback_error_msg = fallback_error.stderr.decode() if fallback_error.stderr else str(fallback_error)
+                logger.error(f"备选软件编码也失败: {fallback_error_msg}")
+                raise RuntimeError(f"无法处理视频 {input_path}: 硬件加速和软件编码都失败")
+        
+        # 如果不是硬件加速导致的问题，或者备选方案也失败了，抛出原始错误
+        raise RuntimeError(f"处理视频失败: {error_msg}")
 
 
 def combine_clip_videos(
@@ -247,6 +366,7 @@ def combine_clip_videos(
         video_ost_list: List[int],
         video_aspect: VideoAspect = VideoAspect.portrait,
         threads: int = 4,
+        force_software_encoding: bool = False,  # 新参数，强制使用软件编码
 ) -> str:
     """
     合并子视频
@@ -256,6 +376,7 @@ def combine_clip_videos(
         video_ost_list: 原声播放列表 (0: 不保留原声, 1: 只保留原声, 2: 保留原声并保留解说)
         video_aspect: 屏幕比例
         threads: 线程数
+        force_software_encoding: 是否强制使用软件编码（忽略硬件加速检测）
 
     Returns:
         str: 合并后的视频路径
@@ -273,9 +394,18 @@ def combine_clip_videos(
     video_width, video_height = aspect.to_resolution()
 
     # 检测可用的硬件加速选项
-    hwaccel = get_hardware_acceleration_option()
+    hwaccel = None if force_software_encoding else get_hardware_acceleration_option()
     if hwaccel:
         logger.info(f"将使用 {hwaccel} 硬件加速")
+    elif force_software_encoding:
+        logger.info("已强制使用软件编码，跳过硬件加速检测")
+    else:
+        logger.info("未检测到兼容的硬件加速，将使用软件编码")
+
+    # Windows系统上，默认使用软件编码以提高兼容性
+    if os.name == 'nt' and hwaccel:
+        logger.warning("在Windows系统上检测到硬件加速，但为了提高兼容性，建议使用软件编码")
+        # 不强制禁用hwaccel，而是在process_single_video中进行额外安全检查
 
     # 重组视频路径和原声设置为一个字典列表结构
     video_segments = []
@@ -311,7 +441,7 @@ def combine_clip_videos(
             logger.warning(f"视频 {video_path} 设置为保留原声(ost={video_ost})，但该视频没有音频流")
         
         video_segments.append(segment)
-        
+
     # 处理每个视频片段
     processed_videos = []
     temp_dir = os.path.join(output_dir, "temp_videos")
@@ -339,7 +469,29 @@ def combine_clip_videos(
                 logger.info(f"视频 {segment['index'] + 1}/{len(video_segments)} 处理完成")
             except Exception as e:
                 logger.error(f"处理视频 {segment['path']} 时出错: {str(e)}")
-                continue
+                # 如果使用硬件加速失败，尝试使用软件编码
+                if hwaccel and not force_software_encoding:
+                    logger.info(f"尝试使用软件编码处理视频 {segment['path']}")
+                    try:
+                        process_single_video(
+                            input_path=segment['path'],
+                            output_path=temp_output,
+                            target_width=video_width,
+                            target_height=video_height,
+                            keep_audio=segment['keep_audio'],
+                            hwaccel=None  # 使用软件编码
+                        )
+                        processed_videos.append({
+                            "index": segment["index"],
+                            "path": temp_output,
+                            "keep_audio": segment["keep_audio"]
+                        })
+                        logger.info(f"使用软件编码成功处理视频 {segment['index'] + 1}/{len(video_segments)}")
+                    except Exception as fallback_error:
+                        logger.error(f"使用软件编码处理视频 {segment['path']} 也失败: {str(fallback_error)}")
+                        continue
+                else:
+                    continue
 
         if not processed_videos:
             raise ValueError("没有有效的视频片段可以合并")
@@ -539,17 +691,17 @@ def combine_clip_videos(
 
 if __name__ == '__main__':
     video_paths = [
-        '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/0ac14d474144b54d614c26a5c87cffe7/vid-00-00-00-00-00-26.mp4',
-        '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/0ac14d474144b54d614c26a5c87cffe7/vid-00-01-15-00-01-29.mp4',
-        '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-04-41-00-04-58.mp4',
-        '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/0ac14d474144b54d614c26a5c87cffe7/vid-00-04-58-00-05-20.mp4',
-        '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/0ac14d474144b54d614c26a5c87cffe7/vid-00-05-45-00-05-53.mp4',
-        '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/6e7e343c7592c7d6f9a9636b55000f23/vid-00-06-00-00-06-03.mp4'
-    ]
+        '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/S01E02_00_14_09_440.mp4',
+        '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/S01E08_00_27_11_110.mp4',
+        '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/S01E08_00_34_44_480.mp4',
+        '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/S01E08_00_42_47_630.mp4',
+        '/Users/apple/Desktop/home/NarratoAI/storage/temp/clip_video/S01E09_00_29_48_160.mp4'
+        ]
 
     combine_clip_videos(
         output_video_path="/Users/apple/Desktop/home/NarratoAI/storage/temp/merge/merged_123.mp4",
         video_paths=video_paths,
-        video_ost_list=[1, 0, 1, 0, 0, 1],
-        video_aspect=VideoAspect.portrait
+        video_ost_list=[1, 1, 1,1,1],
+        video_aspect=VideoAspect.portrait,
+        force_software_encoding=False  # 默认不强制使用软件编码，让系统自动决定
     )
