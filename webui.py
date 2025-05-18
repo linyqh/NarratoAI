@@ -189,17 +189,23 @@ def render_generate_button():
         logger.info(tr("视频生成完成"))
 
 
+# 全局变量，记录是否已经打印过硬件加速信息
+_HAS_LOGGED_HWACCEL_INFO = False
+
 def main():
     """主函数"""
+    global _HAS_LOGGED_HWACCEL_INFO
     init_log()
     init_global_state()
 
-    # 检测FFmpeg硬件加速
+    # 检测FFmpeg硬件加速，但只打印一次日志
     hwaccel_info = ffmpeg_utils.detect_hardware_acceleration()
-    if hwaccel_info["available"]:
-        logger.info(f"FFmpeg硬件加速检测结果: 可用 | 类型: {hwaccel_info['type']} | 编码器: {hwaccel_info['encoder']} | 独立显卡: {hwaccel_info['is_dedicated_gpu']} | 参数: {hwaccel_info['hwaccel_args']}")
-    else:
-        logger.warning(f"FFmpeg硬件加速不可用: {hwaccel_info['message']}, 将使用CPU软件编码")
+    if not _HAS_LOGGED_HWACCEL_INFO:
+        if hwaccel_info["available"]:
+            logger.info(f"FFmpeg硬件加速检测结果: 可用 | 类型: {hwaccel_info['type']} | 编码器: {hwaccel_info['encoder']} | 独立显卡: {hwaccel_info['is_dedicated_gpu']} | 参数: {hwaccel_info['hwaccel_args']}")
+        else:
+            logger.warning(f"FFmpeg硬件加速不可用: {hwaccel_info['message']}, 将使用CPU软件编码")
+        _HAS_LOGGED_HWACCEL_INFO = True
 
     # 仅初始化基本资源，避免过早地加载依赖PyTorch的资源
     # 检查是否能分解utils.init_resources()为基本资源和高级资源(如依赖PyTorch的资源)

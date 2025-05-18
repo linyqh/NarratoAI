@@ -418,13 +418,25 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> st
         # logger.info(f"裁剪视频片段: {timestamp} -> {ffmpeg_start_time}到{ffmpeg_end_time}")
         # logger.debug(f"执行命令: {' '.join(ffmpeg_cmd)}")
 
-        process = subprocess.run(
-            ffmpeg_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False  # 不抛出异常，我们会检查返回码
-        )
+        # 在Windows系统上使用UTF-8编码处理输出，避免GBK编码错误
+        is_windows = os.name == 'nt'
+        if is_windows:
+            process = subprocess.run(
+                ffmpeg_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                encoding='utf-8',  # 明确指定编码为UTF-8
+                text=True,
+                check=False  # 不抛出异常，我们会检查返回码
+            )
+        else:
+            process = subprocess.run(
+                ffmpeg_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False  # 不抛出异常，我们会检查返回码
+            )
 
         # 检查是否成功
         if process.returncode != 0:
@@ -437,7 +449,11 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> st
         if os.path.exists(video_path) and os.path.getsize(video_path) > 0:
             # 检查视频是否可播放
             probe_cmd = ["ffprobe", "-v", "error", video_path]
-            validate_result = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # 在Windows系统上使用UTF-8编码
+            if is_windows:
+                validate_result = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+            else:
+                validate_result = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             if validate_result.returncode == 0:
                 logger.info(f"视频剪辑成功: {video_path}")

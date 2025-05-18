@@ -167,13 +167,25 @@ def clip_video(
             logger.info(f"裁剪视频片段: {timestamp} -> {ffmpeg_start_time}到{ffmpeg_end_time}")
             # logger.debug(f"执行命令: {' '.join(ffmpeg_cmd)}")
 
-            process = subprocess.run(
-                ffmpeg_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=True
-            )
+            # 在Windows系统上使用UTF-8编码处理输出，避免GBK编码错误
+            is_windows = os.name == 'nt'
+            if is_windows:
+                process = subprocess.run(
+                    ffmpeg_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    encoding='utf-8',  # 明确指定编码为UTF-8
+                    text=True,
+                    check=True
+                )
+            else:
+                process = subprocess.run(
+                    ffmpeg_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=True
+                )
 
             result[_id] = output_path
 
