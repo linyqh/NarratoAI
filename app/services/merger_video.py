@@ -5,7 +5,7 @@
 @Project: NarratoAI
 @File   : merger_video
 @Author : 小林同学
-@Date   : 2025/5/6 下午7:38 
+@Date   : 2025/5/6 下午7:38
 '''
 
 import os
@@ -14,6 +14,8 @@ import subprocess
 from enum import Enum
 from typing import List, Optional, Tuple
 from loguru import logger
+
+from app.utils import ffmpeg_utils
 
 
 class VideoAspect(Enum):
@@ -43,7 +45,7 @@ class VideoAspect(Enum):
 def check_ffmpeg_installation() -> bool:
     """
     检查ffmpeg是否已安装
-    
+
     Returns:
         bool: 如果安装则返回True，否则返回False
     """
@@ -58,88 +60,36 @@ def check_ffmpeg_installation() -> bool:
 def get_hardware_acceleration_option() -> Optional[str]:
     """
     根据系统环境选择合适的硬件加速选项
-    
+
     Returns:
         Optional[str]: 硬件加速参数，如果不支持则返回None
     """
-    try:
-        # 检测操作系统
-        is_windows = os.name == 'nt'
-        
-        # 检查NVIDIA GPU支持
-        nvidia_check = subprocess.run(
-            ['ffmpeg', '-hide_banner', '-hwaccels'],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
-        output = nvidia_check.stdout.lower()
-        
-        # 首先尝试获取系统信息，Windows系统使用更安全的检测方法
-        if is_windows:
-            try:
-                # 尝试检测显卡信息
-                gpu_info = subprocess.run(
-                    ['wmic', 'path', 'win32_VideoController', 'get', 'name'],
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
-                )
-                gpu_info_output = gpu_info.stdout.lower()
-                
-                # 检测是否为AMD显卡
-                if 'amd' in gpu_info_output or 'radeon' in gpu_info_output:
-                    logger.info("检测到AMD显卡，为避免兼容性问题，将使用软件编码")
-                    return None
-                
-                # 检测是否为集成显卡
-                if 'intel' in gpu_info_output and ('hd graphics' in gpu_info_output or 'uhd graphics' in gpu_info_output):
-                    # 在Windows上，Intel集成显卡可能不稳定，建议使用软件编码
-                    logger.info("检测到Intel集成显卡，为避免兼容性问题，将使用软件编码")
-                    return None
-            except Exception as e:
-                logger.warning(f"获取显卡信息失败: {str(e)}，将谨慎处理硬件加速")
-        
-        # 根据ffmpeg支持的硬件加速器决定使用哪种
-        if 'cuda' in output and not is_windows:
-            # 在非Windows系统上使用CUDA
-            return 'cuda'
-        elif 'nvenc' in output and not is_windows:
-            # 在非Windows系统上使用NVENC
-            return 'nvenc'
-        elif 'qsv' in output and not (is_windows and ('amd' in gpu_info_output if 'gpu_info_output' in locals() else False)):
-            # 只有在非AMD系统上使用QSV
-            return 'qsv'
-        elif 'videotoolbox' in output:  # macOS
-            return 'videotoolbox'
-        elif 'vaapi' in output and not is_windows:  # Linux VA-API
-            return 'vaapi'
-        else:
-            logger.info("没有找到支持的硬件加速器或系统不兼容，将使用软件编码")
-            return None
-    except Exception as e:
-        logger.warning(f"检测硬件加速器时出错: {str(e)}，将使用软件编码")
-        return None
+    # 使用集中式硬件加速检测
+    return ffmpeg_utils.get_ffmpeg_hwaccel_type()
 
 
 def check_video_has_audio(video_path: str) -> bool:
     """
     检查视频是否包含音频流
-    
+
     Args:
         video_path: 视频文件路径
-        
+
     Returns:
         bool: 如果视频包含音频流则返回True，否则返回False
     """
     if not os.path.exists(video_path):
         logger.warning(f"视频文件不存在: {video_path}")
         return False
-        
+
     probe_cmd = [
-        'ffprobe', '-v', 'error', 
-        '-select_streams', 'a:0', 
-        '-show_entries', 'stream=codec_type', 
-        '-of', 'csv=p=0', 
+        'ffprobe', '-v', 'error',
+        '-select_streams', 'a:0',
+        '-show_entries', 'stream=codec_type',
+        '-of', 'csv=p=0',
         video_path
     ]
-    
+
     try:
         result = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
         return result.stdout.strip() == 'audio'
@@ -151,11 +101,11 @@ def check_video_has_audio(video_path: str) -> bool:
 def create_ffmpeg_concat_file(video_paths: List[str], concat_file_path: str) -> str:
     """
     创建ffmpeg合并所需的concat文件
-    
+
     Args:
         video_paths: 需要合并的视频文件路径列表
         concat_file_path: concat文件的输出路径
-        
+
     Returns:
         str: concat文件的路径
     """
@@ -169,10 +119,10 @@ def create_ffmpeg_concat_file(video_paths: List[str], concat_file_path: str) -> 
             else:  # Unix/Mac系统
                 # 转义特殊字符
                 abs_path = abs_path.replace('\\', '\\\\').replace(':', '\\:')
-            
+
             # 处理路径中的单引号 (如果有)
             abs_path = abs_path.replace("'", "\\'")
-            
+
             f.write(f"file '{abs_path}'\n")
     return concat_file_path
 
@@ -187,7 +137,7 @@ def process_single_video(
 ) -> str:
     """
     处理单个视频：调整分辨率、帧率等
-    
+
     Args:
         input_path: 输入视频路径
         output_path: 输出视频路径
@@ -195,7 +145,7 @@ def process_single_video(
         target_height: 目标高度
         keep_audio: 是否保留音频
         hwaccel: 硬件加速选项
-        
+
     Returns:
         str: 处理后的视频路径
     """
@@ -212,14 +162,14 @@ def process_single_video(
         try:
             # 对视频进行快速探测，检测其基本信息
             probe_cmd = [
-                'ffprobe', '-v', 'error', 
-                '-select_streams', 'v:0', 
-                '-show_entries', 'stream=codec_name,width,height', 
-                '-of', 'csv=p=0', 
+                'ffprobe', '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=codec_name,width,height',
+                '-of', 'csv=p=0',
                 input_path
             ]
             result = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
-            
+
             # 如果探测成功，使用硬件加速；否则降级到软件编码
             if result.returncode != 0:
                 logger.warning(f"视频探测失败，为安全起见，禁用硬件加速: {result.stderr}")
@@ -231,15 +181,9 @@ def process_single_video(
     # 添加硬件加速参数（根据前面的安全检查可能已经被禁用）
     if hwaccel:
         try:
-            if hwaccel == 'cuda' or hwaccel == 'nvenc':
-                command.extend(['-hwaccel', 'cuda'])
-            elif hwaccel == 'qsv':
-                command.extend(['-hwaccel', 'qsv'])
-            elif hwaccel == 'videotoolbox':
-                command.extend(['-hwaccel', 'videotoolbox'])
-            elif hwaccel == 'vaapi':
-                command.extend(['-hwaccel', 'vaapi', '-vaapi_device', '/dev/dri/renderD128'])
-            logger.info(f"应用硬件加速: {hwaccel}")
+            # 使用集中式硬件加速参数
+            hwaccel_args = ffmpeg_utils.get_ffmpeg_hwaccel_args()
+            command.extend(hwaccel_args)
         except Exception as e:
             logger.warning(f"应用硬件加速参数时出错: {str(e)}，将使用软件编码")
             # 重置命令，移除可能添加了一半的硬件加速参数
@@ -270,7 +214,7 @@ def process_single_video(
 
     # 选择编码器 - 考虑到Windows和特定硬件的兼容性
     use_software_encoder = True
-    
+
     if hwaccel:
         if hwaccel == 'cuda' or hwaccel == 'nvenc':
             try:
@@ -289,7 +233,7 @@ def process_single_video(
         elif hwaccel == 'vaapi' and not is_windows:  # Linux VA-API
             command.extend(['-c:v', 'h264_vaapi', '-profile', '100'])
             use_software_encoder = False
-    
+
     # 如果前面的条件未能应用硬件编码器，使用软件编码
     if use_software_encoder:
         logger.info("使用软件编码器(libx264)")
@@ -315,14 +259,14 @@ def process_single_video(
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.decode() if e.stderr else str(e)
         logger.error(f"处理视频失败: {error_msg}")
-        
+
         # 如果使用硬件加速失败，尝试使用软件编码
         if hwaccel:
             logger.info("尝试使用软件编码作为备选方案")
             try:
                 # 构建新的命令，使用软件编码
                 fallback_cmd = ['ffmpeg', '-y', '-i', input_path]
-                
+
                 # 保持原有的音频设置
                 if not keep_audio:
                     fallback_cmd.extend(['-an'])
@@ -332,7 +276,7 @@ def process_single_video(
                         fallback_cmd.extend(['-c:a', 'aac', '-b:a', '128k'])
                     else:
                         fallback_cmd.extend(['-an'])
-                
+
                 # 保持原有的视频过滤器
                 fallback_cmd.extend([
                     '-vf', f"{scale_filter},{pad_filter}",
@@ -346,7 +290,7 @@ def process_single_video(
                     '-pix_fmt', 'yuv420p',
                     output_path
                 ])
-                
+
                 logger.info(f"执行备选FFmpeg命令: {' '.join(fallback_cmd)}")
                 subprocess.run(fallback_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 logger.info(f"使用软件编码成功处理视频: {output_path}")
@@ -355,7 +299,7 @@ def process_single_video(
                 fallback_error_msg = fallback_error.stderr.decode() if fallback_error.stderr else str(fallback_error)
                 logger.error(f"备选软件编码也失败: {fallback_error_msg}")
                 raise RuntimeError(f"无法处理视频 {input_path}: 硬件加速和软件编码都失败")
-        
+
         # 如果不是硬件加速导致的问题，或者备选方案也失败了，抛出原始错误
         raise RuntimeError(f"处理视频失败: {error_msg}")
 
@@ -409,7 +353,7 @@ def combine_clip_videos(
 
     # 重组视频路径和原声设置为一个字典列表结构
     video_segments = []
-    
+
     # 检查视频路径和原声设置列表长度是否匹配
     if len(video_paths) != len(video_ost_list):
         logger.warning(f"视频路径列表({len(video_paths)})和原声设置列表({len(video_ost_list)})长度不匹配")
@@ -417,16 +361,16 @@ def combine_clip_videos(
         min_length = min(len(video_paths), len(video_ost_list))
         video_paths = video_paths[:min_length]
         video_ost_list = video_ost_list[:min_length]
-    
+
     # 创建视频处理配置字典列表
     for i, (video_path, video_ost) in enumerate(zip(video_paths, video_ost_list)):
         if not os.path.exists(video_path):
             logger.warning(f"视频不存在，跳过: {video_path}")
             continue
-            
+
         # 检查是否有音频流
         has_audio = check_video_has_audio(video_path)
-        
+
         # 构建视频片段配置
         segment = {
             "index": i,
@@ -435,11 +379,11 @@ def combine_clip_videos(
             "has_audio": has_audio,
             "keep_audio": video_ost > 0 and has_audio  # 只有当ost>0且实际有音频时才保留
         }
-        
+
         # 记录日志
         if video_ost > 0 and not has_audio:
             logger.warning(f"视频 {video_path} 设置为保留原声(ost={video_ost})，但该视频没有音频流")
-        
+
         video_segments.append(segment)
 
     # 处理每个视频片段
@@ -495,20 +439,20 @@ def combine_clip_videos(
 
         if not processed_videos:
             raise ValueError("没有有效的视频片段可以合并")
-            
+
         # 按原始索引排序处理后的视频
         processed_videos.sort(key=lambda x: x["index"])
-        
+
         # 第二阶段：分步骤合并视频 - 避免复杂的filter_complex滤镜
         try:
             # 1. 首先，将所有没有音频的视频或音频被禁用的视频合并到一个临时文件中
             video_paths_only = [video["path"] for video in processed_videos]
             video_concat_path = os.path.join(temp_dir, "video_concat.mp4")
-            
+
             # 创建concat文件，用于合并视频流
             concat_file = os.path.join(temp_dir, "concat_list.txt")
             create_ffmpeg_concat_file(video_paths_only, concat_file)
-            
+
             # 合并所有视频流，但不包含音频
             concat_cmd = [
                 'ffmpeg', '-y',
@@ -522,19 +466,19 @@ def combine_clip_videos(
                 '-threads', str(threads),
                 video_concat_path
             ]
-            
+
             subprocess.run(concat_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             logger.info("视频流合并完成")
-            
+
             # 2. 提取并合并有音频的片段
             audio_segments = [video for video in processed_videos if video["keep_audio"]]
-            
+
             if not audio_segments:
                 # 如果没有音频片段，直接使用无音频的合并视频作为最终结果
                 shutil.copy(video_concat_path, output_video_path)
                 logger.info("无音频视频合并完成")
                 return output_video_path
-            
+
             # 创建音频中间文件
             audio_files = []
             for i, segment in enumerate(audio_segments):
@@ -554,11 +498,11 @@ def combine_clip_videos(
                     "path": audio_file
                 })
                 logger.info(f"提取音频 {i+1}/{len(audio_segments)} 完成")
-            
+
             # 3. 计算每个音频片段的时间位置
             audio_timings = []
             current_time = 0.0
-            
+
             # 获取每个视频片段的时长
             for i, video in enumerate(processed_videos):
                 duration_cmd = [
@@ -569,7 +513,7 @@ def combine_clip_videos(
                 ]
                 result = subprocess.run(duration_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 duration = float(result.stdout.strip())
-                
+
                 # 如果当前片段需要保留音频，记录时间位置
                 if video["keep_audio"]:
                     for audio in audio_files:
@@ -580,9 +524,9 @@ def combine_clip_videos(
                                 "index": video["index"]
                             })
                             break
-                
+
                 current_time += duration
-            
+
             # 4. 创建静音音频轨道作为基础
             silence_audio = os.path.join(temp_dir, "silence.aac")
             create_silence_cmd = [
@@ -595,28 +539,28 @@ def combine_clip_videos(
                 silence_audio
             ]
             subprocess.run(create_silence_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            
+
             # 5. 创建复杂滤镜命令以混合音频
             filter_script = os.path.join(temp_dir, "filter_script.txt")
             with open(filter_script, 'w') as f:
                 f.write(f"[0:a]volume=0.0[silence];\n")  # 首先静音背景轨道
-                
+
                 # 添加每个音频文件
                 for i, timing in enumerate(audio_timings):
                     f.write(f"[{i+1}:a]adelay={int(timing['start']*1000)}|{int(timing['start']*1000)}[a{i}];\n")
-                
+
                 # 混合所有音频
                 mix_str = "[silence]"
                 for i in range(len(audio_timings)):
                     mix_str += f"[a{i}]"
                 mix_str += f"amix=inputs={len(audio_timings)+1}:duration=longest[aout]"
                 f.write(mix_str)
-            
+
             # 6. 构建音频合并命令
             audio_inputs = ['-i', silence_audio]
             for timing in audio_timings:
                 audio_inputs.extend(['-i', timing["file"]])
-                
+
             mixed_audio = os.path.join(temp_dir, "mixed_audio.aac")
             audio_mix_cmd = [
                 'ffmpeg', '-y'
@@ -627,10 +571,10 @@ def combine_clip_videos(
                 '-b:a', '128k',
                 mixed_audio
             ]
-            
+
             subprocess.run(audio_mix_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             logger.info("音频混合完成")
-            
+
             # 7. 将合并的视频和混合的音频组合在一起
             final_cmd = [
                 'ffmpeg', '-y',
@@ -643,22 +587,22 @@ def combine_clip_videos(
                 '-shortest',
                 output_video_path
             ]
-            
+
             subprocess.run(final_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             logger.info("视频最终合并完成")
-            
+
             return output_video_path
-            
+
         except subprocess.CalledProcessError as e:
             logger.error(f"合并视频过程中出错: {e.stderr.decode() if e.stderr else str(e)}")
-            
+
             # 尝试备用合并方法 - 最简单的无音频合并
             logger.info("尝试备用合并方法 - 无音频合并")
             try:
                 concat_file = os.path.join(temp_dir, "concat_list.txt")
                 video_paths_only = [video["path"] for video in processed_videos]
                 create_ffmpeg_concat_file(video_paths_only, concat_file)
-                
+
                 backup_cmd = [
                     'ffmpeg', '-y',
                     '-f', 'concat',
@@ -668,14 +612,14 @@ def combine_clip_videos(
                     '-an',  # 无音频
                     output_video_path
                 ]
-                
+
                 subprocess.run(backup_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 logger.warning("使用备用方法（无音频）成功合并视频")
                 return output_video_path
             except Exception as backup_error:
                 logger.error(f"备用合并方法也失败: {str(backup_error)}")
                 raise RuntimeError(f"无法合并视频: {str(backup_error)}")
-            
+
     except Exception as e:
         logger.error(f"合并视频时出错: {str(e)}")
         raise

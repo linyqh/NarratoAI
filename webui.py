@@ -7,6 +7,7 @@ from webui.components import basic_settings, video_settings, audio_settings, sub
     review_settings, merge_settings, system_settings
 # from webui.utils import cache, file_utils
 from app.utils import utils
+from app.utils import ffmpeg_utils
 from app.models.schema import VideoClipParams, VideoAspect
 
 
@@ -64,7 +65,7 @@ def init_log():
         try:
             for handler_id in logger._core.handlers:
                 logger.remove(handler_id)
-                
+
             # 重新添加带有高级过滤的处理器
             def advanced_filter(record):
                 """更复杂的过滤器，在应用启动后安全使用"""
@@ -74,7 +75,7 @@ def init_log():
                     "CUDA initialization"
                 ]
                 return not any(msg in record["message"] for msg in ignore_messages)
-                
+
             logger.add(
                 sys.stdout,
                 level=_lvl,
@@ -91,7 +92,7 @@ def init_log():
                 colorize=True
             )
             logger.error(f"设置高级日志过滤器失败: {e}")
-    
+
     # 将高级过滤器设置放到启动主逻辑后
     import threading
     threading.Timer(5.0, setup_advanced_filters).start()
@@ -192,7 +193,14 @@ def main():
     """主函数"""
     init_log()
     init_global_state()
-    
+
+    # 检测FFmpeg硬件加速
+    hwaccel_info = ffmpeg_utils.detect_hardware_acceleration()
+    if hwaccel_info["available"]:
+        logger.info(f"FFmpeg硬件加速检测结果: 可用 | 类型: {hwaccel_info['type']} | 编码器: {hwaccel_info['encoder']} | 独立显卡: {hwaccel_info['is_dedicated_gpu']} | 参数: {hwaccel_info['hwaccel_args']}")
+    else:
+        logger.warning(f"FFmpeg硬件加速不可用: {hwaccel_info['message']}, 将使用CPU软件编码")
+
     # 仅初始化基本资源，避免过早地加载依赖PyTorch的资源
     # 检查是否能分解utils.init_resources()为基本资源和高级资源(如依赖PyTorch的资源)
     try:
@@ -218,15 +226,15 @@ def main():
         audio_settings.render_audio_panel(tr)
     with panel[2]:
         subtitle_settings.render_subtitle_panel(tr)
-    
+
     # 渲染视频审查面板
     review_settings.render_review_panel(tr)
-    
+
     # 放到最后渲染可能使用PyTorch的部分
     # 渲染系统设置面板
     with panel[2]:
         system_settings.render_system_panel(tr)
-        
+
     # 放到最后渲染生成按钮和处理逻辑
     render_generate_button()
 

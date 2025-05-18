@@ -1,5 +1,5 @@
 [app]
-    project_version="0.6.1"
+    project_version="0.6.2"
     # 支持视频理解的大模型提供商
     #   gemini  (谷歌, 需要 VPN)
     #   siliconflow (硅基流动)
