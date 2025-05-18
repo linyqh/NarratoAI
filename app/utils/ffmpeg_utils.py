@@ -138,16 +138,46 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
 
     # 检测NVIDIA CUDA支持
     if 'cuda' in supported_hwaccels and 'nvidia' in gpu_info.lower():
+        # 添加调试日志
+        logger.debug(f"Windows检测到NVIDIA显卡，尝试CUDA加速")
         try:
-            test_cmd = subprocess.run(
-                ["ffmpeg", "-hwaccel", "cuda", "-i", "/dev/null", "-f", "null", "-"],
+            # 先检查NVENC编码器是否可用
+            encoders_cmd = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-encoders"],
                 stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
             )
-            if test_cmd.returncode == 0:
+            has_nvenc = "h264_nvenc" in encoders_cmd.stdout.lower()
+            logger.debug(f"NVENC编码器检测结果: {'可用' if has_nvenc else '不可用'}")
+
+            # 测试CUDA硬件加速
+            test_cmd = subprocess.run(
+                ["ffmpeg", "-hwaccel", "cuda", "-i", "NUL", "-f", "null", "-t", "0.1", "-"],
+                stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+            )
+
+            # 记录详细的返回信息以便调试
+            logger.debug(f"CUDA测试返回码: {test_cmd.returncode}")
+            logger.debug(f"CUDA测试错误输出: {test_cmd.stderr[:200]}..." if len(test_cmd.stderr) > 200 else f"CUDA测试错误输出: {test_cmd.stderr}")
+
+            if test_cmd.returncode == 0 or has_nvenc:
                 _FFMPEG_HW_ACCEL_INFO["available"] = True
                 _FFMPEG_HW_ACCEL_INFO["type"] = "cuda"
                 _FFMPEG_HW_ACCEL_INFO["encoder"] = "h264_nvenc"
                 _FFMPEG_HW_ACCEL_INFO["hwaccel_args"] = ["-hwaccel", "cuda"]
+                _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = True
+                return
+
+            # 如果上面的测试失败，尝试另一种方式
+            test_cmd2 = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-hwaccel", "cuda", "-hwaccel_output_format", "cuda", "-i", "NUL", "-f", "null", "-t", "0.1", "-"],
+                stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+            )
+
+            if test_cmd2.returncode == 0:
+                _FFMPEG_HW_ACCEL_INFO["available"] = True
+                _FFMPEG_HW_ACCEL_INFO["type"] = "cuda"
+                _FFMPEG_HW_ACCEL_INFO["encoder"] = "h264_nvenc"
+                _FFMPEG_HW_ACCEL_INFO["hwaccel_args"] = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
                 _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = True
                 return
         except Exception as e:
@@ -172,11 +202,16 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
 
     # 检测D3D11VA支持
     if 'd3d11va' in supported_hwaccels:
+        logger.debug("Windows尝试D3D11VA加速")
         try:
             test_cmd = subprocess.run(
-                ["ffmpeg", "-hwaccel", "d3d11va", "-i", "/dev/null", "-f", "null", "-"],
+                ["ffmpeg", "-hwaccel", "d3d11va", "-i", "NUL", "-f", "null", "-t", "0.1", "-"],
                 stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
             )
+
+            # 记录详细的返回信息以便调试
+            logger.debug(f"D3D11VA测试返回码: {test_cmd.returncode}")
+
             if test_cmd.returncode == 0:
                 _FFMPEG_HW_ACCEL_INFO["available"] = True
                 _FFMPEG_HW_ACCEL_INFO["type"] = "d3d11va"
@@ -189,11 +224,16 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
 
     # 检测DXVA2支持
     if 'dxva2' in supported_hwaccels:
+        logger.debug("Windows尝试DXVA2加速")
         try:
             test_cmd = subprocess.run(
-                ["ffmpeg", "-hwaccel", "dxva2", "-i", "/dev/null", "-f", "null", "-"],
+                ["ffmpeg", "-hwaccel", "dxva2", "-i", "NUL", "-f", "null", "-t", "0.1", "-"],
                 stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
             )
+
+            # 记录详细的返回信息以便调试
+            logger.debug(f"DXVA2测试返回码: {test_cmd.returncode}")
+
             if test_cmd.returncode == 0:
                 _FFMPEG_HW_ACCEL_INFO["available"] = True
                 _FFMPEG_HW_ACCEL_INFO["type"] = "dxva2"
@@ -203,6 +243,36 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
                 return
         except Exception as e:
             logger.debug(f"测试DXVA2失败: {str(e)}")
+
+    # 如果检测到NVIDIA显卡但前面的测试都失败，尝试直接使用NVENC编码器
+    if 'nvidia' in gpu_info.lower():
+        logger.debug("Windows检测到NVIDIA显卡，尝试直接使用NVENC编码器")
+        try:
+            # 检查NVENC编码器是否可用
+            encoders_cmd = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-encoders"],
+                stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+            )
+
+            if "h264_nvenc" in encoders_cmd.stdout.lower():
+                logger.debug("NVENC编码器可用，尝试直接使用")
+                # 测试NVENC编码器
+                test_cmd = subprocess.run(
+                    ["ffmpeg", "-f", "lavfi", "-i", "color=c=black:s=640x360:r=30", "-c:v", "h264_nvenc", "-t", "0.1", "-f", "null", "-"],
+                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+                )
+
+                logger.debug(f"NVENC编码器测试返回码: {test_cmd.returncode}")
+
+                if test_cmd.returncode == 0:
+                    _FFMPEG_HW_ACCEL_INFO["available"] = True
+                    _FFMPEG_HW_ACCEL_INFO["type"] = "nvenc"
+                    _FFMPEG_HW_ACCEL_INFO["encoder"] = "h264_nvenc"
+                    _FFMPEG_HW_ACCEL_INFO["hwaccel_args"] = []  # 不使用hwaccel参数，直接使用编码器
+                    _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = True
+                    return
+        except Exception as e:
+            logger.debug(f"测试NVENC编码器失败: {str(e)}")
 
     _FFMPEG_HW_ACCEL_INFO["message"] = f"Windows系统未检测到可用的硬件加速，显卡信息: {gpu_info}"
 
@@ -295,10 +365,21 @@ def _get_windows_gpu_info() -> str:
         str: 显卡信息字符串
     """
     try:
+        # 使用PowerShell获取更可靠的显卡信息
         gpu_info = subprocess.run(
-            ['wmic', 'path', 'win32_VideoController', 'get', 'name'],
+            ['powershell', '-Command', "Get-WmiObject Win32_VideoController | Select-Object Name | Format-List"],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
         )
+
+        # 如果PowerShell失败，尝试使用wmic
+        if not gpu_info.stdout.strip():
+            gpu_info = subprocess.run(
+                ['wmic', 'path', 'win32_VideoController', 'get', 'name'],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
+            )
+
+        # 记录详细的显卡信息以便调试
+        logger.debug(f"Windows显卡信息: {gpu_info.stdout}")
         return gpu_info.stdout
     except Exception as e:
         logger.warning(f"获取Windows显卡信息失败: {str(e)}")
