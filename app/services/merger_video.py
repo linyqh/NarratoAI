@@ -216,21 +216,32 @@ def process_single_video(
     use_software_encoder = True
 
     if hwaccel:
-        if hwaccel == 'cuda' or hwaccel == 'nvenc':
+        # 获取硬件加速类型和编码器信息
+        hwaccel_type = ffmpeg_utils.get_ffmpeg_hwaccel_type()
+        hwaccel_encoder = ffmpeg_utils.get_ffmpeg_hwaccel_encoder()
+
+        if hwaccel_type == 'cuda' or hwaccel_type == 'nvenc':
             try:
-                # 在使用NVIDIA编码器前先检查其可用性
-                subprocess.run(['ffmpeg', '-hide_banner', '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                command.extend(['-c:v', 'h264_nvenc', '-preset', 'p4', '-profile:v', 'high'])
-                use_software_encoder = False
-            except Exception:
-                logger.warning("NVENC编码器不可用，将使用软件编码")
-        elif hwaccel == 'qsv' and not is_windows:  # 在Windows上避免使用QSV
+                # 检查NVENC编码器是否可用
+                encoders_cmd = subprocess.run(
+                    ["ffmpeg", "-hide_banner", "-encoders"],
+                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+                )
+
+                if "h264_nvenc" in encoders_cmd.stdout.lower():
+                    command.extend(['-c:v', 'h264_nvenc', '-preset', 'p4', '-profile:v', 'high'])
+                    use_software_encoder = False
+                else:
+                    logger.warning("NVENC编码器不可用，将使用软件编码")
+            except Exception as e:
+                logger.warning(f"NVENC编码器检测失败: {str(e)}，将使用软件编码")
+        elif hwaccel_type == 'qsv':
             command.extend(['-c:v', 'h264_qsv', '-preset', 'medium'])
             use_software_encoder = False
-        elif hwaccel == 'videotoolbox':  # macOS
+        elif hwaccel_type == 'videotoolbox':  # macOS
             command.extend(['-c:v', 'h264_videotoolbox', '-profile:v', 'high'])
             use_software_encoder = False
-        elif hwaccel == 'vaapi' and not is_windows:  # Linux VA-API
+        elif hwaccel_type == 'vaapi':  # Linux VA-API
             command.extend(['-c:v', 'h264_vaapi', '-profile', '100'])
             use_software_encoder = False
 
