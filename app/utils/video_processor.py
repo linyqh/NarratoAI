@@ -19,6 +19,8 @@ from typing import List, Dict
 from loguru import logger
 from tqdm import tqdm
 
+from app.utils import ffmpeg_utils
+
 
 class VideoProcessor:
     def __init__(self, video_path: str):
@@ -63,7 +65,7 @@ class VideoProcessor:
                 if '=' in line:
                     key, value = line.split('=', 1)
                     info[key] = value
-            
+
             # 处理帧率（可能是分数形式）
             if 'r_frame_rate' in info:
                 try:
@@ -71,9 +73,9 @@ class VideoProcessor:
                     info['fps'] = str(num / den)
                 except ValueError:
                     info['fps'] = info.get('r_frame_rate', '25')
-            
+
             return info
-        
+
         except subprocess.CalledProcessError as e:
             logger.error(f"获取视频信息失败: {e.stderr}")
             return {
@@ -83,7 +85,7 @@ class VideoProcessor:
                 'duration': '0'
             }
 
-    def extract_frames_by_interval(self, output_dir: str, interval_seconds: float = 5.0, 
+    def extract_frames_by_interval(self, output_dir: str, interval_seconds: float = 5.0,
                                   use_hw_accel: bool = True) -> List[int]:
         """
         按指定时间间隔提取视频帧
@@ -98,57 +100,51 @@ class VideoProcessor:
         """
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-        
+
         # 计算起始时间和帧提取点
         start_time = 0
         end_time = self.duration
         extraction_times = []
-        
+
         current_time = start_time
         while current_time < end_time:
             extraction_times.append(current_time)
             current_time += interval_seconds
-        
+
         if not extraction_times:
             logger.warning("未找到需要提取的帧")
             return []
 
         # 确定硬件加速器选项
         hw_accel = []
-        if use_hw_accel:
-            # 尝试检测可用的硬件加速器
-            hw_accel_options = self._detect_hw_accelerator()
-            if hw_accel_options:
-                hw_accel = hw_accel_options
-                logger.info(f"使用硬件加速: {' '.join(hw_accel)}")
-            else:
-                logger.warning("未检测到可用的硬件加速器，使用软件解码")
-        
+        if use_hw_accel and ffmpeg_utils.is_ffmpeg_hwaccel_available():
+            hw_accel = ffmpeg_utils.get_ffmpeg_hwaccel_args()
+
         # 提取帧
         frame_numbers = []
         for i, timestamp in enumerate(tqdm(extraction_times, desc="提取视频帧")):
             frame_number = int(timestamp * self.fps)
             frame_numbers.append(frame_number)
-            
+
             # 格式化时间戳字符串 (HHMMSSmmm)
             hours = int(timestamp // 3600)
             minutes = int((timestamp % 3600) // 60)
             seconds = int(timestamp % 60)
             milliseconds = int((timestamp % 1) * 1000)
             time_str = f"{hours:02d}{minutes:02d}{seconds:02d}{milliseconds:03d}"
-            
+
             output_path = os.path.join(output_dir, f"keyframe_{frame_number:06d}_{time_str}.jpg")
-            
+
             # 使用ffmpeg提取单帧
             cmd = [
                 "ffmpeg",
                 "-hide_banner",
                 "-loglevel", "error",
             ]
-            
+
             # 添加硬件加速参数
             cmd.extend(hw_accel)
-            
+
             cmd.extend([
                 "-ss", str(timestamp),
                 "-i", self.video_path,
@@ -157,12 +153,12 @@ class VideoProcessor:
                 "-y",
                 output_path
             ])
-            
+
             try:
                 subprocess.run(cmd, check=True, capture_output=True)
             except subprocess.CalledProcessError as e:
                 logger.warning(f"提取帧 {frame_number} 失败: {e.stderr}")
-        
+
         logger.info(f"成功提取了 {len(frame_numbers)} 个视频帧")
         return frame_numbers
 
@@ -173,119 +169,9 @@ class VideoProcessor:
         Returns:
             List[str]: 硬件加速器ffmpeg命令参数
         """
-        # 检测操作系统
-        import platform
-        system = platform.system().lower()
-        
-        # 测试不同的硬件加速器
-        accelerators = []
-        
-        if system == 'darwin':  # macOS
-            # 测试 videotoolbox (Apple 硬件加速)
-            test_cmd = [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel", "error",
-                "-hwaccel", "videotoolbox",
-                "-i", self.video_path,
-                "-t", "0.1",
-                "-f", "null",
-                "-"
-            ]
-            try:
-                subprocess.run(test_cmd, capture_output=True, check=True)
-                return ["-hwaccel", "videotoolbox"]
-            except subprocess.CalledProcessError:
-                pass
-                
-        elif system == 'linux':
-            # 测试 VAAPI
-            test_cmd = [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel", "error",
-                "-hwaccel", "vaapi",
-                "-i", self.video_path,
-                "-t", "0.1",
-                "-f", "null",
-                "-"
-            ]
-            try:
-                subprocess.run(test_cmd, capture_output=True, check=True)
-                return ["-hwaccel", "vaapi"]
-            except subprocess.CalledProcessError:
-                pass
-            
-            # 尝试 CUDA
-            test_cmd = [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel", "error", 
-                "-hwaccel", "cuda",
-                "-i", self.video_path,
-                "-t", "0.1",
-                "-f", "null",
-                "-"
-            ]
-            try:
-                subprocess.run(test_cmd, capture_output=True, check=True)
-                return ["-hwaccel", "cuda"]
-            except subprocess.CalledProcessError:
-                pass
-                
-        elif system == 'windows':
-            # 测试 CUDA
-            test_cmd = [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel", "error",
-                "-hwaccel", "cuda",
-                "-i", self.video_path,
-                "-t", "0.1",
-                "-f", "null",
-                "-"
-            ]
-            try:
-                subprocess.run(test_cmd, capture_output=True, check=True)
-                return ["-hwaccel", "cuda"]
-            except subprocess.CalledProcessError:
-                pass
-                
-            # 测试 D3D11VA
-            test_cmd = [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel", "error",
-                "-hwaccel", "d3d11va",
-                "-i", self.video_path,
-                "-t", "0.1",
-                "-f", "null", 
-                "-"
-            ]
-            try:
-                subprocess.run(test_cmd, capture_output=True, check=True)
-                return ["-hwaccel", "d3d11va"]
-            except subprocess.CalledProcessError:
-                pass
-                
-            # 测试 DXVA2
-            test_cmd = [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel", "error",
-                "-hwaccel", "dxva2",
-                "-i", self.video_path,
-                "-t", "0.1",
-                "-f", "null",
-                "-"
-            ]
-            try:
-                subprocess.run(test_cmd, capture_output=True, check=True)
-                return ["-hwaccel", "dxva2"]
-            except subprocess.CalledProcessError:
-                pass
-        
-        # 如果没有找到可用的硬件加速器        
+        # 使用集中式硬件加速检测
+        if ffmpeg_utils.is_ffmpeg_hwaccel_available():
+            return ffmpeg_utils.get_ffmpeg_hwaccel_args()
         return []
 
     def process_video_pipeline(self,
@@ -294,7 +180,7 @@ class VideoProcessor:
                               use_hw_accel: bool = True) -> None:
         """
         执行简化的视频处理流程，直接从原视频按固定时间间隔提取帧
-        
+
         Args:
             output_dir: 输出目录
             interval_seconds: 帧提取间隔（秒）
@@ -302,7 +188,7 @@ class VideoProcessor:
         """
         # 创建输出目录
         os.makedirs(output_dir, exist_ok=True)
-        
+
         try:
             # 直接从原视频提取关键帧
             logger.info(f"从视频间隔 {interval_seconds} 秒提取关键帧...")
@@ -311,7 +197,7 @@ class VideoProcessor:
                 interval_seconds=interval_seconds,
                 use_hw_accel=use_hw_accel
             )
-            
+
             logger.info(f"处理完成！视频帧已保存在: {output_dir}")
 
         except Exception as e:
@@ -324,16 +210,16 @@ if __name__ == "__main__":
     import time
 
     start_time = time.time()
-    
+
     # 使用示例
     processor = VideoProcessor("./resource/videos/test.mp4")
-    
+
     # 设置间隔为3秒提取帧
     processor.process_video_pipeline(
         output_dir="output",
         interval_seconds=3.0,
         use_hw_accel=True
     )
-    
+
     end_time = time.time()
     print(f"处理完成！总耗时: {end_time - start_time:.2f} 秒")

@@ -5,7 +5,7 @@
 @Project: NarratoAI
 @File   : clip_video
 @Author : 小林同学
-@Date   : 2025/5/6 下午6:14 
+@Date   : 2025/5/6 下午6:14
 '''
 
 import os
@@ -16,14 +16,16 @@ from loguru import logger
 from typing import Dict, List, Optional
 from pathlib import Path
 
+from app.utils import ffmpeg_utils
+
 
 def parse_timestamp(timestamp: str) -> tuple:
     """
     解析时间戳字符串，返回开始和结束时间
-    
+
     Args:
         timestamp: 格式为'HH:MM:SS-HH:MM:SS'或'HH:MM:SS,sss-HH:MM:SS,sss'的时间戳字符串
-        
+
     Returns:
         tuple: (开始时间, 结束时间) 格式为'HH:MM:SS'或'HH:MM:SS,sss'
     """
@@ -34,37 +36,37 @@ def parse_timestamp(timestamp: str) -> tuple:
 def calculate_end_time(start_time: str, duration: float, extra_seconds: float = 1.0) -> str:
     """
     根据开始时间和持续时间计算结束时间
-    
+
     Args:
         start_time: 开始时间，格式为'HH:MM:SS'或'HH:MM:SS,sss'(带毫秒)
         duration: 持续时间，单位为秒
         extra_seconds: 额外添加的秒数，默认为1秒
-        
+
     Returns:
         str: 计算后的结束时间，格式与输入格式相同
     """
     # 检查是否包含毫秒
     has_milliseconds = ',' in start_time
     milliseconds = 0
-    
+
     if has_milliseconds:
         time_part, ms_part = start_time.split(',')
         h, m, s = map(int, time_part.split(':'))
         milliseconds = int(ms_part)
     else:
         h, m, s = map(int, start_time.split(':'))
-    
+
     # 转换为总毫秒数
-    total_milliseconds = ((h * 3600 + m * 60 + s) * 1000 + milliseconds + 
+    total_milliseconds = ((h * 3600 + m * 60 + s) * 1000 + milliseconds +
                           int((duration + extra_seconds) * 1000))
-    
+
     # 计算新的时、分、秒、毫秒
     ms_new = total_milliseconds % 1000
     total_seconds = total_milliseconds // 1000
     h_new = int(total_seconds // 3600)
     m_new = int((total_seconds % 3600) // 60)
     s_new = int(total_seconds % 60)
-    
+
     # 返回与输入格式一致的时间字符串
     if has_milliseconds:
         return f"{h_new:02d}:{m_new:02d}:{s_new:02d},{ms_new:03d}"
@@ -75,44 +77,12 @@ def calculate_end_time(start_time: str, duration: float, extra_seconds: float = 
 def check_hardware_acceleration() -> Optional[str]:
     """
     检查系统支持的硬件加速选项
-    
+
     Returns:
         Optional[str]: 硬件加速参数，如果不支持则返回None
     """
-    # 检查NVIDIA GPU支持
-    try:
-        nvidia_check = subprocess.run(
-            ["ffmpeg", "-hwaccel", "cuda", "-i", "/dev/null", "-f", "null", "-"],
-            stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
-        )
-        if nvidia_check.returncode == 0:
-            return "cuda"
-    except Exception:
-        pass
-
-    # 检查MacOS videotoolbox支持
-    try:
-        videotoolbox_check = subprocess.run(
-            ["ffmpeg", "-hwaccel", "videotoolbox", "-i", "/dev/null", "-f", "null", "-"],
-            stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
-        )
-        if videotoolbox_check.returncode == 0:
-            return "videotoolbox"
-    except Exception:
-        pass
-
-    # 检查Intel Quick Sync支持
-    try:
-        qsv_check = subprocess.run(
-            ["ffmpeg", "-hwaccel", "qsv", "-i", "/dev/null", "-f", "null", "-"],
-            stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
-        )
-        if qsv_check.returncode == 0:
-            return "qsv"
-    except Exception:
-        pass
-
-    return None
+    # 使用集中式硬件加速检测
+    return ffmpeg_utils.get_ffmpeg_hwaccel_type()
 
 
 def clip_video(
@@ -123,13 +93,13 @@ def clip_video(
 ) -> Dict[str, str]:
     """
     根据时间戳裁剪视频
-    
+
     Args:
         video_origin_path: 原始视频的路径
         tts_result: 包含时间戳和持续时间信息的列表
         output_dir: 输出目录路径，默认为None时会自动生成
         task_id: 任务ID，用于生成唯一的输出目录，默认为None时会自动生成
-        
+
     Returns:
         Dict[str, str]: 时间戳到裁剪后视频路径的映射
     """
@@ -152,12 +122,11 @@ def clip_video(
     # 确保输出目录存在
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    # 检查硬件加速支持
+    # 获取硬件加速支持
     hwaccel = check_hardware_acceleration()
     hwaccel_args = []
     if hwaccel:
-        hwaccel_args = ["-hwaccel", hwaccel]
-        logger.info(f"使用硬件加速: {hwaccel}")
+        hwaccel_args = ffmpeg_utils.get_ffmpeg_hwaccel_args()
 
     # 存储裁剪结果
     result = {}
@@ -170,7 +139,7 @@ def clip_video(
         # 根据持续时间计算真正的结束时间（加上1秒余量）
         duration = item["duration"]
         calculated_end_time = calculate_end_time(start_time, duration)
-        
+
         # 转换为FFmpeg兼容的时间格式（逗号替换为点）
         ffmpeg_start_time = start_time.replace(',', '.')
         ffmpeg_end_time = calculated_end_time.replace(',', '.')
