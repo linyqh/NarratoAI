@@ -127,6 +127,7 @@ jobs:
                   temperature=0.7,
               )
               release_notes = response.choices[0].message.content
+              print(f"commits: \n{commits}")
               print(f"大模型总结的发布说明: \n{release_notes}")
           except Exception as e:
               print(f"Error calling OpenAI API: {e}")
