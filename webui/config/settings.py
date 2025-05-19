@@ -4,6 +4,21 @@ from loguru import logger
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
+def get_version_from_file():
+    """从project_version文件中读取版本号"""
+    try:
+        version_file = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "project_version"
+        )
+        if os.path.isfile(version_file):
+            with open(version_file, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        return "0.1.0"  # 默认版本号
+    except Exception as e:
+        logger.error(f"读取版本号文件失败: {str(e)}")
+        return "0.1.0"  # 默认版本号
+
 @dataclass
 class WebUIConfig:
     """WebUI配置类"""
@@ -16,7 +31,7 @@ class WebUIConfig:
     # Azure配置
     azure: Dict[str, str] = None
     # 项目版本
-    project_version: str = "0.1.0"
+    project_version: str = get_version_from_file()
     # 项目根目录
     root_dir: str = None
     # Gemini API Key
@@ -71,13 +86,13 @@ def load_config(config_path: Optional[str] = None) -> WebUIConfig:
         with open(config_path, "rb") as f:
             config_dict = tomli.load(f)
             
-        # 创建配置对象
+        # 创建配置对象，使用从文件读取的版本号
         config = WebUIConfig(
             ui=config_dict.get("ui", {}),
             proxy=config_dict.get("proxy", {}),
             app=config_dict.get("app", {}),
             azure=config_dict.get("azure", {}),
-            project_version=config_dict.get("project_version", "0.1.0")
+            # 不再从配置文件中获取project_version
         )
         
         return config
@@ -105,13 +120,13 @@ def save_config(config: WebUIConfig, config_path: Optional[str] = None) -> bool:
         # 确保目录存在
         os.makedirs(os.path.dirname(config_path), exist_ok=True)
         
-        # 转换为字典
+        # 转换为字典，不再保存版本号到配置文件
         config_dict = {
             "ui": config.ui,
             "proxy": config.proxy,
             "app": config.app,
-            "azure": config.azure,
-            "project_version": config.project_version
+            "azure": config.azure
+            # 不再保存project_version到配置文件
         }
         
         # 保存配置
@@ -153,8 +168,7 @@ def update_config(config_dict: Dict[str, Any]) -> bool:
             config.app.update(config_dict["app"])
         if "azure" in config_dict:
             config.azure.update(config_dict["azure"])
-        if "project_version" in config_dict:
-            config.project_version = config_dict["project_version"]
+        # 不再从配置字典更新project_version
         
         # 保存配置
         return save_config(config)
