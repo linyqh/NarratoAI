@@ -81,6 +81,7 @@ jobs:
                   temperature=0.7,
               )
               enhanced_notes = response.choices[0].message.content
+              print(f"大模型润色后的发布说明: \n{enhanced_notes}")
           except Exception as e:
               print(f"Error calling OpenAI API: {e}")
               enhanced_notes = release_notes  # 如果API调用失败，使用原始发布说明
