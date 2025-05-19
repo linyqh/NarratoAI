@@ -122,11 +122,12 @@ jobs:
                   model="deepseek-ai/DeepSeek-V3",
                   messages=[
                       {"role": "system", "content": "你是一个专业的软件发布说明生成助手。请根据提供的git提交信息，生成一个结构化的发布说明，包括新功能、改进、修复的bug等类别。使用中文回复。"},
-                      {"role": "user", "content": f"请根据以下git提交信息,生成一个版本{version}的发布说明,内容要言简意赅,相似的提交信息不要重复出现: \n\n{commits}"}
+                      {"role": "user", "content": f"请根据以下git提交信息,生成一个版本{version}的发布说明,内容详细且完整,相似的提交信息不要重复出现: \n\n{commits}"}
                   ],
                   temperature=0.7,
               )
               release_notes = response.choices[0].message.content
+              print(f"大模型总结的发布说明: \n{release_notes}")
           except Exception as e:
               print(f"Error calling OpenAI API: {e}")
               release_notes = f"# 版本 {version} 发布\n\n## 更新内容\n\n"
