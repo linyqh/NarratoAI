@@ -104,11 +104,13 @@ jobs:
           cat > generate_release_notes.py << 'EOF'
           import os
           import sys
-          import openai
+          from openai import OpenAI
 
-          # 设置OpenAI API参数
-          openai.api_key = os.environ.get("OPENAI_API_KEY")
-          openai.base_url = os.environ.get("OPENAI_BASE_URL")
+          # 设置OpenAI客户端
+          client = OpenAI(
+              api_key=os.environ.get("OPENAI_API_KEY"),
+              base_url=os.environ.get("OPENAI_BASE_URL")
+          )
 
           # 获取提交信息和版本号
           commits = sys.stdin.read()
@@ -116,7 +118,7 @@ jobs:
 
           # 调用API生成发布说明
           try:
-              response = openai.chat.completions.create(
+              response = client.chat.completions.create(
                   model="deepseek-ai/DeepSeek-V3",
                   messages=[
                       {"role": "system", "content": "你是一个专业的软件发布说明生成助手。请根据提供的git提交信息，生成一个结构化的发布说明，包括新功能、改进、修复的bug等类别。使用中文回复。"},
@@ -156,7 +158,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.check-version.outputs.current_version }}
-          name: Release v${{ steps.check-version.outputs.current_version }}
+          name: v${{ steps.check-version.outputs.current_version }}
           body: ${{ steps.generate-notes.outputs.release_notes }}
           draft: false
           prerelease: false
