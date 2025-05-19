@@ -17,19 +17,21 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install openai discord-webhook
+        run: pip install openai discord-webhook requests
 
       - name: Enhance release notes and send to Discord
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: https://api.siliconflow.cn/v1
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cat > send_discord_notification.py << 'EOF'
           import os
           import sys
           import json
           import openai
+          import requests
           from datetime import datetime
           from discord_webhook import DiscordWebhook, DiscordEmbed
 
@@ -38,25 +40,56 @@ jobs:
           openai.base_url = os.environ.get("OPENAI_BASE_URL")
 
           # 获取GitHub release信息
-          release_info = json.loads(os.environ.get("RELEASE_INFO"))
-          release_notes = release_info["body"]
-          version = release_info["tag_name"]
-          release_date = datetime.strptime(release_info["published_at"], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y年%m月%d日")
+          github_token = os.environ.get("GITHUB_TOKEN")
+          repo = os.environ.get("GITHUB_REPOSITORY")
+          
+          # 直接从GitHub API获取最新release
+          headers = {"Authorization": f"token {github_token}"}
+          response = requests.get(f"https://api.github.com/repos/{repo}/releases/latest", headers=headers)
+          
+          if response.status_code != 200:
+              print(f"Error fetching release info: {response.status_code}")
+              print(response.text)
+              sys.exit(1)
+              
+          release_info = response.json()
+          
+          # 提取需要的信息
+          release_notes = release_info.get("body", "无发布说明")
+          version = release_info.get("tag_name", "未知版本")
+          
+          # 安全地解析发布日期
+          published_at = release_info.get("published_at")
+          if published_at:
+              try:
+                  release_date = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y年%m月%d日")
+              except ValueError:
+                  release_date = "未知日期"
+          else:
+              release_date = "未知日期"
 
           # 使用大模型润色发布说明
-          response = openai.chat.completions.create(
-              model="deepseek-ai/DeepSeek-V3",
-              messages=[
-                  {"role": "system", "content": "你是一个专业的软件发布公告优化助手。请优化以下发布说明，使其更加生动、专业，并明确区分新功能、优化内容、修复内容和移除内容等类别。保持原有信息的完整性，同时增强可读性和专业性。使用中文回复。"},
-                  {"role": "user", "content": f"请优化以下版本{version}的发布说明，使其更适合在Discord社区发布：\n\n{release_notes}"}
-              ],
-              temperature=0.7,
-          )
-          
-          enhanced_notes = response.choices[0].message.content
+          try:
+              response = openai.chat.completions.create(
+                  model="deepseek-ai/DeepSeek-V3",
+                  messages=[
+                      {"role": "system", "content": "你是一个专业的软件发布公告优化助手。请优化以下发布说明，使其更加生动、专业，并明确区分新功能、优化内容、修复内容和移除内容等类别。保持原有信息的完整性，同时增强可读性和专业性。使用中文回复。"},
+                      {"role": "user", "content": f"请优化以下版本{version}的发布说明，使其更适合在Discord社区发布：\n\n{release_notes}"}
+                  ],
+                  temperature=0.7,
+              )
+              enhanced_notes = response.choices[0].message.content
+          except Exception as e:
+              print(f"Error calling OpenAI API: {e}")
+              enhanced_notes = release_notes  # 如果API调用失败，使用原始发布说明
           
           # 创建Discord消息
-          webhook = DiscordWebhook(url=os.environ.get("DISCORD_WEBHOOK_URL"))
+          webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
+          if not webhook_url:
+              print("Error: DISCORD_WEBHOOK_URL not set")
+              sys.exit(1)
+              
+          webhook = DiscordWebhook(url=webhook_url)
           
           # 创建嵌入式消息
           embed = DiscordEmbed(
@@ -66,17 +99,22 @@ jobs:
           )
           
           # 添加润色后的发布说明
-          embed.add_embed_field(name="更新内容", value=enhanced_notes[:1024] if len(enhanced_notes) > 1024 else enhanced_notes)
-          
-          # 如果内容太长，分段添加
-          if len(enhanced_notes) > 1024:
-              remaining = enhanced_notes[1024:]
-              chunks = [remaining[i:i+1024] for i in range(0, len(remaining), 1024)]
-              for i, chunk in enumerate(chunks):
-                  embed.add_embed_field(name=f"更新内容（续{i+1}）", value=chunk)
+          if enhanced_notes:
+              embed.add_embed_field(name="更新内容", value=enhanced_notes[:1024] if len(enhanced_notes) > 1024 else enhanced_notes)
+              
+              # 如果内容太长，分段添加
+              if len(enhanced_notes) > 1024:
+                  remaining = enhanced_notes[1024:]
+                  chunks = [remaining[i:i+1024] for i in range(0, len(remaining), 1024)]
+                  for i, chunk in enumerate(chunks):
+                      embed.add_embed_field(name=f"更新内容（续{i+1}）", value=chunk)
+          else:
+              embed.add_embed_field(name="更新内容", value="无详细更新内容")
           
           # 添加下载链接
-          embed.add_embed_field(name="下载链接", value=release_info["html_url"])
+          html_url = release_info.get("html_url", "")
+          if html_url:
+              embed.add_embed_field(name="下载链接", value=html_url)
           
           # 设置页脚
           embed.set_footer(text="NarratoAI 团队")
@@ -87,11 +125,11 @@ jobs:
           
           # 发送消息
           response = webhook.execute()
-          print(f"Discord notification sent with status code: {response.status_code}")
+          if response:
+              print(f"Discord notification sent with status code: {response.status_code}")
+          else:
+              print("Failed to send Discord notification")
           EOF
-          
-          # 获取发布信息并传递给脚本
-          echo "RELEASE_INFO='$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/${{ github.repository }}/releases/latest)'" >> $GITHUB_ENV
           
           # 执行脚本
           python send_discord_notification.py 
