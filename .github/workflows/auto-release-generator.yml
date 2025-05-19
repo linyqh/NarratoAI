@@ -72,6 +72,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: https://api.siliconflow.cn/v1
+          CURRENT_VERSION: ${{ steps.check-version.outputs.current_version }}
         run: |
           cat > generate_release_notes.py << 'EOF'
           import os
@@ -108,8 +109,6 @@ jobs:
           EOF
           
           python generate_release_notes.py < <(echo "${{ steps.get-commits.outputs.commits }}")
-        env:
-          CURRENT_VERSION: ${{ steps.check-version.outputs.current_version }}
 
       - name: Create GitHub Release
         if: steps.check-version.outputs.version_changed == 'true'
