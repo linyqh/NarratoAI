@@ -1,0 +1,97 @@
+name: Discord Release Notification
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install openai discord-webhook
+
+      - name: Enhance release notes and send to Discord
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: https://api.siliconflow.cn/v1
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          cat > send_discord_notification.py << 'EOF'
+          import os
+          import sys
+          import json
+          import openai
+          from datetime import datetime
+          from discord_webhook import DiscordWebhook, DiscordEmbed
+
+          # 设置OpenAI API参数
+          openai.api_key = os.environ.get("OPENAI_API_KEY")
+          openai.base_url = os.environ.get("OPENAI_BASE_URL")
+
+          # 获取GitHub release信息
+          release_info = json.loads(os.environ.get("RELEASE_INFO"))
+          release_notes = release_info["body"]
+          version = release_info["tag_name"]
+          release_date = datetime.strptime(release_info["published_at"], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y年%m月%d日")
+
+          # 使用大模型润色发布说明
+          response = openai.chat.completions.create(
+              model="deepseek-ai/DeepSeek-V3",
+              messages=[
+                  {"role": "system", "content": "你是一个专业的软件发布公告优化助手。请优化以下发布说明，使其更加生动、专业，并明确区分新功能、优化内容、修复内容和移除内容等类别。保持原有信息的完整性，同时增强可读性和专业性。使用中文回复。"},
+                  {"role": "user", "content": f"请优化以下版本{version}的发布说明，使其更适合在Discord社区发布：\n\n{release_notes}"}
+              ],
+              temperature=0.7,
+          )
+          
+          enhanced_notes = response.choices[0].message.content
+          
+          # 创建Discord消息
+          webhook = DiscordWebhook(url=os.environ.get("DISCORD_WEBHOOK_URL"))
+          
+          # 创建嵌入式消息
+          embed = DiscordEmbed(
+              title=f"🚀 NarratoAI {version} 发布公告",
+              description=f"发布日期: {release_date}",
+              color="5865F2"  # Discord蓝色
+          )
+          
+          # 添加润色后的发布说明
+          embed.add_embed_field(name="更新内容", value=enhanced_notes[:1024] if len(enhanced_notes) > 1024 else enhanced_notes)
+          
+          # 如果内容太长，分段添加
+          if len(enhanced_notes) > 1024:
+              remaining = enhanced_notes[1024:]
+              chunks = [remaining[i:i+1024] for i in range(0, len(remaining), 1024)]
+              for i, chunk in enumerate(chunks):
+                  embed.add_embed_field(name=f"更新内容（续{i+1}）", value=chunk)
+          
+          # 添加下载链接
+          embed.add_embed_field(name="下载链接", value=release_info["html_url"])
+          
+          # 设置页脚
+          embed.set_footer(text="NarratoAI 团队")
+          embed.set_timestamp()
+          
+          # 添加嵌入式消息到webhook
+          webhook.add_embed(embed)
+          
+          # 发送消息
+          response = webhook.execute()
+          print(f"Discord notification sent with status code: {response.status_code}")
+          EOF
+          
+          # 获取发布信息并传递给脚本
+          echo "RELEASE_INFO='$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/${{ github.repository }}/releases/latest)'" >> $GITHUB_ENV
+          
+          # 执行脚本
+          python send_discord_notification.py 

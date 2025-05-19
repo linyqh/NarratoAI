@@ -1,0 +1,124 @@
+name: Auto Release Generator
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**/project_version'  # 假设版本号存储在这个文件中，根据实际情况调整
+
+jobs:
+  check-version-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史以检查变更
+
+      - name: Check if version changed
+        id: check-version
+        run: |
+          git fetch origin main
+          
+          # 获取当前版本号
+          CURRENT_VERSION=$(cat project_version)
+          echo "Current version: $CURRENT_VERSION"
+          
+          # 获取上一个版本号（如果存在）
+          if git show origin/main:project_version &>/dev/null; then
+            PREVIOUS_VERSION=$(git show origin/main:project_version)
+            echo "Previous version: $PREVIOUS_VERSION"
+            
+            if [[ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]]; then
+              echo "Version changed from $PREVIOUS_VERSION to $CURRENT_VERSION"
+              echo "version_changed=true" >> $GITHUB_OUTPUT
+              echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            else
+              echo "Version unchanged"
+              echo "version_changed=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "First version detected"
+            echo "version_changed=true" >> $GITHUB_OUTPUT
+            echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Python
+        if: steps.check-version.outputs.version_changed == 'true'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install OpenAI SDK
+        if: steps.check-version.outputs.version_changed == 'true'
+        run: pip install openai
+
+      - name: Get commits since last release
+        if: steps.check-version.outputs.version_changed == 'true'
+        id: get-commits
+        run: |
+          # 获取上次发布以来的所有提交信息
+          COMMITS=$(git log $(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~50)..HEAD --pretty=format:"%s")
+          echo "commits<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes with AI
+        if: steps.check-version.outputs.version_changed == 'true'
+        id: generate-notes
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: https://api.siliconflow.cn/v1
+        run: |
+          cat > generate_release_notes.py << 'EOF'
+          import os
+          import sys
+          import openai
+
+          # 设置OpenAI API参数
+          openai.api_key = os.environ.get("OPENAI_API_KEY")
+          openai.base_url = os.environ.get("OPENAI_BASE_URL")
+
+          # 获取提交信息和版本号
+          commits = sys.stdin.read()
+          version = os.environ.get("CURRENT_VERSION")
+
+          # 调用API生成发布说明
+          response = openai.chat.completions.create(
+              model="deepseek-ai/DeepSeek-V3",
+              messages=[
+                  {"role": "system", "content": "你是一个专业的软件发布说明生成助手。请根据提供的git提交信息，生成一个结构化的发布说明，包括新功能、改进、修复的bug等类别。使用中文回复。"},
+                  {"role": "user", "content": f"请根据以下git提交信息，生成一个版本{version}的发布说明：\n\n{commits}"}
+              ],
+              temperature=0.7,
+          )
+          
+          # 输出生成的发布说明
+          release_notes = response.choices[0].message.content
+          print(release_notes)
+          
+          # 保存到GitHub输出
+          with open(os.environ.get("GITHUB_OUTPUT"), "a") as f:
+              f.write("release_notes<<RELEASE_NOTES_EOF\n")
+              f.write(release_notes)
+              f.write("\nRELEASE_NOTES_EOF\n")
+          EOF
+          
+          python generate_release_notes.py < <(echo "${{ steps.get-commits.outputs.commits }}")
+        env:
+          CURRENT_VERSION: ${{ steps.check-version.outputs.current_version }}
+
+      - name: Create GitHub Release
+        if: steps.check-version.outputs.version_changed == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.check-version.outputs.current_version }}
+          name: Release v${{ steps.check-version.outputs.current_version }}
+          body: ${{ steps.generate-notes.outputs.release_notes }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
