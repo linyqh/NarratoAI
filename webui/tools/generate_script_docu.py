@@ -371,7 +371,8 @@ def generate_script_docu(params):
                 narration_dict = json.loads(narration)['items']
                 # 为 narration_dict 中每个 item 新增一个 OST: 2 的字段, 代表保留原声和配音
                 narration_dict = [{**item, "OST": 2} for item in narration_dict]
-                logger.debug(f"解说文案创作完成:\n{"\n".join([item['narration'] for item in narration_dict])}")
+                logger.debug("解说文案创作完成:\n" + '\n'.join([item['narration'] for item in narration_dict]))
+
                 # 结果转换为JSON字符串
                 script = json.dumps(narration_dict, ensure_ascii=False, indent=2)
 
