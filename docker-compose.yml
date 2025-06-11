@@ -2,11 +2,11 @@ x-common: &common
   build:
     context: .
     dockerfile: Dockerfile
-  image: linyq1/narratoai:latest
+  image: my-narratoai:latest
   volumes:
     - ./:/NarratoAI
   environment:
-    - VPN_PROXY_URL=http://host.docker.internal:7890
+    - VPN_PROXY_URL=127.0.0.1:7890
     - PYTHONUNBUFFERED=1
     - PYTHONMALLOC=malloc
     - OPENCV_OPENCL_RUNTIME=disabled

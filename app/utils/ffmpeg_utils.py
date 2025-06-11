@@ -306,22 +306,52 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
     is_amd = 'amd' in gpu_info.lower() or 'radeon' in gpu_info.lower()
 
     # 检测NVIDIA CUDA支持
-    if 'cuda' in supported_hwaccels and is_nvidia:
+    if is_nvidia:
+        logger.debug(f"检测到NVIDIA显卡: {gpu_info.strip()}")
+        
+        # 首先检查NVENC编码器是否可用
         try:
-            test_cmd = subprocess.run(
-                ["ffmpeg", "-hwaccel", "cuda", "-i", "/dev/null", "-f", "null", "-"],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+            encoders_cmd = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-encoders"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
             )
-            if test_cmd.returncode == 0:
-                _FFMPEG_HW_ACCEL_INFO["available"] = True
-                _FFMPEG_HW_ACCEL_INFO["type"] = "cuda"
-                _FFMPEG_HW_ACCEL_INFO["encoder"] = "h264_nvenc"
-                _FFMPEG_HW_ACCEL_INFO["hwaccel_args"] = ["-hwaccel", "cuda"]
-                _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = True
-                return
-        except Exception as e:
-            logger.debug(f"测试CUDA失败: {str(e)}")
+            has_nvenc = "h264_nvenc" in encoders_cmd.stdout.lower()
+            logger.debug(f"NVENC编码器检测结果: {'可用' if has_nvenc else '不可用'}")
 
+            if has_nvenc:
+                # 测试NVENC编码器
+                test_cmd = subprocess.run(
+                    ["ffmpeg", "-f", "lavfi", "-i", "nullsrc=s=1280x720:r=30", "-c:v", "h264_nvenc", "-t", "0.1", "-f", "null", "-"],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
+                )
+                if test_cmd.returncode == 0:
+                    _FFMPEG_HW_ACCEL_INFO["available"] = True
+                    _FFMPEG_HW_ACCEL_INFO["type"] = "nvenc"
+                    _FFMPEG_HW_ACCEL_INFO["encoder"] = "h264_nvenc"
+                    _FFMPEG_HW_ACCEL_INFO["hwaccel_args"] = []  # 直接使用编码器，不需要hwaccel参数
+                    _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = True
+                    return
+
+            # 如果NVENC测试失败，尝试CUDA
+            if 'cuda' in supported_hwaccels:
+                test_cmd = subprocess.run(
+                    ["ffmpeg", "-hwaccel", "cuda", "-hwaccel_output_format", "cuda", "-f", "lavfi", 
+                     "-i", "nullsrc=s=1280x720:r=30", "-t", "0.1", "-f", "null", "-"],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
+                )
+                logger.debug(f"CUDA测试返回码: {test_cmd.returncode}")
+                logger.debug(f"CUDA测试错误输出: {test_cmd.stderr}")
+
+                if test_cmd.returncode == 0:
+                    _FFMPEG_HW_ACCEL_INFO["available"] = True
+                    _FFMPEG_HW_ACCEL_INFO["type"] = "cuda"
+                    _FFMPEG_HW_ACCEL_INFO["encoder"] = "h264_nvenc"
+                    _FFMPEG_HW_ACCEL_INFO["hwaccel_args"] = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
+                    _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = True
+                    return
+        except Exception as e:
+            logger.debug(f"测试NVIDIA硬件加速失败: {str(e)}")
+    
     # 检测VAAPI支持
     if 'vaapi' in supported_hwaccels:
         # 检查是否存在渲染设备
@@ -407,21 +437,42 @@ def _get_linux_gpu_info() -> str:
         str: 显卡信息字符串
     """
     try:
-        # 尝试使用lspci命令
-        gpu_info = subprocess.run(
-            ['lspci', '-v', '-nn', '|', 'grep', '-i', 'vga\\|display'],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True, check=False
+        # 首先尝试使用nvidia-smi命令检测NVIDIA显卡
+        nvidia_info = subprocess.run(
+            ['nvidia-smi', '-L'],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
         )
-        if gpu_info.stdout:
-            return gpu_info.stdout
+        if nvidia_info.returncode == 0 and nvidia_info.stdout:
+            return nvidia_info.stdout
 
-        # 如果lspci命令失败，尝试使用glxinfo
-        gpu_info = subprocess.run(
-            ['glxinfo', '|', 'grep', '-i', 'vendor\\|renderer'],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True, check=False
+        # 如果nvidia-smi失败，尝试使用lspci命令
+        lspci_info = subprocess.run(
+            ['lspci'],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
         )
-        if gpu_info.stdout:
-            return gpu_info.stdout
+        if lspci_info.returncode == 0:
+            # 使用grep过滤VGA和3D控制器
+            grep_process = subprocess.run(
+                ['grep', '-iE', '(VGA|3D|Display)'],
+                input=lspci_info.stdout,
+                stdout=subprocess.PIPE, text=True, check=False
+            )
+            if grep_process.stdout:
+                return grep_process.stdout
+
+        # 如果前面都失败了，尝试使用glxinfo
+        glxinfo = subprocess.run(
+            ['glxinfo'],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
+        )
+        if glxinfo.returncode == 0:
+            grep_process = subprocess.run(
+                ['grep', '-iE', '(vendor|renderer)'],
+                input=glxinfo.stdout,
+                stdout=subprocess.PIPE, text=True, check=False
+            )
+            if grep_process.stdout:
+                return grep_process.stdout
 
         return "Unknown GPU"
     except Exception as e:
