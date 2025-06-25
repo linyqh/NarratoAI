@@ -3,7 +3,7 @@
 """
 import os
 import pysrt
-from moviepy import VideoFileClip, concatenate_videoclips
+from moviepy.editor import VideoFileClip, concatenate_videoclips
 
 
 def get_video_duration(video_path):
