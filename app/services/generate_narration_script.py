@@ -175,6 +175,7 @@ def generate_narration(markdown_content, api_key, base_url, model):
 1. 只输出 json 内容，不要输出其他任何说明性的文字
 2. 解说文案的语言使用 简体中文
 3. 严禁虚构画面，所有画面只能从 <video_frame_description> 中摘取
+4.尽量分段概括整个视频
 </restriction>
 """ % (markdown_content)
 

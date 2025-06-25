@@ -390,4 +390,4 @@ if __name__ == '__main__':
             options=options
         )
     except Exception as e:
-        logger.error(f"合并素材失败: \n{traceback.format_exc()}")
+        logger.error(f"合并素材失败: \n{traceback.format_exc()}")    

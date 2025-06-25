@@ -165,6 +165,9 @@ def render_generate_button():
             **subtitle_params
         }
 
+        if all_params.get("font_name") is None:
+            all_params["font_name"] = "SourceHanSansCN-Regular.otf"  # 或其他合适的字体名
+
         # 创建参数对象
         params = VideoClipParams(**all_params)
 

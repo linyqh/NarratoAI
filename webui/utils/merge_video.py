@@ -3,7 +3,7 @@
 """
 import os
 import pysrt
-from moviepy.editor import VideoFileClip, concatenate_videoclips
+from moviepy import VideoFileClip, concatenate_videoclips
 
 
 def get_video_duration(video_path):
@@ -69,7 +69,7 @@ def merge_videos_and_subtitles(video_paths, subtitle_paths, output_video_path, o
         # 判断视频是否存在，若已经存在不重复合并
         if not os.path.exists(output_video_path):
             print("合并视频中...")
-            final_video = concatenate_videoclips(video_clips)
+            final_video = concatenate_videoclips(video_clips, method="compose")
 
             # 保存合并后的视频
             print("保存合并后的视频...")

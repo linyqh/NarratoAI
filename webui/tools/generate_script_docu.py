@@ -360,7 +360,7 @@ def generate_script_docu(params):
                 chekc_video_config(llm_params)
                 # 整理帧分析数据
                 markdown_output = parse_frame_analysis_to_markdown(analysis_json_path)
-
+                print("Markdown内容:"+markdown_output)  # 调试输出，查看生成的Markdown内容
                 # 生成解说文案
                 narration = generate_narration(
                     markdown_output,
