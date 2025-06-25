@@ -13,14 +13,13 @@ from app.models.schema import VideoClipParams, VideoAspect
 
 # 初始化配置 - 必须是第一个 Streamlit 命令
 st.set_page_config(
-    page_title="NarratoAI",
+    page_title="时代电动",
     page_icon="📽️",
     layout="wide",
     initial_sidebar_state="auto",
     menu_items={
-        "Report a bug": "https://github.com/linyqh/NarratoAI/issues",
-        'About': f"# Narrato:blue[AI] :sunglasses: 📽️ \n #### Version: v{config.project_version} \n "
-                 f"自动化影视解说视频详情请移步：https://github.com/linyqh/NarratoAI"
+        'About': f"# 时代电动[AI] :sunglasses: 📽️ \n #### Version: v{config.project_version} \n "
+                 
     },
 )
 
@@ -217,7 +216,7 @@ def main():
     except Exception as e:
         logger.warning(f"资源初始化时出现警告: {e}")
 
-    st.title(f"Narrato:blue[AI]:sunglasses: 📽️")
+    st.title(f"时代电动:blue[AI剪辑]:sunglasses: 📽️")
     st.write(tr("Get Help"))
 
     # 首先渲染不依赖PyTorch的UI部分

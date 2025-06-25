@@ -157,7 +157,7 @@ def generate_narration(markdown_content, api_key, base_url, model):
 %s
 </video_frame_description>
 
-我正在尝试做这个内容的解说纪录片视频，我需要你以 <video_frame_description> </video_frame_description> 中的内容为解说目标，根据我刚才提供给你的对标文案 <example_text> 特点，以及你总结的特点，帮我生成一段关于荒野建造的解说文案，文案需要符合平台受欢迎的解说风格，请使用 json 格式进行输出；使用 <output> 中的输出格式：
+我正在尝试做这个内容的解说纪录片视频，我需要你以 <video_frame_description> </video_frame_description> 中的内容为解说目标，根据我刚才提供给你的对标文案 <example_text> 特点，以及你总结的特点，帮我生成一段关于这个视频的解说文案，文案需要符合平台受欢迎的解说风格，请使用 json 格式进行输出；使用 <output> 中的输出格式，注意格式必须标准：
 
 <output>
 {
@@ -175,7 +175,6 @@ def generate_narration(markdown_content, api_key, base_url, model):
 1. 只输出 json 内容，不要输出其他任何说明性的文字
 2. 解说文案的语言使用 简体中文
 3. 严禁虚构画面，所有画面只能从 <video_frame_description> 中摘取
-4.尽量分段概括整个视频
 </restriction>
 """ % (markdown_content)
 

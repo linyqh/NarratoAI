@@ -198,7 +198,7 @@ def merge_materials(
                 font=font_path,
                 font_size=subtitle_font_size,
                 color=subtitle_color,
-                bg_color=subtitle_bg_color,  # 这里已经在前面处理过，None表示透明
+                bg_color=subtitle_bg_color,  
                 stroke_color=stroke_color,
                 stroke_width=stroke_width,
             )
@@ -212,10 +212,18 @@ def merge_materials(
                 color=subtitle_color,
             )
         
+        start_time = subtitle_item[0][0]
+        raw_end_time = subtitle_item[0][1]
+        # 只要不超过视频时长即可
+        end_time = min(raw_end_time, video_clip.duration)
+        duration = end_time - start_time
+        if duration <= 0:
+            logger.warning(f"字幕时间异常: start={start_time}, end={end_time}, 跳过该字幕")
+            return None
+
         # 设置字幕时间
-        duration = subtitle_item[0][1] - subtitle_item[0][0]
-        _clip = _clip.with_start(subtitle_item[0][0])
-        _clip = _clip.with_end(subtitle_item[0][1])
+        _clip = _clip.with_start(start_time)
+        _clip = _clip.with_end(end_time)
         _clip = _clip.with_duration(duration)
         
         # 设置字幕位置
@@ -255,13 +263,19 @@ def merge_materials(
                 encoding="utf-8", 
                 make_textclip=make_textclip
             )
-            
+            print(subtitle_path)
             # 创建每个字幕片段
             text_clips = []
-            for item in sub.subtitles:
+            for idx, item in enumerate(sub.subtitles):
+                logger.info(f"处理字幕{idx+1}: {item[0][0]} ~ {item[0][1]} 内容: {item[1]}")
                 clip = create_text_clip(subtitle_item=item)
-                text_clips.append(clip)
-                
+                if clip is not None:
+                    text_clips.append(clip)
+                    logger.info(f"字幕{idx+1} 创建成功")
+                else:
+                    logger.error(f"字幕{idx+1} 创建失败: {item}")
+            logger.info(f"字幕总数: {len(sub.subtitles)}, 成功生成: {len(text_clips)}")
+            logger.info(f"视频时长: {video_clip.duration}")
             # 合成视频和字幕
             video_clip = CompositeVideoClip([video_clip, *text_clips])
             logger.info(f"已添加{len(text_clips)}个字幕片段")
@@ -390,4 +404,4 @@ if __name__ == '__main__':
             options=options
         )
     except Exception as e:
-        logger.error(f"合并素材失败: \n{traceback.format_exc()}")    
+        logger.error(f"合并素材失败: \n{traceback.format_exc()}")
