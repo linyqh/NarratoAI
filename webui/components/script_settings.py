@@ -5,6 +5,7 @@ import time
 import traceback
 import streamlit as st
 from loguru import logger
+from moviepy import VideoFileClip
 
 from app.config import config
 from app.models.schema import VideoClipParams

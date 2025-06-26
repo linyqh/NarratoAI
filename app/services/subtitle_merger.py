@@ -144,7 +144,7 @@ def merge_subtitle_files(subtitle_items, output_file=None):
     
     # 写入合并后的内容
     with open(output_file, 'w', encoding='utf-8') as file:
-        file.write(merged_content)
+        file.write(merged_content.rstrip('\n') + '\n\n')
     
     return output_file
 

@@ -2,7 +2,7 @@
 使用 moviepy 库剪辑指定时间戳视频，支持时分秒毫秒精度
 """
 
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 from datetime import datetime
 import os
 

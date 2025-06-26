@@ -3,7 +3,7 @@
 包含：视频加速、多核处理、预设参数优化等
 """
 
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 from moviepy.video.fx.speedx import speedx
 import multiprocessing as mp
 import time

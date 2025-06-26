@@ -2,7 +2,7 @@
 使用 moviepy 合并视频、音频、字幕和背景音乐
 """
 
-from moviepy.editor import (
+from moviepy import (
     VideoFileClip,
     AudioFileClip,
     TextClip,
