@@ -1075,7 +1075,7 @@ def azure_tts_v1(
             logger.info(f"第 {i+1} 次使用 edge_tts 生成音频")
 
             async def _do() -> tuple[SubMaker, bytes]:
-                communicate = edge_tts.Communicate(text, voice_name, rate=rate_str, pitch=pitch_str, proxy=config.proxy.get("http"))
+                communicate = edge_tts.Communicate(text, voice_name, rate=rate_str, pitch=pitch_str)
                 sub_maker = edge_tts.SubMaker()
                 audio_data = bytes()  # 用于存储音频数据
                 
