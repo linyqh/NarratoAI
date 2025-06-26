@@ -14,6 +14,7 @@ from webui.tools.base import create_vision_analyzer, get_batch_files, get_batch_
 
 
 def generate_script_docu(params):
+    logger.debug(params)
     """
     生成 纪录片 视频脚本
     要求: 原视频无字幕无配音
@@ -358,15 +359,33 @@ def generate_script_docu(params):
                     "text_base_url": text_base_url
                 })
                 chekc_video_config(llm_params)
+                custom_prompt = st.session_state.get('custom_prompt', '')
+                video_theme = st.session_state.get('video_theme', '')
                 # 整理帧分析数据
-                markdown_output = parse_frame_analysis_to_markdown(analysis_json_path)
+                markdown_path = video_keyframes_dir + ".md"
+                if os.path.exists(markdown_path):
+                    logger.info(f"检测到已存在的Markdown文件，跳过分析，直接生成解说文案: {markdown_path}")
+                    with open(markdown_path, "r", encoding="utf-8") as f:
+                        markdown_output = f.read()
+                else:
+                    markdown_output = parse_frame_analysis_to_markdown(analysis_json_path)
+                # 保存 markdown 到关键帧目录同级，文件名为“关键帧目录名.md”
+                    markdown_path = video_keyframes_dir + ".md"
+                    with open(markdown_path, "w", encoding="utf-8") as f:
+                        f.write(markdown_output)
+                    logger.info(f"Markdown内容已保存到: {markdown_path}")
+                print("自定义提示语:"+custom_prompt)
                 print("Markdown内容:"+markdown_output)  # 调试输出，查看生成的Markdown内容
+                print("视频主题:"+video_theme)
                 # 生成解说文案
                 narration = generate_narration(
                     markdown_output,
                     text_api_key,
                     base_url=text_base_url,
-                    model=text_model
+                    model=text_model,
+                    custom_prompt=custom_prompt,
+                    video_theme=video_theme
+                
                 )
                 narration_dict = json.loads(narration)['items']
                 # 为 narration_dict 中每个 item 新增一个 OST: 2 的字段, 代表保留原声和配音
