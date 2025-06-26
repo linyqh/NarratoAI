@@ -356,7 +356,7 @@ class VideoClipParams(BaseModel):
     bgm_file: Optional[str] = Field(default="", description="背景音乐文件")
 
     subtitle_enabled: bool = True
-    font_name: str = "SimHei"  # 默认使用黑体
+    font_name: Optional[str] = "SimHei"  # 默认使用黑体
     font_size: int = 36
     text_fore_color: str = "white"              # 文本前景色
     text_back_color: Optional[str] = None       # 文本背景色
