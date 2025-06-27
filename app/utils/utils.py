@@ -630,7 +630,7 @@ def init_resources():
             ),
             (
                 "Roboto-Regular.ttf",
-                "https://github.com/google/fonts/raw/main/apache/roboto/Roboto-Regular.ttf",
+                "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf",
             ),
         ]
 
