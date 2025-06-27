@@ -73,6 +73,20 @@ def root_dir():
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 
+def sanitize_filename(filename: str) -> str:
+    """Return a safe version of the given filename."""
+    return os.path.basename(filename)
+
+
+def secure_path(path: str, base_dir: str) -> str:
+    """Ensure that the provided path is within base_dir."""
+    abs_base = os.path.abspath(base_dir)
+    abs_path = os.path.abspath(path)
+    if not abs_path.startswith(abs_base + os.sep) and abs_path != abs_base:
+        raise ValueError(f"Illegal path: {path}")
+    return abs_path
+
+
 def storage_dir(sub_dir: str = "", create: bool = False):
     d = os.path.join(root_dir(), "storage")
     if sub_dir:

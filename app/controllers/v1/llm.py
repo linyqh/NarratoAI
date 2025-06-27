@@ -11,6 +11,7 @@ from app.models.schema import (
 )
 from app.services import llm
 from app.utils import utils
+from app.utils.utils import sanitize_filename, secure_path
 from app.config import config
 
 # 认证依赖项
@@ -73,7 +74,8 @@ async def transcribe_video(
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     
     # 保存上传的视频文件
-    video_path = os.path.join(UPLOAD_DIR, video_file.filename)
+    safe_name = sanitize_filename(video_file.filename)
+    video_path = secure_path(os.path.join(UPLOAD_DIR, safe_name), UPLOAD_DIR)
     with open(video_path, "wb") as buffer:
         content = await video_file.read()
         buffer.write(content)
