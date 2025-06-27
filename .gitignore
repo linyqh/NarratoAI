@@ -12,7 +12,7 @@
 /**/.streamlit
 __pycache__
 logs/
-
+*.log
 node_modules
 # VuePress 默认临时文件目录
 /sites/docs/.vuepress/.temp
