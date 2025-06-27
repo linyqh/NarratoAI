@@ -15,8 +15,8 @@ setlocal enabledelayedexpansion
 rem 创建链接和路径的数组
 set "urls_paths[0]=https://zenodo.org/records/13293144/files/MicrosoftYaHeiBold.ttc|.\resource\fonts"
 set "urls_paths[1]=https://zenodo.org/records/13293144/files/MicrosoftYaHeiNormal.ttc|.\resource\fonts"
-set "urls_paths[2]=https://zenodo.org/records/13293144/files/STHeitiLight.ttc|.\resource\fonts"
-set "urls_paths[3]=https://zenodo.org/records/13293144/files/STHeitiMedium.ttc|.\resource\fonts"
+set "urls_paths[2]=https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansSC-Regular.otf|.\resource\fonts"
+set "urls_paths[3]=https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf|.\resource\fonts"
 set "urls_paths[4]=https://zenodo.org/records/13293144/files/UTM%20Kabel%20KT.ttf|.\resource\fonts"
 set "urls_paths[5]=https://zenodo.org/records/14167125/files/test.mp4|.\resource\videos"
 set "urls_paths[6]=https://zenodo.org/records/13293150/files/output000.mp3|.\resource\songs"
@@ -169,7 +169,7 @@ curl -X 'POST' \
   "bgm_volume": 0.3,
   "subtitle_enabled": true,
   "subtitle_position": "bottom",
-  "font_name": "STHeitiMedium.ttc",
+  "font_name": "NotoSansSC-Regular.otf",
   "text_fore_color": "#FFFFFF",
   "text_background_color": "transparent",
   "font_size": 75,
@@ -215,7 +215,7 @@ curl -X 'POST' \
   "bgm_volume": 0.3,
   "subtitle_enabled": true,
   "subtitle_position": "bottom",
-  "font_name": "STHeitiMedium.ttc",
+  "font_name": "NotoSansSC-Regular.otf",
   "text_fore_color": "#FFFFFF",
   "text_background_color": "transparent",
   "font_size": 75,
@@ -317,7 +317,7 @@ curl -X 'POST' \
   "bgm_volume": 0.3,
   "subtitle_enabled": true,
   "subtitle_position": "bottom",
-  "font_name": "STHeitiMedium.ttc",
+  "font_name": "NotoSansSC-Regular.otf",
   "text_fore_color": "#FFFFFF",
   "text_background_color": "transparent",
   "font_size": 75,

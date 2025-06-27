@@ -600,32 +600,31 @@ def init_resources():
         font_dir = os.path.join(root_dir(), "resource", "fonts")
         os.makedirs(font_dir, exist_ok=True)
 
-        # 检查字体文件
+        # 需要下载的字体文件，均为可商用的开源字体
         font_files = [
-            ("SourceHanSansCN-Regular.otf",
-             "https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf"),
-            ("simhei.ttf", "C:/Windows/Fonts/simhei.ttf"),  # Windows 黑体
-            ("simkai.ttf", "C:/Windows/Fonts/simkai.ttf"),  # Windows 楷体
-            ("simsun.ttc", "C:/Windows/Fonts/simsun.ttc"),  # Windows 宋体
+            (
+                "NotoSansSC-Regular.otf",
+                "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansSC-Regular.otf",
+            ),
+            (
+                "SourceHanSansCN-Regular.otf",
+                "https://github.com/adobe-fonts/source-han-sans/raw/release/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf",
+            ),
+            (
+                "NotoSans-Regular.ttf",
+                "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf",
+            ),
+            (
+                "Roboto-Regular.ttf",
+                "https://github.com/google/fonts/raw/main/apache/roboto/Roboto-Regular.ttf",
+            ),
         ]
 
-        # 优先使用系统字体
-        system_font_found = False
-        for font_name, source in font_files:
-            if not source.startswith("http") and os.path.exists(source):
-                target_path = os.path.join(font_dir, font_name)
-                if not os.path.exists(target_path):
-                    import shutil
-                    shutil.copy2(source, target_path)
-                    logger.info(f"已复制系统字体: {font_name}")
-                system_font_found = True
-                break
-
-        # 如果没有找到系统字体，则下载思源黑体
-        if not system_font_found:
-            source_han_path = os.path.join(font_dir, "SourceHanSansCN-Regular.otf")
-            if not os.path.exists(source_han_path):
-                download_font(font_files[0][1], source_han_path)
+        # 下载字体文件
+        for font_name, url in font_files:
+            target_path = os.path.join(font_dir, font_name)
+            if not os.path.exists(target_path):
+                download_font(url, target_path)
 
     except Exception as e:
         logger.error(f"初始化资源文件失败: {e}")
