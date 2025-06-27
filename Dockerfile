@@ -1,63 +1,42 @@
-# 构建阶段
-FROM python:3.10-slim-bullseye as builder
-
-# 设置工作目录
+FROM python:3.13-alpine AS builder
 WORKDIR /build
 
-# 安装构建依赖
-RUN apt-get update && apt-get install -y \
-    git \
-    git-lfs \
-    && rm -rf /var/lib/apt/lists/*
+# 安装依赖并创建用户
+RUN apk add --no-cache git git-lfs build-base linux-headers libffi-dev openssl-dev \
+ && addgroup -S appgroup \
+ && adduser -S -G appgroup appuser \
+ && git lfs install
 
-# 创建虚拟环境
+# 虚拟环境与依赖安装
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-
-# 首先安装 PyTorch（因为它是最大的依赖）
-RUN pip install --no-cache-dir torch torchvision torchaudio
-
-# 然后安装其他依赖
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
 
-# 运行阶段
-FROM python:3.10-slim-bullseye
-
-# 设置工作目录
+# 运行时镜像
+FROM python:3.13-alpine
 WORKDIR /NarratoAI
 
-# 从builder阶段复制虚拟环境
+# 复制并设置所有权
 COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+COPY --chown=appuser:appgroup . /NarratoAI
 
 # 安装运行时依赖
-RUN apt-get update && apt-get install -y \
-    imagemagick \
-    ffmpeg \
-    wget \
-    git-lfs \
-    && rm -rf /var/lib/apt/lists/* \
-    && sed -i '/<policy domain="path" rights="none" pattern="@\*"/d' /etc/ImageMagick-6/policy.xml
+RUN apk add --no-cache imagemagick ffmpeg wget git-lfs \
+ && sed -i '/<policy domain="path" rights="none" pattern="@\*"/d' /etc/ImageMagick-6/policy.xml \
+ && git lfs install
 
-# 设置环境变量
-ENV PYTHONPATH="/NarratoAI" \
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/NarratoAI" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# 设置目录权限
-RUN chmod 777 /NarratoAI
+# 切换到非 root 用户
+USER appuser
 
-# 安装git lfs
-RUN git lfs install
-
-# 复制应用代码
-COPY . .
-
-# 暴露端口
-EXPOSE 8501 8080
-
-# 使用脚本作为入口点
+# 暴露端口与入口
+EXPOSE 8501
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["docker-entrypoint.sh"]
