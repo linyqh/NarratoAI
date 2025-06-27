@@ -91,7 +91,7 @@ class VideoParams(BaseModel):
       "video_aspect": "横屏 16:9（西瓜视频）",
       "voice_name": "女生-晓晓",
       "bgm_name": "random",
-      "font_name": "STHeitiMedium 黑体-中",
+      "font_name": "NotoSansSC-Regular.otf",
       "text_color": "#FFFFFF",
       "font_size": 60,
       "stroke_color": "#000000",
@@ -122,7 +122,8 @@ class VideoParams(BaseModel):
     subtitle_enabled: Optional[bool] = True
     subtitle_position: Optional[str] = "bottom"  # top, bottom, center
     custom_position: float = 70.0
-    font_name: Optional[str] = "STHeitiMedium.ttc"
+    # 默认使用可商用的开源字体
+    font_name: Optional[str] = "NotoSansSC-Regular.otf"
     text_fore_color: Optional[str] = "#FFFFFF"
     text_background_color: Optional[str] = "transparent"
 
@@ -143,7 +144,7 @@ class SubtitleRequest(BaseModel):
     bgm_file: Optional[str] = ""
     bgm_volume: Optional[float] = 0.2
     subtitle_position: Optional[str] = "bottom"
-    font_name: Optional[str] = "STHeitiMedium.ttc"
+    font_name: Optional[str] = "NotoSansSC-Regular.otf"
     text_fore_color: Optional[str] = "#FFFFFF"
     text_background_color: Optional[str] = "transparent"
     font_size: int = 60
@@ -356,7 +357,7 @@ class VideoClipParams(BaseModel):
     bgm_file: Optional[str] = Field(default="", description="背景音乐文件")
 
     subtitle_enabled: bool = True
-    font_name: Optional[str] = "SimHei"  # 默认使用黑体
+    font_name: Optional[str] = "NotoSansSC-Regular.otf"  # 默认使用开源字体
     font_size: int = 36
     text_fore_color: str = "white"              # 文本前景色
     text_back_color: Optional[str] = None       # 文本背景色
