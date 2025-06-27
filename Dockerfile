@@ -60,9 +60,10 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 
 
-# 创建非 root 用户并切换
-RUN groupadd --system appgroup \
- && useradd --system --gid appgroup --create-home appuser
+# 创建非 root 用户并切换（固定 UID=1000，GID=1000，方便文件同步）
+RUN groupadd --system --gid 1000 appgroup \
+ && useradd --system --uid 1000 --gid 1000 --create-home appuser
+
 
 # 在切换到非 root 用户前创建并授权所需目录
 RUN mkdir -p /NarratoAI/storage/temp/merge \
