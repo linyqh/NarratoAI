@@ -89,6 +89,10 @@ _**注意⚠️：近期在 x (推特) 上发现有人冒充作者在 pump.fun �
 - [Python 3.12+](https://www.python.org/downloads/)
 - Python 3.13+ 需要额外安装 `pydub` 和 `audioop-lts`
 - 若使用 Azure TTS 服务，`requirements.txt` 已包含 `azure-cognitiveservices-speech`
+- 已安装 [FFmpeg](https://ffmpeg.org/) 并确保 `ffmpeg` 命令在系统 PATH 中。
+  项目会在启动时自动检测可用的硬件加速（如 macOS VideoToolbox、
+  Windows NVENC 或 Linux VAAPI），检测结果也可通过
+  `python app/utils/ffmpeg_utils.py` 查看。
 
 ## 反馈建议 📢
 
