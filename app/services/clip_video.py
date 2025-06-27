@@ -12,6 +12,7 @@ import os
 import subprocess
 import json
 import hashlib
+import shlex
 from loguru import logger
 from typing import Dict, List, Optional
 from pathlib import Path
@@ -123,10 +124,14 @@ def clip_video(
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # 获取硬件加速支持
-    hwaccel = check_hardware_acceleration()
+    hwaccel_type = check_hardware_acceleration()
     hwaccel_args = []
-    if hwaccel:
+    encoder = "libx264"
+    if hwaccel_type:
         hwaccel_args = ffmpeg_utils.get_ffmpeg_hwaccel_args()
+        detected_encoder = ffmpeg_utils.get_ffmpeg_hwaccel_encoder()
+        if detected_encoder:
+            encoder = detected_encoder
 
     # 存储裁剪结果
     result = {}
@@ -152,20 +157,31 @@ def clip_video(
 
         # 构建FFmpeg命令
         ffmpeg_cmd = [
-            "ffmpeg", "-y", *hwaccel_args,
-            "-i", video_origin_path,
-            "-ss", ffmpeg_start_time,
-            "-to", ffmpeg_end_time,
-            "-c:v", "h264_videotoolbox" if hwaccel == "videotoolbox" else "libx264",
-            "-c:a", "aac",
-            "-strict", "experimental",
-            output_path
+            "ffmpeg",
+            "-y",
+            *hwaccel_args,
+            "-i",
+            video_origin_path,
+            "-ss",
+            ffmpeg_start_time,
+            "-to",
+            ffmpeg_end_time,
+            "-c:v",
+            encoder,
+            "-c:a",
+            "aac",
+            "-strict",
+            "experimental",
+            output_path,
         ]
+        quoted_cmd = " ".join(shlex.quote(arg) for arg in ffmpeg_cmd)
 
         # 执行FFmpeg命令
         try:
-            logger.info(f"裁剪视频片段: {timestamp} -> {ffmpeg_start_time}到{ffmpeg_end_time}")
-            # logger.debug(f"执行命令: {' '.join(ffmpeg_cmd)}")
+            logger.info(
+                f"裁剪视频片段: {timestamp} -> {ffmpeg_start_time}到{ffmpeg_end_time}"
+            )
+            logger.debug(f"执行命令: {quoted_cmd}")
 
             # 在Windows系统上使用UTF-8编码处理输出，避免GBK编码错误
             is_windows = os.name == 'nt'
