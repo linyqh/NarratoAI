@@ -2,7 +2,7 @@
 <h1 align="center" style="font-size: 2cm;"> NarratoAI 😎📽️ </h1>
 <h3 align="center">一体型AI映画解説および自動ビデオ編集ツール🎬🎞️ </h3>
 
-<h3>📖 <a href="README-cn.md">简体中文</a> | <a href="README.md">English</a> | 日本語 </h3>
+<h3>📖 <a href="README-en.md">English</a> | <a href="README.md">简体中文</a> | 日本語 </h3>
 <div align="center">
 
 [//]: # (  <a href="https://trendshift.io/repositories/8731" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8731" alt="harry0703%2FNarratoAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>)
@@ -30,10 +30,38 @@ NarratoAIは、LLMを活用してスクリプト作成、自動ビデオ編集�
 </div>
 
 ## 最新情報
+- 2025.05.11 新バージョン 0.6.0 リリース、**短編ドラマ解説**対応と編集プロセスを最適化
+- 2025.03.06 新バージョン 0.5.2 リリース、DeepSeek R1 と DeepSeek V3 モデルで短編ドラマの混合編集をサポート
+- 2024.12.16 新バージョン 0.3.9 リリース、Alibaba Qwen2-VL モデルによる動画理解をサポート；短編ドラマの混合編集に対応
 - 2024.11.24 Discordコミュニティ開設：https://discord.gg/uVAJftcm
 - 2024.11.11 オープンソースコミュニティに移行、参加を歓迎します！ [公式コミュニティに参加](https://github.com/linyqh/NarratoAI/wiki)
 - 2024.11.10 公式ドキュメント公開、詳細は [公式ドキュメント](https://p9mf6rjv3c.feishu.cn/wiki/SP8swLLZki5WRWkhuFvc2CyInDg) を参照
 - 2024.11.10 新バージョンv0.3.5リリース；ビデオ編集プロセスの最適化
+
+## お得な特典 🎉
+今すぐDeepSeekモデルに完全対応！登録すると2,000万トークン（14元相当のプラットフォームクレジット）が無料でもらえます。10分の動画編集にかかる費用はわずか0.1元！
+
+🔥 特典をすばやく受け取る:
+1️⃣ リンクをクリックして登録: https://cloud.siliconflow.cn/i/pyOKqFCV
+2️⃣ 携帯番号でログインし、**招待コード pyOKqFCV を必ず入力**してください
+3️⃣ 14元のクレジットを獲得し、コスパの高いAI編集を体験しましょう
+
+💡 低コストで大きな創作を:
+Silicon Flow API Keyをワンクリックで統合、インテリジェント編集の効率が倍増！
+（招待コードは特典受け取りの唯一の証明で、登録後自動的に付与されます）
+
+すぐに行動して、「pyOKqFCV」でAI生産性を解き放ちましょう！
+
+😊 更新手順:
+統合パッケージ: update.bat ワンクリック更新スクリプト
+コード更新: git pull で最新のコードを取得
+
+## お知らせ 📢
+_**注意⚠️：最近、x(Twitter)で作者を装ってpump.funプラットフォームでトークンを発行している人物がいます！これは詐欺です!!! だまされないでください！ 現在、NarratoAIはx(Twitter)上で公式な宣伝を行っておらず、十分注意してください**_
+
+以下はこの人物のx(Twitter)ホームページのスクリーンショットです
+
+<img src="https://github.com/user-attachments/assets/c492ab99-52cd-4ba2-8695-1bd2073ecf12" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
 
 ## 今後の計画 🥳
 - [x] Windows統合パックリリース
@@ -54,6 +82,12 @@ NarratoAIは、LLMを活用してスクリプト作成、自動ビデオ編集�
 
 - 推奨最低：CPU 4コア以上、メモリ8GB以上、GPUは必須ではありません
 - Windows 10またはMacOS 11.0以上
+- [Python 3.12+](https://www.python.org/downloads/)
+- Python 3.13+ では `pydub` と `audioop-lts` の追加インストールが必要です
+- Azure TTS を利用する場合、`requirements.txt` には `azure-cognitiveservices-speech` が含まれています
+- [FFmpeg](https://ffmpeg.org/) をインストールし、`ffmpeg` コマンドが PATH にあることを確認してください。
+  プロジェクト起動時に macOS VideoToolbox、Windows NVENC、Linux VAAPI など利用可能なハードウェアアクセラレーションを自動検出します。
+  検出では利用可能なエンコーダを確認し、64x64 の黒フレームで実際のエンコード能力を検証します。`python app/utils/ffmpeg_utils.py` で確認できます。
 
 ## フィードバックと提案 📢
 
