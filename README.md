@@ -93,7 +93,9 @@ _**注意⚠️：近期在 x (推特) 上发现有人冒充作者在 pump.fun �
   项目会在启动时自动检测可用的硬件加速（如 macOS VideoToolbox、
   Windows NVENC 或 Linux VAAPI）。检测逻辑会额外检查可用的编码器，
   并使用一段 64x64 黑帧验证实际编码能力。检测结果也可通过
-  `python app/utils/ffmpeg_utils.py` 查看。
+  `python app/utils/ffmpeg_utils.py` 查看。如检测过程出现卡顿，
+  可设置环境变量 `NARRATO_DISABLE_HWACCEL=1` 跳过硬件加速检测。
+  硬件检测默认在 10 秒无响应时会自动终止并视为不支持。
 
 ## 反馈建议 📢
 
