@@ -106,6 +106,22 @@ def _detect_macos_acceleration(supported_hwaccels: str) -> None:
     global _FFMPEG_HW_ACCEL_INFO
 
     has_videotoolbox = 'videotoolbox' in supported_hwaccels
+
+    # 进一步检查编码器列表，部分FFmpeg构建不会在 -hwaccels 中列出 videotoolbox
+    try:
+        encoders_cmd = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        if "h264_videotoolbox" in encoders_cmd.stdout.lower():
+            has_videotoolbox = True
+    except Exception as e:
+        logger.debug(f"获取编码器列表失败: {str(e)}")
+
     # 即使 -hwaccels 输出中没有列出，也尝试直接测试编码器，避免漏检
     try:
         test_cmd = subprocess.run(
@@ -114,7 +130,7 @@ def _detect_macos_acceleration(supported_hwaccels: str) -> None:
                 "-f",
                 "lavfi",
                 "-i",
-                "color=c=black:s=16x16:r=30",
+                "color=c=black:s=64x64:r=30",
                 "-c:v",
                 "h264_videotoolbox",
                 "-t",
@@ -129,6 +145,15 @@ def _detect_macos_acceleration(supported_hwaccels: str) -> None:
             check=False,
             timeout=10,
         )
+
+        logger.debug(f"videotoolbox测试返回码: {test_cmd.returncode}")
+        if len(test_cmd.stderr) > 0:
+            logger.debug(
+                f"videotoolbox测试错误输出: {test_cmd.stderr[:200]}..."
+                if len(test_cmd.stderr) > 200
+                else f"videotoolbox测试错误输出: {test_cmd.stderr}"
+            )
+
         if test_cmd.returncode == 0:
             _FFMPEG_HW_ACCEL_INFO["available"] = True
             _FFMPEG_HW_ACCEL_INFO["type"] = "videotoolbox"
@@ -180,7 +205,7 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
                         "-f",
                         "lavfi",
                         "-i",
-                        "color=c=black:s=16x16",
+                        "color=c=black:s=64x64",
                         "-c:v",
                         "h264_amf",
                         "-t",
@@ -196,6 +221,7 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
                     check=False,
                     timeout=10,
                 )
+                logger.debug(f"AMF测试返回码: {test_cmd.returncode}")
                 if test_cmd.returncode == 0:
                     _FFMPEG_HW_ACCEL_INFO["available"] = True
                     _FFMPEG_HW_ACCEL_INFO["type"] = "amf"
@@ -237,7 +263,7 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
                     "-f",
                     "lavfi",
                     "-i",
-                    "color=c=black:s=16x16:r=30",
+                    "color=c=black:s=64x64:r=30",
                     "-c:v",
                     "h264_nvenc",
                     "-t",
@@ -279,7 +305,7 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
                     "-f",
                     "lavfi",
                     "-i",
-                    "color=c=black:s=16x16",
+                    "color=c=black:s=64x64",
                     "-c:v",
                     "h264_qsv",
                     "-t",
@@ -294,6 +320,7 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
                 check=False,
                 timeout=10,
             )
+            logger.debug(f"QSV测试返回码: {test_cmd.returncode}")
             if test_cmd.returncode == 0:
                 _FFMPEG_HW_ACCEL_INFO["available"] = True
                 _FFMPEG_HW_ACCEL_INFO["type"] = "qsv"
@@ -377,7 +404,7 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
                 logger.debug("NVENC编码器可用，尝试直接使用")
                 # 测试NVENC编码器，使用UTF-8编码
                 test_cmd = subprocess.run(
-                    ["ffmpeg", "-f", "lavfi", "-i", "color=c=black:s=640x360:r=30", "-c:v", "h264_nvenc", "-t", "0.1", "-f", "null", "-"],
+                    ["ffmpeg", "-f", "lavfi", "-i", "color=c=black:s=64x64:r=30", "-c:v", "h264_nvenc", "-t", "0.1", "-f", "null", "-"],
                     stderr=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     encoding='utf-8',
@@ -425,7 +452,7 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
                     "-f",
                     "lavfi",
                     "-i",
-                    "color=c=black:s=16x16:r=30",
+                    "color=c=black:s=64x64:r=30",
                     "-c:v",
                     "h264_nvenc",
                     "-t",
@@ -440,6 +467,7 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
                 check=False,
                 timeout=10,
             )
+            logger.debug(f"CUDA测试返回码: {test_cmd.returncode}")
             if test_cmd.returncode == 0:
                 _FFMPEG_HW_ACCEL_INFO["available"] = True
                 _FFMPEG_HW_ACCEL_INFO["type"] = "cuda"
@@ -464,7 +492,7 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
                         "-f",
                         "lavfi",
                         "-i",
-                        "nullsrc=s=16x16",
+                        "nullsrc=s=64x64",
                         "-c:v",
                         "h264_nvenc",
                         "-t",
@@ -479,6 +507,7 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
                     check=False,
                     timeout=10,
                 )
+                logger.debug(f"NVENC编码器测试返回码: {test_cmd.returncode}")
                 if test_cmd.returncode == 0:
                     _FFMPEG_HW_ACCEL_INFO["available"] = True
                     _FFMPEG_HW_ACCEL_INFO["type"] = "nvenc"
@@ -507,7 +536,7 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
                         "-f",
                         "lavfi",
                         "-i",
-                        "color=c=black:s=16x16:r=30",
+                        "color=c=black:s=64x64:r=30",
                         "-vaapi_device",
                         render_device,
                         "-c:v",
@@ -524,6 +553,7 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
                     check=False,
                     timeout=10,
                 )
+                logger.debug(f"VAAPI测试返回码: {test_cmd.returncode}")
                 if test_cmd.returncode == 0:
                     _FFMPEG_HW_ACCEL_INFO["available"] = True
                     _FFMPEG_HW_ACCEL_INFO["type"] = "vaapi"
@@ -544,7 +574,7 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
                     "-f",
                     "lavfi",
                     "-i",
-                    "color=c=black:s=16x16",
+                    "color=c=black:s=64x64",
                     "-c:v",
                     "h264_qsv",
                     "-t",
@@ -559,6 +589,7 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
                 check=False,
                 timeout=10,
             )
+            logger.debug(f"QSV测试返回码: {test_cmd.returncode}")
             if test_cmd.returncode == 0:
                 _FFMPEG_HW_ACCEL_INFO["available"] = True
                 _FFMPEG_HW_ACCEL_INFO["type"] = "qsv"
