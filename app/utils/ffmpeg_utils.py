@@ -105,41 +105,43 @@ def _detect_macos_acceleration(supported_hwaccels: str) -> None:
     """
     global _FFMPEG_HW_ACCEL_INFO
 
-    if 'videotoolbox' in supported_hwaccels:
-        # 测试videotoolbox 编码能力。使用lavfi产生黑帧作为输入避免无效输入
-        try:
-            test_cmd = subprocess.run(
-                [
-                    "ffmpeg",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "color=c=black:s=16x16:r=30",
-                    "-c:v",
-                    "h264_videotoolbox",
-                    "-t",
-                    "0.1",
-                    "-f",
-                    "null",
-                    "-",
-                ],
-                stderr=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                text=True,
-                check=False,
-                timeout=10,
-            )
-            if test_cmd.returncode == 0:
-                _FFMPEG_HW_ACCEL_INFO["available"] = True
-                _FFMPEG_HW_ACCEL_INFO["type"] = "videotoolbox"
-                _FFMPEG_HW_ACCEL_INFO["encoder"] = "h264_videotoolbox"
-                _FFMPEG_HW_ACCEL_INFO["hwaccel_args"] = ["-hwaccel", "videotoolbox"]
-                # macOS的Metal GPU加速通常是集成GPU
-                _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = False
-                return
-        except Exception as e:
-            logger.debug(f"测试videotoolbox失败: {str(e)}")
+    has_videotoolbox = 'videotoolbox' in supported_hwaccels
+    # 即使 -hwaccels 输出中没有列出，也尝试直接测试编码器，避免漏检
+    try:
+        test_cmd = subprocess.run(
+            [
+                "ffmpeg",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=16x16:r=30",
+                "-c:v",
+                "h264_videotoolbox",
+                "-t",
+                "0.1",
+                "-f",
+                "null",
+                "-",
+            ],
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        if test_cmd.returncode == 0:
+            _FFMPEG_HW_ACCEL_INFO["available"] = True
+            _FFMPEG_HW_ACCEL_INFO["type"] = "videotoolbox"
+            _FFMPEG_HW_ACCEL_INFO["encoder"] = "h264_videotoolbox"
+            _FFMPEG_HW_ACCEL_INFO["hwaccel_args"] = ["-hwaccel", "videotoolbox"]
+            # macOS的Metal GPU加速通常是集成GPU
+            _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = False
+            return
+    except Exception as e:
+        logger.debug(f"测试videotoolbox失败: {str(e)}")
 
+    if not has_videotoolbox:
+        logger.debug("FFmpeg -hwaccels 未列出videotoolbox")
     _FFMPEG_HW_ACCEL_INFO["message"] = "macOS系统未检测到可用的videotoolbox硬件加速"
 
 
