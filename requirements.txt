@@ -6,7 +6,7 @@ streamlit~=1.45.0
 watchdog==6.0.0
 loguru~=0.7.3
 pydub==0.25.1
-audioop-lts
+audioop-lts~=0.2.0
 azure-cognitiveservices-speech~=1.37.0
 tomli~=2.2.1
 pysrt==1.1.2

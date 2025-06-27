@@ -190,9 +190,6 @@ class SubtitleAnalyzer:
             # 限制文件路径在 storage 目录
             output_path = secure_path(output_path, storage_dir())
 
-            # 限制文件路径在 storage 目录
-            output_path = secure_path(output_path, storage_dir())
-
             # 确保目录存在
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
