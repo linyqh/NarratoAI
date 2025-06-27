@@ -618,7 +618,7 @@ def init_resources():
         font_files = [
             (
                 "NotoSansSC-Regular.otf",
-                "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansSC-Regular.otf",
+                "https://github.com/notofonts/noto-cjk/raw/refs/heads/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
             ),
             (
                 "SourceHanSansCN-Regular.otf",
@@ -626,7 +626,7 @@ def init_resources():
             ),
             (
                 "NotoSans-Regular.ttf",
-                "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf",
+                "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf",
             ),
             (
                 "Roboto-Regular.ttf",
