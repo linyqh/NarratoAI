@@ -48,8 +48,16 @@ def detect_hardware_acceleration() -> Dict[str, Union[bool, str, List[str], None
     """
     global _FFMPEG_HW_ACCEL_INFO
 
+
     # 如果已经检测过，直接返回结果
     if _FFMPEG_HW_ACCEL_INFO["type"] is not None:
+        return _FFMPEG_HW_ACCEL_INFO
+
+    # 检查是否通过环境变量禁用了硬件加速检测
+    disable_env = os.getenv("NARRATO_DISABLE_HWACCEL", "").lower()
+    if disable_env in {"1", "true", "yes"}:
+        logger.info("环境变量 NARRATO_DISABLE_HWACCEL 已设置，跳过硬件加速检测")
+        _FFMPEG_HW_ACCEL_INFO["message"] = "硬件加速检测被禁用"
         return _FFMPEG_HW_ACCEL_INFO
 
     # 检查ffmpeg是否已安装
@@ -80,16 +88,29 @@ def detect_hardware_acceleration() -> Dict[str, Union[bool, str, List[str], None
         logger.error(f"获取FFmpeg硬件加速器列表失败: {str(e)}")
         supported_hwaccels = ""
 
-    # 根据操作系统检测不同的硬件加速器
-    if system == 'darwin':  # macOS
-        _detect_macos_acceleration(supported_hwaccels)
-    elif system == 'windows':  # Windows
-        _detect_windows_acceleration(supported_hwaccels)
-    elif system == 'linux':  # Linux
-        _detect_linux_acceleration(supported_hwaccels)
-    else:
-        logger.warning(f"不支持的操作系统: {system}")
-        _FFMPEG_HW_ACCEL_INFO["message"] = f"不支持的操作系统: {system}"
+    def run_detection() -> None:
+        """在独立线程中运行硬件加速检测"""
+        if system == 'darwin':  # macOS
+            _detect_macos_acceleration(supported_hwaccels)
+        elif system == 'windows':  # Windows
+            _detect_windows_acceleration(supported_hwaccels)
+        elif system == 'linux':  # Linux
+            _detect_linux_acceleration(supported_hwaccels)
+        else:
+            logger.warning(f"不支持的操作系统: {system}")
+            _FFMPEG_HW_ACCEL_INFO["message"] = f"不支持的操作系统: {system}"
+
+    # 在独立线程中执行检测，最多等待10秒
+    import concurrent.futures
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(run_detection)
+            future.result(timeout=10)
+    except Exception as e:  # TimeoutError 或其他异常
+        logger.warning(f"硬件加速检测超时或失败: {str(e)}")
+        if _FFMPEG_HW_ACCEL_INFO["type"] is None:
+            _FFMPEG_HW_ACCEL_INFO["message"] = "硬件加速检测超时"
 
     # 记录检测结果已经在启动时输出，这里不再重复输出
 
@@ -567,38 +588,42 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
 
     # 检测Intel QSV支持
     if 'qsv' in supported_hwaccels and is_intel:
-        try:
-            test_cmd = subprocess.run(
-                [
-                    "ffmpeg",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "color=c=black:s=64x64",
-                    "-c:v",
-                    "h264_qsv",
-                    "-t",
-                    "0.1",
-                    "-f",
-                    "null",
-                    "-",
-                ],
-                stderr=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                text=True,
-                check=False,
-                timeout=10,
-            )
-            logger.debug(f"QSV测试返回码: {test_cmd.returncode}")
-            if test_cmd.returncode == 0:
-                _FFMPEG_HW_ACCEL_INFO["available"] = True
-                _FFMPEG_HW_ACCEL_INFO["type"] = "qsv"
-                _FFMPEG_HW_ACCEL_INFO["encoder"] = "h264_qsv"
-                _FFMPEG_HW_ACCEL_INFO["hwaccel_args"] = ["-hwaccel", "qsv"]
-                _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = False  # Intel QSV通常是集成GPU
-                return
-        except Exception as e:
-            logger.debug(f"测试QSV失败: {str(e)}")
+        # 确保存在 /dev/dri/renderD* 设备，否则某些环境下会导致 ffmpeg 卡住
+        if not any(os.path.exists(p) for p in ['/dev/dri/renderD128', '/dev/dri/renderD129']):
+            logger.debug("未找到 /dev/dri/renderD* 设备，跳过QSV检测")
+        else:
+            try:
+                test_cmd = subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-f",
+                        "lavfi",
+                        "-i",
+                        "color=c=black:s=64x64",
+                        "-c:v",
+                        "h264_qsv",
+                        "-t",
+                        "0.1",
+                        "-f",
+                        "null",
+                        "-",
+                    ],
+                    stderr=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+                logger.debug(f"QSV测试返回码: {test_cmd.returncode}")
+                if test_cmd.returncode == 0:
+                    _FFMPEG_HW_ACCEL_INFO["available"] = True
+                    _FFMPEG_HW_ACCEL_INFO["type"] = "qsv"
+                    _FFMPEG_HW_ACCEL_INFO["encoder"] = "h264_qsv"
+                    _FFMPEG_HW_ACCEL_INFO["hwaccel_args"] = ["-hwaccel", "qsv"]
+                    _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = False  # Intel QSV通常是集成GPU
+                    return
+            except Exception as e:
+                logger.debug(f"测试QSV失败: {str(e)}")
 
     _FFMPEG_HW_ACCEL_INFO["message"] = f"Linux系统未检测到可用的硬件加速，显卡信息: {gpu_info}"
 
