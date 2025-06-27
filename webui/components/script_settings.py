@@ -9,6 +9,7 @@ from loguru import logger
 from app.config import config
 from app.models.schema import VideoClipParams
 from app.utils import utils, check_script
+from app.utils.utils import sanitize_filename, secure_path
 from webui.tools.generate_script_docu import generate_script_docu
 from webui.tools.generate_script_short import generate_script_short
 from webui.tools.generate_short_summary import generate_script_short_sunmmary
@@ -109,14 +110,15 @@ def render_script_file(tr, params):
                 json_data = json.loads(script_content)
 
                 # 保存到脚本目录
-                script_file_path = os.path.join(script_dir, uploaded_file.name)
-                file_name, file_extension = os.path.splitext(uploaded_file.name)
+                safe_name = sanitize_filename(uploaded_file.name)
+                script_file_path = secure_path(os.path.join(script_dir, safe_name), script_dir)
+                file_name, file_extension = os.path.splitext(safe_name)
 
                 # 如果文件已存在,添加时间戳
                 if os.path.exists(script_file_path):
                     timestamp = time.strftime("%Y%m%d%H%M%S")
                     file_name_with_timestamp = f"{file_name}_{timestamp}"
-                    script_file_path = os.path.join(script_dir, file_name_with_timestamp + file_extension)
+                    script_file_path = secure_path(os.path.join(script_dir, file_name_with_timestamp + file_extension), script_dir)
 
                 # 写入文件
                 with open(script_file_path, "w", encoding='utf-8') as f:
@@ -165,13 +167,14 @@ def render_video_file(tr, params):
         )
 
         if uploaded_file is not None:
-            video_file_path = os.path.join(utils.video_dir(), uploaded_file.name)
-            file_name, file_extension = os.path.splitext(uploaded_file.name)
+            safe_name = sanitize_filename(uploaded_file.name)
+            video_file_path = secure_path(os.path.join(utils.video_dir(), safe_name), utils.video_dir())
+            file_name, file_extension = os.path.splitext(safe_name)
 
             if os.path.exists(video_file_path):
                 timestamp = time.strftime("%Y%m%d%H%M%S")
                 file_name_with_timestamp = f"{file_name}_{timestamp}"
-                video_file_path = os.path.join(utils.video_dir(), file_name_with_timestamp + file_extension)
+                video_file_path = secure_path(os.path.join(utils.video_dir(), file_name_with_timestamp + file_extension), utils.video_dir())
 
             with open(video_file_path, "wb") as f:
                 f.write(uploaded_file.read())
@@ -262,14 +265,15 @@ def short_drama_summary(tr):
             script_content = subtitle_file.read().decode('utf-8')
 
             # 保存到字幕目录
-            script_file_path = os.path.join(utils.subtitle_dir(), subtitle_file.name)
-            file_name, file_extension = os.path.splitext(subtitle_file.name)
+            safe_name = sanitize_filename(subtitle_file.name)
+            script_file_path = secure_path(os.path.join(utils.subtitle_dir(), safe_name), utils.subtitle_dir())
+            file_name, file_extension = os.path.splitext(safe_name)
 
             # 如果文件已存在,添加时间戳
             if os.path.exists(script_file_path):
                 timestamp = time.strftime("%Y%m%d%H%M%S")
                 file_name_with_timestamp = f"{file_name}_{timestamp}"
-                script_file_path = os.path.join(utils.subtitle_dir(), file_name_with_timestamp + file_extension)
+                script_file_path = secure_path(os.path.join(utils.subtitle_dir(), file_name_with_timestamp + file_extension), utils.subtitle_dir())
 
             # 直接写入SRT内容，不进行JSON转换
             with open(script_file_path, "w", encoding='utf-8') as f:
@@ -370,6 +374,7 @@ def check_script_format(tr, script_content):
 def load_script(tr, script_path):
     """加载脚本文件"""
     try:
+        script_path = secure_path(script_path, utils.script_dir())
         with open(script_path, 'r', encoding='utf-8') as f:
             script = f.read()
             script = utils.clean_model_output(script)
@@ -390,7 +395,7 @@ def save_script(tr, video_clip_json_details):
     with st.spinner(tr("Save Script")):
         script_dir = utils.script_dir()
         timestamp = time.strftime("%Y-%m%d-%H%M%S")
-        save_path = os.path.join(script_dir, f"{timestamp}.json")
+        save_path = secure_path(os.path.join(script_dir, f"{timestamp}.json"), script_dir)
 
         try:
             data = json.loads(video_clip_json_details)

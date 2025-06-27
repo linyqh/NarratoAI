@@ -14,7 +14,7 @@ import requests
 from typing import Dict, Any, Optional
 from loguru import logger
 from app.config import config
-from app.utils.utils import get_uuid, storage_dir
+from app.utils.utils import get_uuid, storage_dir, secure_path, resource_dir
 from app.services.SDE.prompt import subtitle_plot_analysis_v1, plot_writing
 
 
@@ -146,6 +146,7 @@ class SubtitleAnalyzer:
             Dict[str, Any]: 包含分析结果的字典
         """
         try:
+            subtitle_file_path = secure_path(subtitle_file_path, resource_dir("srt"))
             # 检查文件是否存在
             if not os.path.exists(subtitle_file_path):
                 return {
@@ -186,6 +187,12 @@ class SubtitleAnalyzer:
                 output_dir = storage_dir("drama_analysis", create=True)
                 output_path = os.path.join(output_dir, f"analysis_{get_uuid(True)}.txt")
             
+            # 限制文件路径在 storage 目录
+            output_path = secure_path(output_path, storage_dir())
+
+            # 限制文件路径在 storage 目录
+            output_path = secure_path(output_path, storage_dir())
+
             # 确保目录存在
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
