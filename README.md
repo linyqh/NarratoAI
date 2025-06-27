@@ -87,6 +87,8 @@ _**注意⚠️：近期在 x (推特) 上发现有人冒充作者在 pump.fun �
 - 建议最低 CPU 4核或以上，内存 8G 或以上，显卡非必须
 - Windows 10/11 或 MacOS 11.0 以上系统
 - [Python 3.12+](https://www.python.org/downloads/)
+- Python 3.13+ 需要额外安装 `pydub` 和 `audioop-lts`
+- 若使用 Azure TTS 服务，`requirements.txt` 已包含 `azure-cognitiveservices-speech`
 
 ## 反馈建议 📢
 
