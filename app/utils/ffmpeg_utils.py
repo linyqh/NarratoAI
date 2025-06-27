@@ -109,7 +109,11 @@ def _detect_macos_acceleration(supported_hwaccels: str) -> None:
         try:
             test_cmd = subprocess.run(
                 ["ffmpeg", "-hwaccel", "videotoolbox", "-i", "/dev/null", "-f", "null", "-"],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                check=False,
+                timeout=10,
             )
             if test_cmd.returncode == 0:
                 _FFMPEG_HW_ACCEL_INFO["available"] = True
@@ -136,28 +140,76 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
 
     # 在Windows上，首先检查显卡信息
     gpu_info = _get_windows_gpu_info()
+    gpu_lower = gpu_info.lower()
+    is_nvidia = 'nvidia' in gpu_lower
+    is_amd = 'amd' in gpu_lower or 'radeon' in gpu_lower
+    is_intel = 'intel' in gpu_lower
 
-    # 检查是否为AMD显卡
-    if 'amd' in gpu_info.lower() or 'radeon' in gpu_info.lower():
-        logger.info("检测到AMD显卡，为避免兼容性问题，将使用软件编码")
-        _FFMPEG_HW_ACCEL_INFO["message"] = "检测到AMD显卡，为避免兼容性问题，将使用软件编码"
-        return
+    # 尝试检测AMD AMF加速
+    if is_amd:
+        try:
+            encoders_cmd = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-encoders"],
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                encoding='utf-8',
+                text=True,
+                check=False,
+                timeout=10,
+            )
+            if "h264_amf" in encoders_cmd.stdout.lower():
+                test_cmd = subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-f",
+                        "lavfi",
+                        "-i",
+                        "color=c=black:s=16x16",
+                        "-c:v",
+                        "h264_amf",
+                        "-t",
+                        "0.1",
+                        "-f",
+                        "null",
+                        "-",
+                    ],
+                    stderr=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    encoding='utf-8',
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+                if test_cmd.returncode == 0:
+                    _FFMPEG_HW_ACCEL_INFO["available"] = True
+                    _FFMPEG_HW_ACCEL_INFO["type"] = "amf"
+                    _FFMPEG_HW_ACCEL_INFO["encoder"] = "h264_amf"
+                    _FFMPEG_HW_ACCEL_INFO["hwaccel_args"] = []
+                    _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = True
+                    return
+        except Exception as e:
+            logger.debug(f"测试AMF失败: {str(e)}")
 
     # 检查是否为Intel集成显卡
     is_intel_integrated = False
-    if 'intel' in gpu_info.lower() and ('hd graphics' in gpu_info.lower() or 'uhd graphics' in gpu_info.lower()):
+    if is_intel and ('hd graphics' in gpu_lower or 'uhd graphics' in gpu_lower):
         logger.info("检测到Intel集成显卡")
         is_intel_integrated = True
 
     # 检测NVIDIA CUDA支持
-    if 'cuda' in supported_hwaccels and 'nvidia' in gpu_info.lower():
+    if 'cuda' in supported_hwaccels and is_nvidia:
         # 添加调试日志
         logger.debug(f"Windows检测到NVIDIA显卡，尝试CUDA加速")
         try:
             # 先检查NVENC编码器是否可用，使用UTF-8编码
             encoders_cmd = subprocess.run(
                 ["ffmpeg", "-hide_banner", "-encoders"],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, encoding='utf-8', text=True, check=False
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                encoding='utf-8',
+                text=True,
+                check=False,
+                timeout=10,
             )
             has_nvenc = "h264_nvenc" in encoders_cmd.stdout.lower()
             logger.debug(f"NVENC编码器检测结果: {'可用' if has_nvenc else '不可用'}")
@@ -165,7 +217,12 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
             # 测试CUDA硬件加速，使用UTF-8编码
             test_cmd = subprocess.run(
                 ["ffmpeg", "-hwaccel", "cuda", "-i", "NUL", "-f", "null", "-t", "0.1", "-"],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, encoding='utf-8', text=True, check=False
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                encoding='utf-8',
+                text=True,
+                check=False,
+                timeout=10,
             )
 
             # 记录详细的返回信息以便调试
@@ -183,7 +240,12 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
             # 如果上面的测试失败，尝试另一种方式，使用UTF-8编码
             test_cmd2 = subprocess.run(
                 ["ffmpeg", "-hide_banner", "-loglevel", "error", "-hwaccel", "cuda", "-hwaccel_output_format", "cuda", "-i", "NUL", "-f", "null", "-t", "0.1", "-"],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, encoding='utf-8', text=True, check=False
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                encoding='utf-8',
+                text=True,
+                check=False,
+                timeout=10,
             )
 
             if test_cmd2.returncode == 0:
@@ -197,11 +259,15 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
             logger.debug(f"测试CUDA失败: {str(e)}")
 
     # 检测Intel QSV支持（如果是Intel显卡）
-    if 'qsv' in supported_hwaccels and 'intel' in gpu_info.lower():
+    if 'qsv' in supported_hwaccels and is_intel:
         try:
             test_cmd = subprocess.run(
                 ["ffmpeg", "-hwaccel", "qsv", "-i", "/dev/null", "-f", "null", "-"],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                check=False,
+                timeout=10,
             )
             if test_cmd.returncode == 0:
                 _FFMPEG_HW_ACCEL_INFO["available"] = True
@@ -219,7 +285,12 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
         try:
             test_cmd = subprocess.run(
                 ["ffmpeg", "-hwaccel", "d3d11va", "-i", "NUL", "-f", "null", "-t", "0.1", "-"],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, encoding='utf-8', text=True, check=False
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                encoding='utf-8',
+                text=True,
+                check=False,
+                timeout=10,
             )
 
             # 记录详细的返回信息以便调试
@@ -241,7 +312,12 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
         try:
             test_cmd = subprocess.run(
                 ["ffmpeg", "-hwaccel", "dxva2", "-i", "NUL", "-f", "null", "-t", "0.1", "-"],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, encoding='utf-8', text=True, check=False
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                encoding='utf-8',
+                text=True,
+                check=False,
+                timeout=10,
             )
 
             # 记录详细的返回信息以便调试
@@ -258,13 +334,18 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
             logger.debug(f"测试DXVA2失败: {str(e)}")
 
     # 如果检测到NVIDIA显卡但前面的测试都失败，尝试直接使用NVENC编码器
-    if 'nvidia' in gpu_info.lower():
+    if is_nvidia:
         logger.debug("Windows检测到NVIDIA显卡，尝试直接使用NVENC编码器")
         try:
             # 检查NVENC编码器是否可用，使用UTF-8编码
             encoders_cmd = subprocess.run(
                 ["ffmpeg", "-hide_banner", "-encoders"],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, encoding='utf-8', text=True, check=False
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                encoding='utf-8',
+                text=True,
+                check=False,
+                timeout=10,
             )
 
             if "h264_nvenc" in encoders_cmd.stdout.lower():
@@ -272,7 +353,12 @@ def _detect_windows_acceleration(supported_hwaccels: str) -> None:
                 # 测试NVENC编码器，使用UTF-8编码
                 test_cmd = subprocess.run(
                     ["ffmpeg", "-f", "lavfi", "-i", "color=c=black:s=640x360:r=30", "-c:v", "h264_nvenc", "-t", "0.1", "-f", "null", "-"],
-                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, encoding='utf-8', text=True, check=False
+                    stderr=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    encoding='utf-8',
+                    text=True,
+                    check=False,
+                    timeout=10,
                 )
 
                 logger.debug(f"NVENC编码器测试返回码: {test_cmd.returncode}")
@@ -310,7 +396,7 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
         try:
             test_cmd = subprocess.run(
                 ["ffmpeg", "-hwaccel", "cuda", "-i", "/dev/null", "-f", "null", "-"],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+                stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False, timeout=10
             )
             if test_cmd.returncode == 0:
                 _FFMPEG_HW_ACCEL_INFO["available"] = True
@@ -321,6 +407,45 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
                 return
         except Exception as e:
             logger.debug(f"测试CUDA失败: {str(e)}")
+
+    # 某些FFmpeg构建可能未在 -hwaccels 中显示 CUDA，但仍支持 NVENC 编码
+    if is_nvidia and not _FFMPEG_HW_ACCEL_INFO["available"]:
+        try:
+            encoders_cmd = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-encoders"],
+                stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False, timeout=10
+            )
+            if "h264_nvenc" in encoders_cmd.stdout.lower():
+                test_cmd = subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-f",
+                        "lavfi",
+                        "-i",
+                        "nullsrc=s=16x16",
+                        "-c:v",
+                        "h264_nvenc",
+                        "-t",
+                        "0.1",
+                        "-f",
+                        "null",
+                        "-",
+                    ],
+                    stderr=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+                if test_cmd.returncode == 0:
+                    _FFMPEG_HW_ACCEL_INFO["available"] = True
+                    _FFMPEG_HW_ACCEL_INFO["type"] = "nvenc"
+                    _FFMPEG_HW_ACCEL_INFO["encoder"] = "h264_nvenc"
+                    _FFMPEG_HW_ACCEL_INFO["hwaccel_args"] = []
+                    _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = True
+                    return
+        except Exception as e:
+            logger.debug(f"测试NVENC编码器失败: {str(e)}")
 
     # 检测VAAPI支持
     if 'vaapi' in supported_hwaccels:
@@ -337,7 +462,11 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
                 test_cmd = subprocess.run(
                     ["ffmpeg", "-hwaccel", "vaapi", "-vaapi_device", render_device,
                      "-i", "/dev/null", "-f", "null", "-"],
-                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+                    stderr=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    text=True,
+                    check=False,
+                    timeout=10,
                 )
                 if test_cmd.returncode == 0:
                     _FFMPEG_HW_ACCEL_INFO["available"] = True
@@ -355,7 +484,11 @@ def _detect_linux_acceleration(supported_hwaccels: str) -> None:
         try:
             test_cmd = subprocess.run(
                 ["ffmpeg", "-hwaccel", "qsv", "-i", "/dev/null", "-f", "null", "-"],
-                stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                check=False,
+                timeout=10,
             )
             if test_cmd.returncode == 0:
                 _FFMPEG_HW_ACCEL_INFO["available"] = True
@@ -381,14 +514,24 @@ def _get_windows_gpu_info() -> str:
         # 使用PowerShell获取更可靠的显卡信息，并使用UTF-8编码
         gpu_info = subprocess.run(
             ['powershell', '-Command', "Get-WmiObject Win32_VideoController | Select-Object Name | Format-List"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', text=True, check=False
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            encoding='utf-8',
+            text=True,
+            check=False,
+            timeout=5,
         )
 
         # 如果PowerShell失败，尝试使用wmic
         if not gpu_info.stdout.strip():
             gpu_info = subprocess.run(
                 ['wmic', 'path', 'win32_VideoController', 'get', 'name'],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8', text=True, check=False
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                encoding='utf-8',
+                text=True,
+                check=False,
+                timeout=5,
             )
 
         # 记录详细的显卡信息以便调试
@@ -409,16 +552,26 @@ def _get_linux_gpu_info() -> str:
     try:
         # 尝试使用lspci命令
         gpu_info = subprocess.run(
-            ['lspci', '-v', '-nn', '|', 'grep', '-i', 'vga\\|display'],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True, check=False
+            'lspci -v -nn | grep -i "vga\\|display"',
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            shell=True,
+            check=False,
+            timeout=5,
         )
         if gpu_info.stdout:
             return gpu_info.stdout
 
         # 如果lspci命令失败，尝试使用glxinfo
         gpu_info = subprocess.run(
-            ['glxinfo', '|', 'grep', '-i', 'vendor\\|renderer'],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True, check=False
+            'glxinfo | grep -i "vendor\\|renderer"',
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            shell=True,
+            check=False,
+            timeout=5,
         )
         if gpu_info.stdout:
             return gpu_info.stdout
