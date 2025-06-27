@@ -13,7 +13,7 @@ from moviepy.editor import (
 import os
 
 # 设置字体文件路径（用于中文字幕显示）
-FONT_PATH = "../../resource/fonts/STHeitiMedium.ttc"  # 请确保此路径下有对应字体文件
+FONT_PATH = "../../resource/fonts/NotoSansSC-Regular.otf"  # 使用可商用的开源字体
 # change_settings(
 #     {"IMAGEMAGICK_BINARY": r"C:\Program Files\ImageMagick-7.1.1-Q16\magick.exe"})  # Windows系统需要设置 ImageMagick 路径
 

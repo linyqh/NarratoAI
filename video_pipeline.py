@@ -73,7 +73,8 @@ class VideoPipeline:
             "bgm_volume": 0.3,
             "subtitle_enabled": True,
             "subtitle_position": "bottom",
-            "font_name": "STHeitiMedium.ttc",
+            # 使用可商用的开源字体
+            "font_name": "NotoSansSC-Regular.otf",
             "text_fore_color": "#FFFFFF",
             "text_background_color": "transparent",
             "font_size": 75,

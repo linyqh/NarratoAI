@@ -1,5 +1,4 @@
-# Exclude common Python files and directories
-venv/
+# Python 编译缓存
 __pycache__/
 *.pyc
 *.pyo
@@ -7,18 +6,39 @@ __pycache__/
 *.pyz
 *.pyw
 *.pyi
-*.egg-info/
 
-# Exclude development and local files
+# 虚拟环境和 Python egg 信息
+venv/
+*.egg-info/
+*.dist-info/
+.Python
+
+# pip 缓存
+pip-wheel-metadata/
+.eggs/
+
+# IDE文件与本地配置
+*.db
+*.sqlite3
+*.log
+
+# 环境变量及本地敏感数据
 .env
 .env.*
-*.log
-*.db
+config.toml
 
-# Exclude version control system files
+# 版本控制
 .git/
 .gitignore
 .svn/
 
+# 临时/媒体/生成数据目录（这里可选，可调整）
 storage/
-config.toml
+resource/
+
+# 排除大媒体文件
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm

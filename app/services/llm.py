@@ -405,7 +405,14 @@ def compress_video(input_path: str, output_path: str):
 
     try:
         clip = VideoFileClip(input_path)
-        clip.write_videofile(output_path, codec='libx264', audio_codec='aac', bitrate="500k", audio_bitrate="128k")
+        clip.write_videofile(
+            output_path,
+            codec='libx264',
+            audio_codec='aac',
+            bitrate="500k",
+            audio_bitrate="128k",
+            logger=None
+        )
     except subprocess.CalledProcessError as e:
         logger.error(f"视频压缩失败: {e}")
         raise

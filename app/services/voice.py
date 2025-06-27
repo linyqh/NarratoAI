@@ -1075,7 +1075,7 @@ def azure_tts_v1(
             logger.info(f"第 {i+1} 次使用 edge_tts 生成音频")
 
             async def _do() -> tuple[SubMaker, bytes]:
-                communicate = edge_tts.Communicate(text, voice_name, rate=rate_str, pitch=pitch_str, proxy=config.proxy.get("http"))
+                communicate = edge_tts.Communicate(text, voice_name, rate=rate_str, pitch=pitch_str)
                 sub_maker = edge_tts.SubMaker()
                 audio_data = bytes()  # 用于存储音频数据
                 
@@ -1454,7 +1454,18 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                 continue
             else:
                 # 为当前片段生成字幕文件
-                _, duration = create_subtitle(sub_maker=sub_maker, text=text, subtitle_file=subtitle_file)
+                subtitle_result = create_subtitle(
+                    sub_maker=sub_maker,
+                    text=text,
+                    subtitle_file=subtitle_file,
+                )
+                if subtitle_result:
+                    _, duration = subtitle_result
+                else:
+                    logger.error(
+                        f"无法为时间戳 {timestamp} 创建字幕文件: {subtitle_file}"
+                    )
+                    duration = get_audio_duration(sub_maker)
 
             tts_results.append({
                 "_id": item['_id'],

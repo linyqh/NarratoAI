@@ -8,7 +8,8 @@ def get_fonts_cache(font_dir):
         fonts = []
         for root, dirs, files in os.walk(font_dir):
             for file in files:
-                if file.endswith(".ttf") or file.endswith(".ttc"):
+                lower = file.lower()
+                if lower.endswith((".ttf", ".ttc", ".otf")):
                     fonts.append(file)
         fonts.sort()
         st.session_state['fonts_cache'] = fonts

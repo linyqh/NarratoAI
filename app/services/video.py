@@ -351,7 +351,8 @@ def generate_video_v3(
         output_path,
         codec='libx264',
         audio_codec='aac',
-        fps=video.fps
+        fps=video.fps,
+        logger=None
     )
     logger.info(f"视频已导出到: {output_path}")  # 调试信息
 

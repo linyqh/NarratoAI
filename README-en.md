@@ -85,6 +85,12 @@ Below is a screenshot of this person's x (Twitter) homepage
 - Recommended minimum: CPU with 4 cores or more, 8GB RAM or more, GPU is not required
 - Windows 10/11 or MacOS 11.0 or above
 - [Python 3.12+](https://www.python.org/downloads/)
+- For Python 3.13+, install `pydub` and `audioop-lts`
+- Azure TTS requires `azure-cognitiveservices-speech` (included in `requirements.txt`)
+- Ensure [FFmpeg](https://ffmpeg.org/) is installed and the `ffmpeg` command is in your PATH.
+  The project will automatically detect available hardware acceleration such as macOS VideoToolbox,
+  Windows NVENC, or Linux VAAPI on startup. Detection also verifies available encoders using a 64x64
+  black frame and can be inspected with `python app/utils/ffmpeg_utils.py`.
 
 ## Feedback & Suggestions 📢
 

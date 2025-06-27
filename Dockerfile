@@ -1,63 +1,72 @@
+# =====================
 # 构建阶段
-FROM python:3.10-slim-bullseye as builder
-
-# 设置工作目录
+# =====================
+FROM python:3.13-slim-bookworm AS builder
 WORKDIR /build
 
-# 安装构建依赖
-RUN apt-get update && apt-get install -y \
+# 更新索引并安装所有构建依赖
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
     git \
     git-lfs \
+    build-essential \
+    libffi-dev \
+    libssl-dev \
+    && git lfs install \
     && rm -rf /var/lib/apt/lists/*
 
-# 创建虚拟环境
+# 创建并激活虚拟环境
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# 首先安装 PyTorch（因为它是最大的依赖）
-RUN pip install --no-cache-dir torch torchvision torchaudio
-
-# 然后安装其他依赖
+# 安装 Python 依赖
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
+# =====================
 # 运行阶段
-FROM python:3.10-slim-bullseye
-
-# 设置工作目录
+# =====================
+FROM python:3.13-slim-bookworm
 WORKDIR /NarratoAI
 
-# 从builder阶段复制虚拟环境
+# 复制并设置虚拟环境所有权
 COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
 
-# 安装运行时依赖
-RUN apt-get update && apt-get install -y \
+# 复制应用代码并把 /NarratoAI 归属给非 root 用户
+COPY . /NarratoAI
+
+# 安装运行时依赖（ImageMagick、FFmpeg、Wget等，不再安装git-lfs）
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
     imagemagick \
     ffmpeg \
     wget \
-    git-lfs \
-    && rm -rf /var/lib/apt/lists/* \
-    && sed -i '/<policy domain="path" rights="none" pattern="@\*"/d' /etc/ImageMagick-6/policy.xml
+    && sed -i '/<policy domain="path" rights="none" pattern="@\*"/d' /etc/ImageMagick-6/policy.xml \
+    && rm -rf /var/lib/apt/lists/*
 
-# 设置环境变量
-ENV PYTHONPATH="/NarratoAI" \
+# 环境变量
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/NarratoAI" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# 设置目录权限
-RUN chmod 777 /NarratoAI
-
-# 安装git lfs
-RUN git lfs install
-
-# 复制应用代码
-COPY . .
-
-# 暴露端口
-EXPOSE 8501 8080
-
-# 使用脚本作为入口点
+# 暴露端口并设置入口
+EXPOSE 8501
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# 创建非 root 用户并切换（固定 UID=1000，GID=1000，方便文件同步）
+RUN groupadd --system --gid 1000 appgroup \
+    && useradd --system --uid 1000 --gid 1000 --create-home appuser
+
+# 在切换到非 root 用户前创建并授权所需目录
+RUN mkdir -p /NarratoAI/storage/temp/merge \
+    /NarratoAI/resource/videos \
+    /NarratoAI/resource/srt \
+    && chown -R appuser:appgroup /NarratoAI/storage /NarratoAI/resource
+
+USER appuser
+
 ENTRYPOINT ["docker-entrypoint.sh"]

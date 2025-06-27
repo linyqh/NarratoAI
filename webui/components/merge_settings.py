@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
 from webui.utils.merge_video import merge_videos_and_subtitles
-from app.utils.utils import video_dir, srt_dir
+from app.utils.utils import video_dir, srt_dir, sanitize_filename, secure_path
 
 # 定义临时目录路径
 TEMP_MERGE_DIR = os.path.join("storage", "temp", "merge")
@@ -26,7 +26,8 @@ class VideoSubtitlePair:
 
 def save_uploaded_file(uploaded_file: UploadedFile, target_dir: str) -> str:
     """Save uploaded file to target directory and return the file path"""
-    file_path = os.path.join(target_dir, uploaded_file.name)
+    safe_name = sanitize_filename(uploaded_file.name)
+    file_path = secure_path(os.path.join(target_dir, safe_name), target_dir)
     # 如果文件已存在，先删除它
     if os.path.exists(file_path):
         os.remove(file_path)
@@ -54,7 +55,7 @@ def group_files(files: List[UploadedFile]) -> Dict[str, VideoSubtitlePair]:
     
     # 首先处理所有视频文件
     for file in files:
-        base_name = os.path.splitext(file.name)[0]
+        base_name = os.path.splitext(sanitize_filename(file.name))[0]
         ext = os.path.splitext(file.name)[1].lower()
         
         if ext == ".mp4":
@@ -67,12 +68,12 @@ def group_files(files: List[UploadedFile]) -> Dict[str, VideoSubtitlePair]:
     
     # 然后处理所有字幕文件
     for file in files:
-        base_name = os.path.splitext(file.name)[0]
+        base_name = os.path.splitext(sanitize_filename(file.name))[0]
         ext = os.path.splitext(file.name)[1].lower()
         
         if ext == ".srt":
             # 即使没有对应视频也保存字幕文件
-            subtitle_path = os.path.join(TEMP_MERGE_DIR, f"{base_name}.srt")
+            subtitle_path = secure_path(os.path.join(TEMP_MERGE_DIR, f"{base_name}.srt"), TEMP_MERGE_DIR)
             save_uploaded_file(file, TEMP_MERGE_DIR)
             
             if base_name in pairs:  # 如果有对应的视频
@@ -140,14 +141,14 @@ def render_merge_settings(tr):
                                 st.caption(base_name)
                                 
                                 # 显示视频预览（如果存在）
-                                video_path = os.path.join(TEMP_MERGE_DIR, f"{base_name}.mp4")
+                                video_path = secure_path(os.path.join(TEMP_MERGE_DIR, f"{base_name}.mp4"), TEMP_MERGE_DIR)
                                 if os.path.exists(video_path):
                                     st.video(video_path)
                                 else:
                                     st.warning(tr("Missing Video"))
                                 
                                 # 显示字幕预览（如果存在）
-                                subtitle_path = os.path.join(TEMP_MERGE_DIR, f"{base_name}.srt")
+                                subtitle_path = secure_path(os.path.join(TEMP_MERGE_DIR, f"{base_name}.srt"), TEMP_MERGE_DIR)
                                 if os.path.exists(subtitle_path):
                                     with open(subtitle_path, 'r', encoding='utf-8') as f:
                                         subtitle_content = f.read()
@@ -215,8 +216,8 @@ def render_merge_settings(tr):
                 # 找出有完整视频和字幕的文件对
                 complete_pairs = {
                     k: v for k, v in all_pairs.items()
-                    if os.path.exists(os.path.join(TEMP_MERGE_DIR, f"{k}.mp4")) and 
-                    os.path.exists(os.path.join(TEMP_MERGE_DIR, f"{k}.srt"))
+                    if os.path.exists(secure_path(os.path.join(TEMP_MERGE_DIR, f"{k}.mp4"), TEMP_MERGE_DIR)) and
+                    os.path.exists(secure_path(os.path.join(TEMP_MERGE_DIR, f"{k}.srt"), TEMP_MERGE_DIR))
                 }
                 
                 # 合并按钮和结果显示
@@ -238,12 +239,12 @@ def render_merge_settings(tr):
                             video_paths = []
                             subtitle_paths = []
                             for base_name, _ in sorted_complete_pairs:
-                                video_paths.append(os.path.join(TEMP_MERGE_DIR, f"{base_name}.mp4"))
-                                subtitle_paths.append(os.path.join(TEMP_MERGE_DIR, f"{base_name}.srt"))
+                                video_paths.append(secure_path(os.path.join(TEMP_MERGE_DIR, f"{base_name}.mp4"), TEMP_MERGE_DIR))
+                                subtitle_paths.append(secure_path(os.path.join(TEMP_MERGE_DIR, f"{base_name}.srt"), TEMP_MERGE_DIR))
                             
                             # 获取输出文件路径
-                            output_video = os.path.join(video_dir(), f"merged_video_{time.strftime('%M%S')}.mp4")
-                            output_subtitle = os.path.join(srt_dir(), f"merged_subtitle_{time.strftime('%M%S')}.srt")
+                            output_video = secure_path(os.path.join(video_dir(), f"merged_video_{time.strftime('%M%S')}.mp4"), video_dir())
+                            output_subtitle = secure_path(os.path.join(srt_dir(), f"merged_subtitle_{time.strftime('%M%S')}.srt"), srt_dir())
                             
                             with st.spinner(tr("Merging files...")):
                                 # 合并文件

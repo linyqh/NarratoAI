@@ -87,3 +87,9 @@
     frame_interval_input = 3
     # 大模型单次处理的关键帧数量
     vision_batch_size = 10
+
+[azure]
+    # Azure TTS 服务区域，如 eastus 或 westeurope
+    speech_region = ""
+    # Azure TTS API Key
+    speech_key = ""

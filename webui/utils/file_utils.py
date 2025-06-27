@@ -6,6 +6,7 @@ import shutil
 from uuid import uuid4
 from loguru import logger
 from app.utils import utils
+from app.utils.utils import sanitize_filename, secure_path
 
 def open_task_folder(root_dir, task_id):
     """打开任务文件夹
@@ -99,7 +100,8 @@ def save_uploaded_file(uploaded_file, save_dir, allowed_types=None):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         
-        file_name, file_extension = os.path.splitext(uploaded_file.name)
+        safe_name = sanitize_filename(uploaded_file.name)
+        file_name, file_extension = os.path.splitext(safe_name)
         
         # 检查文件类型
         if allowed_types and file_extension.lower() not in allowed_types:
@@ -107,11 +109,11 @@ def save_uploaded_file(uploaded_file, save_dir, allowed_types=None):
             return None
         
         # 如果文件已存在，添加时间戳
-        save_path = os.path.join(save_dir, uploaded_file.name)
+        save_path = secure_path(os.path.join(save_dir, safe_name), save_dir)
         if os.path.exists(save_path):
             timestamp = time.strftime("%Y%m%d%H%M%S")
             new_file_name = f"{file_name}_{timestamp}{file_extension}"
-            save_path = os.path.join(save_dir, new_file_name)
+            save_path = secure_path(os.path.join(save_dir, new_file_name), save_dir)
         
         # 保存文件
         with open(save_path, "wb") as f:

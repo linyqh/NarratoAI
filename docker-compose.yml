@@ -1,20 +1,21 @@
+version: "3.8"
+
 x-common: &common
-  build:
+  build: 
     context: .
     dockerfile: Dockerfile
   image: linyq1/narratoai:latest
   volumes:
-    - ./:/NarratoAI
+    - ./storage:/NarratoAI/storage
+    - ./resource:/NarratoAI/resource
   environment:
-    - VPN_PROXY_URL=http://host.docker.internal:7890
+    - VPN_PROXY_URL=${VPN_PROXY_URL:-http://host.docker.internal:7890}
     - PYTHONUNBUFFERED=1
     - PYTHONMALLOC=malloc
     - OPENCV_OPENCL_RUNTIME=disabled
     - OPENCV_CPU_DISABLE=0
   restart: always
   mem_limit: 4g
-  mem_reservation: 2g
-  memswap_limit: 6g
   cpus: 2.0
   cpu_shares: 1024
 
@@ -36,3 +37,14 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    privileged: false
