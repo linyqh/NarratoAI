@@ -276,6 +276,7 @@ def merge_materials(
             temp_audiofile_path=output_dir,
             threads=threads,
             fps=fps,
+            logger=None,
         )
         logger.success(f"素材合并完成: {output_path}")
     except Exception as e:
