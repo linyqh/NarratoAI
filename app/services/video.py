@@ -314,24 +314,35 @@ def generate_video_v3(
     audio_clips = []
 
     # 添加原声（设置音量）
-    logger.debug(f"音量配置: {volume_config}")
+    logger.info(f"音量配置详情: {volume_config}")
     if video.audio is not None:
-        original_audio = video.audio.volumex(volume_config['original'])
+        original_volume = volume_config['original']
+        logger.info(f"应用原声音量: {original_volume}")
+        original_audio = video.audio.volumex(original_volume)
         audio_clips.append(original_audio)
+        logger.info("原声音频已添加到合成列表")
+    else:
+        logger.warning("视频没有音轨，无法添加原声")
 
     # 添加BGM（如果提供）
     if bgm_path:
+        logger.info(f"添加背景音乐: {bgm_path}")
         bgm = AudioFileClip(bgm_path)
         if bgm.duration < video.duration:
             bgm = loop_audio_clip(bgm, video.duration)
         else:
             bgm = bgm.subclip(0, video.duration)
-        bgm = bgm.volumex(volume_config['bgm'])
+        bgm_volume = volume_config['bgm']
+        logger.info(f"应用BGM音量: {bgm_volume}")
+        bgm = bgm.volumex(bgm_volume)
         audio_clips.append(bgm)
 
     # 添加解说音频（如果提供）
     if narration_path:
-        narration = AudioFileClip(narration_path).volumex(volume_config['narration'])
+        logger.info(f"添加解说音频: {narration_path}")
+        narration_volume = volume_config['narration']
+        logger.info(f"应用解说音量: {narration_volume}")
+        narration = AudioFileClip(narration_path).volumex(narration_volume)
         audio_clips.append(narration)
 
     # 合成最终视频（包含字幕）
@@ -342,8 +353,12 @@ def generate_video_v3(
         final_video = video
 
     if audio_clips:
+        logger.info(f"合成音频轨道，共 {len(audio_clips)} 个音频片段")
         final_audio = CompositeAudioClip(audio_clips)
         final_video = final_video.set_audio(final_audio)
+        logger.info("音频合成完成")
+    else:
+        logger.warning("没有音频轨道需要合成")
 
     # 导出视频
     logger.info("开始导出视频...")  # 调试信息
