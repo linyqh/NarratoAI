@@ -1,6 +1,6 @@
 import warnings
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 import pydantic
 from pydantic import BaseModel, Field
@@ -11,6 +11,24 @@ warnings.filterwarnings(
     category=UserWarning,
     message="Field name.*shadows an attribute in parent.*",
 )
+
+
+class AudioVolumeDefaults:
+    """音量配置默认值常量类 - 确保全局一致性"""
+
+    # 语音音量默认值
+    VOICE_VOLUME = 1.0
+    TTS_VOLUME = 1.0
+
+    # 原声音量默认值 - 这是修复bug的关键
+    ORIGINAL_VOLUME = 0.7
+
+    # 背景音乐音量默认值
+    BGM_VOLUME = 0.3
+
+    # 音量范围
+    MIN_VOLUME = 0.0
+    MAX_VOLUME = 1.0
 
 
 class VideoConcatMode(str, Enum):
@@ -101,7 +119,7 @@ class VideoParams(BaseModel):
 
     video_subject: str
     video_script: str = ""  # 用于生成视频的脚本
-    video_terms: Optional[str | list] = None  # 用于生成视频的关键词
+    video_terms: Optional[Union[str, list]] = None  # 用于生成视频的关键词
     video_aspect: Optional[VideoAspect] = VideoAspect.portrait.value
     video_concat_mode: Optional[VideoConcatMode] = VideoConcatMode.random.value
     video_clip_duration: Optional[int] = 5
@@ -113,11 +131,11 @@ class VideoParams(BaseModel):
     video_language: Optional[str] = ""  # auto detect
 
     voice_name: Optional[str] = ""
-    voice_volume: Optional[float] = 1.0
+    voice_volume: Optional[float] = AudioVolumeDefaults.VOICE_VOLUME
     voice_rate: Optional[float] = 1.0
     bgm_type: Optional[str] = "random"
     bgm_file: Optional[str] = ""
-    bgm_volume: Optional[float] = 0.2
+    bgm_volume: Optional[float] = AudioVolumeDefaults.BGM_VOLUME
 
     subtitle_enabled: Optional[bool] = True
     subtitle_position: Optional[str] = "bottom"  # top, bottom, center
@@ -157,11 +175,11 @@ class AudioRequest(BaseModel):
     video_script: str
     video_language: Optional[str] = ""
     voice_name: Optional[str] = "zh-CN-XiaoxiaoNeural-Female"
-    voice_volume: Optional[float] = 1.0
+    voice_volume: Optional[float] = AudioVolumeDefaults.VOICE_VOLUME
     voice_rate: Optional[float] = 1.2
     bgm_type: Optional[str] = "random"
     bgm_file: Optional[str] = ""
-    bgm_volume: Optional[float] = 0.2
+    bgm_volume: Optional[float] = AudioVolumeDefaults.BGM_VOLUME
     video_source: Optional[str] = "local"
 
 
@@ -347,7 +365,7 @@ class VideoClipParams(BaseModel):
     # video_concat_mode: Optional[VideoConcatMode] = VideoConcatMode.random.value
 
     voice_name: Optional[str] = Field(default="zh-CN-YunjianNeural", description="语音名称")
-    voice_volume: Optional[float] = Field(default=1.0, description="解说语音音量")
+    voice_volume: Optional[float] = Field(default=AudioVolumeDefaults.VOICE_VOLUME, description="解说语音音量")
     voice_rate: Optional[float] = Field(default=1.0, description="语速")
     voice_pitch: Optional[float] = Field(default=1.0, description="语调")
 
@@ -367,9 +385,9 @@ class VideoClipParams(BaseModel):
 
     n_threads: Optional[int] = Field(default=16, description="线程数")    # 线程数，有助于提升视频处理速度
 
-    tts_volume: Optional[float] = Field(default=1.0, description="解说语音音量（后处理）")
-    original_volume: Optional[float] = Field(default=1.0, description="视频原声音量")
-    bgm_volume: Optional[float] = Field(default=0.3, description="背景音乐音量")
+    tts_volume: Optional[float] = Field(default=AudioVolumeDefaults.TTS_VOLUME, description="解说语音音量（后处理）")
+    original_volume: Optional[float] = Field(default=AudioVolumeDefaults.ORIGINAL_VOLUME, description="视频原声音量")
+    bgm_volume: Optional[float] = Field(default=AudioVolumeDefaults.BGM_VOLUME, description="背景音乐音量")
 
 
 class VideoTranscriptionRequest(BaseModel):
