@@ -366,15 +366,46 @@ def generate_video_v3(
     else:
         logger.warning("没有音频轨道需要合成")
 
-    # 导出视频
-    logger.info("开始导出视频...")  # 调试信息
-    final_video.write_videofile(
-        output_path,
-        codec='libx264',
-        audio_codec='aac',
-        fps=video.fps
-    )
-    logger.info(f"视频已导出到: {output_path}")  # 调试信息
+    # 导出视频 - 使用优化的编码器
+    logger.info("开始导出视频...")
+
+    # 获取最优编码器
+    from app.utils import ffmpeg_utils
+    optimal_encoder = ffmpeg_utils.get_optimal_ffmpeg_encoder()
+
+    # 根据编码器类型设置参数
+    ffmpeg_params = []
+    if "nvenc" in optimal_encoder:
+        ffmpeg_params = ['-preset', 'medium', '-profile:v', 'high']
+    elif "videotoolbox" in optimal_encoder:
+        ffmpeg_params = ['-profile:v', 'high']
+    elif "qsv" in optimal_encoder:
+        ffmpeg_params = ['-preset', 'medium']
+    elif "vaapi" in optimal_encoder:
+        ffmpeg_params = ['-profile', '100']
+    elif optimal_encoder == "libx264":
+        ffmpeg_params = ['-preset', 'medium', '-crf', '23']
+
+    try:
+        final_video.write_videofile(
+            output_path,
+            codec=optimal_encoder,
+            audio_codec='aac',
+            fps=video.fps,
+            ffmpeg_params=ffmpeg_params
+        )
+        logger.info(f"视频已导出到: {output_path} (使用编码器: {optimal_encoder})")
+    except Exception as e:
+        logger.warning(f"使用 {optimal_encoder} 编码器失败: {str(e)}, 尝试软件编码")
+        # 降级到软件编码
+        final_video.write_videofile(
+            output_path,
+            codec='libx264',
+            audio_codec='aac',
+            fps=video.fps,
+            ffmpeg_params=['-preset', 'medium', '-crf', '23']
+        )
+        logger.info(f"视频已导出到: {output_path} (使用软件编码)")
 
     # 清理资源
     video.close()
