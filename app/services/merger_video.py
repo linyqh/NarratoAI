@@ -64,7 +64,7 @@ def get_hardware_acceleration_option() -> Optional[str]:
     Returns:
         Optional[str]: 硬件加速参数，如果不支持则返回None
     """
-    # 使用集中式硬件加速检测
+    # 使用新的硬件加速检测API
     return ffmpeg_utils.get_ffmpeg_hwaccel_type()
 
 
@@ -178,14 +178,20 @@ def process_single_video(
             logger.warning(f"视频探测出错，禁用硬件加速: {str(e)}")
             hwaccel = None
 
-    # 添加硬件加速参数（根据前面的安全检查可能已经被禁用）
+    # 添加硬件加速参数（使用新的智能检测机制）
     if hwaccel:
         try:
-            # 使用集中式硬件加速参数
+            # 使用新的硬件加速检测API
             hwaccel_args = ffmpeg_utils.get_ffmpeg_hwaccel_args()
-            command.extend(hwaccel_args)
+            if hwaccel_args:
+                command.extend(hwaccel_args)
+                logger.debug(f"应用硬件加速参数: {hwaccel_args}")
+            else:
+                logger.info("硬件加速不可用，将使用软件编码")
+                hwaccel = False  # 标记为不使用硬件加速
         except Exception as e:
             logger.warning(f"应用硬件加速参数时出错: {str(e)}，将使用软件编码")
+            hwaccel = False  # 标记为不使用硬件加速
             # 重置命令，移除可能添加了一半的硬件加速参数
             command = ['ffmpeg', '-y']
 
@@ -212,41 +218,27 @@ def process_single_video(
         '-r', '30',  # 设置帧率为30fps
     ])
 
-    # 选择编码器 - 考虑到Windows和特定硬件的兼容性
-    use_software_encoder = True
+    # 选择编码器 - 使用新的智能编码器选择
+    encoder = ffmpeg_utils.get_optimal_ffmpeg_encoder()
 
-    if hwaccel:
-        # 获取硬件加速类型和编码器信息
-        hwaccel_type = ffmpeg_utils.get_ffmpeg_hwaccel_type()
-        hwaccel_encoder = ffmpeg_utils.get_ffmpeg_hwaccel_encoder()
+    if hwaccel and encoder != "libx264":
+        logger.info(f"使用硬件编码器: {encoder}")
+        command.extend(['-c:v', encoder])
 
-        if hwaccel_type == 'cuda' or hwaccel_type == 'nvenc':
-            try:
-                # 检查NVENC编码器是否可用
-                encoders_cmd = subprocess.run(
-                    ["ffmpeg", "-hide_banner", "-encoders"],
-                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, check=False
-                )
-
-                if "h264_nvenc" in encoders_cmd.stdout.lower():
-                    command.extend(['-c:v', 'h264_nvenc', '-preset', 'p4', '-profile:v', 'high'])
-                    use_software_encoder = False
-                else:
-                    logger.warning("NVENC编码器不可用，将使用软件编码")
-            except Exception as e:
-                logger.warning(f"NVENC编码器检测失败: {str(e)}，将使用软件编码")
-        elif hwaccel_type == 'qsv':
-            command.extend(['-c:v', 'h264_qsv', '-preset', 'medium'])
-            use_software_encoder = False
-        elif hwaccel_type == 'videotoolbox':  # macOS
-            command.extend(['-c:v', 'h264_videotoolbox', '-profile:v', 'high'])
-            use_software_encoder = False
-        elif hwaccel_type == 'vaapi':  # Linux VA-API
-            command.extend(['-c:v', 'h264_vaapi', '-profile', '100'])
-            use_software_encoder = False
-
-    # 如果前面的条件未能应用硬件编码器，使用软件编码
-    if use_software_encoder:
+        # 根据编码器类型添加特定参数
+        if "nvenc" in encoder:
+            command.extend(['-preset', 'p4', '-profile:v', 'high'])
+        elif "videotoolbox" in encoder:
+            command.extend(['-profile:v', 'high'])
+        elif "qsv" in encoder:
+            command.extend(['-preset', 'medium'])
+        elif "vaapi" in encoder:
+            command.extend(['-profile', '100'])
+        elif "amf" in encoder:
+            command.extend(['-quality', 'balanced'])
+        else:
+            command.extend(['-preset', 'medium', '-profile:v', 'high'])
+    else:
         logger.info("使用软件编码器(libx264)")
         command.extend(['-c:v', 'libx264', '-preset', 'medium', '-profile:v', 'high'])
 
@@ -273,8 +265,11 @@ def process_single_video(
 
         # 如果使用硬件加速失败，尝试使用软件编码
         if hwaccel:
-            logger.info("尝试使用软件编码作为备选方案")
+            logger.info("硬件加速失败，尝试使用软件编码作为备选方案")
             try:
+                # 强制使用软件编码
+                ffmpeg_utils.force_software_encoding()
+
                 # 构建新的命令，使用软件编码
                 fallback_cmd = ['ffmpeg', '-y', '-i', input_path]
 
@@ -302,14 +297,30 @@ def process_single_video(
                     output_path
                 ])
 
-                logger.info(f"执行备选FFmpeg命令: {' '.join(fallback_cmd)}")
+                logger.info("执行软件编码备选方案")
                 subprocess.run(fallback_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 logger.info(f"使用软件编码成功处理视频: {output_path}")
                 return output_path
             except subprocess.CalledProcessError as fallback_error:
                 fallback_error_msg = fallback_error.stderr.decode() if fallback_error.stderr else str(fallback_error)
-                logger.error(f"备选软件编码也失败: {fallback_error_msg}")
-                raise RuntimeError(f"无法处理视频 {input_path}: 硬件加速和软件编码都失败")
+                logger.error(f"软件编码备选方案也失败: {fallback_error_msg}")
+
+                # 尝试最基本的编码参数
+                try:
+                    logger.info("尝试最基本的编码参数")
+                    basic_cmd = [
+                        'ffmpeg', '-y', '-i', input_path,
+                        '-c:v', 'libx264', '-preset', 'ultrafast',
+                        '-crf', '23', '-pix_fmt', 'yuv420p',
+                        output_path
+                    ]
+                    subprocess.run(basic_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    logger.info(f"使用基本编码参数成功处理视频: {output_path}")
+                    return output_path
+                except subprocess.CalledProcessError as basic_error:
+                    basic_error_msg = basic_error.stderr.decode() if basic_error.stderr else str(basic_error)
+                    logger.error(f"基本编码参数也失败: {basic_error_msg}")
+                    raise RuntimeError(f"无法处理视频 {input_path}: 所有编码方案都失败")
 
         # 如果不是硬件加速导致的问题，或者备选方案也失败了，抛出原始错误
         raise RuntimeError(f"处理视频失败: {error_msg}")

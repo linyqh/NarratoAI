@@ -402,17 +402,35 @@ def save_clip_video(timestamp: str, origin_video: str, save_dir: str = "") -> st
         ffmpeg_start_time = start_str.replace(',', '.')
         ffmpeg_end_time = end_str.replace(',', '.')
 
-        # 构建FFmpeg命令
+        # 构建FFmpeg命令 - 使用新的智能编码器选择
+        encoder = ffmpeg_utils.get_optimal_ffmpeg_encoder()
+
         ffmpeg_cmd = [
             "ffmpeg", "-y", *hwaccel_args,
             "-i", origin_video,
             "-ss", ffmpeg_start_time,
             "-to", ffmpeg_end_time,
-            "-c:v", "h264_videotoolbox" if hwaccel == "videotoolbox" else "libx264",
+            "-c:v", encoder,
             "-c:a", "aac",
             "-strict", "experimental",
             video_path
         ]
+
+        # 根据编码器类型添加特定参数
+        if "nvenc" in encoder:
+            ffmpeg_cmd.insert(-1, "-preset")
+            ffmpeg_cmd.insert(-1, "medium")
+        elif "videotoolbox" in encoder:
+            ffmpeg_cmd.insert(-1, "-profile:v")
+            ffmpeg_cmd.insert(-1, "high")
+        elif "qsv" in encoder:
+            ffmpeg_cmd.insert(-1, "-preset")
+            ffmpeg_cmd.insert(-1, "medium")
+        elif encoder == "libx264":
+            ffmpeg_cmd.insert(-1, "-preset")
+            ffmpeg_cmd.insert(-1, "medium")
+            ffmpeg_cmd.insert(-1, "-crf")
+            ffmpeg_cmd.insert(-1, "23")
 
         # 执行FFmpeg命令
         # logger.info(f"裁剪视频片段: {timestamp} -> {ffmpeg_start_time}到{ffmpeg_end_time}")
