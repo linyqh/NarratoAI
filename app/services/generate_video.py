@@ -24,6 +24,7 @@ from moviepy.video.tools.subtitles import SubtitlesClip
 from PIL import ImageFont
 
 from app.utils import utils
+from app.models.schema import AudioVolumeDefaults
 
 
 def merge_materials(
@@ -58,6 +59,7 @@ def merge_materials(
             - stroke_width: 描边宽度，默认1
             - threads: 处理线程数，默认2
             - fps: 输出帧率，默认30
+            - subtitle_enabled: 是否启用字幕，默认True
             
     返回:
         输出视频的路径
@@ -66,11 +68,12 @@ def merge_materials(
     if options is None:
         options = {}
     
-    # 设置默认参数值
-    voice_volume = options.get('voice_volume', 1.0)
-    bgm_volume = options.get('bgm_volume', 0.3)
-    original_audio_volume = options.get('original_audio_volume', 0.0)  # 默认为0，即不保留原声
-    keep_original_audio = options.get('keep_original_audio', False)  # 是否保留原声
+    # 设置默认参数值 - 使用统一的音量配置
+    voice_volume = options.get('voice_volume', AudioVolumeDefaults.VOICE_VOLUME)
+    bgm_volume = options.get('bgm_volume', AudioVolumeDefaults.BGM_VOLUME)
+    # 修复bug: 将原声音量默认值从0.0改为0.7，确保短剧解说模式下原片音量正常
+    original_audio_volume = options.get('original_audio_volume', AudioVolumeDefaults.ORIGINAL_VOLUME)
+    keep_original_audio = options.get('keep_original_audio', True)  # 默认保留原声
     subtitle_font = options.get('subtitle_font', '')
     subtitle_font_size = options.get('subtitle_font_size', 40)
     subtitle_color = options.get('subtitle_color', '#FFFFFF')
@@ -81,11 +84,33 @@ def merge_materials(
     stroke_width = options.get('stroke_width', 1)
     threads = options.get('threads', 2)
     fps = options.get('fps', 30)
-    
+    subtitle_enabled = options.get('subtitle_enabled', True)
+
+    # 配置日志 - 便于调试问题
+    logger.info(f"音量配置详情:")
+    logger.info(f"  - 配音音量: {voice_volume}")
+    logger.info(f"  - 背景音乐音量: {bgm_volume}")
+    logger.info(f"  - 原声音量: {original_audio_volume}")
+    logger.info(f"  - 是否保留原声: {keep_original_audio}")
+    logger.info(f"字幕配置详情:")
+    logger.info(f"  - 是否启用字幕: {subtitle_enabled}")
+    logger.info(f"  - 字幕文件路径: {subtitle_path}")
+
+    # 音量参数验证
+    def validate_volume(volume, name):
+        if not (AudioVolumeDefaults.MIN_VOLUME <= volume <= AudioVolumeDefaults.MAX_VOLUME):
+            logger.warning(f"{name}音量 {volume} 超出有效范围 [{AudioVolumeDefaults.MIN_VOLUME}, {AudioVolumeDefaults.MAX_VOLUME}]，将被限制")
+            return max(AudioVolumeDefaults.MIN_VOLUME, min(volume, AudioVolumeDefaults.MAX_VOLUME))
+        return volume
+
+    voice_volume = validate_volume(voice_volume, "配音")
+    bgm_volume = validate_volume(bgm_volume, "背景音乐")
+    original_audio_volume = validate_volume(original_audio_volume, "原声")
+
     # 处理透明背景色问题 - MoviePy 2.1.1不支持'transparent'值
     if subtitle_bg_color == 'transparent':
         subtitle_bg_color = None  # None在新版MoviePy中表示透明背景
-    
+
     # 创建输出目录（如果不存在）
     output_dir = os.path.dirname(output_path)
     os.makedirs(output_dir, exist_ok=True)
@@ -246,27 +271,34 @@ def merge_materials(
             color=subtitle_color,
         )
     
-    # 处理字幕
-    if subtitle_path and os.path.exists(subtitle_path):
+    # 处理字幕 - 修复字幕开关bug
+    if subtitle_enabled and subtitle_path and os.path.exists(subtitle_path):
+        logger.info("字幕已启用，开始处理字幕文件")
         try:
             # 加载字幕文件
             sub = SubtitlesClip(
-                subtitles=subtitle_path, 
-                encoding="utf-8", 
+                subtitles=subtitle_path,
+                encoding="utf-8",
                 make_textclip=make_textclip
             )
-            
+
             # 创建每个字幕片段
             text_clips = []
             for item in sub.subtitles:
                 clip = create_text_clip(subtitle_item=item)
                 text_clips.append(clip)
-                
+
             # 合成视频和字幕
             video_clip = CompositeVideoClip([video_clip, *text_clips])
             logger.info(f"已添加{len(text_clips)}个字幕片段")
         except Exception as e:
             logger.error(f"处理字幕失败: \n{traceback.format_exc()}")
+    elif not subtitle_enabled:
+        logger.info("字幕已禁用，跳过字幕处理")
+    elif not subtitle_path:
+        logger.info("未提供字幕文件路径，跳过字幕处理")
+    elif not os.path.exists(subtitle_path):
+        logger.warning(f"字幕文件不存在: {subtitle_path}，跳过字幕处理")
     
     # 导出最终视频
     try:
@@ -372,6 +404,7 @@ if __name__ == '__main__':
         'bgm_volume': 0.1,              # 背景音乐音量
         'original_audio_volume': 1.0,   # 视频原声音量，0表示不保留
         'keep_original_audio': True,    # 是否保留原声
+        'subtitle_enabled': True,       # 是否启用字幕 - 修复字幕开关bug
         'subtitle_font': 'MicrosoftYaHeiNormal.ttc',  # 这里使用相对字体路径，会自动在 font_dir() 目录下查找
         'subtitle_font_size': 40,
         'subtitle_color': '#FFFFFF',

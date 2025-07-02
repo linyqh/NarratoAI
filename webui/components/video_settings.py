@@ -1,5 +1,5 @@
 import streamlit as st
-from app.models.schema import VideoClipParams, VideoAspect
+from app.models.schema import VideoClipParams, VideoAspect, AudioVolumeDefaults
 
 
 def render_video_panel(tr):
@@ -41,12 +41,12 @@ def render_video_config(tr, params):
     )
     st.session_state['video_quality'] = video_qualities[quality_index][1]
 
-    # 原声音量
+    # 原声音量 - 使用统一的默认值
     params.original_volume = st.slider(
         tr("Original Volume"),
-        min_value=0.0,
-        max_value=1.0,
-        value=0.7,
+        min_value=AudioVolumeDefaults.MIN_VOLUME,
+        max_value=AudioVolumeDefaults.MAX_VOLUME,
+        value=AudioVolumeDefaults.ORIGINAL_VOLUME,
         step=0.01,
         help=tr("Adjust the volume of the original audio")
     )
@@ -58,5 +58,5 @@ def get_video_params():
     return {
         'video_aspect': st.session_state.get('video_aspect', VideoAspect.portrait.value),
         'video_quality': st.session_state.get('video_quality', '1080p'),
-        'original_volume': st.session_state.get('original_volume', 0.7)
+        'original_volume': st.session_state.get('original_volume', AudioVolumeDefaults.ORIGINAL_VOLUME)
     }

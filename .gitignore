@@ -34,3 +34,6 @@ resource/srt/*.srt
 app/models/faster-whisper-large-v2/*
 app/models/faster-whisper-large-v3/*
 app/models/bert/*
+
+bug清单.md
+task.md

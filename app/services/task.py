@@ -315,6 +315,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         'bgm_volume': params.bgm_volume,  # 背景音乐音量
         'original_audio_volume': params.original_volume,  # 视频原声音量，0表示不保留
         'keep_original_audio': True,  # 是否保留原声
+        'subtitle_enabled': params.subtitle_enabled,  # 是否启用字幕 - 修复字幕开关bug
         'subtitle_font': params.font_name,  # 这里使用相对字体路径，会自动在 font_dir() 目录下查找
         'subtitle_font_size': params.font_size,
         'subtitle_color': params.text_fore_color,

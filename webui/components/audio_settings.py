@@ -3,6 +3,7 @@ import os
 from uuid import uuid4
 from app.config import config
 from app.services import voice
+from app.models.schema import AudioVolumeDefaults
 from app.utils import utils
 from webui.utils.cache import get_songs_cache
 
@@ -94,12 +95,12 @@ def render_azure_v2_settings(tr):
 
 def render_voice_parameters(tr):
     """渲染语音参数设置"""
-    # 音量
+    # 音量 - 使用统一的默认值
     voice_volume = st.slider(
         tr("Speech Volume"),
-        min_value=0.0,
-        max_value=1.0,
-        value=1.0,
+        min_value=AudioVolumeDefaults.MIN_VOLUME,
+        max_value=AudioVolumeDefaults.MAX_VOLUME,
+        value=AudioVolumeDefaults.VOICE_VOLUME,
         step=0.01,
         help=tr("Adjust the volume of the original audio")
     )
@@ -187,12 +188,12 @@ def render_bgm_settings(tr):
         if custom_bgm_file and os.path.exists(custom_bgm_file):
             st.session_state['bgm_file'] = custom_bgm_file
 
-    # 背景音乐音量
+    # 背景音乐音量 - 使用统一的默认值
     bgm_volume = st.slider(
         tr("Background Music Volume"),
-        min_value=0.0,
-        max_value=1.0,
-        value=0.3,
+        min_value=AudioVolumeDefaults.MIN_VOLUME,
+        max_value=AudioVolumeDefaults.MAX_VOLUME,
+        value=AudioVolumeDefaults.BGM_VOLUME,
         step=0.01,
         help=tr("Adjust the volume of the original audio")
     )
@@ -203,10 +204,10 @@ def get_audio_params():
     """获取音频参数"""
     return {
         'voice_name': config.ui.get("voice_name", ""),
-        'voice_volume': st.session_state.get('voice_volume', 1.0),
+        'voice_volume': st.session_state.get('voice_volume', AudioVolumeDefaults.VOICE_VOLUME),
         'voice_rate': st.session_state.get('voice_rate', 1.0),
         'voice_pitch': st.session_state.get('voice_pitch', 1.0),
         'bgm_type': st.session_state.get('bgm_type', 'random'),
         'bgm_file': st.session_state.get('bgm_file', ''),
-        'bgm_volume': st.session_state.get('bgm_volume', 0.3),
+        'bgm_volume': st.session_state.get('bgm_volume', AudioVolumeDefaults.BGM_VOLUME),
     }
