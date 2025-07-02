@@ -205,7 +205,8 @@ def generate_video_v3(
         bgm_path: Optional[str] = None,
         narration_path: Optional[str] = None,
         output_path: str = "output.mp4",
-        font_path: Optional[str] = None
+        font_path: Optional[str] = None,
+        subtitle_enabled: bool = True
 ) -> None:
     """
     合并视频素材，包括视频、字幕、BGM和解说音频
@@ -220,6 +221,7 @@ def generate_video_v3(
             - original: 原声音量（0-1），默认1.0
             - bgm: BGM音量（0-1），默认0.3
             - narration: 解说音量（0-1），默认1.0
+        subtitle_enabled: 是否启用字幕，默认True
         subtitle_style: 字幕样式配置字典，可包含以下键：
             - font: 字体名称
             - fontsize: 字体大小
@@ -239,8 +241,8 @@ def generate_video_v3(
     video = VideoFileClip(video_path)
     subtitle_clips = []
 
-    # 处理字幕（如果提供）
-    if subtitle_path:
+    # 处理字幕（如果启用且提供）- 修复字幕开关bug
+    if subtitle_enabled and subtitle_path:
         if os.path.exists(subtitle_path):
             # 检查字体文件
             if font_path and not os.path.exists(font_path):
@@ -308,7 +310,11 @@ def generate_video_v3(
             except Exception as e:
                 logger.info(f"警告：处理字幕文件时出错: {str(e)}")
         else:
-            logger.info(f"提示：字幕文件不存在: {subtitle_path}")
+            logger.warning(f"字幕文件不存在: {subtitle_path}")
+    elif not subtitle_enabled:
+        logger.info("字幕已禁用，跳过字幕处理")
+    elif not subtitle_path:
+        logger.info("未提供字幕文件路径，跳过字幕处理")
 
     # 合并音频
     audio_clips = []
