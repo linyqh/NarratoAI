@@ -85,6 +85,233 @@ def check_hardware_acceleration() -> Optional[str]:
     return ffmpeg_utils.get_ffmpeg_hwaccel_type()
 
 
+def get_safe_encoder_config(hwaccel_type: Optional[str] = None) -> Dict[str, str]:
+    """
+    获取安全的编码器配置，针对Windows平台优化
+    
+    Args:
+        hwaccel_type: 硬件加速类型
+        
+    Returns:
+        Dict[str, str]: 编码器配置字典
+    """
+    config = {
+        "video_codec": "libx264",
+        "audio_codec": "aac",
+        "pixel_format": "yuv420p",
+        "preset": "fast",
+        "crf": "23"
+    }
+    
+    # 根据硬件加速类型调整配置
+    if hwaccel_type == "cuda":
+        config["video_codec"] = "h264_nvenc"
+        config["preset"] = "fast"
+        config["pixel_format"] = "yuv420p"
+    elif hwaccel_type == "qsv":
+        config["video_codec"] = "h264_qsv"
+        config["preset"] = "fast"
+    elif hwaccel_type == "d3d11va" or hwaccel_type == "dxva2":
+        # Windows平台的硬件解码，但使用软件编码
+        config["video_codec"] = "libx264"
+        config["preset"] = "fast"
+    elif hwaccel_type == "videotoolbox":
+        config["video_codec"] = "h264_videotoolbox"
+    
+    return config
+
+
+def build_ffmpeg_command(
+    input_path: str, 
+    output_path: str, 
+    start_time: str, 
+    end_time: str,
+    encoder_config: Dict[str, str],
+    hwaccel_args: List[str] = None
+) -> List[str]:
+    """
+    构建优化的ffmpeg命令
+    
+    Args:
+        input_path: 输入视频路径
+        output_path: 输出视频路径
+        start_time: 开始时间
+        end_time: 结束时间
+        encoder_config: 编码器配置
+        hwaccel_args: 硬件加速参数
+        
+    Returns:
+        List[str]: ffmpeg命令列表
+    """
+    cmd = ["ffmpeg", "-y"]
+    
+    # 添加硬件加速参数（如果有）
+    if hwaccel_args:
+        cmd.extend(hwaccel_args)
+    
+    # 输入文件
+    cmd.extend(["-i", input_path])
+    
+    # 时间范围
+    cmd.extend(["-ss", start_time, "-to", end_time])
+    
+    # 编码器设置
+    cmd.extend(["-c:v", encoder_config["video_codec"]])
+    cmd.extend(["-c:a", encoder_config["audio_codec"]])
+    
+    # 像素格式（关键：避免滤镜链问题）
+    cmd.extend(["-pix_fmt", encoder_config["pixel_format"]])
+    
+    # 编码质量设置
+    if encoder_config["video_codec"] == "libx264":
+        cmd.extend(["-preset", encoder_config["preset"]])
+        cmd.extend(["-crf", encoder_config["crf"]])
+    elif encoder_config["video_codec"] == "h264_nvenc":
+        cmd.extend(["-preset", encoder_config["preset"]])
+        cmd.extend(["-rc", "vbr", "-cq", encoder_config["crf"]])
+    elif encoder_config["video_codec"] == "h264_qsv":
+        cmd.extend(["-preset", encoder_config["preset"]])
+        cmd.extend(["-global_quality", encoder_config["crf"]])
+    
+    # 音频设置
+    cmd.extend(["-ar", "44100", "-ac", "2"])
+    
+    # 避免滤镜链问题的关键参数
+    cmd.extend(["-avoid_negative_ts", "make_zero"])
+    
+    # 输出文件
+    cmd.append(output_path)
+    
+    return cmd
+
+
+def execute_ffmpeg_with_fallback(
+    cmd: List[str], 
+    timestamp: str,
+    input_path: str,
+    output_path: str,
+    start_time: str,
+    end_time: str
+) -> bool:
+    """
+    执行ffmpeg命令，带有fallback机制
+    
+    Args:
+        cmd: 主要的ffmpeg命令
+        timestamp: 时间戳（用于日志）
+        input_path: 输入路径
+        output_path: 输出路径
+        start_time: 开始时间
+        end_time: 结束时间
+        
+    Returns:
+        bool: 是否成功
+    """
+    try:
+        logger.debug(f"执行ffmpeg命令: {' '.join(cmd)}")
+        
+        # 在Windows系统上使用UTF-8编码处理输出
+        is_windows = os.name == 'nt'
+        process_kwargs = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+            "check": True
+        }
+        
+        if is_windows:
+            process_kwargs["encoding"] = 'utf-8'
+        
+        subprocess.run(cmd, **process_kwargs)
+        
+        # 验证输出文件
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            logger.info(f"视频裁剪成功: {timestamp}")
+            return True
+        else:
+            logger.warning(f"输出文件无效: {output_path}")
+            return False
+            
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr if e.stderr else str(e)
+        logger.warning(f"主要命令失败: {error_msg}")
+        
+        # 尝试fallback命令（纯软件编码）
+        logger.info(f"尝试fallback方案: {timestamp}")
+        return try_fallback_encoding(input_path, output_path, start_time, end_time, timestamp)
+    except Exception as e:
+        logger.error(f"执行ffmpeg命令时发生异常: {str(e)}")
+        return False
+
+
+def try_fallback_encoding(
+    input_path: str,
+    output_path: str,
+    start_time: str,
+    end_time: str,
+    timestamp: str
+) -> bool:
+    """
+    尝试fallback编码方案（纯软件编码）
+    
+    Args:
+        input_path: 输入路径
+        output_path: 输出路径
+        start_time: 开始时间
+        end_time: 结束时间
+        timestamp: 时间戳
+        
+    Returns:
+        bool: 是否成功
+    """
+    # 最简单的软件编码命令
+    fallback_cmd = [
+        "ffmpeg", "-y",
+        "-i", input_path,
+        "-ss", start_time,
+        "-to", end_time,
+        "-c:v", "libx264",
+        "-c:a", "aac",
+        "-pix_fmt", "yuv420p",
+        "-preset", "ultrafast",  # 最快速度
+        "-crf", "28",  # 稍微降低质量以提高兼容性
+        "-avoid_negative_ts", "make_zero",
+        "-movflags", "+faststart",
+        output_path
+    ]
+    
+    try:
+        logger.debug(f"执行fallback命令: {' '.join(fallback_cmd)}")
+        
+        is_windows = os.name == 'nt'
+        process_kwargs = {
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+            "check": True
+        }
+        
+        if is_windows:
+            process_kwargs["encoding"] = 'utf-8'
+        
+        subprocess.run(fallback_cmd, **process_kwargs)
+        
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            logger.info(f"Fallback编码成功: {timestamp}")
+            return True
+        else:
+            logger.error(f"Fallback编码失败，输出文件无效: {output_path}")
+            return False
+            
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr if e.stderr else str(e)
+        logger.error(f"Fallback编码也失败: {error_msg}")
+        return False
+    except Exception as e:
+        logger.error(f"Fallback编码异常: {str(e)}")
+        return False
+
+
 def clip_video(
         video_origin_path: str,
         tts_result: List[Dict],
@@ -92,7 +319,7 @@ def clip_video(
         task_id: Optional[str] = None
 ) -> Dict[str, str]:
     """
-    根据时间戳裁剪视频
+    根据时间戳裁剪视频 - 优化版本，增强Windows兼容性和错误处理
 
     Args:
         video_origin_path: 原始视频的路径
@@ -123,13 +350,22 @@ def clip_video(
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # 获取硬件加速支持
-    hwaccel = check_hardware_acceleration()
+    hwaccel_type = check_hardware_acceleration()
     hwaccel_args = []
-    if hwaccel:
+    
+    if hwaccel_type:
         hwaccel_args = ffmpeg_utils.get_ffmpeg_hwaccel_args()
+        logger.info(f"使用硬件加速: {hwaccel_type}")
+    else:
+        logger.info("使用软件编码")
+
+    # 获取编码器配置
+    encoder_config = get_safe_encoder_config(hwaccel_type)
+    logger.debug(f"编码器配置: {encoder_config}")
 
     # 存储裁剪结果
     result = {}
+    failed_clips = []
 
     for item in tts_result:
         _id = item.get("_id", item.get("timestamp", "unknown"))
@@ -151,49 +387,40 @@ def clip_video(
         output_path = os.path.join(output_dir, output_filename)
 
         # 构建FFmpeg命令
-        ffmpeg_cmd = [
-            "ffmpeg", "-y", *hwaccel_args,
-            "-i", video_origin_path,
-            "-ss", ffmpeg_start_time,
-            "-to", ffmpeg_end_time,
-            "-c:v", "h264_videotoolbox" if hwaccel == "videotoolbox" else "libx264",
-            "-c:a", "aac",
-            "-strict", "experimental",
-            output_path
-        ]
+        ffmpeg_cmd = build_ffmpeg_command(
+            video_origin_path, 
+            output_path, 
+            ffmpeg_start_time, 
+            ffmpeg_end_time,
+            encoder_config,
+            hwaccel_args
+        )
 
         # 执行FFmpeg命令
-        try:
-            logger.info(f"裁剪视频片段: {timestamp} -> {ffmpeg_start_time}到{ffmpeg_end_time}")
-            # logger.debug(f"执行命令: {' '.join(ffmpeg_cmd)}")
-
-            # 在Windows系统上使用UTF-8编码处理输出，避免GBK编码错误
-            is_windows = os.name == 'nt'
-            if is_windows:
-                process = subprocess.run(
-                    ffmpeg_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    encoding='utf-8',  # 明确指定编码为UTF-8
-                    text=True,
-                    check=True
-                )
-            else:
-                process = subprocess.run(
-                    ffmpeg_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    check=True
-                )
-
+        logger.info(f"裁剪视频片段: {timestamp} -> {ffmpeg_start_time}到{ffmpeg_end_time}")
+        
+        success = execute_ffmpeg_with_fallback(
+            ffmpeg_cmd, 
+            timestamp,
+            video_origin_path,
+            output_path,
+            ffmpeg_start_time,
+            ffmpeg_end_time
+        )
+        
+        if success:
             result[_id] = output_path
-
-        except subprocess.CalledProcessError as e:
+        else:
+            failed_clips.append(timestamp)
             logger.error(f"裁剪视频片段失败: {timestamp}")
-            logger.error(f"错误信息: {e.stderr}")
-            raise RuntimeError(f"视频裁剪失败: {e.stderr}")
 
+    # 检查是否有失败的片段
+    if failed_clips:
+        logger.warning(f"以下片段裁剪失败: {failed_clips}")
+        if len(failed_clips) == len(tts_result):
+            raise RuntimeError("所有视频片段裁剪都失败了，请检查视频文件和ffmpeg配置")
+
+    logger.info(f"视频裁剪完成，成功: {len(result)}, 失败: {len(failed_clips)}")
     return result
 
 
