@@ -19,6 +19,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_API_ENDPOINT: https://api.groq.com/openai/v1
-          MODEL: llama-3.1-70b-versatile
+          OPENAI_API_ENDPOINT: https://api.siliconflow.cn/v1
+          MODEL: deepseek-ai/DeepSeek-V3
           LANGUAGE: Chinese

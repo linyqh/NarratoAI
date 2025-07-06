@@ -1,7 +1,10 @@
+import traceback
+
 import streamlit as st
 import os
 from app.config import config
 from app.utils import utils
+from loguru import logger
 
 
 def render_basic_settings(tr):
@@ -61,25 +64,25 @@ def render_proxy_settings(tr):
     proxy_enabled = st.checkbox(tr("Enable Proxy"), value=proxy_enabled)
     
     # 保存代理开关状态
-    config.proxy["enabled"] = proxy_enabled
+    # config.proxy["enabled"] = proxy_enabled
 
     # 只有在代理启用时才显示代理设置输入框
     if proxy_enabled:
         HTTP_PROXY = st.text_input(tr("HTTP_PROXY"), value=proxy_url_http)
         HTTPS_PROXY = st.text_input(tr("HTTPs_PROXY"), value=proxy_url_https)
 
-        if HTTP_PROXY:
+        if HTTP_PROXY and HTTPS_PROXY:
             config.proxy["http"] = HTTP_PROXY
-            os.environ["HTTP_PROXY"] = HTTP_PROXY
-        if HTTPS_PROXY:
             config.proxy["https"] = HTTPS_PROXY
+            os.environ["HTTP_PROXY"] = HTTP_PROXY
             os.environ["HTTPS_PROXY"] = HTTPS_PROXY
+            # logger.debug(f"代理已启用: {HTTP_PROXY}")
     else:
         # 当代理被禁用时，清除环境变量和配置
         os.environ.pop("HTTP_PROXY", None)
         os.environ.pop("HTTPS_PROXY", None)
-        config.proxy["http"] = ""
-        config.proxy["https"] = ""
+        # config.proxy["http"] = ""
+        # config.proxy["https"] = ""
 
 
 def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
@@ -105,29 +108,6 @@ def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
             return True, tr("gemini model is available")
         except Exception as e:
             return False, f"{tr('gemini model is not available')}: {str(e)}"
-
-    elif provider.lower() == 'qwenvl':
-        from openai import OpenAI
-        try:
-            client = OpenAI(
-                api_key=api_key,
-                base_url=base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"
-            )
-            
-            # 发送一个简单的测试请求
-            response = client.chat.completions.create(
-                model=model_name or "qwen-vl-max-latest",
-                messages=[{"role": "user", "content": "直接回复我文本'当前网络可用'"}]
-            )
-            
-            if response and response.choices:
-                return True, tr("QwenVL model is available")
-            else:
-                return False, tr("QwenVL model returned invalid response")
-                
-        except Exception as e:
-            return False, f"{tr('QwenVL model is not available')}: {str(e)}"
-            
     elif provider.lower() == 'narratoapi':
         import requests
         try:
@@ -145,9 +125,46 @@ def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
                 return False, f"{tr('NarratoAPI is not available')}: HTTP {response.status_code}"
         except Exception as e:
             return False, f"{tr('NarratoAPI is not available')}: {str(e)}"
-            
+
     else:
-        return False, f"{tr('Unsupported provider')}: {provider}"
+        from openai import OpenAI
+        try:
+            client = OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+            )
+
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": [{"type": "text", "text": "You are a helpful assistant."}],
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20241022/emyrja/dog_and_girl.jpeg"
+                                },
+                            },
+                            {"type": "text", "text": "回复我网络可用即可"},
+                        ],
+                    },
+                ],
+            )
+            if response and response.choices:
+                return True, tr("QwenVL model is available")
+            else:
+                return False, tr("QwenVL model returned invalid response")
+
+        except Exception as e:
+            # logger.debug(api_key)
+            # logger.debug(base_url)
+            # logger.debug(model_name)
+            return False, f"{tr('QwenVL model is not available')}: {str(e)}"
 
 
 def render_vision_llm_settings(tr):
@@ -155,7 +172,7 @@ def render_vision_llm_settings(tr):
     st.subheader(tr("Vision Model Settings"))
 
     # 视频分析模型提供商选择
-    vision_providers = ['Gemini', 'QwenVL', 'NarratoAPI(待发布)']
+    vision_providers = ['Siliconflow', 'Gemini', 'QwenVL', 'OpenAI']
     saved_vision_provider = config.app.get("vision_llm_provider", "Gemini").lower()
     saved_provider_index = 0
 
@@ -191,8 +208,8 @@ def render_vision_llm_settings(tr):
         )
         st_vision_model_name = st.text_input(
             tr("Vision Model Name"), 
-            value=vision_model_name or "gemini-1.5-flash",
-            help=tr("Default: gemini-1.5-flash")
+            value=vision_model_name or "gemini-2.0-flash-lite",
+            help=tr("Default: gemini-2.0-flash-lite")
         )
     elif vision_provider == 'qwenvl':
         st_vision_base_url = st.text_input(
@@ -258,53 +275,45 @@ def test_text_model_connection(api_key, base_url, model_name, provider, tr):
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
-        
-        # 如果没有指定base_url，使用默认值
-        if not base_url:
-            if provider.lower() == 'openai':
-                base_url = "https://api.openai.com/v1"
-            elif provider.lower() == 'moonshot':
-                base_url = "https://api.moonshot.cn/v1"
-            elif provider.lower() == 'deepseek':
-                base_url = "https://api.deepseek.com/v1"
-                
-        # 构建测试URL
-        test_url = f"{base_url.rstrip('/')}/chat/completions"
-        
+
         # 特殊处理Gemini
         if provider.lower() == 'gemini':
             import google.generativeai as genai
             try:
                 genai.configure(api_key=api_key)
-                model = genai.GenerativeModel(model_name or 'gemini-pro')
+                model = genai.GenerativeModel(model_name)
                 model.generate_content("直接回复我文本'当前网络可用'")
                 return True, tr("Gemini model is available")
             except Exception as e:
                 return False, f"{tr('Gemini model is not available')}: {str(e)}"
-        
-        # 构建测试消息
-        test_data = {
-            "model": model_name,
-            "messages": [
-                {"role": "user", "content": "直接回复我文本'当前网络可用'"}
-            ],
-            "max_tokens": 10
-        }
-        
-        # 发送测试请求
-        response = requests.post(
-            test_url,
-            headers=headers,
-            json=test_data,
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            return True, tr("Text model is available")
         else:
-            return False, f"{tr('Text model is not available')}: HTTP {response.status_code}"
+            test_url = f"{base_url.rstrip('/')}/chat/completions"
+
+            # 构建测试消息
+            test_data = {
+                "model": model_name,
+                "messages": [
+                    {"role": "user", "content": "直接回复我文本'当前网络可用'"}
+                ],
+                "stream": False
+            }
+
+            # 发送测试请求
+            response = requests.post(
+                test_url,
+                headers=headers,
+                json=test_data,
+            )
+            # logger.debug(model_name)
+            # logger.debug(api_key)
+            # logger.debug(test_url)
+            if response.status_code == 200:
+                return True, tr("Text model is available")
+            else:
+                return False, f"{tr('Text model is not available')}: HTTP {response.status_code}"
             
     except Exception as e:
+        logger.error(traceback.format_exc())
         return False, f"{tr('Connection failed')}: {str(e)}"
 
 
@@ -313,8 +322,8 @@ def render_text_llm_settings(tr):
     st.subheader(tr("Text Generation Model Settings"))
 
     # 文案生成模型提供商选择
-    text_providers = ['DeepSeek', 'OpenAI', 'Qwen', 'Moonshot', 'Gemini']
-    saved_text_provider = config.app.get("text_llm_provider", "DeepSeek").lower()
+    text_providers = ['OpenAI', 'Siliconflow', 'DeepSeek', 'Gemini', 'Qwen', 'Moonshot']
+    saved_text_provider = config.app.get("text_llm_provider", "OpenAI").lower()
     saved_provider_index = 0
 
     for i, provider in enumerate(text_providers):
@@ -331,9 +340,9 @@ def render_text_llm_settings(tr):
     config.app["text_llm_provider"] = text_provider
 
     # 获取已保存的文本模型配置
-    text_api_key = config.app.get(f"text_{text_provider}_api_key", "")
-    text_base_url = config.app.get(f"text_{text_provider}_base_url", "")
-    text_model_name = config.app.get(f"text_{text_provider}_model_name", "")
+    text_api_key = config.app.get(f"text_{text_provider}_api_key")
+    text_base_url = config.app.get(f"text_{text_provider}_base_url")
+    text_model_name = config.app.get(f"text_{text_provider}_model_name")
 
     # 渲染文本模型配置输入框
     st_text_api_key = st.text_input(tr("Text API Key"), value=text_api_key, type="password")
@@ -364,11 +373,11 @@ def render_text_llm_settings(tr):
     if st_text_model_name:
         config.app[f"text_{text_provider}_model_name"] = st_text_model_name
 
-    # Cloudflare 特殊配置
-    if text_provider == 'cloudflare':
-        st_account_id = st.text_input(
-            tr("Account ID"),
-            value=config.app.get(f"text_{text_provider}_account_id", "")
-        )
-        if st_account_id:
-            config.app[f"text_{text_provider}_account_id"] = st_account_id
+    # # Cloudflare 特殊配置
+    # if text_provider == 'cloudflare':
+    #     st_account_id = st.text_input(
+    #         tr("Account ID"),
+    #         value=config.app.get(f"text_{text_provider}_account_id", "")
+    #     )
+    #     if st_account_id:
+    #         config.app[f"text_{text_provider}_account_id"] = st_account_id

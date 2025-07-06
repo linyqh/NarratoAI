@@ -6,6 +6,19 @@ from loguru import logger
 
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 config_file = f"{root_dir}/config.toml"
+version_file = f"{root_dir}/project_version"
+
+
+def get_version_from_file():
+    """从project_version文件中读取版本号"""
+    try:
+        if os.path.isfile(version_file):
+            with open(version_file, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        return "0.1.0"  # 默认版本号
+    except Exception as e:
+        logger.error(f"读取版本号文件失败: {str(e)}")
+        return "0.1.0"  # 默认版本号
 
 
 def load_config():
@@ -57,7 +70,8 @@ project_description = _cfg.get(
     "project_description",
     "<a href='https://github.com/linyqh/NarratoAI'>https://github.com/linyqh/NarratoAI</a>",
 )
-project_version = _cfg.get("app", {}).get("project_version")
+# 从文件读取版本号，而不是从配置文件中获取
+project_version = get_version_from_file()
 reload_debug = False
 
 imagemagick_path = app.get("imagemagick_path", "")

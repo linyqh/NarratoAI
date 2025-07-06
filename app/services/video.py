@@ -1,13 +1,13 @@
 import traceback
 
-import pysrt
+# import pysrt
 from typing import Optional
 from typing import List
 from loguru import logger
-from moviepy.editor import *
+from moviepy import *
 from PIL import ImageFont
 from contextlib import contextmanager
-from moviepy.editor import (
+from moviepy import (
     VideoFileClip,
     AudioFileClip,
     TextClip,
@@ -103,86 +103,6 @@ def manage_clip(clip):
     finally:
         clip.close()
         del clip
-
-
-def combine_clip_videos(combined_video_path: str,
-                        video_paths: List[str],
-                        video_ost_list: List[int],
-                        list_script: list,
-                        video_aspect: VideoAspect = VideoAspect.portrait,
-                        threads: int = 2,
-                        ) -> str:
-    """
-    合并子视频
-    Args:
-        combined_video_path: 合并后的存储路径
-        video_paths: 子视频路径列表
-        video_ost_list: 原声播放列表 (0: 不保留原声, 1: 只保留原声, 2: 保留原声并保留解说)
-        list_script: 剪辑脚本
-        video_aspect: 屏幕比例
-        threads: 线程数
-
-    Returns:
-        str: 合并后的视频路径
-    """
-    from app.utils.utils import calculate_total_duration
-    audio_duration = calculate_total_duration(list_script)
-    logger.info(f"音频的最大持续时间: {audio_duration} s")
-
-    output_dir = os.path.dirname(combined_video_path)
-    aspect = VideoAspect(video_aspect)
-    video_width, video_height = aspect.to_resolution()
-
-    clips = []
-    for video_path, video_ost in zip(video_paths, video_ost_list):
-        try:
-            clip = VideoFileClip(video_path)
-
-            if video_ost == 0:  # 不保留原声
-                clip = clip.without_audio()
-            # video_ost 为 1 或 2 时都保留原声，不需要特殊处理
-
-            clip = clip.set_fps(30)
-
-            # 处理视频尺寸
-            clip_w, clip_h = clip.size
-            if clip_w != video_width or clip_h != video_height:
-                clip = resize_video_with_padding(
-                    clip,
-                    target_width=video_width,
-                    target_height=video_height
-                )
-                logger.info(f"视频 {video_path} 已调整尺寸为 {video_width} x {video_height}")
-
-            clips.append(clip)
-
-        except Exception as e:
-            logger.error(f"处理视频 {video_path} 时出错: {str(e)}")
-            continue
-
-    if not clips:
-        raise ValueError("没有有效的视频片段可以合并")
-
-    try:
-        video_clip = concatenate_videoclips(clips)
-        video_clip = video_clip.set_fps(30)
-
-        logger.info("开始合并视频... (过程中出现 UserWarning: 不必理会)")
-        video_clip.write_videofile(
-            filename=combined_video_path,
-            threads=threads,
-            audio_codec="aac",
-            fps=30,
-            temp_audiofile=os.path.join(output_dir, "temp-audio.m4a")
-        )
-    finally:
-        # 确保资源被正确放
-        video_clip.close()
-        for clip in clips:
-            clip.close()
-
-    logger.success("视频合并完成")
-    return combined_video_path
 
 
 def resize_video_with_padding(clip, target_width: int, target_height: int):
@@ -285,7 +205,8 @@ def generate_video_v3(
         bgm_path: Optional[str] = None,
         narration_path: Optional[str] = None,
         output_path: str = "output.mp4",
-        font_path: Optional[str] = None
+        font_path: Optional[str] = None,
+        subtitle_enabled: bool = True
 ) -> None:
     """
     合并视频素材，包括视频、字幕、BGM和解说音频
@@ -300,6 +221,7 @@ def generate_video_v3(
             - original: 原声音量（0-1），默认1.0
             - bgm: BGM音量（0-1），默认0.3
             - narration: 解说音量（0-1），默认1.0
+        subtitle_enabled: 是否启用字幕，默认True
         subtitle_style: 字幕样式配置字典，可包含以下键：
             - font: 字体名称
             - fontsize: 字体大小
@@ -319,8 +241,8 @@ def generate_video_v3(
     video = VideoFileClip(video_path)
     subtitle_clips = []
 
-    # 处理字幕（如果提供）
-    if subtitle_path:
+    # 处理字幕（如果启用且提供）- 修复字幕开关bug
+    if subtitle_enabled and subtitle_path:
         if os.path.exists(subtitle_path):
             # 检查字体文件
             if font_path and not os.path.exists(font_path):
@@ -388,30 +310,45 @@ def generate_video_v3(
             except Exception as e:
                 logger.info(f"警告：处理字幕文件时出错: {str(e)}")
         else:
-            logger.info(f"提示：字幕文件不存在: {subtitle_path}")
+            logger.warning(f"字幕文件不存在: {subtitle_path}")
+    elif not subtitle_enabled:
+        logger.info("字幕已禁用，跳过字幕处理")
+    elif not subtitle_path:
+        logger.info("未提供字幕文件路径，跳过字幕处理")
 
     # 合并音频
     audio_clips = []
 
     # 添加原声（设置音量）
-    logger.debug(f"音量配置: {volume_config}")
+    logger.info(f"音量配置详情: {volume_config}")
     if video.audio is not None:
-        original_audio = video.audio.volumex(volume_config['original'])
+        original_volume = volume_config['original']
+        logger.info(f"应用原声音量: {original_volume}")
+        original_audio = video.audio.volumex(original_volume)
         audio_clips.append(original_audio)
+        logger.info("原声音频已添加到合成列表")
+    else:
+        logger.warning("视频没有音轨，无法添加原声")
 
     # 添加BGM（如果提供）
     if bgm_path:
+        logger.info(f"添加背景音乐: {bgm_path}")
         bgm = AudioFileClip(bgm_path)
         if bgm.duration < video.duration:
             bgm = loop_audio_clip(bgm, video.duration)
         else:
             bgm = bgm.subclip(0, video.duration)
-        bgm = bgm.volumex(volume_config['bgm'])
+        bgm_volume = volume_config['bgm']
+        logger.info(f"应用BGM音量: {bgm_volume}")
+        bgm = bgm.volumex(bgm_volume)
         audio_clips.append(bgm)
 
     # 添加解说音频（如果提供）
     if narration_path:
-        narration = AudioFileClip(narration_path).volumex(volume_config['narration'])
+        logger.info(f"添加解说音频: {narration_path}")
+        narration_volume = volume_config['narration']
+        logger.info(f"应用解说音量: {narration_volume}")
+        narration = AudioFileClip(narration_path).volumex(narration_volume)
         audio_clips.append(narration)
 
     # 合成最终视频（包含字幕）
@@ -422,18 +359,53 @@ def generate_video_v3(
         final_video = video
 
     if audio_clips:
+        logger.info(f"合成音频轨道，共 {len(audio_clips)} 个音频片段")
         final_audio = CompositeAudioClip(audio_clips)
         final_video = final_video.set_audio(final_audio)
+        logger.info("音频合成完成")
+    else:
+        logger.warning("没有音频轨道需要合成")
 
-    # 导出视频
-    logger.info("开始导出视频...")  # 调试信息
-    final_video.write_videofile(
-        output_path,
-        codec='libx264',
-        audio_codec='aac',
-        fps=video.fps
-    )
-    logger.info(f"视频已导出到: {output_path}")  # 调试信息
+    # 导出视频 - 使用优化的编码器
+    logger.info("开始导出视频...")
+
+    # 获取最优编码器
+    from app.utils import ffmpeg_utils
+    optimal_encoder = ffmpeg_utils.get_optimal_ffmpeg_encoder()
+
+    # 根据编码器类型设置参数
+    ffmpeg_params = []
+    if "nvenc" in optimal_encoder:
+        ffmpeg_params = ['-preset', 'medium', '-profile:v', 'high']
+    elif "videotoolbox" in optimal_encoder:
+        ffmpeg_params = ['-profile:v', 'high']
+    elif "qsv" in optimal_encoder:
+        ffmpeg_params = ['-preset', 'medium']
+    elif "vaapi" in optimal_encoder:
+        ffmpeg_params = ['-profile', '100']
+    elif optimal_encoder == "libx264":
+        ffmpeg_params = ['-preset', 'medium', '-crf', '23']
+
+    try:
+        final_video.write_videofile(
+            output_path,
+            codec=optimal_encoder,
+            audio_codec='aac',
+            fps=video.fps,
+            ffmpeg_params=ffmpeg_params
+        )
+        logger.info(f"视频已导出到: {output_path} (使用编码器: {optimal_encoder})")
+    except Exception as e:
+        logger.warning(f"使用 {optimal_encoder} 编码器失败: {str(e)}, 尝试软件编码")
+        # 降级到软件编码
+        final_video.write_videofile(
+            output_path,
+            codec='libx264',
+            audio_codec='aac',
+            fps=video.fps,
+            ffmpeg_params=['-preset', 'medium', '-crf', '23']
+        )
+        logger.info(f"视频已导出到: {output_path} (使用软件编码)")
 
     # 清理资源
     video.close()
@@ -443,4 +415,3 @@ def generate_video_v3(
         bgm.close()
     if narration_path:
         narration.close()
-

@@ -13,6 +13,7 @@ from app.config import config
 from app.models.exception import HttpException
 from app.router import root_api_router
 from app.utils import utils
+from app.utils import ffmpeg_utils
 
 
 def exception_handler(request: Request, e: HttpException):
@@ -80,3 +81,10 @@ def shutdown_event():
 @app.on_event("startup")
 def startup_event():
     logger.info("startup event")
+
+    # 检测FFmpeg硬件加速
+    hwaccel_info = ffmpeg_utils.detect_hardware_acceleration()
+    if hwaccel_info["available"]:
+        logger.info(f"FFmpeg硬件加速检测结果: 可用 | 类型: {hwaccel_info['type']} | 编码器: {hwaccel_info['encoder']} | 独立显卡: {hwaccel_info['is_dedicated_gpu']} | 参数: {hwaccel_info['hwaccel_args']}")
+    else:
+        logger.warning(f"FFmpeg硬件加速不可用: {hwaccel_info['message']}, 将使用CPU软件编码")

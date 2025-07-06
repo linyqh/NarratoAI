@@ -115,7 +115,6 @@
     "Text Generation Model Settings": "文案生成模型设置",
     "LLM Model Name": "大语言模型名称",
     "LLM Model API Key": "大语言模型 API 密钥",
-    "Batch Size": "批处理大小",
     "Text Model Provider": "文案生成模型提供商",
     "Text API Key": "文案生成 API 密钥",
     "Text Base URL": "文案生成接口地址",
@@ -144,7 +143,7 @@
     "Merge All Files": "合并所有文件",
     "Merge Function Not Implemented": "合并功能待实现",
     "No Matched Pairs Found": "未找到匹配的文件对",
-    "Missing Subtitle": "缺少对应的字幕文件",
+    "Missing Subtitle": "缺少对应的字幕文件, 请使用其他软件完成字幕转录，比如剪映等",
     "Missing Video": "缺少对应的视频文件",
     "All Uploaded Files": "所有上传的文件",
     "Order": "排序序号",
@@ -192,6 +191,11 @@
     "Generate Short Video Script": "AI生成短剧混剪脚本",
     "Adjust the volume of the original audio": "调整原始音频的音量",
     "Original Volume": "视频音量",
-    "Auto Generate": "纪录片解说 (画面解说)"
+    "Auto Generate": "纪录片解说 (画面解说)",
+    "Frame Interval (seconds)": "帧间隔 (秒)",
+    "Frame Interval (seconds) (More keyframes consume more tokens)": "帧间隔 (秒) (更多关键帧消耗更多令牌)",
+    "Batch Size": "批处理大小",
+    "Batch Size (More keyframes consume more tokens)": "批处理大小, 每批处理越少消耗 token 越多",
+    "Short Drama Summary": "短剧解说(仅支持 gemini-2.0-flash)"
   }
 }
