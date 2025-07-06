@@ -137,6 +137,9 @@ def process_single_video(
 ) -> str:
     """
     处理单个视频：调整分辨率、帧率等
+    
+    重要修复：避免在视频滤镜处理时使用CUDA硬件解码，
+    因为这会导致滤镜链格式转换错误。使用纯NVENC编码器获得最佳兼容性。
 
     Args:
         input_path: 输入视频路径
@@ -178,24 +181,11 @@ def process_single_video(
             logger.warning(f"视频探测出错，禁用硬件加速: {str(e)}")
             hwaccel = None
 
-    # 添加硬件加速参数（使用新的智能检测机制）
-    if hwaccel:
-        try:
-            # 使用新的硬件加速检测API
-            hwaccel_args = ffmpeg_utils.get_ffmpeg_hwaccel_args()
-            if hwaccel_args:
-                command.extend(hwaccel_args)
-                logger.debug(f"应用硬件加速参数: {hwaccel_args}")
-            else:
-                logger.info("硬件加速不可用，将使用软件编码")
-                hwaccel = False  # 标记为不使用硬件加速
-        except Exception as e:
-            logger.warning(f"应用硬件加速参数时出错: {str(e)}，将使用软件编码")
-            hwaccel = False  # 标记为不使用硬件加速
-            # 重置命令，移除可能添加了一半的硬件加速参数
-            command = ['ffmpeg', '-y']
-
-    # 输入文件
+    # 关键修复：对于涉及滤镜处理的场景，不使用CUDA硬件解码
+    # 这避免了 "Impossible to convert between the formats" 错误
+    # 我们将只使用纯NVENC编码器来获得硬件加速优势
+    
+    # 输入文件（不添加硬件解码参数）
     command.extend(['-i', input_path])
 
     # 处理音频
@@ -218,27 +208,36 @@ def process_single_video(
         '-r', '30',  # 设置帧率为30fps
     ])
 
-    # 选择编码器 - 使用新的智能编码器选择
-    encoder = ffmpeg_utils.get_optimal_ffmpeg_encoder()
-
-    if hwaccel and encoder != "libx264":
-        logger.info(f"使用硬件编码器: {encoder}")
-        command.extend(['-c:v', encoder])
-
-        # 根据编码器类型添加特定参数
-        if "nvenc" in encoder:
-            command.extend(['-preset', 'p4', '-profile:v', 'high'])
-        elif "videotoolbox" in encoder:
-            command.extend(['-profile:v', 'high'])
-        elif "qsv" in encoder:
-            command.extend(['-preset', 'medium'])
-        elif "vaapi" in encoder:
-            command.extend(['-profile', '100'])
-        elif "amf" in encoder:
-            command.extend(['-quality', 'balanced'])
-        else:
-            command.extend(['-preset', 'medium', '-profile:v', 'high'])
-    else:
+    # 关键修复：选择编码器时优先使用纯NVENC（无硬件解码）
+    if hwaccel:
+        try:
+            # 检查是否为NVIDIA硬件加速
+            hwaccel_info = ffmpeg_utils.detect_hardware_acceleration()
+            if hwaccel_info.get("type") in ["cuda", "nvenc"] and hwaccel_info.get("encoder") == "h264_nvenc":
+                # 使用纯NVENC编码器（最佳兼容性）
+                logger.info("使用纯NVENC编码器（避免滤镜链问题）")
+                command.extend(['-c:v', 'h264_nvenc'])
+                command.extend(['-preset', 'medium', '-cq', '23', '-profile:v', 'main'])
+            else:
+                # 其他硬件编码器
+                encoder = ffmpeg_utils.get_optimal_ffmpeg_encoder()
+                logger.info(f"使用硬件编码器: {encoder}")
+                command.extend(['-c:v', encoder])
+                
+                # 根据编码器类型添加特定参数
+                if "amf" in encoder:
+                    command.extend(['-quality', 'balanced'])
+                elif "qsv" in encoder:
+                    command.extend(['-preset', 'medium'])
+                elif "videotoolbox" in encoder:
+                    command.extend(['-profile:v', 'high'])
+                else:
+                    command.extend(['-preset', 'medium', '-profile:v', 'high'])
+        except Exception as e:
+            logger.warning(f"硬件编码器检测失败: {str(e)}，将使用软件编码")
+            hwaccel = None
+    
+    if not hwaccel:
         logger.info("使用软件编码器(libx264)")
         command.extend(['-c:v', 'libx264', '-preset', 'medium', '-profile:v', 'high'])
 
