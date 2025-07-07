@@ -10,6 +10,7 @@
 
 import os
 import traceback
+import tempfile
 from typing import Optional, Dict, Any
 from loguru import logger
 from moviepy import (
@@ -25,6 +26,7 @@ from PIL import ImageFont
 
 from app.utils import utils
 from app.models.schema import AudioVolumeDefaults
+from app.services.audio_normalizer import AudioNormalizer, normalize_audio_for_mixing
 
 
 def merge_materials(
@@ -153,6 +155,41 @@ def merge_materials(
     # 处理背景音乐和所有音频轨道合成
     audio_tracks = []
 
+    # 智能音量调整（可选功能）
+    if AudioVolumeDefaults.ENABLE_SMART_VOLUME and audio_path and os.path.exists(audio_path) and original_audio is not None:
+        try:
+            normalizer = AudioNormalizer()
+            temp_dir = tempfile.mkdtemp()
+            temp_original_path = os.path.join(temp_dir, "temp_original.wav")
+
+            # 保存原声到临时文件进行分析
+            original_audio.write_audiofile(temp_original_path, verbose=False, logger=None)
+
+            # 计算智能音量调整
+            tts_adjustment, original_adjustment = normalizer.calculate_volume_adjustment(
+                audio_path, temp_original_path
+            )
+
+            # 应用智能调整，但保留用户设置的相对比例
+            smart_voice_volume = voice_volume * tts_adjustment
+            smart_original_volume = original_audio_volume * original_adjustment
+
+            # 限制音量范围，避免过度调整
+            smart_voice_volume = max(0.1, min(1.5, smart_voice_volume))
+            smart_original_volume = max(0.1, min(2.0, smart_original_volume))
+
+            voice_volume = smart_voice_volume
+            original_audio_volume = smart_original_volume
+
+            logger.info(f"智能音量调整 - TTS: {voice_volume:.2f}, 原声: {original_audio_volume:.2f}")
+
+            # 清理临时文件
+            import shutil
+            shutil.rmtree(temp_dir)
+
+        except Exception as e:
+            logger.warning(f"智能音量分析失败，使用原始设置: {e}")
+
     # 先添加主音频（配音）
     if audio_path and os.path.exists(audio_path):
         try:
@@ -164,8 +201,14 @@ def merge_materials(
 
     # 添加原声（如果需要）
     if original_audio is not None:
-        audio_tracks.append(original_audio)
-        logger.info(f"已添加视频原声，音量: {original_audio_volume}")
+        # 重新应用调整后的音量（因为original_audio已经应用了一次音量）
+        # 计算需要的额外调整
+        current_volume_in_original = 1.0  # original_audio中已应用的音量
+        additional_adjustment = original_audio_volume / current_volume_in_original
+
+        adjusted_original_audio = original_audio.with_effects([afx.MultiplyVolume(additional_adjustment)])
+        audio_tracks.append(adjusted_original_audio)
+        logger.info(f"已添加视频原声，最终音量: {original_audio_volume}")
 
     # 添加背景音乐（如果有）
     if bgm_path and os.path.exists(bgm_path):
