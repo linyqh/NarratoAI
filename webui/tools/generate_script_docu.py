@@ -65,11 +65,32 @@ def generate_script_docu(params):
 
                     # 初始化视频处理器
                     processor = video_processor.VideoProcessor(params.video_origin_path)
+
+                    # 显示视频信息
+                    st.info(f"视频信息: {processor.width}x{processor.height}, {processor.fps:.1f}fps, {processor.duration:.1f}秒")
+
                     # 处理视频并提取关键帧
-                    processor.process_video_pipeline(
-                        output_dir=video_keyframes_dir,
-                        interval_seconds=st.session_state.get('frame_interval_input'),
-                    )
+                    update_progress(15, "正在提取关键帧...")
+
+                    try:
+                        processor.process_video_pipeline(
+                            output_dir=video_keyframes_dir,
+                            interval_seconds=st.session_state.get('frame_interval_input'),
+                        )
+                    except Exception as extract_error:
+                        # 如果硬件加速失败，尝试强制使用软件方案
+                        logger.warning(f"硬件加速提取失败: {extract_error}")
+                        st.warning("硬件加速提取失败，正在尝试软件方案...")
+
+                        # 强制使用软件编码重试
+                        from app.utils import ffmpeg_utils
+                        ffmpeg_utils.force_software_encoding()
+
+                        processor.process_video_pipeline(
+                            output_dir=video_keyframes_dir,
+                            interval_seconds=st.session_state.get('frame_interval_input'),
+                            use_hw_accel=False  # 明确禁用硬件加速
+                        )
 
                     # 获取所有关键文件路径
                     for filename in sorted(os.listdir(video_keyframes_dir)):
@@ -77,9 +98,13 @@ def generate_script_docu(params):
                             keyframe_files.append(os.path.join(video_keyframes_dir, filename))
 
                     if not keyframe_files:
-                        raise Exception("未提取到任何关键帧")
+                        # 检查目录中是否有其他文件
+                        all_files = os.listdir(video_keyframes_dir)
+                        logger.error(f"关键帧目录内容: {all_files}")
+                        raise Exception("未提取到任何关键帧文件，可能是 FFmpeg 兼容性问题")
 
                     update_progress(20, f"关键帧提取完成，共 {len(keyframe_files)} 帧")
+                    st.success(f"✅ 成功提取 {len(keyframe_files)} 个关键帧")
 
                 except Exception as e:
                     # 如果提取失败，清理创建的目录
@@ -90,7 +115,16 @@ def generate_script_docu(params):
                     except Exception as cleanup_err:
                         logger.error(f"清理失败的关键帧目录时出错: {cleanup_err}")
 
-                    raise Exception(f"关键帧提取失败: {str(e)}")
+                    # 提供更详细的错误信息和解决建议
+                    error_msg = str(e)
+                    if "滤镜链" in error_msg or "filter" in error_msg.lower():
+                        suggestion = "建议：这可能是硬件加速兼容性问题，请尝试在设置中禁用硬件加速"
+                    elif "cuda" in error_msg.lower() or "nvenc" in error_msg.lower():
+                        suggestion = "建议：NVIDIA 显卡驱动可能需要更新，或尝试禁用硬件加速"
+                    else:
+                        suggestion = "建议：检查视频文件是否损坏，或尝试转换为标准格式"
+
+                    raise Exception(f"关键帧提取失败: {error_msg}\n{suggestion}")
 
             """
             2. 视觉分析(批量分析每一帧)
