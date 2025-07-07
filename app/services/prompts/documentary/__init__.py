@@ -4,7 +4,7 @@
 """
 @Project: NarratoAI
 @File   : __init__.py
-@Author : AI Assistant
+@Author : viccy同学
 @Date   : 2025/1/7
 @Description: 纪录片解说提示词模块
 """

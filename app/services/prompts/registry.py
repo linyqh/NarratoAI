@@ -4,7 +4,7 @@
 """
 @Project: NarratoAI
 @File   : registry.py
-@Author : AI Assistant
+@Author : viccy同学
 @Date   : 2025/1/7
 @Description: 提示词注册机制
 """

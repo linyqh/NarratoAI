@@ -4,7 +4,7 @@
 """
 @Project: NarratoAI
 @File   : __init__.py
-@Author : AI Assistant
+@Author : viccy同学
 @Date   : 2025/1/7
 @Description: 统一提示词管理模块
 """
@@ -23,7 +23,7 @@ from .exceptions import (
 
 # 版本信息
 __version__ = "1.0.0"
-__author__ = "AI Assistant"
+__author__ = "viccy同学"
 
 # 导出的公共接口
 __all__ = [

@@ -4,7 +4,7 @@
 """
 @Project: NarratoAI
 @File   : __init__.py
-@Author : AI Assistant
+@Author : viccy同学
 @Date   : 2025/1/7
 @Description: 短剧混剪提示词模块
 """

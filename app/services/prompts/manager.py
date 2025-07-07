@@ -4,7 +4,7 @@
 """
 @Project: NarratoAI
 @File   : manager.py
-@Author : AI Assistant
+@Author : viccy同学
 @Date   : 2025/1/7
 @Description: 提示词管理器
 """

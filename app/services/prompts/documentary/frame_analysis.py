@@ -4,7 +4,7 @@
 """
 @Project: NarratoAI
 @File   : frame_analysis.py
-@Author : AI Assistant
+@Author : viccy同学
 @Date   : 2025/1/7
 @Description: 纪录片视频帧分析提示词
 """
