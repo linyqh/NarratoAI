@@ -42,15 +42,18 @@ class TemplateRenderer:
         parameters = parameters or {}
         
         try:
-            # 使用Python内置的Template类进行基础渲染
-            tmpl = Template(template)
-            
-            # 先进行基础参数替换
-            rendered = tmpl.safe_substitute(**parameters)
-            
+            # 使用简单的字符串替换进行参数替换
+            rendered = template
+
+            for key, value in parameters.items():
+                # 替换 ${key} 格式的参数
+                rendered = rendered.replace(f"${{{key}}}", str(value))
+                # 也替换 $key 格式的参数（为了兼容性）
+                rendered = rendered.replace(f"${key}", str(value))
+
             # 处理自定义过滤器
             rendered = self._apply_filters(rendered, parameters)
-            
+
             return rendered
             
         except Exception as e:

@@ -12,6 +12,8 @@ from loguru import logger
 
 from .unified_service import UnifiedLLMService
 from .exceptions import LLMServiceError
+# 导入新的提示词管理系统
+from app.services.prompts import PromptManager
 
 # 确保提供商已注册
 def _ensure_providers_registered():
@@ -267,20 +269,15 @@ class SubtitleAnalyzerAdapter:
             生成结果字典
         """
         try:
-            # 构建提示词
-            prompt = f"""
-根据以下剧情分析，为短剧《{short_name}》生成引人入胜的解说文案：
-
-{plot_analysis}
-
-请生成JSON格式的解说文案，包含以下字段：
-- narration_script: 解说文案内容
-
-输出格式：
-{{
-  "narration_script": "解说文案内容"
-}}
-"""
+            # 使用新的提示词管理系统构建提示词
+            prompt = PromptManager.get_prompt(
+                category="short_drama_narration",
+                name="script_generation",
+                parameters={
+                    "drama_name": short_name,
+                    "plot_analysis": plot_analysis
+                }
+            )
             
             # 使用统一服务生成文案
             result = self._run_async_safely(
@@ -295,6 +292,9 @@ class SubtitleAnalyzerAdapter:
             # 清理JSON输出
             cleaned_result = self._clean_json_output(result)
 
+            # 新的提示词系统返回的是包含items数组的JSON格式
+            # 为了保持向后兼容，我们需要直接返回这个JSON字符串
+            # 调用方会期望这是一个包含items数组的JSON字符串
             return {
                 "status": "success",
                 "narration_script": cleaned_result,
