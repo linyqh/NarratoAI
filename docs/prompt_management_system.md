@@ -192,16 +192,62 @@ python test_prompt_system.py
 ## 注意事项
 
 1. **模板参数**: 使用 `${parameter_name}` 格式
-2. **JSON转义**: 模板中的JSON需要使用双大括号 `{{` 和 `}}`
+2. **JSON格式**: 模板中的JSON示例使用标准格式 `{` 和 `}`，不要使用双大括号
 3. **参数验证**: 必需参数会自动验证
 4. **版本管理**: 支持多版本共存，默认使用最新版本
 5. **输出验证**: 建议对LLM输出进行验证以确保格式正确
+6. **JSON解析**: 系统提供强大的JSON解析兼容性，自动处理各种格式问题
+
+## JSON解析优化
+
+系统提供了强大的JSON解析兼容性，能够处理LLM生成的各种格式问题：
+
+### 支持的格式修复
+
+1. **双大括号修复**: 自动将 `{{` 和 `}}` 转换为标准的 `{` 和 `}`
+2. **代码块提取**: 自动从 ````json` 代码块中提取JSON内容
+3. **额外文本处理**: 自动提取大括号包围的JSON内容，忽略前后的额外文本
+4. **尾随逗号修复**: 自动移除对象和数组末尾的多余逗号
+5. **注释移除**: 自动移除 `//` 和 `#` 注释
+6. **引号修复**: 自动修复单引号和缺失的属性名引号
+
+### 解析策略
+
+系统采用多重解析策略，按优先级依次尝试：
+
+```python
+strategies = [
+    ("直接解析", lambda s: json.loads(s)),
+    ("修复双大括号", _fix_double_braces),
+    ("提取代码块", _extract_code_block),
+    ("提取大括号内容", _extract_braces_content),
+    ("修复常见格式问题", _fix_common_json_issues),
+    ("修复引号问题", _fix_quote_issues),
+    ("修复尾随逗号", _fix_trailing_commas),
+    ("强制修复", _force_fix_json),
+]
+```
+
+### 使用示例
+
+```python
+from webui.tools.generate_short_summary import parse_and_fix_json
+
+# 处理双大括号JSON
+json_str = '{{ "items": [{{ "_id": 1, "name": "test" }}] }}'
+result = parse_and_fix_json(json_str)  # 自动修复并解析
+
+# 处理有额外文本的JSON
+json_str = '这是一些文本\n{"items": []}\n更多文本'
+result = parse_and_fix_json(json_str)  # 自动提取JSON部分
+```
 
 ## 性能优化
 
 - 提示词模板会被缓存
 - 支持批量操作
 - 异步渲染支持（未来版本）
+- JSON解析采用多策略优化，确保高成功率
 
 ## 故障排除
 

@@ -46,19 +46,19 @@ ${custom_instructions}
 
 请按照以下JSON格式输出分析结果：
 
-{{
+{
   "analysis": [
-    {{
+    {
       "timestamp": "00:00:05,390",
       "picture": "详细的画面描述，包括场景、人物、物体、动作等",
       "scene_type": "场景类型（如：建造、准备、完成等）",
       "key_elements": ["关键元素1", "关键元素2"],
       "visual_quality": "画面质量描述（构图、光线、色彩等）"
-    }}
+    }
   ],
   "summary": "整体视频内容概述",
   "total_frames": "分析的帧数"
-}}
+}
 
 重要要求：
 1. 只输出JSON格式，不要添加任何其他文字或代码块标记
