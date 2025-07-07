@@ -4,7 +4,7 @@
 '''
 @Project: NarratoAI
 @File   : audio_normalizer
-@Author : 小林同学
+@Author : Viccy同学
 @Date   : 2025/1/7 
 @Description: 音频响度分析和标准化工具
 '''

@@ -4,7 +4,7 @@
 '''
 @Project: NarratoAI
 @File   : update_script
-@Author : 小林同学
+@Author : Viccy同学
 @Date   : 2025/5/6 下午11:00 
 '''
 

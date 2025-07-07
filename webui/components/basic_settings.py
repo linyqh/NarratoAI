@@ -7,6 +7,45 @@ from app.utils import utils
 from loguru import logger
 
 
+def validate_api_key(api_key: str, provider: str) -> tuple[bool, str]:
+    """验证API密钥格式"""
+    if not api_key or not api_key.strip():
+        return False, f"{provider} API密钥不能为空"
+
+    # 基本长度检查
+    if len(api_key.strip()) < 10:
+        return False, f"{provider} API密钥长度过短，请检查是否正确"
+
+    return True, ""
+
+
+def validate_base_url(base_url: str, provider: str) -> tuple[bool, str]:
+    """验证Base URL格式"""
+    if not base_url or not base_url.strip():
+        return True, ""  # base_url可以为空
+
+    base_url = base_url.strip()
+    if not (base_url.startswith('http://') or base_url.startswith('https://')):
+        return False, f"{provider} Base URL必须以http://或https://开头"
+
+    return True, ""
+
+
+def validate_model_name(model_name: str, provider: str) -> tuple[bool, str]:
+    """验证模型名称"""
+    if not model_name or not model_name.strip():
+        return False, f"{provider} 模型名称不能为空"
+
+    return True, ""
+
+
+def show_config_validation_errors(errors: list):
+    """显示配置验证错误"""
+    if errors:
+        for error in errors:
+            st.error(error)
+
+
 def render_basic_settings(tr):
     """渲染基础设置面板"""
     with st.expander(tr("Basic Settings"), expanded=False):
@@ -87,29 +126,96 @@ def render_proxy_settings(tr):
 
 def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
     """测试视觉模型连接
-    
+
     Args:
         api_key: API密钥
         base_url: 基础URL
         model_name: 模型名称
         provider: 提供商名称
-    
+
     Returns:
         bool: 连接是否成功
         str: 测试结果消息
     """
+    import requests
     if provider.lower() == 'gemini':
-        import google.generativeai as genai
-        
+        # 原生Gemini API测试
         try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(model_name)
-            model.generate_content("直接回复我文本'当前网络可用'")
-            return True, tr("gemini model is available")
+            # 构建请求数据
+            request_data = {
+                "contents": [{
+                    "parts": [{"text": "直接回复我文本'当前网络可用'"}]
+                }],
+                "generationConfig": {
+                    "temperature": 1.0,
+                    "topK": 40,
+                    "topP": 0.95,
+                    "maxOutputTokens": 100,
+                },
+                "safetySettings": [
+                    {
+                        "category": "HARM_CATEGORY_HARASSMENT",
+                        "threshold": "BLOCK_NONE"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_HATE_SPEECH",
+                        "threshold": "BLOCK_NONE"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        "threshold": "BLOCK_NONE"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                        "threshold": "BLOCK_NONE"
+                    }
+                ]
+            }
+
+            # 构建请求URL
+            api_base_url = base_url or "https://generativelanguage.googleapis.com/v1beta"
+            url = f"{api_base_url}/models/{model_name}:generateContent?key={api_key}"
+
+            # 发送请求
+            response = requests.post(
+                url,
+                json=request_data,
+                headers={"Content-Type": "application/json"},
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                return True, tr("原生Gemini模型连接成功")
+            else:
+                return False, f"{tr('原生Gemini模型连接失败')}: HTTP {response.status_code}"
         except Exception as e:
-            return False, f"{tr('gemini model is not available')}: {str(e)}"
+            return False, f"{tr('原生Gemini模型连接失败')}: {str(e)}"
+
+    elif provider.lower() == 'gemini(openai)':
+        # OpenAI兼容的Gemini代理测试
+        try:
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+
+            test_url = f"{base_url.rstrip('/')}/chat/completions"
+            test_data = {
+                "model": model_name,
+                "messages": [
+                    {"role": "user", "content": "直接回复我文本'当前网络可用'"}
+                ],
+                "stream": False
+            }
+
+            response = requests.post(test_url, headers=headers, json=test_data, timeout=10)
+            if response.status_code == 200:
+                return True, tr("OpenAI兼容Gemini代理连接成功")
+            else:
+                return False, f"{tr('OpenAI兼容Gemini代理连接失败')}: HTTP {response.status_code}"
+        except Exception as e:
+            return False, f"{tr('OpenAI兼容Gemini代理连接失败')}: {str(e)}"
     elif provider.lower() == 'narratoapi':
-        import requests
         try:
             # 构建测试请求
             headers = {
@@ -172,7 +278,7 @@ def render_vision_llm_settings(tr):
     st.subheader(tr("Vision Model Settings"))
 
     # 视频分析模型提供商选择
-    vision_providers = ['Siliconflow', 'Gemini', 'QwenVL', 'OpenAI']
+    vision_providers = ['Siliconflow', 'Gemini', 'Gemini(OpenAI)', 'QwenVL', 'OpenAI']
     saved_vision_provider = config.app.get("vision_llm_provider", "Gemini").lower()
     saved_provider_index = 0
 
@@ -191,9 +297,15 @@ def render_vision_llm_settings(tr):
     st.session_state['vision_llm_providers'] = vision_provider
 
     # 获取已保存的视觉模型配置
-    vision_api_key = config.app.get(f"vision_{vision_provider}_api_key", "")
-    vision_base_url = config.app.get(f"vision_{vision_provider}_base_url", "")
-    vision_model_name = config.app.get(f"vision_{vision_provider}_model_name", "")
+    # 处理特殊的提供商名称映射
+    if vision_provider == 'gemini(openai)':
+        vision_config_key = 'vision_gemini_openai'
+    else:
+        vision_config_key = f'vision_{vision_provider}'
+
+    vision_api_key = config.app.get(f"{vision_config_key}_api_key", "")
+    vision_base_url = config.app.get(f"{vision_config_key}_base_url", "")
+    vision_model_name = config.app.get(f"{vision_config_key}_model_name", "")
 
     # 渲染视觉模型配置输入框
     st_vision_api_key = st.text_input(tr("Vision API Key"), value=vision_api_key, type="password")
@@ -201,15 +313,25 @@ def render_vision_llm_settings(tr):
     # 根据不同提供商设置默认值和帮助信息
     if vision_provider == 'gemini':
         st_vision_base_url = st.text_input(
-            tr("Vision Base URL"), 
-            value=vision_base_url,
-            disabled=True,
-            help=tr("Gemini API does not require a base URL")
+            tr("Vision Base URL"),
+            value=vision_base_url or "https://generativelanguage.googleapis.com/v1beta",
+            help=tr("原生Gemini API端点，默认: https://generativelanguage.googleapis.com/v1beta")
         )
         st_vision_model_name = st.text_input(
-            tr("Vision Model Name"), 
-            value=vision_model_name or "gemini-2.0-flash-lite",
-            help=tr("Default: gemini-2.0-flash-lite")
+            tr("Vision Model Name"),
+            value=vision_model_name or "gemini-2.0-flash-exp",
+            help=tr("原生Gemini模型，默认: gemini-2.0-flash-exp")
+        )
+    elif vision_provider == 'gemini(openai)':
+        st_vision_base_url = st.text_input(
+            tr("Vision Base URL"),
+            value=vision_base_url or "https://generativelanguage.googleapis.com/v1beta/openai",
+            help=tr("OpenAI兼容的Gemini代理端点，如: https://your-proxy.com/v1")
+        )
+        st_vision_model_name = st.text_input(
+            tr("Vision Model Name"),
+            value=vision_model_name or "gemini-2.0-flash-exp",
+            help=tr("OpenAI格式的Gemini模型名称，默认: gemini-2.0-flash-exp")
         )
     elif vision_provider == 'qwenvl':
         st_vision_base_url = st.text_input(
@@ -228,30 +350,81 @@ def render_vision_llm_settings(tr):
 
     # 在配置输入框后添加测试按钮
     if st.button(tr("Test Connection"), key="test_vision_connection"):
-        with st.spinner(tr("Testing connection...")):
-            success, message = test_vision_model_connection(
-                api_key=st_vision_api_key,
-                base_url=st_vision_base_url,
-                model_name=st_vision_model_name,
-                provider=vision_provider,
-                tr=tr
-            )
-            
-            if success:
-                st.success(tr(message))
-            else:
-                st.error(tr(message))
+        # 先验证配置
+        test_errors = []
+        if not st_vision_api_key:
+            test_errors.append("请先输入API密钥")
+        if not st_vision_model_name:
+            test_errors.append("请先输入模型名称")
 
-    # 保存视觉模型配置
+        if test_errors:
+            for error in test_errors:
+                st.error(error)
+        else:
+            with st.spinner(tr("Testing connection...")):
+                try:
+                    success, message = test_vision_model_connection(
+                        api_key=st_vision_api_key,
+                        base_url=st_vision_base_url,
+                        model_name=st_vision_model_name,
+                        provider=vision_provider,
+                        tr=tr
+                    )
+
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
+                except Exception as e:
+                    st.error(f"测试连接时发生错误: {str(e)}")
+                    logger.error(f"视频分析模型连接测试失败: {str(e)}")
+
+    # 验证和保存视觉模型配置
+    validation_errors = []
+    config_changed = False
+
+    # 验证API密钥
     if st_vision_api_key:
-        config.app[f"vision_{vision_provider}_api_key"] = st_vision_api_key
-        st.session_state[f"vision_{vision_provider}_api_key"] = st_vision_api_key
+        is_valid, error_msg = validate_api_key(st_vision_api_key, f"视频分析({vision_provider})")
+        if is_valid:
+            config.app[f"{vision_config_key}_api_key"] = st_vision_api_key
+            st.session_state[f"{vision_config_key}_api_key"] = st_vision_api_key
+            config_changed = True
+        else:
+            validation_errors.append(error_msg)
+
+    # 验证Base URL
     if st_vision_base_url:
-        config.app[f"vision_{vision_provider}_base_url"] = st_vision_base_url
-        st.session_state[f"vision_{vision_provider}_base_url"] = st_vision_base_url
+        is_valid, error_msg = validate_base_url(st_vision_base_url, f"视频分析({vision_provider})")
+        if is_valid:
+            config.app[f"{vision_config_key}_base_url"] = st_vision_base_url
+            st.session_state[f"{vision_config_key}_base_url"] = st_vision_base_url
+            config_changed = True
+        else:
+            validation_errors.append(error_msg)
+
+    # 验证模型名称
     if st_vision_model_name:
-        config.app[f"vision_{vision_provider}_model_name"] = st_vision_model_name
-        st.session_state[f"vision_{vision_provider}_model_name"] = st_vision_model_name
+        is_valid, error_msg = validate_model_name(st_vision_model_name, f"视频分析({vision_provider})")
+        if is_valid:
+            config.app[f"{vision_config_key}_model_name"] = st_vision_model_name
+            st.session_state[f"{vision_config_key}_model_name"] = st_vision_model_name
+            config_changed = True
+        else:
+            validation_errors.append(error_msg)
+
+    # 显示验证错误
+    show_config_validation_errors(validation_errors)
+
+    # 如果配置有变化且没有验证错误，保存到文件
+    if config_changed and not validation_errors:
+        try:
+            config.save_config()
+            if st_vision_api_key or st_vision_base_url or st_vision_model_name:
+                st.success(f"视频分析模型({vision_provider})配置已保存")
+        except Exception as e:
+            st.error(f"保存配置失败: {str(e)}")
+            logger.error(f"保存视频分析配置失败: {str(e)}")
 
 
 def test_text_model_connection(api_key, base_url, model_name, provider, tr):
@@ -278,14 +451,74 @@ def test_text_model_connection(api_key, base_url, model_name, provider, tr):
 
         # 特殊处理Gemini
         if provider.lower() == 'gemini':
-            import google.generativeai as genai
+            # 原生Gemini API测试
             try:
-                genai.configure(api_key=api_key)
-                model = genai.GenerativeModel(model_name)
-                model.generate_content("直接回复我文本'当前网络可用'")
-                return True, tr("Gemini model is available")
+                # 构建请求数据
+                request_data = {
+                    "contents": [{
+                        "parts": [{"text": "直接回复我文本'当前网络可用'"}]
+                    }],
+                    "generationConfig": {
+                        "temperature": 1.0,
+                        "topK": 40,
+                        "topP": 0.95,
+                        "maxOutputTokens": 100,
+                    },
+                    "safetySettings": [
+                        {
+                            "category": "HARM_CATEGORY_HARASSMENT",
+                            "threshold": "BLOCK_NONE"
+                        },
+                        {
+                            "category": "HARM_CATEGORY_HATE_SPEECH",
+                            "threshold": "BLOCK_NONE"
+                        },
+                        {
+                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                            "threshold": "BLOCK_NONE"
+                        },
+                        {
+                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                            "threshold": "BLOCK_NONE"
+                        }
+                    ]
+                }
+
+                # 构建请求URL
+                api_base_url = base_url or "https://generativelanguage.googleapis.com/v1beta"
+                url = f"{api_base_url}/models/{model_name}:generateContent?key={api_key}"
+
+                # 发送请求
+                response = requests.post(
+                    url,
+                    json=request_data,
+                    headers={"Content-Type": "application/json"},
+                    timeout=30
+                )
+
+                if response.status_code == 200:
+                    return True, tr("原生Gemini模型连接成功")
+                else:
+                    return False, f"{tr('原生Gemini模型连接失败')}: HTTP {response.status_code}"
             except Exception as e:
-                return False, f"{tr('Gemini model is not available')}: {str(e)}"
+                return False, f"{tr('原生Gemini模型连接失败')}: {str(e)}"
+
+        elif provider.lower() == 'gemini(openai)':
+            # OpenAI兼容的Gemini代理测试
+            test_url = f"{base_url.rstrip('/')}/chat/completions"
+            test_data = {
+                "model": model_name,
+                "messages": [
+                    {"role": "user", "content": "直接回复我文本'当前网络可用'"}
+                ],
+                "stream": False
+            }
+
+            response = requests.post(test_url, headers=headers, json=test_data, timeout=10)
+            if response.status_code == 200:
+                return True, tr("OpenAI兼容Gemini代理连接成功")
+            else:
+                return False, f"{tr('OpenAI兼容Gemini代理连接失败')}: HTTP {response.status_code}"
         else:
             test_url = f"{base_url.rstrip('/')}/chat/completions"
 
@@ -322,7 +555,7 @@ def render_text_llm_settings(tr):
     st.subheader(tr("Text Generation Model Settings"))
 
     # 文案生成模型提供商选择
-    text_providers = ['OpenAI', 'Siliconflow', 'DeepSeek', 'Gemini', 'Qwen', 'Moonshot']
+    text_providers = ['OpenAI', 'Siliconflow', 'DeepSeek', 'Gemini', 'Gemini(OpenAI)', 'Qwen', 'Moonshot']
     saved_text_provider = config.app.get("text_llm_provider", "OpenAI").lower()
     saved_provider_index = 0
 
@@ -346,32 +579,108 @@ def render_text_llm_settings(tr):
 
     # 渲染文本模型配置输入框
     st_text_api_key = st.text_input(tr("Text API Key"), value=text_api_key, type="password")
-    st_text_base_url = st.text_input(tr("Text Base URL"), value=text_base_url)
-    st_text_model_name = st.text_input(tr("Text Model Name"), value=text_model_name)
+
+    # 根据不同提供商设置默认值和帮助信息
+    if text_provider == 'gemini':
+        st_text_base_url = st.text_input(
+            tr("Text Base URL"),
+            value=text_base_url or "https://generativelanguage.googleapis.com/v1beta",
+            help=tr("原生Gemini API端点，默认: https://generativelanguage.googleapis.com/v1beta")
+        )
+        st_text_model_name = st.text_input(
+            tr("Text Model Name"),
+            value=text_model_name or "gemini-2.0-flash-exp",
+            help=tr("原生Gemini模型，默认: gemini-2.0-flash-exp")
+        )
+    elif text_provider == 'gemini(openai)':
+        st_text_base_url = st.text_input(
+            tr("Text Base URL"),
+            value=text_base_url or "https://generativelanguage.googleapis.com/v1beta/openai",
+            help=tr("OpenAI兼容的Gemini代理端点，如: https://your-proxy.com/v1")
+        )
+        st_text_model_name = st.text_input(
+            tr("Text Model Name"),
+            value=text_model_name or "gemini-2.0-flash-exp",
+            help=tr("OpenAI格式的Gemini模型名称，默认: gemini-2.0-flash-exp")
+        )
+    else:
+        st_text_base_url = st.text_input(tr("Text Base URL"), value=text_base_url)
+        st_text_model_name = st.text_input(tr("Text Model Name"), value=text_model_name)
 
     # 添加测试按钮
     if st.button(tr("Test Connection"), key="test_text_connection"):
-        with st.spinner(tr("Testing connection...")):
-            success, message = test_text_model_connection(
-                api_key=st_text_api_key,
-                base_url=st_text_base_url,
-                model_name=st_text_model_name,
-                provider=text_provider,
-                tr=tr
-            )
-            
-            if success:
-                st.success(message)
-            else:
-                st.error(message)
+        # 先验证配置
+        test_errors = []
+        if not st_text_api_key:
+            test_errors.append("请先输入API密钥")
+        if not st_text_model_name:
+            test_errors.append("请先输入模型名称")
 
-    # 保存文本模型配置
+        if test_errors:
+            for error in test_errors:
+                st.error(error)
+        else:
+            with st.spinner(tr("Testing connection...")):
+                try:
+                    success, message = test_text_model_connection(
+                        api_key=st_text_api_key,
+                        base_url=st_text_base_url,
+                        model_name=st_text_model_name,
+                        provider=text_provider,
+                        tr=tr
+                    )
+
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
+                except Exception as e:
+                    st.error(f"测试连接时发生错误: {str(e)}")
+                    logger.error(f"文案生成模型连接测试失败: {str(e)}")
+
+    # 验证和保存文本模型配置
+    text_validation_errors = []
+    text_config_changed = False
+
+    # 验证API密钥
     if st_text_api_key:
-        config.app[f"text_{text_provider}_api_key"] = st_text_api_key
+        is_valid, error_msg = validate_api_key(st_text_api_key, f"文案生成({text_provider})")
+        if is_valid:
+            config.app[f"text_{text_provider}_api_key"] = st_text_api_key
+            text_config_changed = True
+        else:
+            text_validation_errors.append(error_msg)
+
+    # 验证Base URL
     if st_text_base_url:
-        config.app[f"text_{text_provider}_base_url"] = st_text_base_url
+        is_valid, error_msg = validate_base_url(st_text_base_url, f"文案生成({text_provider})")
+        if is_valid:
+            config.app[f"text_{text_provider}_base_url"] = st_text_base_url
+            text_config_changed = True
+        else:
+            text_validation_errors.append(error_msg)
+
+    # 验证模型名称
     if st_text_model_name:
-        config.app[f"text_{text_provider}_model_name"] = st_text_model_name
+        is_valid, error_msg = validate_model_name(st_text_model_name, f"文案生成({text_provider})")
+        if is_valid:
+            config.app[f"text_{text_provider}_model_name"] = st_text_model_name
+            text_config_changed = True
+        else:
+            text_validation_errors.append(error_msg)
+
+    # 显示验证错误
+    show_config_validation_errors(text_validation_errors)
+
+    # 如果配置有变化且没有验证错误，保存到文件
+    if text_config_changed and not text_validation_errors:
+        try:
+            config.save_config()
+            if st_text_api_key or st_text_base_url or st_text_model_name:
+                st.success(f"文案生成模型({text_provider})配置已保存")
+        except Exception as e:
+            st.error(f"保存配置失败: {str(e)}")
+            logger.error(f"保存文案生成配置失败: {str(e)}")
 
     # # Cloudflare 特殊配置
     # if text_provider == 'cloudflare':

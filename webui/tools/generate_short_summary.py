@@ -16,6 +16,89 @@ from loguru import logger
 
 from app.config import config
 from app.services.SDE.short_drama_explanation import analyze_subtitle, generate_narration_script
+import re
+
+
+def parse_and_fix_json(json_string):
+    """
+    解析并修复JSON字符串
+
+    Args:
+        json_string: 待解析的JSON字符串
+
+    Returns:
+        dict: 解析后的字典，如果解析失败返回None
+    """
+    if not json_string or not json_string.strip():
+        logger.error("JSON字符串为空")
+        return None
+
+    # 清理字符串
+    json_string = json_string.strip()
+
+    # 尝试直接解析
+    try:
+        return json.loads(json_string)
+    except json.JSONDecodeError as e:
+        logger.warning(f"直接JSON解析失败: {e}")
+
+    # 尝试提取JSON部分
+    try:
+        # 查找JSON代码块
+        json_match = re.search(r'```json\s*(.*?)\s*```', json_string, re.DOTALL)
+        if json_match:
+            json_content = json_match.group(1).strip()
+            logger.info("从代码块中提取JSON内容")
+            return json.loads(json_content)
+    except json.JSONDecodeError:
+        pass
+
+    # 尝试查找大括号包围的内容
+    try:
+        # 查找第一个 { 到最后一个 } 的内容
+        start_idx = json_string.find('{')
+        end_idx = json_string.rfind('}')
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            json_content = json_string[start_idx:end_idx+1]
+            logger.info("提取大括号包围的JSON内容")
+            return json.loads(json_content)
+    except json.JSONDecodeError:
+        pass
+
+    # 尝试修复常见的JSON格式问题
+    try:
+        # 移除注释
+        json_string = re.sub(r'#.*', '', json_string)
+        # 移除多余的逗号
+        json_string = re.sub(r',\s*}', '}', json_string)
+        json_string = re.sub(r',\s*]', ']', json_string)
+        # 修复单引号
+        json_string = re.sub(r"'([^']*)':", r'"\1":', json_string)
+
+        logger.info("尝试修复JSON格式问题后解析")
+        return json.loads(json_string)
+    except json.JSONDecodeError:
+        pass
+
+    # 如果所有方法都失败，尝试创建一个基本的结构
+    logger.error(f"所有JSON解析方法都失败，原始内容: {json_string[:200]}...")
+
+    # 尝试从文本中提取关键信息创建基本结构
+    try:
+        # 这是一个简单的回退方案
+        return {
+            "items": [
+                {
+                    "_id": 1,
+                    "timestamp": "00:00:00,000-00:00:10,000",
+                    "picture": "解析失败，使用默认内容",
+                    "narration": json_string[:100] + "..." if len(json_string) > 100 else json_string,
+                    "OST": 0
+                }
+            ]
+        }
+    except Exception:
+        return None
 
 
 def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperature):
@@ -61,7 +144,8 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
                 model=text_model,
                 base_url=text_base_url,
                 save_result=True,
-                temperature=temperature
+                temperature=temperature,
+                provider=text_provider
             )
             """
             3. 根据剧情生成解说文案
@@ -78,7 +162,8 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
                     model=text_model,
                     base_url=text_base_url,
                     save_result=True,
-                    temperature=temperature
+                    temperature=temperature,
+                    provider=text_provider
                 )
 
                 if narration_result["status"] == "success":
@@ -100,7 +185,20 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
 
             # 结果转换为JSON字符串
             narration_script = narration_result["narration_script"]
-            narration_dict = json.loads(narration_script)
+
+            # 增强JSON解析，包含错误处理和修复
+            narration_dict = parse_and_fix_json(narration_script)
+            if narration_dict is None:
+                st.error("生成的解说文案格式错误，无法解析为JSON")
+                logger.error(f"JSON解析失败，原始内容: {narration_script}")
+                st.stop()
+
+            # 验证JSON结构
+            if 'items' not in narration_dict:
+                st.error("生成的解说文案缺少必要的'items'字段")
+                logger.error(f"JSON结构错误，缺少items字段: {narration_dict}")
+                st.stop()
+
             script = json.dumps(narration_dict['items'], ensure_ascii=False, indent=2)
 
             if script is None:

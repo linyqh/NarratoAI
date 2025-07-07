@@ -140,14 +140,27 @@ class ScriptGenerator:
         # 获取Gemini配置
         vision_api_key = config.app.get("vision_gemini_api_key")
         vision_model = config.app.get("vision_gemini_model_name")
-        
+        vision_base_url = config.app.get("vision_gemini_base_url")
+
         if not vision_api_key or not vision_model:
             raise ValueError("未配置 Gemini API Key 或者模型")
 
-        analyzer = gemini_analyzer.VisionAnalyzer(
-            model_name=vision_model,
-            api_key=vision_api_key,
-        )
+        # 根据提供商类型选择合适的分析器
+        if vision_provider == 'gemini(openai)':
+            # 使用OpenAI兼容的Gemini代理
+            from app.utils.gemini_openai_analyzer import GeminiOpenAIAnalyzer
+            analyzer = GeminiOpenAIAnalyzer(
+                model_name=vision_model,
+                api_key=vision_api_key,
+                base_url=vision_base_url
+            )
+        else:
+            # 使用原生Gemini分析器
+            analyzer = gemini_analyzer.VisionAnalyzer(
+                model_name=vision_model,
+                api_key=vision_api_key,
+                base_url=vision_base_url
+            )
 
         progress_callback(40, "正在分析关键帧...")
 
@@ -213,13 +226,35 @@ class ScriptGenerator:
         text_provider = config.app.get('text_llm_provider', 'gemini').lower()
         text_api_key = config.app.get(f'text_{text_provider}_api_key')
         text_model = config.app.get(f'text_{text_provider}_model_name')
+        text_base_url = config.app.get(f'text_{text_provider}_base_url')
 
-        processor = ScriptProcessor(
-            model_name=text_model,
-            api_key=text_api_key,
-            prompt=custom_prompt,
-            video_theme=video_theme
-        )
+        # 根据提供商类型选择合适的处理器
+        if text_provider == 'gemini(openai)':
+            # 使用OpenAI兼容的Gemini代理
+            from app.utils.script_generator import GeminiOpenAIGenerator
+            generator = GeminiOpenAIGenerator(
+                model_name=text_model,
+                api_key=text_api_key,
+                prompt=custom_prompt,
+                base_url=text_base_url
+            )
+            processor = ScriptProcessor(
+                model_name=text_model,
+                api_key=text_api_key,
+                base_url=text_base_url,
+                prompt=custom_prompt,
+                video_theme=video_theme
+            )
+            processor.generator = generator
+        else:
+            # 使用标准处理器（包括原生Gemini）
+            processor = ScriptProcessor(
+                model_name=text_model,
+                api_key=text_api_key,
+                base_url=text_base_url,
+                prompt=custom_prompt,
+                video_theme=video_theme
+            )
 
         return processor.process_frames(frame_content_list)
 

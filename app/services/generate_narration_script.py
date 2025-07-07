@@ -4,7 +4,7 @@
 '''
 @Project: NarratoAI
 @File   : 生成介绍文案
-@Author : 小林同学
+@Author : Viccy同学
 @Date   : 2025/5/8 上午11:33 
 '''
 

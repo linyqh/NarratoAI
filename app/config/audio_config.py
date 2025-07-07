@@ -4,7 +4,7 @@
 '''
 @Project: NarratoAI
 @File   : audio_config
-@Author : 小林同学
+@Author : Viccy同学
 @Date   : 2025/1/7 
 @Description: 音频配置管理
 '''
