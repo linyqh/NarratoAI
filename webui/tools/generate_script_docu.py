@@ -25,9 +25,9 @@ def generate_script_docu(params):
     def update_progress(progress: float, message: str = ""):
         progress_bar.progress(progress)
         if message:
-            status_text.text(f"{progress}% - {message}")
+            status_text.text(f"🎬 {message}")
         else:
-            status_text.text(f"进度: {progress}%")
+            status_text.text(f"📊 进度: {progress}%")
 
     try:
         with st.spinner("正在生成脚本..."):
@@ -54,7 +54,7 @@ def generate_script_docu(params):
 
                 if keyframe_files:
                     logger.info(f"使用已缓存的关键帧: {video_keyframes_dir}")
-                    st.info(f"使用已缓存的关键帧，如需重新提取请删除目录: {video_keyframes_dir}")
+                    st.info(f"✅ 使用已缓存关键帧，共 {len(keyframe_files)} 帧")
                     update_progress(20, f"使用已缓存关键帧，共 {len(keyframe_files)} 帧")
 
             # 如果没有缓存的关键帧，则进行提取
@@ -67,30 +67,30 @@ def generate_script_docu(params):
                     processor = video_processor.VideoProcessor(params.video_origin_path)
 
                     # 显示视频信息
-                    st.info(f"视频信息: {processor.width}x{processor.height}, {processor.fps:.1f}fps, {processor.duration:.1f}秒")
+                    st.info(f"📹 视频信息: {processor.width}x{processor.height}, {processor.fps:.1f}fps, {processor.duration:.1f}秒")
 
-                    # 处理视频并提取关键帧
-                    update_progress(15, "正在提取关键帧...")
+                    # 处理视频并提取关键帧 - 直接使用超级兼容性方案
+                    update_progress(15, "正在提取关键帧（使用超级兼容性方案）...")
 
                     try:
-                        processor.process_video_pipeline(
+                        # 使用优化的关键帧提取方法
+                        processor.extract_frames_by_interval_ultra_compatible(
                             output_dir=video_keyframes_dir,
                             interval_seconds=st.session_state.get('frame_interval_input'),
                         )
                     except Exception as extract_error:
-                        # 如果硬件加速失败，尝试强制使用软件方案
-                        logger.warning(f"硬件加速提取失败: {extract_error}")
-                        st.warning("硬件加速提取失败，正在尝试软件方案...")
+                        logger.error(f"关键帧提取失败: {extract_error}")
+                        
+                        # 提供详细的错误信息和解决建议
+                        error_msg = str(extract_error)
+                        if "权限" in error_msg or "permission" in error_msg.lower():
+                            suggestion = "建议：检查输出目录权限，或更换输出位置"
+                        elif "空间" in error_msg or "space" in error_msg.lower():
+                            suggestion = "建议：检查磁盘空间是否足够"
+                        else:
+                            suggestion = "建议：检查视频文件是否损坏，或尝试转换为标准格式"
 
-                        # 强制使用软件编码重试
-                        from app.utils import ffmpeg_utils
-                        ffmpeg_utils.force_software_encoding()
-
-                        processor.process_video_pipeline(
-                            output_dir=video_keyframes_dir,
-                            interval_seconds=st.session_state.get('frame_interval_input'),
-                            use_hw_accel=False  # 明确禁用硬件加速
-                        )
+                        raise Exception(f"关键帧提取失败: {error_msg}\n{suggestion}")
 
                     # 获取所有关键文件路径
                     for filename in sorted(os.listdir(video_keyframes_dir)):
@@ -101,7 +101,7 @@ def generate_script_docu(params):
                         # 检查目录中是否有其他文件
                         all_files = os.listdir(video_keyframes_dir)
                         logger.error(f"关键帧目录内容: {all_files}")
-                        raise Exception("未提取到任何关键帧文件，可能是 FFmpeg 兼容性问题")
+                        raise Exception("未提取到任何关键帧文件，请检查视频文件格式")
 
                     update_progress(20, f"关键帧提取完成，共 {len(keyframe_files)} 帧")
                     st.success(f"✅ 成功提取 {len(keyframe_files)} 个关键帧")
@@ -115,23 +115,14 @@ def generate_script_docu(params):
                     except Exception as cleanup_err:
                         logger.error(f"清理失败的关键帧目录时出错: {cleanup_err}")
 
-                    # 提供更详细的错误信息和解决建议
-                    error_msg = str(e)
-                    if "滤镜链" in error_msg or "filter" in error_msg.lower():
-                        suggestion = "建议：这可能是硬件加速兼容性问题，请尝试在设置中禁用硬件加速"
-                    elif "cuda" in error_msg.lower() or "nvenc" in error_msg.lower():
-                        suggestion = "建议：NVIDIA 显卡驱动可能需要更新，或尝试禁用硬件加速"
-                    else:
-                        suggestion = "建议：检查视频文件是否损坏，或尝试转换为标准格式"
-
-                    raise Exception(f"关键帧提取失败: {error_msg}\n{suggestion}")
+                    raise Exception(f"关键帧提取失败: {str(e)}")
 
             """
             2. 视觉分析(批量分析每一帧)
             """
             vision_llm_provider = st.session_state.get('vision_llm_providers').lower()
             llm_params = dict()
-            logger.debug(f"VLM 视觉大模型提供商: {vision_llm_provider}")
+            logger.info(f"使用 {vision_llm_provider.upper()} 进行视觉分析")
 
             try:
                 # ===================初始化视觉分析器===================
@@ -212,7 +203,7 @@ def generate_script_docu(params):
                 overall_activity_summaries = []  # 合并所有批次的整体总结
                 prev_batch_files = None
                 frame_counter = 1  # 初始化帧计数器，用于给所有帧分配连续的序号
-                # logger.debug(json.dumps(results, indent=4, ensure_ascii=False))
+                
                 # 确保分析目录存在
                 analysis_dir = os.path.join(utils.storage_dir(), "temp", "analysis")
                 os.makedirs(analysis_dir, exist_ok=True)
@@ -228,11 +219,9 @@ def generate_script_docu(params):
                         
                     # 获取当前批次的文件列表
                     batch_files = get_batch_files(keyframe_files, result, vision_batch_size)
-                    logger.debug(f"批次 {result['batch_index']} 处理完成，共 {len(batch_files)} 张图片")
                     
                     # 获取批次的时间戳范围
                     first_timestamp, last_timestamp, timestamp_range = get_batch_timestamps(batch_files, prev_batch_files)
-                    logger.debug(f"处理时间戳: {first_timestamp}-{last_timestamp}")
                     
                     # 解析响应中的JSON数据
                     response_text = result['response']
@@ -377,8 +366,8 @@ def generate_script_docu(params):
                 """
                 4. 生成文案
                 """
-                logger.info("开始准备生成解说文案")
-                update_progress(80, "正在生成文案...")
+                logger.info("开始生成解说文案")
+                update_progress(80, "正在生成解说文案...")
                 from app.services.generate_narration_script import parse_frame_analysis_to_markdown, generate_narration
                 # 从配置中获取文本生成相关配置
                 text_provider = config.app.get('text_llm_provider', 'gemini').lower()
@@ -413,7 +402,7 @@ def generate_script_docu(params):
                 narration_dict = narration_data['items']
                 # 为 narration_dict 中每个 item 新增一个 OST: 2 的字段, 代表保留原声和配音
                 narration_dict = [{**item, "OST": 2} for item in narration_dict]
-                logger.debug(f"解说文案创作完成:\n{"\n".join([item['narration'] for item in narration_dict])}")
+                logger.info(f"解说文案生成完成，共 {len(narration_dict)} 个片段")
                 # 结果转换为JSON字符串
                 script = json.dumps(narration_dict, ensure_ascii=False, indent=2)
 
@@ -424,20 +413,20 @@ def generate_script_docu(params):
             if script is None:
                 st.error("生成脚本失败，请检查日志")
                 st.stop()
-            logger.success(f"剪辑脚本生成完成")
+            logger.info(f"纪录片解说脚本生成完成")
             if isinstance(script, list):
                 st.session_state['video_clip_json'] = script
             elif isinstance(script, str):
                 st.session_state['video_clip_json'] = json.loads(script)
-            update_progress(80, "脚本生成完成")
+            update_progress(100, "脚本生成完成")
 
         time.sleep(0.1)
         progress_bar.progress(100)
-        status_text.text("脚本生成完成！")
-        st.success("视频脚本生成成功！")
+        status_text.text("🎉 脚本生成完成！")
+        st.success("✅ 视频脚本生成成功！")
 
     except Exception as err:
-        st.error(f"生成过程中发生错误: {str(err)}")
+        st.error(f"❌ 生成过程中发生错误: {str(err)}")
         logger.exception(f"生成脚本时发生错误\n{traceback.format_exc()}")
     finally:
         time.sleep(2)

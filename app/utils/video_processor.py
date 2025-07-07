@@ -129,7 +129,8 @@ class VideoProcessor:
 
         logger.info(f"开始提取 {len(extraction_times)} 个关键帧，使用 {hwaccel_type} 加速")
 
-        with tqdm(total=len(extraction_times), desc="提取视频帧", unit="帧") as pbar:
+        with tqdm(total=len(extraction_times), desc="🎬 提取视频帧", unit="帧",
+                 bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]") as pbar:
             for i, timestamp in enumerate(extraction_times):
                 frame_number = int(timestamp * self.fps)
                 frame_numbers.append(frame_number)
@@ -151,16 +152,16 @@ class VideoProcessor:
                 if success:
                     successful_extractions += 1
                     pbar.set_postfix({
-                        "成功": successful_extractions,
-                        "失败": failed_extractions,
-                        "当前": f"{timestamp:.1f}s"
+                        "✅": successful_extractions,
+                        "❌": failed_extractions,
+                        "时间": f"{timestamp:.1f}s"
                     })
                 else:
                     failed_extractions += 1
                     pbar.set_postfix({
-                        "成功": successful_extractions,
-                        "失败": failed_extractions,
-                        "当前": f"{timestamp:.1f}s (失败)"
+                        "✅": successful_extractions,
+                        "❌": failed_extractions,
+                        "时间": f"{timestamp:.1f}s"
                     })
 
                 pbar.update(1)
@@ -203,19 +204,16 @@ class VideoProcessor:
             # 对于 NVIDIA 显卡，优先使用纯软件解码 + NVENC 编码
             if self._try_extract_with_software_decode(timestamp, output_path):
                 return True
-            logger.debug(f"纯软件解码方案失败，尝试其他方案")
 
         # 策略2: 尝试标准硬件加速
         if use_hw_accel and ffmpeg_utils.is_ffmpeg_hwaccel_available():
             hw_accel = ffmpeg_utils.get_ffmpeg_hwaccel_args()
             if self._try_extract_with_hwaccel(timestamp, output_path, hw_accel):
                 return True
-            logger.debug(f"硬件加速方案失败，回退到软件方案")
 
         # 策略3: 软件方案
         if self._try_extract_with_software(timestamp, output_path):
             return True
-        logger.debug(f"软件方案失败，尝试超级兼容性方案")
 
         # 策略4: 超级兼容性方案（Windows 特殊处理）
         return self._try_extract_with_ultra_compatibility(timestamp, output_path)
@@ -434,37 +432,21 @@ class VideoProcessor:
             if is_windows:
                 process_kwargs["encoding"] = 'utf-8'
 
-            logger.debug(f"执行命令: {' '.join(cmd)}")
             result = subprocess.run(cmd, **process_kwargs)
 
             # 验证输出文件
             output_path = cmd[-1]
             if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-                logger.debug(f"{description} - 成功")
                 return True
             else:
-                logger.debug(f"{description} - 输出文件无效: {output_path}")
                 return False
 
         except subprocess.CalledProcessError as e:
-            error_msg = e.stderr if hasattr(e, 'stderr') and e.stderr else str(e)
-
-            # 分析错误类型，提供更好的调试信息
-            if "mjpeg" in error_msg.lower() and "non full-range yuv" in error_msg.lower():
-                logger.debug(f"{description} - MJPEG YUV 格式问题: {error_msg[:200]}")
-            elif "codec avOption" in error_msg.lower():
-                logger.debug(f"{description} - 编码器参数问题: {error_msg[:200]}")
-            elif "filter" in error_msg.lower():
-                logger.debug(f"{description} - 滤镜链问题: {error_msg[:200]}")
-            else:
-                logger.debug(f"{description} - 命令执行失败: {error_msg[:200]}")
-
+            # 简化错误日志，仅记录关键信息
             return False
         except subprocess.TimeoutExpired:
-            logger.debug(f"{description} - 命令执行超时")
             return False
         except Exception as e:
-            logger.debug(f"{description} - 未知错误: {str(e)}")
             return False
 
     def _detect_hw_accelerator(self) -> List[str]:
@@ -509,6 +491,163 @@ class VideoProcessor:
             import traceback
             logger.error(f"视频处理失败: \n{traceback.format_exc()}")
             raise
+
+    def extract_frames_by_interval_ultra_compatible(self, output_dir: str, interval_seconds: float = 5.0) -> List[int]:
+        """
+        使用超级兼容性方案按指定时间间隔提取视频帧
+        
+        直接使用PNG格式提取，避免MJPEG编码问题，确保最高兼容性
+        
+        Args:
+            output_dir: 输出目录
+            interval_seconds: 帧提取间隔（秒）
+            
+        Returns:
+            List[int]: 提取的帧号列表
+        """
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # 计算起始时间和帧提取点
+        start_time = 0
+        end_time = self.duration
+        extraction_times = []
+
+        current_time = start_time
+        while current_time < end_time:
+            extraction_times.append(current_time)
+            current_time += interval_seconds
+
+        if not extraction_times:
+            logger.warning("未找到需要提取的帧")
+            return []
+
+        # 提取帧 - 使用美化的进度条
+        frame_numbers = []
+        successful_extractions = 0
+        failed_extractions = 0
+
+        logger.info(f"开始提取 {len(extraction_times)} 个关键帧，使用超级兼容性方案")
+
+        with tqdm(total=len(extraction_times), desc="🎬 提取关键帧", unit="帧", 
+                 bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]") as pbar:
+            for i, timestamp in enumerate(extraction_times):
+                frame_number = int(timestamp * self.fps)
+                frame_numbers.append(frame_number)
+
+                # 格式化时间戳字符串 (HHMMSSmmm)
+                hours = int(timestamp // 3600)
+                minutes = int((timestamp % 3600) // 60)
+                seconds = int(timestamp % 60)
+                milliseconds = int((timestamp % 1) * 1000)
+                time_str = f"{hours:02d}{minutes:02d}{seconds:02d}{milliseconds:03d}"
+
+                output_path = os.path.join(output_dir, f"keyframe_{frame_number:06d}_{time_str}.jpg")
+
+                # 直接使用超级兼容性方案
+                success = self._extract_frame_ultra_compatible(timestamp, output_path)
+
+                if success:
+                    successful_extractions += 1
+                    pbar.set_postfix({
+                        "✅": successful_extractions,
+                        "❌": failed_extractions,
+                        "时间": f"{timestamp:.1f}s"
+                    })
+                else:
+                    failed_extractions += 1
+                    pbar.set_postfix({
+                        "✅": successful_extractions,
+                        "❌": failed_extractions,
+                        "时间": f"{timestamp:.1f}s"
+                    })
+
+                pbar.update(1)
+
+        # 统计结果
+        total_attempts = len(extraction_times)
+        success_rate = (successful_extractions / total_attempts) * 100 if total_attempts > 0 else 0
+
+        logger.info(f"关键帧提取完成: 成功 {successful_extractions}/{total_attempts} 帧 ({success_rate:.1f}%)")
+
+        if failed_extractions > 0:
+            logger.warning(f"有 {failed_extractions} 帧提取失败")
+
+        # 验证实际生成的文件
+        actual_files = [f for f in os.listdir(output_dir) if f.endswith('.jpg')]
+        logger.info(f"实际生成文件数量: {len(actual_files)} 个")
+
+        if len(actual_files) == 0:
+            logger.error("未生成任何关键帧文件")
+            raise Exception("关键帧提取完全失败，请检查视频文件")
+
+        return frame_numbers
+
+    def _extract_frame_ultra_compatible(self, timestamp: float, output_path: str) -> bool:
+        """
+        超级兼容性方案提取单帧
+        
+        Args:
+            timestamp: 时间戳（秒）
+            output_path: 输出文件路径
+            
+        Returns:
+            bool: 是否成功提取
+        """
+        # 使用 PNG 格式避免 MJPEG 问题
+        png_output = output_path.replace('.jpg', '.png')
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-ss", str(timestamp),
+            "-i", self.video_path,
+            "-vframes", "1",
+            "-f", "image2",  # 明确指定图片格式
+            "-y",
+            png_output
+        ]
+
+        try:
+            # 执行FFmpeg命令
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
+            
+            # 验证PNG文件是否成功生成
+            if os.path.exists(png_output) and os.path.getsize(png_output) > 0:
+                # 转换PNG为JPG
+                try:
+                    from PIL import Image
+                    with Image.open(png_output) as img:
+                        # 转换为 RGB 模式（去除 alpha 通道）
+                        if img.mode in ('RGBA', 'LA'):
+                            background = Image.new('RGB', img.size, (255, 255, 255))
+                            background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                            img = background
+                        img.save(output_path, 'JPEG', quality=90)
+
+                    # 删除临时 PNG 文件
+                    os.remove(png_output)
+                    return True
+                except Exception as e:
+                    logger.warning(f"PNG 转 JPG 失败: {e}")
+                    # 如果转换失败，直接重命名 PNG 为 JPG
+                    try:
+                        os.rename(png_output, output_path)
+                        return True
+                    except Exception:
+                        return False
+            else:
+                return False
+                
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"超级兼容性方案提取帧 {timestamp:.1f}s 失败: {e}")
+            return False
+        except subprocess.TimeoutExpired:
+            logger.warning(f"超级兼容性方案提取帧 {timestamp:.1f}s 超时")
+            return False
+        except Exception as e:
+            logger.warning(f"超级兼容性方案提取帧 {timestamp:.1f}s 异常: {e}")
+            return False
 
 
 if __name__ == "__main__":
