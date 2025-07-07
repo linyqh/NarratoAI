@@ -51,15 +51,15 @@ ${subtitle_content}
 
 请返回一个JSON对象，包含一个名为"plot_points"的数组，数组中包含多个对象，每个对象都要包含以下字段：
 
-{{
+{
   "plot_points": [
-    {{
+    {
       "timestamp": "时间段，格式为xx:xx:xx,xxx-xx:xx:xx,xxx",
       "title": "关键剧情的主题",
       "picture": "关键剧情前后的详细剧情描述，包括人物对话、动作、情感变化等"
-    }}
+    }
   ]
-}}
+}
 
 重要要求：
 1. 请确保返回的是合法的JSON格式

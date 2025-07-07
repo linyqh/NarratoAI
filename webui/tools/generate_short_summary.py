@@ -45,6 +45,15 @@ def parse_and_fix_json(json_string):
     except json.JSONDecodeError as e:
         logger.warning(f"直接JSON解析失败: {e}")
 
+    # 尝试修复双大括号问题（LLM生成的常见问题）
+    try:
+        # 将双大括号替换为单大括号
+        fixed_braces = json_string.replace('{{', '{').replace('}}', '}')
+        logger.info("修复双大括号格式")
+        return json.loads(fixed_braces)
+    except json.JSONDecodeError:
+        pass
+
     # 尝试提取JSON部分
     try:
         # 查找JSON代码块
@@ -68,19 +77,40 @@ def parse_and_fix_json(json_string):
     except json.JSONDecodeError:
         pass
 
-    # 尝试修复常见的JSON格式问题
+    # 尝试综合修复JSON格式问题
     try:
-        # 移除注释
-        json_string = re.sub(r'#.*', '', json_string)
-        # 移除多余的逗号
-        json_string = re.sub(r',\s*}', '}', json_string)
-        json_string = re.sub(r',\s*]', ']', json_string)
-        # 修复单引号
-        json_string = re.sub(r"'([^']*)':", r'"\1":', json_string)
+        fixed_json = json_string
 
-        logger.info("尝试修复JSON格式问题后解析")
-        return json.loads(json_string)
-    except json.JSONDecodeError:
+        # 1. 修复双大括号问题
+        fixed_json = fixed_json.replace('{{', '{').replace('}}', '}')
+
+        # 2. 提取JSON内容（如果有其他文本包围）
+        start_idx = fixed_json.find('{')
+        end_idx = fixed_json.rfind('}')
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            fixed_json = fixed_json[start_idx:end_idx+1]
+
+        # 3. 移除注释
+        fixed_json = re.sub(r'#.*', '', fixed_json)
+        fixed_json = re.sub(r'//.*', '', fixed_json)
+
+        # 4. 移除多余的逗号
+        fixed_json = re.sub(r',\s*}', '}', fixed_json)
+        fixed_json = re.sub(r',\s*]', ']', fixed_json)
+
+        # 5. 修复单引号
+        fixed_json = re.sub(r"'([^']*)':", r'"\1":', fixed_json)
+
+        # 6. 修复没有引号的属性名
+        fixed_json = re.sub(r'(\w+)(\s*):', r'"\1"\2:', fixed_json)
+
+        # 7. 修复重复的引号
+        fixed_json = re.sub(r'""([^"]*?)""', r'"\1"', fixed_json)
+
+        logger.info("尝试综合修复JSON格式问题后解析")
+        return json.loads(fixed_json)
+    except json.JSONDecodeError as e:
+        logger.debug(f"综合修复失败: {e}")
         pass
 
     # 如果所有方法都失败，尝试创建一个基本的结构

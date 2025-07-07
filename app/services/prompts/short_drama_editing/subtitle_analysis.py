@@ -45,20 +45,20 @@ ${subtitle_content}
 
 请按照以下JSON格式输出分析结果：
 
-{{
+{
   "summary": "整体剧情梗概，简要概括主要故事线、角色关系和核心冲突",
   "plot_titles": [
     "情节点1标题",
     "情节点2标题",
     "情节点3标题"
   ],
-  "analysis_details": {{
+  "analysis_details": {
     "main_characters": ["主要角色1", "主要角色2"],
     "story_theme": "故事主题",
     "conflict_type": "冲突类型（如：爱情、复仇、家庭等）",
     "emotional_peaks": ["情感高潮点1", "情感高潮点2"]
-  }}
-}}
+  }
+}
 
 重要要求：
 1. 必须输出有效的JSON格式，不能包含注释或其他文字

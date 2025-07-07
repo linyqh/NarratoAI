@@ -59,16 +59,16 @@ ${video_frame_description}
 我正在尝试做这个内容的解说纪录片视频，我需要你以 <video_frame_description> </video_frame_description> 中的内容为解说目标，根据我刚才提供给你的对标文案特点，以及你总结的特点，帮我生成一段关于荒野建造的解说文案，文案需要符合平台受欢迎的解说风格，请使用 json 格式进行输出；使用 <output> 中的输出格式：
 
 <output>
-{{
+{
   "items": [
-    {{
+    {
         "_id": 1,
         "timestamp": "00:00:05,390-00:00:10,430",
         "picture": "画面描述",
-        "narration": "解说文案",
-    }}
+        "narration": "解说文案"
+    }
   ]
-}}
+}
 </output>
 
 <restriction>
