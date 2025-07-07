@@ -20,15 +20,18 @@ class AudioVolumeDefaults:
     VOICE_VOLUME = 1.0
     TTS_VOLUME = 1.0
 
-    # 原声音量默认值 - 这是修复bug的关键
-    ORIGINAL_VOLUME = 0.7
+    # 原声音量默认值 - 提高原声音量以平衡TTS
+    ORIGINAL_VOLUME = 1.2
 
     # 背景音乐音量默认值
     BGM_VOLUME = 0.3
 
     # 音量范围
     MIN_VOLUME = 0.0
-    MAX_VOLUME = 1.0
+    MAX_VOLUME = 2.0  # 允许原声音量超过1.0以平衡TTS
+
+    # 智能音量调整
+    ENABLE_SMART_VOLUME = True  # 是否启用智能音量分析和调整
 
 
 class VideoConcatMode(str, Enum):
