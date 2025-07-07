@@ -367,7 +367,16 @@ def generate_script_docu(params):
                     base_url=text_base_url,
                     model=text_model
                 )
-                narration_dict = json.loads(narration)['items']
+
+                # 使用增强的JSON解析器
+                from webui.tools.generate_short_summary import parse_and_fix_json
+                narration_data = parse_and_fix_json(narration)
+
+                if not narration_data or 'items' not in narration_data:
+                    logger.error(f"解说文案JSON解析失败，原始内容: {narration[:200]}...")
+                    raise Exception("解说文案格式错误，无法解析JSON或缺少items字段")
+
+                narration_dict = narration_data['items']
                 # 为 narration_dict 中每个 item 新增一个 OST: 2 的字段, 代表保留原声和配音
                 narration_dict = [{**item, "OST": 2} for item in narration_dict]
                 logger.debug(f"解说文案创作完成:\n{"\n".join([item['narration'] for item in narration_dict])}")
