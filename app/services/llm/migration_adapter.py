@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import json
 from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 import PIL.Image
@@ -94,47 +95,26 @@ class LegacyLLMAdapter:
     def generate_narration(markdown_content: str, api_key: str, base_url: str, model: str) -> str:
         """
         生成解说文案 - 兼容原有接口
-        
+
         Args:
             markdown_content: Markdown格式的视频帧分析内容
             api_key: API密钥
             base_url: API基础URL
             model: 模型名称
-            
+
         Returns:
             生成的解说文案JSON字符串
         """
         try:
-            # 构建提示词
-            prompt = f"""
-我是一名荒野建造解说的博主，以下是一些同行的对标文案，请你深度学习并总结这些文案的风格特点跟内容特点：
+            # 使用新的提示词管理系统
+            prompt = PromptManager.get_prompt(
+                category="documentary",
+                name="narration_generation",
+                parameters={
+                    "video_frame_description": markdown_content
+                }
+            )
 
-<video_frame_description>
-{markdown_content}
-</video_frame_description>
-
-请根据以上视频帧描述，生成引人入胜的解说文案。
-
-<output>
-{{
-  "items": [
-    {{
-        "_id": 1,
-        "timestamp": "00:00:05,390-00:00:10,430",
-        "picture": "画面描述",
-        "narration": "解说文案",
-    }}
-  ]
-}}
-</output>
-
-<restriction>
-1. 只输出 json 内容，不要输出其他任何说明性的文字
-2. 解说文案的语言使用 简体中文
-3. 严禁虚构画面，所有画面只能从 <video_frame_description> 中摘取
-</restriction>
-"""
-            
             # 使用统一服务生成文案
             result = _run_async_safely(
                 UnifiedLLMService.generate_text,
@@ -143,12 +123,41 @@ class LegacyLLMAdapter:
                 temperature=1.5,
                 response_format="json"
             )
-            
-            return result
-            
+
+            # 使用增强的JSON解析器
+            from webui.tools.generate_short_summary import parse_and_fix_json
+            parsed_result = parse_and_fix_json(result)
+
+            if not parsed_result:
+                logger.error("无法解析LLM返回的JSON数据")
+                # 返回一个基本的JSON结构而不是错误字符串
+                return json.dumps({
+                    "items": [
+                        {
+                            "_id": 1,
+                            "timestamp": "00:00:00-00:00:10",
+                            "picture": "解析失败，请检查LLM输出",
+                            "narration": "解说文案生成失败，请重试"
+                        }
+                    ]
+                }, ensure_ascii=False)
+
+            # 确保返回的是JSON字符串
+            return json.dumps(parsed_result, ensure_ascii=False)
+
         except Exception as e:
             logger.error(f"生成解说文案失败: {str(e)}")
-            return f"生成解说文案失败: {str(e)}"
+            # 返回一个基本的JSON结构而不是错误字符串
+            return json.dumps({
+                "items": [
+                    {
+                        "_id": 1,
+                        "timestamp": "00:00:00-00:00:10",
+                        "picture": "生成失败",
+                        "narration": f"解说文案生成失败: {str(e)}"
+                    }
+                ]
+            }, ensure_ascii=False)
 
 
 class VisionAnalyzerAdapter:
@@ -163,17 +172,17 @@ class VisionAnalyzerAdapter:
     async def analyze_images(self,
                            images: List[Union[str, Path, PIL.Image.Image]],
                            prompt: str,
-                           batch_size: int = 10) -> List[str]:
+                           batch_size: int = 10) -> List[Dict[str, Any]]:
         """
         分析图片 - 兼容原有接口
-        
+
         Args:
             images: 图片列表
             prompt: 分析提示词
             batch_size: 批处理大小
-            
+
         Returns:
-            分析结果列表
+            分析结果列表，格式与旧实现兼容
         """
         try:
             # 使用统一服务分析图片
@@ -183,9 +192,26 @@ class VisionAnalyzerAdapter:
                 provider=self.provider,
                 batch_size=batch_size
             )
-            
-            return results
-            
+
+            # 转换为旧格式以保持向后兼容性
+            # 新实现返回 List[str]，需要转换为 List[Dict]
+            compatible_results = []
+            for i, result in enumerate(results):
+                # 计算这个批次处理的图片数量
+                start_idx = i * batch_size
+                end_idx = min(start_idx + batch_size, len(images))
+                images_processed = end_idx - start_idx
+
+                compatible_results.append({
+                    'batch_index': i,
+                    'images_processed': images_processed,
+                    'response': result,
+                    'model_used': self.model
+                })
+
+            logger.info(f"图片分析完成，共处理 {len(images)} 张图片，生成 {len(compatible_results)} 个批次结果")
+            return compatible_results
+
         except Exception as e:
             logger.error(f"图片分析失败: {str(e)}")
             raise
