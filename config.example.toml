@@ -4,7 +4,7 @@
     #   gemini  (谷歌, 需要 VPN)
     #   siliconflow (硅基流动)
     #   qwenvl  (通义千问)
-    vision_llm_provider="Siliconflow"
+    vision_llm_provider="gemini"
 
     ########## Gemini 视觉模型
     vision_gemini_api_key = ""
@@ -37,7 +37,7 @@
     #   gemini (谷歌, 需要 VPN)
     #   qwen (通义千问)
     #   moonshot (月之暗面)
-    text_llm_provider="openai"
+    text_llm_provider="gemini"
 
     ########## OpenAI API Key
     # Get your API key at https://platform.openai.com/api-keys
@@ -60,7 +60,7 @@
     ########## Gemini API Key
     text_gemini_api_key=""
     text_gemini_model_name = "gemini-2.0-flash"
-    text_gemini_base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+    text_gemini_base_url = "https://generativelanguage.googleapis.com/v1beta"
 
     ########## Qwen API Key
     # 访问 https://bailian.console.aliyun.com/?tab=model#/api-key 获取你的 API 密钥
@@ -78,8 +78,9 @@
     hide_config = true
 
 [proxy]
-    http = "http://127.0.0.1:7890"
-    https = "http://127.0.0.1:7890"
+    # clash 默认地址：http://127.0.0.1:7890
+    http = ""
+    https = ""
     enabled = false
 
 [frames]
