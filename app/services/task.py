@@ -7,155 +7,12 @@ from os import path
 from loguru import logger
 
 from app.config import config
+from app.config.audio_config import AudioConfig, get_recommended_volumes_for_content
 from app.models import const
-from app.models.schema import VideoConcatMode, VideoParams, VideoClipParams
-from app.services import (llm, material, subtitle, video, voice, audio_merger,
-                          subtitle_merger, clip_video, merger_video, update_script, generate_video)
+from app.models.schema import VideoClipParams
+from app.services import (voice, audio_merger, subtitle_merger, clip_video, merger_video, update_script, generate_video)
 from app.services import state as sm
 from app.utils import utils
-
-
-# def generate_script(task_id, params):
-#     logger.info("\n\n## generating video script")
-#     video_script = params.video_script.strip()
-#     if not video_script:
-#         video_script = llm.generate_script(
-#             video_subject=params.video_subject,
-#             language=params.video_language,
-#             paragraph_number=params.paragraph_number,
-#         )
-#     else:
-#         logger.debug(f"video script: \n{video_script}")
-
-#     if not video_script:
-#         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-#         logger.error("failed to generate video script.")
-#         return None
-
-#     return video_script
-
-
-# def generate_terms(task_id, params, video_script):
-#     logger.info("\n\n## generating video terms")
-#     video_terms = params.video_terms
-#     if not video_terms:
-#         video_terms = llm.generate_terms(
-#             video_subject=params.video_subject, video_script=video_script, amount=5
-#         )
-#     else:
-#         if isinstance(video_terms, str):
-#             video_terms = [term.strip() for term in re.split(r"[,，]", video_terms)]
-#         elif isinstance(video_terms, list):
-#             video_terms = [term.strip() for term in video_terms]
-#         else:
-#             raise ValueError("video_terms must be a string or a list of strings.")
-
-#         logger.debug(f"video terms: {utils.to_json(video_terms)}")
-
-#     if not video_terms:
-#         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-#         logger.error("failed to generate video terms.")
-#         return None
-
-#     return video_terms
-
-
-# def save_script_data(task_id, video_script, video_terms, params):
-#     script_file = path.join(utils.task_dir(task_id), "script.json")
-#     script_data = {
-#         "script": video_script,
-#         "search_terms": video_terms,
-#         "params": params,
-#     }
-
-#     with open(script_file, "w", encoding="utf-8") as f:
-#         f.write(utils.to_json(script_data))
-
-
-# def generate_audio(task_id, params, video_script):
-#     logger.info("\n\n## generating audio")
-#     audio_file = path.join(utils.task_dir(task_id), "audio.mp3")
-#     sub_maker = voice.tts(
-#         text=video_script,
-#         voice_name=voice.parse_voice_name(params.voice_name),
-#         voice_rate=params.voice_rate,
-#         voice_file=audio_file,
-#     )
-#     if sub_maker is None:
-#         sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-#         logger.error(
-#             """failed to generate audio:
-# 1. check if the language of the voice matches the language of the video script.
-# 2. check if the network is available. If you are in China, it is recommended to use a VPN and enable the global traffic mode.
-#         """.strip()
-#         )
-#         return None, None, None
-
-#     audio_duration = math.ceil(voice.get_audio_duration(sub_maker))
-#     return audio_file, audio_duration, sub_maker
-
-
-# def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
-#     if not params.subtitle_enabled:
-#         return ""
-
-#     subtitle_path = path.join(utils.task_dir(task_id), "subtitle111.srt")
-#     subtitle_provider = config.app.get("subtitle_provider", "").strip().lower()
-#     logger.info(f"\n\n## generating subtitle, provider: {subtitle_provider}")
-
-#     subtitle_fallback = False
-#     if subtitle_provider == "edge":
-#         voice.create_subtitle(
-#             text=video_script, sub_maker=sub_maker, subtitle_file=subtitle_path
-#         )
-#         if not os.path.exists(subtitle_path):
-#             subtitle_fallback = True
-#             logger.warning("subtitle file not found, fallback to whisper")
-
-#     if subtitle_provider == "whisper" or subtitle_fallback:
-#         subtitle.create(audio_file=audio_file, subtitle_file=subtitle_path)
-#         logger.info("\n\n## correcting subtitle")
-#         subtitle.correct(subtitle_file=subtitle_path, video_script=video_script)
-
-#     subtitle_lines = subtitle.file_to_subtitles(subtitle_path)
-#     if not subtitle_lines:
-#         logger.warning(f"subtitle file is invalid: {subtitle_path}")
-#         return ""
-
-#     return subtitle_path
-
-
-# def get_video_materials(task_id, params, video_terms, audio_duration):
-#     if params.video_source == "local":
-#         logger.info("\n\n## preprocess local materials")
-#         materials = video.preprocess_video(
-#             materials=params.video_materials, clip_duration=params.video_clip_duration
-#         )
-#         if not materials:
-#             sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-#             logger.error(
-#                 "no valid materials found, please check the materials and try again."
-#             )
-#             return None
-#         return [material_info.url for material_info in materials]
-#     else:
-#         logger.info(f"\n\n## downloading videos from {params.video_source}")
-#         downloaded_videos = material.download_videos(
-#             task_id=task_id,
-#             search_terms=video_terms,
-#             source=params.video_source,
-#             video_aspect=params.video_aspect,
-#             video_contact_mode=params.video_concat_mode,
-#             audio_duration=audio_duration * params.video_count,
-#             max_clip_duration=params.video_clip_duration,
-#         )
-#         if not downloaded_videos:
-#             sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-#             logger.error(
-#                 "failed to download videos, maybe the network is not available. if you are in China, please use a VPN."
-#             )
-#             return None
-#         return downloaded_videos
 
 
 def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: dict):
@@ -171,12 +28,6 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     logger.info(f"\n\n## 开始任务: {task_id}")
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=0)
 
-    # # 初始化 ImageMagick
-    # if not utils.init_imagemagick():
-    #     logger.warning("ImageMagick 初始化失败，字幕可能无法正常显示")
-
-    # # tts 角色名称
-    # voice_name = voice.parse_voice_name(params.voice_name)
     """
     1. 加载剪辑脚本
     """
@@ -309,11 +160,22 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     # bgm_path = '/Users/apple/Desktop/home/NarratoAI/resource/songs/bgm.mp3'
     bgm_path = utils.get_bgm_file()
 
+    # 获取优化的音量配置
+    optimized_volumes = get_recommended_volumes_for_content('mixed')
+
+    # 应用用户设置和优化建议的组合
+    # 如果用户设置了非默认值，优先使用用户设置
+    final_tts_volume = params.tts_volume if hasattr(params, 'tts_volume') and params.tts_volume != 1.0 else optimized_volumes['tts_volume']
+    final_original_volume = params.original_volume if hasattr(params, 'original_volume') and params.original_volume != 0.7 else optimized_volumes['original_volume']
+    final_bgm_volume = params.bgm_volume if hasattr(params, 'bgm_volume') and params.bgm_volume != 0.3 else optimized_volumes['bgm_volume']
+
+    logger.info(f"音量配置 - TTS: {final_tts_volume}, 原声: {final_original_volume}, BGM: {final_bgm_volume}")
+
     # 调用示例
     options = {
-        'voice_volume': params.tts_volume,  # 配音音量
-        'bgm_volume': params.bgm_volume,  # 背景音乐音量
-        'original_audio_volume': params.original_volume,  # 视频原声音量，0表示不保留
+        'voice_volume': final_tts_volume,  # 配音音量（优化后）
+        'bgm_volume': final_bgm_volume,  # 背景音乐音量（优化后）
+        'original_audio_volume': final_original_volume,  # 视频原声音量（优化后）
         'keep_original_audio': True,  # 是否保留原声
         'subtitle_enabled': params.subtitle_enabled,  # 是否启用字幕 - 修复字幕开关bug
         'subtitle_font': params.font_name,  # 这里使用相对字体路径，会自动在 font_dir() 目录下查找
