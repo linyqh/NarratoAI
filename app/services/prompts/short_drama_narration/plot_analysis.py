@@ -1,15 +1,37 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
-'''
+"""
 @Project: NarratoAI
-@File   : prompt
-@Author : 小林同学
-@Date   : 2025/5/9 上午12:57 
-'''
-# 字幕剧情分析提示词
-subtitle_plot_analysis_v1 = """
-# 角色
+@File   : plot_analysis.py
+@Author : viccy同学
+@Date   : 2025/1/7
+@Description: 短剧剧情分析提示词
+"""
+
+from ..base import TextPrompt, PromptMetadata, ModelType, OutputFormat
+
+
+class PlotAnalysisPrompt(TextPrompt):
+    """短剧剧情分析提示词"""
+    
+    def __init__(self):
+        metadata = PromptMetadata(
+            name="plot_analysis",
+            category="short_drama_narration",
+            version="v1.0",
+            description="分析短剧字幕内容，提供详细的剧情分析和分段解析",
+            model_type=ModelType.TEXT,
+            output_format=OutputFormat.TEXT,
+            tags=["短剧", "剧情分析", "字幕解析", "分段分析"],
+            parameters=["subtitle_content"]
+        )
+        super().__init__(metadata)
+        
+        self._system_prompt = "你是一位专业的剧本分析师和剧情概括助手。"
+        
+    def get_template(self) -> str:
+        return """# 角色
 你是一位专业的剧本分析师和剧情概括助手。
 
 # 任务
@@ -62,36 +84,7 @@ subtitle_plot_analysis_v1 = """
 
 # 限制
 1. 严禁输出与分析结果无关的内容
-2. 
+2. 时间戳必须严格按照字幕中的实际时间
 
 # 请处理以下字幕：
-"""
-
-plot_writing = """
-我是一个影视解说up主，需要为我的粉丝讲解短剧《%s》的剧情，目前正在解说剧情，希望能让粉丝通过我的解说了解剧情，并且产生 继续观看的兴趣，请生成一篇解说脚本，包含解说文案，以及穿插原声的片段，下面<plot>中的内容是短剧的剧情概述：
-
-<plot>
-%s
-</plot>
-
-请使用 json 格式进行输出；使用 <output> 中的输出格式：
-<output>
-{
-  "items": [
-    {
-        "_id": 1, # 唯一递增id
-        "timestamp": "00:00:05,390-00:00:10,430",
-        "picture": "剧情描述或者备注",
-        "narration": "解说文案，如果片段为穿插的原片片段，可以直接使用 ‘播放原片+_id‘ 进行占位",
-        "OST": "值为 0 表示当前片段为解说片段，值为 1 表示当前片段为穿插的原片"
-    }
-}
-</output>
-
-<restriction>
-1. 只输出 json 内容，不要输出其他任何说明性的文字
-2. 解说文案的语言使用 简体中文
-3. 严禁虚构剧情，所有画面只能从 <polt> 中摘取
-4. 严禁虚构时间戳，所有时间戳范围只能从 <polt> 中摘取
-</restriction>
-"""
+${subtitle_content}"""

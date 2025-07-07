@@ -5,53 +5,162 @@ from pathlib import Path
 from loguru import logger
 from tqdm import tqdm
 import asyncio
-from tenacity import retry, stop_after_attempt, RetryError, retry_if_exception_type, wait_exponential
-from google.api_core import exceptions
-import google.generativeai as genai
+from tenacity import retry, stop_after_attempt, retry_if_exception_type, wait_exponential
+import requests
 import PIL.Image
 import traceback
+import base64
+import io
 from app.utils import utils
 
 
 class VisionAnalyzer:
-    """视觉分析器类"""
+    """原生Gemini视觉分析器类"""
 
-    def __init__(self, model_name: str = "gemini-1.5-flash", api_key: str = None):
+    def __init__(self, model_name: str = "gemini-2.0-flash-exp", api_key: str = None, base_url: str = None):
         """初始化视觉分析器"""
         if not api_key:
             raise ValueError("必须提供API密钥")
 
         self.model_name = model_name
         self.api_key = api_key
+        self.base_url = base_url or "https://generativelanguage.googleapis.com/v1beta"
 
         # 初始化配置
         self._configure_client()
 
     def _configure_client(self):
-        """配置API客户端"""
-        genai.configure(api_key=self.api_key)
-        # 开放 Gemini 模型安全设置
-        from google.generativeai.types import HarmCategory, HarmBlockThreshold
-        safety_settings = {
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        }
-        self.model = genai.GenerativeModel(self.model_name, safety_settings=safety_settings)
+        """配置原生Gemini API客户端"""
+        # 使用原生Gemini REST API
+        self.client = None
+        logger.info(f"配置原生Gemini API，端点: {self.base_url}, 模型: {self.model_name}")
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(exceptions.ResourceExhausted)
+        retry=retry_if_exception_type(requests.exceptions.RequestException)
     )
     async def _generate_content_with_retry(self, prompt, batch):
-        """使用重试机制的内部方法来调用 generate_content_async"""
+        """使用重试机制调用原生Gemini API"""
         try:
-            return await self.model.generate_content_async([prompt, *batch])
-        except exceptions.ResourceExhausted as e:
-            print(f"API配额限制: {str(e)}")
-            raise RetryError("API调用失败")
+            return await self._generate_with_gemini_api(prompt, batch)
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Gemini API请求异常: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Gemini API生成内容时发生错误: {str(e)}")
+            raise
+
+    async def _generate_with_gemini_api(self, prompt, batch):
+        """使用原生Gemini REST API生成内容"""
+        # 将PIL图片转换为base64编码
+        image_parts = []
+        for img in batch:
+            # 将PIL图片转换为字节流
+            img_buffer = io.BytesIO()
+            img.save(img_buffer, format='JPEG', quality=85)  # 优化图片质量
+            img_bytes = img_buffer.getvalue()
+
+            # 转换为base64
+            img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+            image_parts.append({
+                "inline_data": {
+                    "mime_type": "image/jpeg",
+                    "data": img_base64
+                }
+            })
+
+        # 构建符合官方文档的请求数据
+        request_data = {
+            "contents": [{
+                "parts": [
+                    {"text": prompt},
+                    *image_parts
+                ]
+            }],
+            "generationConfig": {
+                "temperature": 1.0,
+                "topK": 40,
+                "topP": 0.95,
+                "maxOutputTokens": 8192,
+                "candidateCount": 1,
+                "stopSequences": []
+            },
+            "safetySettings": [
+                {
+                    "category": "HARM_CATEGORY_HARASSMENT",
+                    "threshold": "BLOCK_NONE"
+                },
+                {
+                    "category": "HARM_CATEGORY_HATE_SPEECH",
+                    "threshold": "BLOCK_NONE"
+                },
+                {
+                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    "threshold": "BLOCK_NONE"
+                },
+                {
+                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    "threshold": "BLOCK_NONE"
+                }
+            ]
+        }
+
+        # 构建请求URL
+        url = f"{self.base_url}/models/{self.model_name}:generateContent?key={self.api_key}"
+
+        # 发送请求
+        response = await asyncio.to_thread(
+            requests.post,
+            url,
+            json=request_data,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "NarratoAI/1.0"
+            },
+            timeout=120  # 增加超时时间
+        )
+
+        # 处理HTTP错误
+        if response.status_code == 429:
+            raise requests.exceptions.RequestException(f"API配额限制: {response.text}")
+        elif response.status_code == 400:
+            raise Exception(f"请求参数错误: {response.text}")
+        elif response.status_code == 403:
+            raise Exception(f"API密钥无效或权限不足: {response.text}")
+        elif response.status_code != 200:
+            raise Exception(f"Gemini API请求失败: {response.status_code} - {response.text}")
+
+        response_data = response.json()
+
+        # 检查响应格式
+        if "candidates" not in response_data or not response_data["candidates"]:
+            raise Exception("Gemini API返回无效响应，可能触发了安全过滤")
+
+        candidate = response_data["candidates"][0]
+
+        # 检查是否被安全过滤阻止
+        if "finishReason" in candidate and candidate["finishReason"] == "SAFETY":
+            raise Exception("内容被Gemini安全过滤器阻止")
+
+        if "content" not in candidate or "parts" not in candidate["content"]:
+            raise Exception("Gemini API返回内容格式错误")
+
+        # 提取文本内容
+        text_content = ""
+        for part in candidate["content"]["parts"]:
+            if "text" in part:
+                text_content += part["text"]
+
+        if not text_content.strip():
+            raise Exception("Gemini API返回空内容")
+
+        # 创建兼容的响应对象
+        class CompatibleResponse:
+            def __init__(self, text):
+                self.text = text
+
+        return CompatibleResponse(text_content)
 
     async def analyze_images(self,
                            images: Union[List[str], List[PIL.Image.Image]],

@@ -69,6 +69,7 @@ def generate_script_short(tr, params, custom_clips=5):
                 model_name=text_model,
                 base_url=text_base_url,
                 custom_clips=custom_clips,
+                provider=text_provider
             )
 
             if script is None:
