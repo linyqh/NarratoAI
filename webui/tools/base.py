@@ -6,34 +6,45 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from app.config import config
+# 导入新的LLM服务模块 - 确保提供商被注册
+import app.services.llm  # 这会触发提供商注册
+from app.services.llm.migration_adapter import create_vision_analyzer as create_vision_analyzer_new
+# 保留旧的导入以确保向后兼容
 from app.utils import gemini_analyzer, qwenvl_analyzer
 
 
 def create_vision_analyzer(provider, api_key, model, base_url):
     """
-    创建视觉分析器实例
-    
+    创建视觉分析器实例 - 已重构为使用新的LLM服务架构
+
     Args:
-        provider: 提供商名称 ('gemini' 或 'qwenvl')
+        provider: 提供商名称 ('gemini', 'gemini(openai)', 'qwenvl', 'siliconflow')
         api_key: API密钥
         model: 模型名称
         base_url: API基础URL
-        
+
     Returns:
-        VisionAnalyzer 或 QwenAnalyzer 实例
+        视觉分析器实例
     """
-    if provider == 'gemini':
-        return gemini_analyzer.VisionAnalyzer(model_name=model, api_key=api_key, base_url=base_url)
-    elif provider == 'gemini(openai)':
-        from app.utils.gemini_openai_analyzer import GeminiOpenAIAnalyzer
-        return GeminiOpenAIAnalyzer(model_name=model, api_key=api_key, base_url=base_url)
-    else:
-        # 只传入必要的参数
-        return qwenvl_analyzer.QwenAnalyzer(
-            model_name=model,
-            api_key=api_key,
-            base_url=base_url
-        )
+    try:
+        # 优先使用新的LLM服务架构
+        return create_vision_analyzer_new(provider, api_key, model, base_url)
+    except Exception as e:
+        logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
+
+        # 回退到旧的实现以确保兼容性
+        if provider == 'gemini':
+            return gemini_analyzer.VisionAnalyzer(model_name=model, api_key=api_key, base_url=base_url)
+        elif provider == 'gemini(openai)':
+            from app.utils.gemini_openai_analyzer import GeminiOpenAIAnalyzer
+            return GeminiOpenAIAnalyzer(model_name=model, api_key=api_key, base_url=base_url)
+        else:
+            # 只传入必要的参数
+            return qwenvl_analyzer.QwenAnalyzer(
+                model_name=model,
+                api_key=api_key,
+                base_url=base_url
+            )
 
 
 def get_batch_timestamps(batch_files, prev_batch_files=None):

@@ -11,8 +11,13 @@
 import json
 import os
 import traceback
+import asyncio
 from openai import OpenAI
 from loguru import logger
+
+# 导入新的LLM服务模块 - 确保提供商被注册
+import app.services.llm  # 这会触发提供商注册
+from app.services.llm.migration_adapter import generate_narration as generate_narration_new
 
 
 def parse_frame_analysis_to_markdown(json_file_path):
@@ -79,11 +84,34 @@ def parse_frame_analysis_to_markdown(json_file_path):
 
 def generate_narration(markdown_content, api_key, base_url, model):
     """
-    调用OpenAI API根据视频帧分析的Markdown内容生成解说文案
-    
+    调用大模型API根据视频帧分析的Markdown内容生成解说文案 - 已重构为使用新的LLM服务架构
+
     :param markdown_content: Markdown格式的视频帧分析内容
-    :param api_key: OpenAI API密钥
-    :param base_url: API基础URL，如果使用非官方API
+    :param api_key: API密钥
+    :param base_url: API基础URL
+    :param model: 使用的模型名称
+    :return: 生成的解说文案
+    """
+    try:
+        # 优先使用新的LLM服务架构
+        logger.info("使用新的LLM服务架构生成解说文案")
+        result = generate_narration_new(markdown_content, api_key, base_url, model)
+        return result
+
+    except Exception as e:
+        logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
+
+        # 回退到旧的实现以确保兼容性
+        return _generate_narration_legacy(markdown_content, api_key, base_url, model)
+
+
+def _generate_narration_legacy(markdown_content, api_key, base_url, model):
+    """
+    旧的解说文案生成实现 - 保留作为备用方案
+
+    :param markdown_content: Markdown格式的视频帧分析内容
+    :param api_key: API密钥
+    :param base_url: API基础URL
     :param model: 使用的模型名称
     :return: 生成的解说文案
     """

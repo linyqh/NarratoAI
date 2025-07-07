@@ -16,6 +16,9 @@ from loguru import logger
 
 from app.config import config
 from app.services.SDE.short_drama_explanation import analyze_subtitle, generate_narration_script
+# 导入新的LLM服务模块 - 确保提供商被注册
+import app.services.llm  # 这会触发提供商注册
+from app.services.llm.migration_adapter import SubtitleAnalyzerAdapter
 import re
 
 
@@ -132,32 +135,29 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
                 return
 
             """
-            2. 分析字幕总结剧情
+            2. 分析字幕总结剧情 - 使用新的LLM服务架构
             """
             text_provider = config.app.get('text_llm_provider', 'gemini').lower()
             text_api_key = config.app.get(f'text_{text_provider}_api_key')
             text_model = config.app.get(f'text_{text_provider}_model_name')
             text_base_url = config.app.get(f'text_{text_provider}_base_url')
-            analysis_result = analyze_subtitle(
-                subtitle_file_path=subtitle_path,
-                api_key=text_api_key,
-                model=text_model,
-                base_url=text_base_url,
-                save_result=True,
-                temperature=temperature,
-                provider=text_provider
-            )
-            """
-            3. 根据剧情生成解说文案
-            """
-            if analysis_result["status"] == "success":
-                logger.info("字幕分析成功！")
-                update_progress(60, "正在生成文案...")
 
-                # 根据剧情生成解说文案
-                narration_result = generate_narration_script(
-                    short_name=video_theme,
-                    plot_analysis=analysis_result["analysis"],
+            try:
+                # 优先使用新的LLM服务架构
+                logger.info("使用新的LLM服务架构进行字幕分析")
+                analyzer = SubtitleAnalyzerAdapter(text_api_key, text_model, text_base_url, text_provider)
+
+                # 读取字幕文件
+                with open(subtitle_path, 'r', encoding='utf-8') as f:
+                    subtitle_content = f.read()
+
+                analysis_result = analyzer.analyze_subtitle(subtitle_content)
+
+            except Exception as e:
+                logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
+                # 回退到旧的实现
+                analysis_result = analyze_subtitle(
+                    subtitle_file_path=subtitle_path,
                     api_key=text_api_key,
                     model=text_model,
                     base_url=text_base_url,
@@ -165,6 +165,35 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
                     temperature=temperature,
                     provider=text_provider
                 )
+            """
+            3. 根据剧情生成解说文案
+            """
+            if analysis_result["status"] == "success":
+                logger.info("字幕分析成功！")
+                update_progress(60, "正在生成文案...")
+
+                # 根据剧情生成解说文案 - 使用新的LLM服务架构
+                try:
+                    # 优先使用新的LLM服务架构
+                    logger.info("使用新的LLM服务架构生成解说文案")
+                    narration_result = analyzer.generate_narration_script(
+                        short_name=video_theme,
+                        plot_analysis=analysis_result["analysis"],
+                        temperature=temperature
+                    )
+                except Exception as e:
+                    logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
+                    # 回退到旧的实现
+                    narration_result = generate_narration_script(
+                        short_name=video_theme,
+                        plot_analysis=analysis_result["analysis"],
+                        api_key=text_api_key,
+                        model=text_model,
+                        base_url=text_base_url,
+                        save_result=True,
+                        temperature=temperature,
+                        provider=text_provider
+                    )
 
                 if narration_result["status"] == "success":
                     logger.info("\n解说文案生成成功！")
