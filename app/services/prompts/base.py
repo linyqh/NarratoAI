@@ -112,21 +112,23 @@ class BasePrompt(ABC):
     def render(self, parameters: Dict[str, Any] = None) -> str:
         """渲染提示词"""
         parameters = parameters or {}
-        
+
         # 验证参数
         if self.metadata.parameters:
             self.validate_parameters(parameters)
-            
-        # 渲染模板
+
+        # 渲染模板 - 使用自定义的模板渲染器
         template = self.get_template()
         try:
-            return template.format(**parameters)
-        except KeyError as e:
+            from .template import get_renderer
+            renderer = get_renderer()
+            return renderer.render(template, parameters)
+        except Exception as e:
             from .exceptions import TemplateRenderError
             raise TemplateRenderError(
                 template_name=self.name,
-                error_message=f"模板参数错误: {str(e)}",
-                missing_params=[str(e)]
+                error_message=f"模板渲染错误: {str(e)}",
+                missing_params=[]
             )
             
     def to_dict(self) -> Dict[str, Any]:
