@@ -7,6 +7,8 @@ import os
 import json
 
 from .utils import load_srt
+# 导入新的提示词管理系统
+from app.services.prompts import PromptManager
 
 
 def analyze_subtitle(
@@ -45,28 +47,24 @@ def analyze_subtitle(
                 base_url=base_url
             )
 
+        # 使用新的提示词管理系统
+        subtitle_analysis_prompt = PromptManager.get_prompt(
+            category="short_drama_editing",
+            name="subtitle_analysis",
+            parameters={
+                "subtitle_content": subtitle_content,
+                "custom_clips": custom_clips
+            }
+        )
+
         messages = [
             {
                 "role": "system",
-                "content": """你是一名经验丰富的短剧编剧，擅长根据字幕内容按照先后顺序分析关键剧情,并找出 %s 个关键片段。
-                请返回一个JSON对象，包含以下字段：
-                {
-                    "summary": "整体剧情梗概",
-                    "plot_titles": [
-                        "关键剧情1",
-                        "关键剧情2",
-                        "关键剧情3",
-                        "关键剧情4",
-                        "关键剧情5",
-                        "..."
-                    ]
-                }
-                请确保返回的是合法的JSON格式, 请确保返回的是 %s 个片段。
-                """ % (custom_clips, custom_clips)
+                "content": "你是一名短剧编剧和内容分析师，擅长从字幕中提取剧情要点和关键情节。"
             },
             {
                 "role": "user",
-                "content": f"srt字幕如下：{subtitle_content}"
+                "content": subtitle_analysis_prompt
             }
         ]
         # DeepSeek R1 和 V3 不支持 response_format=json_object
@@ -90,40 +88,31 @@ def analyze_subtitle(
 
         print(json.dumps(summary_data, indent=4, ensure_ascii=False))
 
-        # 获取爆点时间段分析
-        prompt = f"""剧情梗概：
-            {summary_data['summary']}
-
-            需要定位的爆点内容：
-            """
+        # 构建爆点标题列表
+        plot_titles_text = ""
         print(f"找到 {len(summary_data['plot_titles'])} 个片段")
         for i, point in enumerate(summary_data['plot_titles'], 1):
-            prompt += f"{i}. {point}\n"
+            plot_titles_text += f"{i}. {point}\n"
+
+        # 使用新的提示词管理系统
+        plot_extraction_prompt = PromptManager.get_prompt(
+            category="short_drama_editing",
+            name="plot_extraction",
+            parameters={
+                "subtitle_content": subtitle_content,
+                "plot_summary": summary_data['summary'],
+                "plot_titles": plot_titles_text
+            }
+        )
 
         messages = [
             {
                 "role": "system",
-                "content": """你是一名短剧编剧，非常擅长根据字幕中分析视频中关键剧情出现的具体时间段。
-                请仔细阅读剧情梗概和爆点内容，然后在字幕中找出每个爆点发生的具体时间段和爆点前后的详细剧情。
-                
-                请返回一个JSON对象，包含一个名为"plot_points"的数组，数组中包含多个对象，每个对象都要包含以下字段：
-                {
-                    "plot_points": [
-                        {
-                            "timestamp": "时间段，格式为xx:xx:xx,xxx-xx:xx:xx,xxx",
-                            "title": "关键剧情的主题",
-                            "picture": "关键剧情前后的详细剧情描述"
-                        }
-                    ]
-                }
-                请确保返回的是合法的JSON格式。"""
+                "content": "你是一名短剧编剧，非常擅长根据字幕中分析视频中关键剧情出现的具体时间段。"
             },
             {
                 "role": "user",
-                "content": f"""字幕内容：
-{subtitle_content}
-
-{prompt}"""
+                "content": plot_extraction_prompt
             }
         ]
         # DeepSeek R1 和 V3 不支持 response_format=json_object
