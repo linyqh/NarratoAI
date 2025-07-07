@@ -212,12 +212,18 @@ class VideoProcessor:
                 return True
             logger.debug(f"硬件加速方案失败，回退到软件方案")
 
-        # 策略3: 软件方案（最后的备用方案）
-        return self._try_extract_with_software(timestamp, output_path)
+        # 策略3: 软件方案
+        if self._try_extract_with_software(timestamp, output_path):
+            return True
+        logger.debug(f"软件方案失败，尝试超级兼容性方案")
+
+        # 策略4: 超级兼容性方案（Windows 特殊处理）
+        return self._try_extract_with_ultra_compatibility(timestamp, output_path)
 
     def _try_extract_with_software_decode(self, timestamp: float, output_path: str) -> bool:
         """
         使用纯软件解码提取帧（推荐用于 Windows N 卡）
+        参考 clip_video.py 中的成功实现
 
         Args:
             timestamp: 时间戳
@@ -226,13 +232,19 @@ class VideoProcessor:
         Returns:
             bool: 是否成功
         """
-        # 使用 Windows NVIDIA 优化配置
-        cmd = FFmpegConfigManager.get_extraction_command(
-            input_path=self.video_path,
-            output_path=output_path,
-            timestamp=timestamp,
-            profile_name="windows_nvidia"
-        )
+        # 参考 clip_video.py 中的兼容性方案，专门针对图片输出优化
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-ss", str(timestamp),  # 先定位时间戳
+            "-i", self.video_path,
+            "-vframes", "1",  # 只提取一帧
+            "-q:v", "2",  # 高质量
+            "-pix_fmt", "yuv420p",  # 明确指定像素格式
+            "-y",
+            output_path
+        ]
 
         return self._execute_ffmpeg_command(cmd, f"软件解码提取帧 {timestamp:.1f}s")
 
@@ -272,6 +284,7 @@ class VideoProcessor:
     def _try_extract_with_software(self, timestamp: float, output_path: str) -> bool:
         """
         使用纯软件方案提取帧（最后的备用方案）
+        参考 clip_video.py 中的基本编码方案
 
         Args:
             timestamp: 时间戳
@@ -280,22 +293,125 @@ class VideoProcessor:
         Returns:
             bool: 是否成功
         """
-        # 使用最高兼容性配置
-        cmd = FFmpegConfigManager.get_extraction_command(
-            input_path=self.video_path,
-            output_path=output_path,
-            timestamp=timestamp,
-            profile_name="compatibility"
-        )
-
-        # 软件方案使用更详细的日志
-        cmd[cmd.index("-loglevel") + 1] = "warning"
+        # 最基本的兼容性方案，参考 clip_video.py 的 try_basic_fallback
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel", "warning",  # 更详细的日志用于调试
+            "-ss", str(timestamp),
+            "-i", self.video_path,
+            "-vframes", "1",
+            "-q:v", "3",  # 稍微降低质量以提高兼容性
+            "-pix_fmt", "yuv420p",
+            "-avoid_negative_ts", "make_zero",  # 避免时间戳问题
+            "-y",
+            output_path
+        ]
 
         return self._execute_ffmpeg_command(cmd, f"软件方案提取帧 {timestamp:.1f}s")
+
+    def _try_extract_with_ultra_compatibility(self, timestamp: float, output_path: str) -> bool:
+        """
+        超级兼容性方案，专门解决 Windows 系统的 MJPEG 编码问题
+
+        Args:
+            timestamp: 时间戳
+            output_path: 输出路径
+
+        Returns:
+            bool: 是否成功
+        """
+        # 方案1: 使用 PNG 格式避免 MJPEG 问题
+        png_output = output_path.replace('.jpg', '.png')
+        cmd1 = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-ss", str(timestamp),
+            "-i", self.video_path,
+            "-vframes", "1",
+            "-f", "image2",  # 明确指定图片格式
+            "-y",
+            png_output
+        ]
+
+        if self._execute_ffmpeg_command(cmd1, f"PNG格式提取帧 {timestamp:.1f}s"):
+            # 如果 PNG 成功，转换为 JPG
+            try:
+                from PIL import Image
+                with Image.open(png_output) as img:
+                    # 转换为 RGB 模式（去除 alpha 通道）
+                    if img.mode in ('RGBA', 'LA'):
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                        img = background
+                    img.save(output_path, 'JPEG', quality=90)
+
+                # 删除临时 PNG 文件
+                os.remove(png_output)
+                return True
+            except Exception as e:
+                logger.debug(f"PNG 转 JPG 失败: {e}")
+                # 如果转换失败，直接重命名 PNG 为 JPG
+                try:
+                    os.rename(png_output, output_path)
+                    return True
+                except Exception:
+                    pass
+
+        # 方案2: 使用最简单的参数
+        cmd2 = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-i", self.video_path,
+            "-ss", str(timestamp),  # 把 -ss 放在 -i 后面
+            "-vframes", "1",
+            "-f", "mjpeg",  # 明确指定 MJPEG 格式
+            "-q:v", "5",  # 降低质量要求
+            "-y",
+            output_path
+        ]
+
+        if self._execute_ffmpeg_command(cmd2, f"MJPEG格式提取帧 {timestamp:.1f}s"):
+            return True
+
+        # 方案3: 最后的尝试 - 使用 BMP 格式
+        bmp_output = output_path.replace('.jpg', '.bmp')
+        cmd3 = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-i", self.video_path,
+            "-ss", str(timestamp),
+            "-vframes", "1",
+            "-f", "bmp",
+            "-y",
+            bmp_output
+        ]
+
+        if self._execute_ffmpeg_command(cmd3, f"BMP格式提取帧 {timestamp:.1f}s"):
+            # 尝试转换 BMP 为 JPG
+            try:
+                from PIL import Image
+                with Image.open(bmp_output) as img:
+                    img.save(output_path, 'JPEG', quality=90)
+                os.remove(bmp_output)
+                return True
+            except Exception:
+                # 如果转换失败，直接重命名
+                try:
+                    os.rename(bmp_output, output_path)
+                    return True
+                except Exception:
+                    pass
+
+        return False
 
     def _execute_ffmpeg_command(self, cmd: List[str], description: str) -> bool:
         """
         执行 FFmpeg 命令并处理结果
+        参考 clip_video.py 中的错误处理机制
 
         Args:
             cmd: FFmpeg 命令列表
@@ -305,31 +421,44 @@ class VideoProcessor:
             bool: 是否成功
         """
         try:
-            # 在 Windows 上使用 UTF-8 编码
+            # 参考 clip_video.py 中的 Windows 处理方式
             is_windows = os.name == 'nt'
             process_kwargs = {
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "text": True,
                 "check": True,
-                "capture_output": True,
                 "timeout": 30  # 30秒超时
             }
 
             if is_windows:
                 process_kwargs["encoding"] = 'utf-8'
-                process_kwargs["text"] = True
 
+            logger.debug(f"执行命令: {' '.join(cmd)}")
             result = subprocess.run(cmd, **process_kwargs)
 
             # 验证输出文件
             output_path = cmd[-1]
             if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                logger.debug(f"{description} - 成功")
                 return True
             else:
-                logger.debug(f"{description} - 输出文件无效")
+                logger.debug(f"{description} - 输出文件无效: {output_path}")
                 return False
 
         except subprocess.CalledProcessError as e:
             error_msg = e.stderr if hasattr(e, 'stderr') and e.stderr else str(e)
-            logger.debug(f"{description} - 命令执行失败: {error_msg}")
+
+            # 分析错误类型，提供更好的调试信息
+            if "mjpeg" in error_msg.lower() and "non full-range yuv" in error_msg.lower():
+                logger.debug(f"{description} - MJPEG YUV 格式问题: {error_msg[:200]}")
+            elif "codec avOption" in error_msg.lower():
+                logger.debug(f"{description} - 编码器参数问题: {error_msg[:200]}")
+            elif "filter" in error_msg.lower():
+                logger.debug(f"{description} - 滤镜链问题: {error_msg[:200]}")
+            else:
+                logger.debug(f"{description} - 命令执行失败: {error_msg[:200]}")
+
             return False
         except subprocess.TimeoutExpired:
             logger.debug(f"{description} - 命令执行超时")
