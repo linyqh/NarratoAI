@@ -15,7 +15,8 @@ from typing import Dict, Any, Optional
 from loguru import logger
 from app.config import config
 from app.utils.utils import get_uuid, storage_dir
-from app.services.SDE.prompt import subtitle_plot_analysis_v1, plot_writing
+# 导入新的提示词管理系统
+from app.services.prompts import PromptManager
 
 
 class SubtitleAnalyzer:
@@ -49,7 +50,15 @@ class SubtitleAnalyzer:
         self.provider = provider or self._detect_provider()
 
         # 设置提示词模板
-        self.prompt_template = custom_prompt or subtitle_plot_analysis_v1
+        if custom_prompt:
+            self.prompt_template = custom_prompt
+        else:
+            # 使用新的提示词管理系统
+            self.prompt_template = PromptManager.get_prompt(
+                category="short_drama_narration",
+                name="plot_analysis",
+                parameters={}
+            )
 
         # 根据提供商类型确定是否为原生Gemini
         self.is_native_gemini = self.provider.lower() == 'gemini'
@@ -360,8 +369,15 @@ class SubtitleAnalyzer:
             Dict[str, Any]: 包含生成结果的字典
         """
         try:
-            # 构建完整提示词
-            prompt = plot_writing % (short_name, plot_analysis)
+            # 使用新的提示词管理系统构建提示词
+            prompt = PromptManager.get_prompt(
+                category="short_drama_narration",
+                name="script_generation",
+                parameters={
+                    "drama_name": short_name,
+                    "plot_analysis": plot_analysis
+                }
+            )
 
             if self.is_native_gemini:
                 # 使用原生Gemini API格式
