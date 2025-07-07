@@ -6,7 +6,7 @@ from loguru import logger
 from typing import List, Dict
 from datetime import datetime
 from openai import OpenAI
-import google.generativeai as genai
+import requests
 import time
 
 
@@ -134,59 +134,182 @@ class OpenAIGenerator(BaseGenerator):
 
 
 class GeminiGenerator(BaseGenerator):
-    """Google Gemini API 生成器实现"""
-    def __init__(self, model_name: str, api_key: str, prompt: str):
+    """原生Gemini API 生成器实现"""
+    def __init__(self, model_name: str, api_key: str, prompt: str, base_url: str = None):
         super().__init__(model_name, api_key, prompt)
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model_name)
-        
-        # Gemini特定参数
+
+        self.base_url = base_url or "https://generativelanguage.googleapis.com/v1beta"
+        self.client = None
+
+        # 原生Gemini API参数
         self.default_params = {
             "temperature": self.default_params["temperature"],
-            "top_p": self.default_params["top_p"],
-            "candidate_count": 1,
-            "stop_sequences": None
+            "topP": self.default_params["top_p"],
+            "topK": 40,
+            "maxOutputTokens": 4000,
+            "candidateCount": 1,
+            "stopSequences": []
+        }
+
+
+class GeminiOpenAIGenerator(BaseGenerator):
+    """OpenAI兼容的Gemini代理生成器实现"""
+    def __init__(self, model_name: str, api_key: str, prompt: str, base_url: str = None):
+        super().__init__(model_name, api_key, prompt)
+
+        if not base_url:
+            raise ValueError("OpenAI兼容的Gemini代理必须提供base_url")
+
+        self.base_url = base_url.rstrip('/')
+
+        # 使用OpenAI兼容接口
+        from openai import OpenAI
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=base_url
+        )
+
+        # OpenAI兼容接口参数
+        self.default_params = {
+            "temperature": self.default_params["temperature"],
+            "max_tokens": 4000,
+            "stream": False
         }
 
     def _generate(self, messages: list, params: dict) -> any:
-        """实现Gemini特定的生成逻辑"""
-        while True:
+        """实现OpenAI兼容Gemini代理的生成逻辑"""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                **params
+            )
+            return response
+        except Exception as e:
+            logger.error(f"OpenAI兼容Gemini代理生成错误: {str(e)}")
+            raise
+
+    def _process_response(self, response: any) -> str:
+        """处理OpenAI兼容接口的响应"""
+        if not response or not response.choices:
+            raise ValueError("OpenAI兼容Gemini代理返回无效响应")
+        return response.choices[0].message.content.strip()
+
+    def _generate(self, messages: list, params: dict) -> any:
+        """实现原生Gemini API的生成逻辑"""
+        max_retries = 3
+        for attempt in range(max_retries):
             try:
                 # 转换消息格式为Gemini格式
                 prompt = "\n".join([m["content"] for m in messages])
-                response = self.model.generate_content(
-                    prompt,
-                    generation_config=params
+
+                # 构建请求数据
+                request_data = {
+                    "contents": [{
+                        "parts": [{"text": prompt}]
+                    }],
+                    "generationConfig": params,
+                    "safetySettings": [
+                        {
+                            "category": "HARM_CATEGORY_HARASSMENT",
+                            "threshold": "BLOCK_NONE"
+                        },
+                        {
+                            "category": "HARM_CATEGORY_HATE_SPEECH",
+                            "threshold": "BLOCK_NONE"
+                        },
+                        {
+                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                            "threshold": "BLOCK_NONE"
+                        },
+                        {
+                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                            "threshold": "BLOCK_NONE"
+                        }
+                    ]
+                }
+
+                # 构建请求URL
+                url = f"{self.base_url}/models/{self.model_name}:generateContent?key={self.api_key}"
+
+                # 发送请求
+                response = requests.post(
+                    url,
+                    json=request_data,
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "NarratoAI/1.0"
+                    },
+                    timeout=120
                 )
-                
-                # 检查响应是否包含有效内容
-                if (hasattr(response, 'result') and 
-                    hasattr(response.result, 'candidates') and 
-                    response.result.candidates):
-                    
-                    candidate = response.result.candidates[0]
-                    
-                    # 检查是否有内容字段
-                    if not hasattr(candidate, 'content'):
-                        logger.warning("Gemini API 返回速率限制响应，等待30秒后重试...")
-                        time.sleep(30)  # 等待3秒后重试
+
+                if response.status_code == 429:
+                    # 处理限流
+                    wait_time = 65 if attempt == 0 else 30
+                    logger.warning(f"原生Gemini API 触发限流，等待{wait_time}秒后重试...")
+                    time.sleep(wait_time)
+                    continue
+
+                if response.status_code == 400:
+                    raise Exception(f"请求参数错误: {response.text}")
+                elif response.status_code == 403:
+                    raise Exception(f"API密钥无效或权限不足: {response.text}")
+                elif response.status_code != 200:
+                    raise Exception(f"原生Gemini API请求失败: {response.status_code} - {response.text}")
+
+                response_data = response.json()
+
+                # 检查响应格式
+                if "candidates" not in response_data or not response_data["candidates"]:
+                    if attempt < max_retries - 1:
+                        logger.warning("原生Gemini API 返回无效响应，等待30秒后重试...")
+                        time.sleep(30)
                         continue
-                return response
-                
-            except Exception as e:
-                error_str = str(e)
-                if "429" in error_str:
-                    logger.warning("Gemini API 触发限流，等待65秒后重试...")
-                    time.sleep(65)  # 等待65秒后重试
+                    else:
+                        raise Exception("原生Gemini API返回无效响应，可能触发了安全过滤")
+
+                candidate = response_data["candidates"][0]
+
+                # 检查是否被安全过滤阻止
+                if "finishReason" in candidate and candidate["finishReason"] == "SAFETY":
+                    raise Exception("内容被Gemini安全过滤器阻止")
+
+                # 创建兼容的响应对象
+                class CompatibleResponse:
+                    def __init__(self, data):
+                        self.data = data
+                        candidate = data["candidates"][0]
+                        if "content" in candidate and "parts" in candidate["content"]:
+                            self.text = ""
+                            for part in candidate["content"]["parts"]:
+                                if "text" in part:
+                                    self.text += part["text"]
+                        else:
+                            self.text = ""
+
+                return CompatibleResponse(response_data)
+
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"网络请求失败，等待30秒后重试: {str(e)}")
+                    time.sleep(30)
                     continue
                 else:
-                    logger.error(f"Gemini 生成文案错误: \n{error_str}")
+                    logger.error(f"原生Gemini API请求失败: {str(e)}")
+                    raise
+            except Exception as e:
+                if attempt < max_retries - 1 and "429" in str(e):
+                    logger.warning("原生Gemini API 触发限流，等待65秒后重试...")
+                    time.sleep(65)
+                    continue
+                else:
+                    logger.error(f"原生Gemini 生成文案错误: {str(e)}")
                     raise
 
     def _process_response(self, response: any) -> str:
-        """处理Gemini的响应"""
+        """处理原生Gemini API的响应"""
         if not response or not response.text:
-            raise ValueError("Invalid response from Gemini API")
+            raise ValueError("原生Gemini API返回无效响应")
         return response.text.strip()
 
 
@@ -318,7 +441,7 @@ class ScriptProcessor:
         # 根据模型名称选择对应的生成器
         logger.info(f"文本 LLM 提供商: {model_name}")
         if 'gemini' in model_name.lower():
-            self.generator = GeminiGenerator(model_name, self.api_key, self.prompt)
+            self.generator = GeminiGenerator(model_name, self.api_key, self.prompt, self.base_url)
         elif 'qwen' in model_name.lower():
             self.generator = QwenGenerator(model_name, self.api_key, self.prompt, self.base_url)
         elif 'moonshot' in model_name.lower():

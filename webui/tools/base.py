@@ -23,11 +23,14 @@ def create_vision_analyzer(provider, api_key, model, base_url):
         VisionAnalyzer 或 QwenAnalyzer 实例
     """
     if provider == 'gemini':
-        return gemini_analyzer.VisionAnalyzer(model_name=model, api_key=api_key)
+        return gemini_analyzer.VisionAnalyzer(model_name=model, api_key=api_key, base_url=base_url)
+    elif provider == 'gemini(openai)':
+        from app.utils.gemini_openai_analyzer import GeminiOpenAIAnalyzer
+        return GeminiOpenAIAnalyzer(model_name=model, api_key=api_key, base_url=base_url)
     else:
         # 只传入必要的参数
         return qwenvl_analyzer.QwenAnalyzer(
-            model_name=model, 
+            model_name=model,
             api_key=api_key,
             base_url=base_url
         )

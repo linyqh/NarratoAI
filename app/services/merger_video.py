@@ -4,7 +4,7 @@
 '''
 @Project: NarratoAI
 @File   : merger_video
-@Author : 小林同学
+@Author : Viccy同学
 @Date   : 2025/5/6 下午7:38
 '''
 
