@@ -1,14 +1,18 @@
 """
-使用OpenAI API，分析字幕文件，返回剧情梗概和爆点
+使用统一LLM服务，分析字幕文件，返回剧情梗概和爆点
 """
 import traceback
-from openai import OpenAI, BadRequestError
-import os
 import json
+import asyncio
+from loguru import logger
 
 from .utils import load_srt
 # 导入新的提示词管理系统
 from app.services.prompts import PromptManager
+# 导入统一LLM服务
+from app.services.llm.unified_service import UnifiedLLMService
+# 导入安全的异步执行函数
+from app.services.llm.migration_adapter import _run_async_safely
 
 
 def analyze_subtitle(
@@ -16,15 +20,18 @@ def analyze_subtitle(
     model_name: str,
     api_key: str = None,
     base_url: str = None,
-    custom_clips: int = 5
+    custom_clips: int = 5,
+    provider: str = None
 ) -> dict:
     """分析字幕内容，返回完整的分析结果
 
     Args:
         srt_path (str): SRT字幕文件路径
+        model_name (str): 大模型名称
         api_key (str, optional): 大模型API密钥. Defaults to None.
-        model_name (str, optional): 大模型名称. Defaults to "gpt-4o-2024-11-20".
         base_url (str, optional): 大模型API基础URL. Defaults to None.
+        custom_clips (int): 需要提取的片段数量. Defaults to 5.
+        provider (str, optional): LLM服务提供商. Defaults to None.
 
     Returns:
         dict: 包含剧情梗概和结构化的时间段分析的字典
@@ -34,18 +41,21 @@ def analyze_subtitle(
         subtitles = load_srt(srt_path)
         subtitle_content = "\n".join([f"{sub['timestamp']}\n{sub['text']}" for sub in subtitles])
 
-        # 初始化客户端
-        global client
-        if "deepseek" in model_name.lower():
-            client = OpenAI(
-                api_key=api_key or os.getenv('DeepSeek_API_KEY'),
-                base_url="https://api.siliconflow.cn/v1"    # 使用第三方 硅基流动 API
-            )
-        else:
-            client = OpenAI(
-                api_key=api_key or os.getenv('OPENAI_API_KEY'),
-                base_url=base_url
-            )
+        # 初始化统一LLM服务
+        llm_service = UnifiedLLMService()
+
+        # 如果没有指定provider，根据model_name推断
+        if not provider:
+            if "deepseek" in model_name.lower():
+                provider = "deepseek"
+            elif "gpt" in model_name.lower():
+                provider = "openai"
+            elif "gemini" in model_name.lower():
+                provider = "gemini"
+            else:
+                provider = "openai"  # 默认使用openai
+
+        logger.info(f"使用LLM服务分析字幕，提供商: {provider}, 模型: {model_name}")
 
         # 使用新的提示词管理系统
         subtitle_analysis_prompt = PromptManager.get_prompt(
@@ -57,35 +67,27 @@ def analyze_subtitle(
             }
         )
 
-        messages = [
-            {
-                "role": "system",
-                "content": "你是一名短剧编剧和内容分析师，擅长从字幕中提取剧情要点和关键情节。"
-            },
-            {
-                "role": "user",
-                "content": subtitle_analysis_prompt
-            }
-        ]
-        # DeepSeek R1 和 V3 不支持 response_format=json_object
-        try:
-            completion = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                response_format={"type": "json_object"}
-            )
-            summary_data = json.loads(completion.choices[0].message.content)
-        except BadRequestError as e:
-            completion = client.chat.completions.create(
-                model=model_name,
-                messages=messages
-            )
-            # 去除 completion 字符串前的 ```json 和 结尾的 ```
-            completion = completion.choices[0].message.content.replace("```json", "").replace("```", "")
-            summary_data = json.loads(completion)
-        except Exception as e:
-            raise Exception(f"大模型解析发生错误：{str(e)}\n{traceback.format_exc()}")
+        # 使用统一LLM服务生成文本
+        logger.info("开始分析字幕内容...")
+        response = _run_async_safely(
+            UnifiedLLMService.generate_text,
+            prompt=subtitle_analysis_prompt,
+            provider=provider,
+            model=model_name,
+            api_key=api_key,
+            base_url=base_url,
+            temperature=0.1,  # 使用较低的温度以获得更稳定的结果
+            max_tokens=4000
+        )
 
+        # 解析JSON响应
+        from webui.tools.generate_short_summary import parse_and_fix_json
+        summary_data = parse_and_fix_json(response)
+
+        if not summary_data:
+            raise Exception("无法解析LLM返回的JSON数据")
+
+        logger.info(f"字幕分析完成，找到 {len(summary_data.get('plot_titles', []))} 个关键情节")
         print(json.dumps(summary_data, indent=4, ensure_ascii=False))
 
         # 构建爆点标题列表
@@ -105,42 +107,37 @@ def analyze_subtitle(
             }
         )
 
-        messages = [
-            {
-                "role": "system",
-                "content": "你是一名短剧编剧，非常擅长根据字幕中分析视频中关键剧情出现的具体时间段。"
-            },
-            {
-                "role": "user",
-                "content": plot_extraction_prompt
-            }
-        ]
-        # DeepSeek R1 和 V3 不支持 response_format=json_object
-        try:
-            completion = client.chat.completions.create(
-                model=model_name,
-                messages=messages,
-                response_format={"type": "json_object"}
-            )
-            plot_points_data = json.loads(completion.choices[0].message.content)
-        except BadRequestError as e:
-            completion = client.chat.completions.create(
-                model=model_name,
-                messages=messages
-            )
-            # 去除 completion 字符串前的 ```json 和 结尾的 ```
-            completion = completion.choices[0].message.content.replace("```json", "").replace("```", "")
-            plot_points_data = json.loads(completion)
-        except Exception as e:
-            raise Exception(f"大模型解析错误：{str(e)}\n{traceback.format_exc()}")
+        # 使用统一LLM服务进行爆点时间段分析
+        logger.info("开始分析爆点时间段...")
+        response = _run_async_safely(
+            UnifiedLLMService.generate_text,
+            prompt=plot_extraction_prompt,
+            provider=provider,
+            model=model_name,
+            api_key=api_key,
+            base_url=base_url,
+            temperature=0.1,
+            max_tokens=4000
+        )
 
-        print(json.dumps(plot_points_data, indent=4, ensure_ascii=False))
+        # 解析JSON响应
+        plot_data = parse_and_fix_json(response)
+
+        if not plot_data:
+            raise Exception("无法解析爆点分析的JSON数据")
+
+        logger.info(f"爆点分析完成，找到 {len(plot_data.get('plot_points', []))} 个时间段")
 
         # 合并结果
-        return {
-            "plot_summary": summary_data,
-            "plot_points": plot_points_data["plot_points"]
+        result = {
+            "summary": summary_data.get("summary", ""),
+            "plot_titles": summary_data.get("plot_titles", []),
+            "plot_points": plot_data.get("plot_points", [])
         }
 
+        return result
+
     except Exception as e:
+        logger.error(f"分析字幕时发生错误: {str(e)}")
         raise Exception(f"分析字幕时发生错误：{str(e)}\n{traceback.format_exc()}")
+
