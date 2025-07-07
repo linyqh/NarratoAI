@@ -4,7 +4,7 @@
 """
 @Project: NarratoAI
 @File   : template.py
-@Author : AI Assistant
+@Author : viccy同学
 @Date   : 2025/1/7
 @Description: 模板渲染引擎
 """

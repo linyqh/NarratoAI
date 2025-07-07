@@ -4,7 +4,7 @@
 """
 @Project: NarratoAI
 @File   : script_generation.py
-@Author : AI Assistant
+@Author : viccy同学
 @Date   : 2025/1/7
 @Description: 短剧解说脚本生成提示词
 """

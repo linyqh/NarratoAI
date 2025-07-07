@@ -4,7 +4,7 @@
 """
 @Project: NarratoAI
 @File   : plot_extraction.py
-@Author : AI Assistant
+@Author : viccy同学
 @Date   : 2025/1/7
 @Description: 短剧爆点提取提示词
 """
