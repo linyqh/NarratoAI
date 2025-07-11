@@ -53,7 +53,7 @@ class PromptManager:
         
         try:
             rendered = prompt_obj.render(parameters)
-            logger.debug(f"提示词渲染成功: {category}.{name} v{prompt_obj.version}")
+            logger.debug(f"提示词渲染成功: {category}.{name}-{prompt_obj.version}")
             return rendered
         except Exception as e:
             logger.error(f"提示词渲染失败: {category}.{name} - {str(e)}")

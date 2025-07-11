@@ -221,7 +221,7 @@ def process_single_video(
             else:
                 # 其他硬件编码器
                 encoder = ffmpeg_utils.get_optimal_ffmpeg_encoder()
-                logger.info(f"使用硬件编码器: {encoder}")
+                # logger.info(f"使用硬件编码器: {encoder}")
                 command.extend(['-c:v', encoder])
                 
                 # 根据编码器类型添加特定参数
@@ -256,7 +256,7 @@ def process_single_video(
     try:
         # logger.info(f"执行FFmpeg命令: {' '.join(command)}")
         process = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        logger.info(f"视频处理成功: {output_path}")
+        # logger.info(f"视频处理成功: {output_path}")
         return output_path
     except subprocess.CalledProcessError as e:
         error_msg = e.stderr.decode() if e.stderr else str(e)
