@@ -207,7 +207,7 @@ class GeminiTextProvider(TextModelProvider):
                           prompt: str,
                           system_prompt: Optional[str] = None,
                           temperature: float = 1.0,
-                          max_tokens: Optional[int] = None,
+                          max_tokens: Optional[int] = 30000,
                           response_format: Optional[str] = None,
                           **kwargs) -> str:
         """
@@ -231,7 +231,7 @@ class GeminiTextProvider(TextModelProvider):
                 "temperature": temperature,
                 "topK": 40,
                 "topP": 0.95,
-                "maxOutputTokens": max_tokens or 4000,
+                "maxOutputTokens": 60000,
                 "candidateCount": 1
             },
             "safetySettings": [
@@ -269,7 +269,7 @@ class GeminiTextProvider(TextModelProvider):
             # payload["generationConfig"]["stopSequences"] = ["```", "注意", "说明"]
         
         # 记录请求信息
-        logger.debug(f"Gemini文本生成请求: {payload}")
+        # logger.debug(f"Gemini文本生成请求: {payload}")
 
         # 发送API请求
         response_data = await self._make_api_call(payload)

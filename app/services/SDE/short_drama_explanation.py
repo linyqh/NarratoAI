@@ -49,16 +49,8 @@ class SubtitleAnalyzer:
         self.temperature = temperature
         self.provider = provider or self._detect_provider()
 
-        # 设置提示词模板
-        if custom_prompt:
-            self.prompt_template = custom_prompt
-        else:
-            # 使用新的提示词管理系统
-            self.prompt_template = PromptManager.get_prompt(
-                category="short_drama_narration",
-                name="plot_analysis",
-                parameters={}
-            )
+        # 设置自定义提示词（如果提供）
+        self.custom_prompt = custom_prompt
 
         # 根据提供商类型确定是否为原生Gemini
         self.is_native_gemini = self.provider.lower() == 'gemini'
@@ -95,7 +87,16 @@ class SubtitleAnalyzer:
         """
         try:
             # 构建完整提示词
-            prompt = f"{self.prompt_template}\n\n{subtitle_content}"
+            if self.custom_prompt:
+                # 使用自定义提示词
+                prompt = f"{self.custom_prompt}\n\n{subtitle_content}"
+            else:
+                # 使用新的提示词管理系统，正确传入参数
+                prompt = PromptManager.get_prompt(
+                    category="short_drama_narration",
+                    name="plot_analysis",
+                    parameters={"subtitle_content": subtitle_content}
+                )
 
             if self.is_native_gemini:
                 # 使用原生Gemini API格式
@@ -127,7 +128,7 @@ class SubtitleAnalyzer:
                     "temperature": self.temperature,
                     "topK": 40,
                     "topP": 0.95,
-                    "maxOutputTokens": 4000,
+                    "maxOutputTokens": 64000,
                     "candidateCount": 1
                 },
                 "safetySettings": [
@@ -356,13 +357,14 @@ class SubtitleAnalyzer:
             logger.error(f"保存分析结果时发生错误: {str(e)}")
             return ""
 
-    def generate_narration_script(self, short_name:str, plot_analysis: str, temperature: float = 0.7) -> Dict[str, Any]:
+    def generate_narration_script(self, short_name: str, plot_analysis: str, subtitle_content: str = "", temperature: float = 0.7) -> Dict[str, Any]:
         """
         根据剧情分析生成解说文案
 
         Args:
             short_name: 短剧名称
             plot_analysis: 剧情分析内容
+            subtitle_content: 原始字幕内容，用于提供准确的时间戳信息
             temperature: 生成温度，控制创造性，默认0.7
 
         Returns:
@@ -375,7 +377,8 @@ class SubtitleAnalyzer:
                 name="script_generation",
                 parameters={
                     "drama_name": short_name,
-                    "plot_analysis": plot_analysis
+                    "plot_analysis": plot_analysis,
+                    "subtitle_content": subtitle_content
                 }
             )
 
@@ -412,7 +415,7 @@ class SubtitleAnalyzer:
                     "temperature": temperature,
                     "topK": 40,
                     "topP": 0.95,
-                    "maxOutputTokens": 4000,
+                    "maxOutputTokens": 64000,
                     "candidateCount": 1,
                     "stopSequences": ["```", "注意", "说明"]
                 },
@@ -675,6 +678,7 @@ def analyze_subtitle(
 def generate_narration_script(
     short_name: str = None,
     plot_analysis: str = None,
+    subtitle_content: str = None,
     api_key: Optional[str] = None,
     model: Optional[str] = None,
     base_url: Optional[str] = None,
@@ -689,6 +693,7 @@ def generate_narration_script(
     Args:
         short_name: 短剧名称
         plot_analysis: 剧情分析内容，直接提供
+        subtitle_content: 原始字幕内容，用于提供准确的时间戳信息
         api_key: API密钥
         model: 模型名称
         base_url: API基础URL
@@ -710,7 +715,7 @@ def generate_narration_script(
     )
     
     # 生成解说文案
-    result = analyzer.generate_narration_script(short_name, plot_analysis, temperature)
+    result = analyzer.generate_narration_script(short_name, plot_analysis, subtitle_content or "", temperature)
     
     # 保存结果
     if save_result and result["status"] == "success":
@@ -740,10 +745,16 @@ if __name__ == '__main__':
             print("字幕分析成功！")
             print("分析结果：")
             print(analysis_result["analysis"])
-            
+
+            # 读取原始字幕内容用于解说脚本生成
+            with open(subtitle_path, 'r', encoding='utf-8') as f:
+                subtitle_content = f.read()
+
             # 根据剧情生成解说文案
             narration_result = generate_narration_script(
+                short_name="家里家外",
                 plot_analysis=analysis_result["analysis"],
+                subtitle_content=subtitle_content,
                 api_key=text_api_key,
                 model=text_model,
                 base_url=text_base_url,
