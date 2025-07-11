@@ -269,7 +269,7 @@ def execute_ffmpeg_with_fallback(
         
         # 验证输出文件
         if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-            logger.info(f"✓ 视频裁剪成功: {timestamp}")
+            # logger.info(f"✓ 视频裁剪成功: {timestamp}")
             return True
         else:
             logger.warning(f"输出文件无效: {output_path}")
