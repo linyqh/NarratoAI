@@ -172,14 +172,14 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
             text_model = config.app.get(f'text_{text_provider}_model_name')
             text_base_url = config.app.get(f'text_{text_provider}_base_url')
 
+            # 读取字幕文件内容（无论使用哪种实现都需要）
+            with open(subtitle_path, 'r', encoding='utf-8') as f:
+                subtitle_content = f.read()
+
             try:
                 # 优先使用新的LLM服务架构
                 logger.info("使用新的LLM服务架构进行字幕分析")
                 analyzer = SubtitleAnalyzerAdapter(text_api_key, text_model, text_base_url, text_provider)
-
-                # 读取字幕文件
-                with open(subtitle_path, 'r', encoding='utf-8') as f:
-                    subtitle_content = f.read()
 
                 analysis_result = analyzer.analyze_subtitle(subtitle_content)
 
@@ -209,6 +209,7 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
                     narration_result = analyzer.generate_narration_script(
                         short_name=video_theme,
                         plot_analysis=analysis_result["analysis"],
+                        subtitle_content=subtitle_content,  # 传递原始字幕内容
                         temperature=temperature
                     )
                 except Exception as e:
@@ -217,6 +218,7 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
                     narration_result = generate_narration_script(
                         short_name=video_theme,
                         plot_analysis=analysis_result["analysis"],
+                        subtitle_content=subtitle_content,  # 传递原始字幕内容
                         api_key=text_api_key,
                         model=text_model,
                         base_url=text_base_url,

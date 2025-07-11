@@ -251,7 +251,7 @@ def execute_ffmpeg_with_fallback(
         bool: 是否成功
     """
     try:
-        logger.debug(f"执行ffmpeg命令: {' '.join(cmd)}")
+        # logger.debug(f"执行ffmpeg命令: {' '.join(cmd)}")
         
         # 在Windows系统上使用UTF-8编码处理输出
         is_windows = os.name == 'nt'
