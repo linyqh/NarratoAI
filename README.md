@@ -108,6 +108,9 @@ _**注意⚠️：近期在 x (推特) 上发现有人冒充作者在 pump.fun �
   <img src="https://github.com/user-attachments/assets/07d4fd58-02f0-425c-8b59-2ab94b4f09f8" alt="Image 2" style="width: 350px; height: 350px; margin: auto;"/>
 </div>
 
+## 赞助
+[![Powered by DartNode](https://dartnode.com/branding/DN-Open-Source-sm.png)](https://dartnode.com "Powered by DartNode - Free VPS for Open Source")
+
 ## 许可证 📝
 
 点击查看 [`LICENSE`](LICENSE) 文件
