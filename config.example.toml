@@ -77,6 +77,21 @@
     # webui界面是否显示配置项
     hide_config = true
 
+[azure]
+    # Azure TTS 配置
+    speech_key = ""
+    speech_region = ""
+
+[soulvoice]
+    # SoulVoice TTS API 密钥
+    api_key = ""
+    # 音色 URI（必需）
+    voice_uri = "speech:mcg3fdnx:clzkyf4vy00e5qr6hywum4u84:bzznlkuhcjzpbosexitr"
+    # API 接口地址（可选，默认值如下）
+    api_url = "https://tts.scsmtech.cn/tts"
+    # 默认模型（可选）
+    model = "FunAudioLLM/CosyVoice2-0.5B"
+
 [proxy]
     # clash 默认地址：http://127.0.0.1:7890
     http = ""

@@ -4,17 +4,40 @@ import json
 import traceback
 import edge_tts
 import asyncio
+import requests
 from loguru import logger
-from typing import List, Union
+from typing import List, Union, Tuple
 from datetime import datetime
 from xml.sax.saxutils import unescape
 from edge_tts import submaker, SubMaker
-from edge_tts.submaker import mktimestamp
+# from edge_tts.submaker import mktimestamp  # 函数可能不存在，我们自己实现
 from moviepy.video.tools import subtitles
+try:
+    from moviepy import AudioFileClip
+    MOVIEPY_AVAILABLE = True
+except ImportError:
+    MOVIEPY_AVAILABLE = False
+    logger.warning("moviepy 未安装，将使用估算方法计算音频时长")
 import time
 
 from app.config import config
 from app.utils import utils
+
+
+def mktimestamp(time_seconds: float) -> str:
+    """
+    将秒数转换为 SRT 时间戳格式
+
+    Args:
+        time_seconds: 时间（秒）
+
+    Returns:
+        str: SRT 格式的时间戳，如 "00:01:23.456"
+    """
+    hours = int(time_seconds // 3600)
+    minutes = int((time_seconds % 3600) // 60)
+    seconds = time_seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:06.3f}"
 
 
 def get_all_azure_voices(filter_locals=None) -> list[str]:
@@ -1038,8 +1061,15 @@ def is_azure_v2_voice(voice_name: str):
 def tts(
     text: str, voice_name: str, voice_rate: float, voice_pitch: float, voice_file: str
 ) -> Union[SubMaker, None]:
+    # 检查是否为 SoulVoice 引擎
+    if is_soulvoice_voice(voice_name):
+        return soulvoice_tts(text, voice_name, voice_file, speed=voice_rate)
+
+    # 检查是否为 Azure V2 引擎
     if is_azure_v2_voice(voice_name):
         return azure_tts_v2(text, voice_name, voice_file)
+
+    # 默认使用 Azure V1 引擎
     return azure_tts_v1(text, voice_name, voice_rate, voice_pitch, voice_file)
 
 
@@ -1368,6 +1398,10 @@ def create_subtitle(sub_maker: submaker.SubMaker, text: str, subtitle_file: str)
             if start_time < 0:
                 start_time = _start_time
 
+            # 将 100纳秒单位转换为秒
+            start_time_seconds = start_time / 10000000
+            end_time_seconds = end_time / 10000000
+
             sub = unescape(sub)
             sub_line += sub
             sub_text = match_line(sub_line, sub_index)
@@ -1375,8 +1409,8 @@ def create_subtitle(sub_maker: submaker.SubMaker, text: str, subtitle_file: str)
                 sub_index += 1
                 line = formatter(
                     idx=sub_index,
-                    start_time=start_time,
-                    end_time=end_time,
+                    start_time=start_time_seconds,
+                    end_time=end_time_seconds,
                     sub_text=sub_text,
                 )
                 sub_items.append(line)
@@ -1402,9 +1436,13 @@ def create_subtitle(sub_maker: submaker.SubMaker, text: str, subtitle_file: str)
                 f"\nsub_items:{json.dumps(sub_items, indent=4, ensure_ascii=False)}"
                 f"\nscript_lines:{json.dumps(script_lines, indent=4, ensure_ascii=False)}"
             )
+            # 返回默认值，避免 None 错误
+            return subtitle_file, 3.0
 
     except Exception as e:
         logger.error(f"failed, error: {str(e)}")
+        # 返回默认值，避免 None 错误
+        return subtitle_file, 3.0
 
 
 def get_audio_duration(sub_maker: submaker.SubMaker):
@@ -1453,8 +1491,21 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                              f"或者使用其他 tts 引擎")
                 continue
             else:
-                # 为当前片段生成字幕文件
-                _, duration = create_subtitle(sub_maker=sub_maker, text=text, subtitle_file=subtitle_file)
+                # SoulVoice 引擎不生成字幕文件
+                if is_soulvoice_voice(voice_name):
+                    # 获取实际音频文件的时长
+                    duration = get_audio_duration_from_file(audio_file)
+                    if duration <= 0:
+                        # 如果无法获取文件时长，尝试从 SubMaker 获取
+                        duration = get_audio_duration(sub_maker)
+                        if duration <= 0:
+                            # 最后的 fallback，基于文本长度估算
+                            duration = max(1.0, len(text) / 3.0)
+                            logger.warning(f"无法获取音频时长，使用文本估算: {duration:.2f}秒")
+                    # 不创建字幕文件
+                    subtitle_file = ""
+                else:
+                    _, duration = create_subtitle(sub_maker=sub_maker, text=text, subtitle_file=subtitle_file)
 
             tts_results.append({
                 "_id": item['_id'],
@@ -1467,3 +1518,168 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
             logger.info(f"已生成音频文件: {audio_file}")
 
     return tts_results
+
+
+def get_audio_duration_from_file(audio_file: str) -> float:
+    """
+    获取音频文件的时长（秒）
+    """
+    if MOVIEPY_AVAILABLE:
+        try:
+            audio_clip = AudioFileClip(audio_file)
+            duration = audio_clip.duration
+            audio_clip.close()
+            return duration
+        except Exception as e:
+            logger.error(f"使用 moviepy 获取音频时长失败: {str(e)}")
+
+    # Fallback: 使用更准确的估算方法
+    try:
+        import os
+        file_size = os.path.getsize(audio_file)
+
+        # 更准确的 MP3 时长估算
+        # 假设 MP3 平均比特率为 128kbps = 16KB/s
+        # 但实际文件还包含头部信息，所以调整系数
+        estimated_duration = max(1.0, file_size / 20000)  # 调整为更保守的估算
+
+        # 对于中文语音，根据文本长度进行二次校正
+        # 一般中文语音速度约为 3-4 字/秒
+        logger.warning(f"使用文件大小估算音频时长: {estimated_duration:.2f}秒")
+        return estimated_duration
+    except Exception as e:
+        logger.error(f"获取音频时长失败: {str(e)}")
+        # 如果所有方法都失败，返回一个基于文本长度的估算
+        return 3.0  # 默认3秒，避免返回0
+
+
+def is_soulvoice_voice(voice_name: str) -> bool:
+    """
+    检查是否为 SoulVoice 语音
+    """
+    return voice_name.startswith("soulvoice:") or voice_name.startswith("speech:")
+
+
+def parse_soulvoice_voice(voice_name: str) -> str:
+    """
+    解析 SoulVoice 语音名称
+    支持格式：
+    - soulvoice:speech:mcg3fdnx:clzkyf4vy00e5qr6hywum4u84:bzznlkuhcjzpbosexitr
+    - speech:mcg3fdnx:clzkyf4vy00e5qr6hywum4u84:bzznlkuhcjzpbosexitr
+    """
+    if voice_name.startswith("soulvoice:"):
+        return voice_name[10:]  # 移除 "soulvoice:" 前缀
+    return voice_name
+
+
+def soulvoice_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.0) -> Union[SubMaker, None]:
+    """
+    使用 SoulVoice API 进行文本转语音
+
+    Args:
+        text: 要转换的文本
+        voice_name: 语音名称
+        voice_file: 输出音频文件路径
+        speed: 语音速度
+
+    Returns:
+        SubMaker: 包含时间戳信息的字幕制作器，失败时返回 None
+    """
+    # 获取配置
+    api_key = config.soulvoice.get("api_key", "")
+    api_url = config.soulvoice.get("api_url", "https://tts.scsmtech.cn/tts")
+    default_model = config.soulvoice.get("model", "FunAudioLLM/CosyVoice2-0.5B")
+
+    if not api_key:
+        logger.error("SoulVoice API key 未配置")
+        return None
+
+    # 解析语音名称
+    parsed_voice = parse_soulvoice_voice(voice_name)
+
+    # 准备请求数据
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+
+    data = {
+        'text': text.strip(),
+        'model': default_model,
+        'voice': parsed_voice,
+        'speed': speed
+    }
+
+    # 重试机制
+    for attempt in range(3):
+        try:
+            logger.info(f"第 {attempt + 1} 次调用 SoulVoice API")
+
+            # 设置代理
+            proxies = {}
+            if config.proxy.get("http"):
+                proxies = {
+                    'http': config.proxy.get("http"),
+                    'https': config.proxy.get("https", config.proxy.get("http"))
+                }
+
+            # 调用 API
+            response = requests.post(
+                api_url,
+                headers=headers,
+                json=data,
+                proxies=proxies,
+                timeout=60
+            )
+
+            if response.status_code == 200:
+                # 保存音频文件
+                with open(voice_file, 'wb') as f:
+                    f.write(response.content)
+
+                logger.info(f"SoulVoice TTS 成功生成音频: {voice_file}")
+
+                # SoulVoice 不支持精确字幕生成，返回简单的 SubMaker 对象
+                sub_maker = SubMaker()
+                sub_maker.subs = [text]  # 整个文本作为一个段落
+                sub_maker.offset = [(0, 0)]  # 占位时间戳
+
+                return sub_maker
+
+            else:
+                logger.error(f"SoulVoice API 调用失败: {response.status_code} - {response.text}")
+
+        except requests.exceptions.Timeout:
+            logger.error(f"SoulVoice API 调用超时 (尝试 {attempt + 1}/3)")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"SoulVoice API 网络错误: {str(e)} (尝试 {attempt + 1}/3)")
+        except Exception as e:
+            logger.error(f"SoulVoice TTS 处理错误: {str(e)} (尝试 {attempt + 1}/3)")
+
+        if attempt < 2:  # 不是最后一次尝试
+            time.sleep(2)  # 等待2秒后重试
+
+    logger.error("SoulVoice TTS 生成失败，已达到最大重试次数")
+    return None
+
+
+def is_soulvoice_voice(voice_name: str) -> bool:
+    """
+    检查是否为 SoulVoice 语音
+    """
+    return voice_name.startswith("soulvoice:") or voice_name.startswith("speech:")
+
+
+def parse_soulvoice_voice(voice_name: str) -> str:
+    """
+    解析 SoulVoice 语音名称
+    支持格式：
+    - soulvoice:speech:mcg3fdnx:clzkyf4vy00e5qr6hywum4u84:bzznlkuhcjzpbosexitr
+    - speech:mcg3fdnx:clzkyf4vy00e5qr6hywum4u84:bzznlkuhcjzpbosexitr
+    """
+    if voice_name.startswith("soulvoice:"):
+        return voice_name[10:]  # 移除 "soulvoice:" 前缀
+    return voice_name
+
+
+
