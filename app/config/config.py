@@ -48,6 +48,7 @@ def save_config():
     with open(config_file, "w", encoding="utf-8") as f:
         _cfg["app"] = app
         _cfg["azure"] = azure
+        _cfg["soulvoice"] = soulvoice
         _cfg["ui"] = ui
         f.write(toml.dumps(_cfg))
 
@@ -57,6 +58,7 @@ app = _cfg.get("app", {})
 whisper = _cfg.get("whisper", {})
 proxy = _cfg.get("proxy", {})
 azure = _cfg.get("azure", {})
+soulvoice = _cfg.get("soulvoice", {})
 ui = _cfg.get("ui", {})
 frames = _cfg.get("frames", {})
 

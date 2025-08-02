@@ -613,6 +613,49 @@ def clip_video(
 
         # 根据持续时间计算真正的结束时间（加上1秒余量）
         duration = item["duration"]
+
+        # 时长合理性检查和修正
+        if duration <= 0 or duration > 300:  # 超过5分钟认为不合理
+            logger.warning(f"检测到异常时长 {duration}秒，片段: {timestamp}")
+
+            # 尝试从时间戳计算实际时长
+            try:
+                start_time_str, end_time_str = timestamp.split('-')
+
+                # 解析开始时间
+                if ',' in start_time_str:
+                    time_part, ms_part = start_time_str.split(',')
+                    h1, m1, s1 = map(int, time_part.split(':'))
+                    ms1 = int(ms_part)
+                else:
+                    h1, m1, s1 = map(int, start_time_str.split(':'))
+                    ms1 = 0
+
+                # 解析结束时间
+                if ',' in end_time_str:
+                    time_part, ms_part = end_time_str.split(',')
+                    h2, m2, s2 = map(int, time_part.split(':'))
+                    ms2 = int(ms_part)
+                else:
+                    h2, m2, s2 = map(int, end_time_str.split(':'))
+                    ms2 = 0
+
+                # 计算实际时长
+                start_total_ms = (h1 * 3600 + m1 * 60 + s1) * 1000 + ms1
+                end_total_ms = (h2 * 3600 + m2 * 60 + s2) * 1000 + ms2
+                actual_duration = (end_total_ms - start_total_ms) / 1000.0
+
+                if actual_duration > 0 and actual_duration <= 300:
+                    duration = actual_duration
+                    logger.info(f"使用时间戳计算的实际时长: {duration:.3f}秒")
+                else:
+                    duration = 5.0  # 默认5秒
+                    logger.warning(f"时间戳计算也异常，使用默认时长: {duration}秒")
+
+            except Exception as e:
+                duration = 5.0  # 默认5秒
+                logger.warning(f"时长修正失败，使用默认时长: {duration}秒, 错误: {str(e)}")
+
         calculated_end_time = calculate_end_time(start_time, duration)
 
         # 转换为FFmpeg兼容的时间格式（逗号替换为点）
