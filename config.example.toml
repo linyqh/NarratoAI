@@ -92,6 +92,22 @@
     # 默认模型（可选）
     model = "FunAudioLLM/CosyVoice2-0.5B"
 
+[ui]
+    # TTS引擎选择 (edge_tts, azure_speech, soulvoice)
+    tts_engine = "edge_tts"
+
+    # Edge TTS 配置
+    edge_voice_name = "zh-CN-XiaoyiNeural-Female"
+    edge_volume = 80
+    edge_rate = 1.0
+    edge_pitch = 0
+
+    # Azure Speech Services 配置
+    azure_voice_name = "zh-CN-XiaoyiNeural-Female"
+    azure_volume = 80
+    azure_rate = 1.0
+    azure_pitch = 0
+
 [proxy]
     # clash 默认地址：http://127.0.0.1:7890
     http = ""
