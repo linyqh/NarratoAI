@@ -4,7 +4,7 @@ import sys
 from loguru import logger
 from app.config import config
 from webui.components import basic_settings, video_settings, audio_settings, subtitle_settings, script_settings, \
-    review_settings, system_settings
+    system_settings
 # from webui.utils import cache, file_utils
 from app.utils import utils
 from app.utils import ffmpeg_utils
@@ -227,13 +227,10 @@ def main():
     with panel[0]:
         script_settings.render_script_panel(tr)
     with panel[1]:
-        video_settings.render_video_panel(tr)
         audio_settings.render_audio_panel(tr)
     with panel[2]:
+        video_settings.render_video_panel(tr)
         subtitle_settings.render_subtitle_panel(tr)
-
-    # 渲染视频审查面板
-    review_settings.render_review_panel(tr)
 
     # 放到最后渲染可能使用PyTorch的部分
     # 渲染系统设置面板

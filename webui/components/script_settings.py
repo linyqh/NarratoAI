@@ -333,7 +333,7 @@ def render_script_buttons(tr, params):
     video_clip_json_details = st.text_area(
         tr("Video Script"),
         value=json.dumps(st.session_state.get('video_clip_json', []), indent=2, ensure_ascii=False),
-        height=180
+        height=500
     )
 
     # 操作按钮行 - 合并格式检查和保存功能
