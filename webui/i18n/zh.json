@@ -11,7 +11,6 @@
     "Video Theme": "视频主题",
     "Generation Prompt": "自定义提示词",
     "Save Script": "保存脚本",
-    "Crop Video": "裁剪视频",
     "Video File": "视频文件（:blue[1️⃣支持上传视频文件(限制2G) 2️⃣大文件建议直接导入 ./resource/videos 目录]）",
     "Plot Description": "剧情描述 (:blue[可从 https://www.tvmao.com/ 获取])",
     "Generate Video Keywords": "点击使用AI根据**文案**生成【视频关键】",
