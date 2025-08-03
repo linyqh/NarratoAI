@@ -1058,6 +1058,27 @@ def is_azure_v2_voice(voice_name: str):
     return ""
 
 
+def should_use_azure_speech_services(voice_name: str) -> bool:
+    """判断音色是否应该使用Azure Speech Services"""
+    if not voice_name or is_soulvoice_voice(voice_name):
+        return False
+
+    voice_name = voice_name.strip()
+
+    # 如果是带-V2后缀的，肯定是Azure Speech Services
+    if voice_name.endswith("-V2"):
+        return True
+
+    # 检查是否为Azure官方音色格式 (如: zh-CN-YunzeNeural)
+    # Azure音色通常格式为: [语言]-[地区]-[名称]Neural
+    import re
+    pattern = r'^[a-z]{2}-[A-Z]{2}-\w+Neural$'
+    if re.match(pattern, voice_name):
+        return True
+
+    return False
+
+
 def tts(
     text: str, voice_name: str, voice_rate: float, voice_pitch: float, voice_file: str
 ) -> Union[SubMaker, None]:
@@ -1065,11 +1086,11 @@ def tts(
     if is_soulvoice_voice(voice_name):
         return soulvoice_tts(text, voice_name, voice_file, speed=voice_rate)
 
-    # 检查是否为 Azure V2 引擎
-    if is_azure_v2_voice(voice_name):
+    # 检查是否应该使用 Azure Speech Services
+    if should_use_azure_speech_services(voice_name):
         return azure_tts_v2(text, voice_name, voice_file)
 
-    # 默认使用 Azure V1 引擎
+    # 默认使用 Edge TTS (Azure V1)
     return azure_tts_v1(text, voice_name, voice_rate, voice_pitch, voice_file)
 
 
@@ -1140,11 +1161,21 @@ def azure_tts_v1(
 
 
 def azure_tts_v2(text: str, voice_name: str, voice_file: str) -> Union[SubMaker, None]:
-    voice_name = is_azure_v2_voice(voice_name)
-    if not voice_name:
-        logger.error(f"invalid voice name: {voice_name}")
-        raise ValueError(f"invalid voice name: {voice_name}")
+    # 直接使用官方音色名称，不需要V2后缀验证
+    # Azure Speech Services 的音色名称如: zh-CN-YunzeNeural, en-US-AvaMultilingualNeural
+    processed_voice_name = voice_name.strip()
+    if not processed_voice_name:
+        logger.error(f"invalid voice name: {voice_name} (empty)")
+        raise ValueError(f"invalid voice name: {voice_name} (empty)")
     text = text.strip()
+
+    # 检查Azure Speech SDK是否可用
+    try:
+        import azure.cognitiveservices.speech as speechsdk
+    except ImportError as e:
+        logger.error("Azure Speech SDK 未安装。请运行: pip install azure-cognitiveservices-speech")
+        logger.error("或者使用 Edge TTS 引擎作为替代方案")
+        return None
 
     def _format_duration_to_offset(duration) -> int:
         if isinstance(duration, str):
@@ -1164,9 +1195,7 @@ def azure_tts_v2(text: str, voice_name: str, voice_file: str) -> Union[SubMaker,
 
     for i in range(3):
         try:
-            logger.info(f"start, voice name: {voice_name}, try: {i + 1}")
-
-            import azure.cognitiveservices.speech as speechsdk
+            logger.info(f"start, voice name: {processed_voice_name}, try: {i + 1}")
 
             sub_maker = SubMaker()
 
@@ -1185,7 +1214,7 @@ def azure_tts_v2(text: str, voice_name: str, voice_file: str) -> Union[SubMaker,
             speech_config = speechsdk.SpeechConfig(
                 subscription=speech_key, region=service_region
             )
-            speech_config.speech_synthesis_voice_name = voice_name
+            speech_config.speech_synthesis_voice_name = processed_voice_name
             # speech_config.set_property(property_id=speechsdk.PropertyId.SpeechServiceResponse_RequestSentenceBoundary,
             #                            value='true')
             speech_config.set_property(
