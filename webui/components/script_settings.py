@@ -333,38 +333,12 @@ def render_script_buttons(tr, params):
     video_clip_json_details = st.text_area(
         tr("Video Script"),
         value=json.dumps(st.session_state.get('video_clip_json', []), indent=2, ensure_ascii=False),
-        height=180
+        height=500
     )
 
-    # 操作按钮行
-    button_cols = st.columns(3)
-    with button_cols[0]:
-        if st.button(tr("Check Format"), key="check_format", use_container_width=True):
-            check_script_format(tr, video_clip_json_details)
-
-    with button_cols[1]:
-        if st.button(tr("Save Script"), key="save_script", use_container_width=True):
-            save_script(tr, video_clip_json_details)
-
-    with button_cols[2]:
-        script_valid = st.session_state.get('script_format_valid', False)
-        if st.button(tr("Crop Video"), key="crop_video", disabled=not script_valid, use_container_width=True):
-            crop_video(tr, params)
-
-
-def check_script_format(tr, script_content):
-    """检查脚本格式"""
-    try:
-        result = check_script.check_format(script_content)
-        if result.get('success'):
-            st.success(tr("Script format check passed"))
-            st.session_state['script_format_valid'] = True
-        else:
-            st.error(f"{tr('Script format check failed')}: {result.get('message')}")
-            st.session_state['script_format_valid'] = False
-    except Exception as e:
-        st.error(f"{tr('Script format check error')}: {str(e)}")
-        st.session_state['script_format_valid'] = False
+    # 操作按钮行 - 合并格式检查和保存功能
+    if st.button(tr("Save Script"), key="save_script", use_container_width=True):
+        save_script_with_validation(tr, video_clip_json_details)
 
 
 def load_script(tr, script_path):
@@ -381,12 +355,52 @@ def load_script(tr, script_path):
         st.error(f"{tr('Failed to load script')}: {str(e)}")
 
 
-def save_script(tr, video_clip_json_details):
-    """保存视频脚本"""
+def save_script_with_validation(tr, video_clip_json_details):
+    """保存视频脚本（包含格式验证）"""
     if not video_clip_json_details:
         st.error(tr("请输入视频脚本"))
         st.stop()
 
+    # 第一步：格式验证
+    with st.spinner("正在验证脚本格式..."):
+        try:
+            result = check_script.check_format(video_clip_json_details)
+            if not result.get('success'):
+                # 格式验证失败，显示详细错误信息
+                error_message = result.get('message', '未知错误')
+                error_details = result.get('details', '')
+
+                st.error(f"**脚本格式验证失败**")
+                st.error(f"**错误信息：** {error_message}")
+                if error_details:
+                    st.error(f"**详细说明：** {error_details}")
+
+                # 显示正确格式示例
+                st.info("**正确的脚本格式示例：**")
+                example_script = [
+                    {
+                        "_id": 1,
+                        "timestamp": "00:00:00,600-00:00:07,559",
+                        "picture": "工地上，蔡晓艳奋力救人，场面混乱",
+                        "narration": "灾后重建，工地上险象环生！泼辣女工蔡晓艳挺身而出，救人第一！",
+                        "OST": 0
+                    },
+                    {
+                        "_id": 2,
+                        "timestamp": "00:00:08,240-00:00:12,359",
+                        "picture": "领导视察，蔡晓艳不屑一顾",
+                        "narration": "播放原片4",
+                        "OST": 1
+                    }
+                ]
+                st.code(json.dumps(example_script, ensure_ascii=False, indent=2), language='json')
+                st.stop()
+
+        except Exception as e:
+            st.error(f"格式验证过程中发生错误: {str(e)}")
+            st.stop()
+
+    # 第二步：保存脚本
     with st.spinner(tr("Save Script")):
         script_dir = utils.script_dir()
         timestamp = time.strftime("%Y-%m%d-%H%M%S")
@@ -403,7 +417,7 @@ def save_script(tr, video_clip_json_details):
                 config.app["video_clip_json_path"] = save_path
 
                 # 显示成功消息
-                st.success(tr("Script saved successfully"))
+                st.success("✅ 脚本格式验证通过，保存成功！")
 
                 # 强制重新加载页面更新选择框
                 time.sleep(0.5)  # 给一点时间让用户看到成功消息
@@ -414,26 +428,7 @@ def save_script(tr, video_clip_json_details):
             st.stop()
 
 
-def crop_video(tr, params):
-    """裁剪视频"""
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-
-    def update_progress(progress):
-        progress_bar.progress(progress)
-        status_text.text(f"剪辑进度: {progress}%")
-
-    try:
-        utils.cut_video(params, update_progress)
-        time.sleep(0.5)
-        progress_bar.progress(100)
-        st.success("视频剪辑成功完成！")
-    except Exception as e:
-        st.error(f"剪辑过程中发生错误: {str(e)}")
-    finally:
-        time.sleep(1)
-        progress_bar.empty()
-        status_text.empty()
+# crop_video函数已移除 - 现在使用统一裁剪策略，不再需要预裁剪步骤
 
 
 def get_script_params():

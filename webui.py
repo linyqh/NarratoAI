@@ -4,7 +4,7 @@ import sys
 from loguru import logger
 from app.config import config
 from webui.components import basic_settings, video_settings, audio_settings, subtitle_settings, script_settings, \
-    review_settings, merge_settings, system_settings
+    system_settings
 # from webui.utils import cache, file_utils
 from app.utils import utils
 from app.utils import ffmpeg_utils
@@ -106,8 +106,7 @@ def init_global_state():
         st.session_state['video_plot'] = ''
     if 'ui_language' not in st.session_state:
         st.session_state['ui_language'] = config.ui.get("language", utils.get_system_locale())
-    if 'subclip_videos' not in st.session_state:
-        st.session_state['subclip_videos'] = {}
+    # 移除subclip_videos初始化 - 现在使用统一裁剪策略
 
 
 def tr(key):
@@ -136,11 +135,9 @@ def render_generate_button():
         logger.add(log_received)
 
         config.save_config()
-        task_id = st.session_state.get('task_id')
 
-        if not task_id:
-            st.error(tr("请先裁剪视频"))
-            return
+        # 移除task_id检查 - 现在使用统一裁剪策略，不再需要预裁剪
+        # 直接检查必要的文件是否存在
         if not st.session_state.get('video_clip_json_path'):
             st.error(tr("脚本文件不能为空"))
             return
@@ -168,10 +165,14 @@ def render_generate_button():
         # 创建参数对象
         params = VideoClipParams(**all_params)
 
-        result = tm.start_subclip(
+        # 使用新的统一裁剪策略，不再需要预裁剪的subclip_videos
+        # 生成一个新的task_id用于本次处理
+        import uuid
+        task_id = str(uuid.uuid4())
+
+        result = tm.start_subclip_unified(
             task_id=task_id,
-            params=params,
-            subclip_path_videos=st.session_state['subclip_videos']
+            params=params
         )
 
         video_files = result.get("videos", [])
@@ -220,21 +221,16 @@ def main():
     # 首先渲染不依赖PyTorch的UI部分
     # 渲染基础设置面板
     basic_settings.render_basic_settings(tr)
-    # 渲染合并设置
-    merge_settings.render_merge_settings(tr)
 
     # 渲染主面板
     panel = st.columns(3)
     with panel[0]:
         script_settings.render_script_panel(tr)
     with panel[1]:
-        video_settings.render_video_panel(tr)
         audio_settings.render_audio_panel(tr)
     with panel[2]:
+        video_settings.render_video_panel(tr)
         subtitle_settings.render_subtitle_panel(tr)
-
-    # 渲染视频审查面板
-    review_settings.render_review_panel(tr)
 
     # 放到最后渲染可能使用PyTorch的部分
     # 渲染系统设置面板

@@ -9,14 +9,35 @@ def render_subtitle_panel(tr):
     with st.container(border=True):
         st.write(tr("Subtitle Settings"))
 
-        # 启用字幕选项
-        enable_subtitles = st.checkbox(tr("Enable Subtitles"), value=True)
-        st.session_state['subtitle_enabled'] = enable_subtitles
+        # 检查是否选择了 SoulVoice 引擎
+        from app.services import voice
+        current_voice = st.session_state.get('voice_name', '')
+        is_soulvoice = voice.is_soulvoice_voice(current_voice)
 
-        if enable_subtitles:
-            render_font_settings(tr)
-            render_position_settings(tr)
-            render_style_settings(tr)
+        if is_soulvoice:
+            # SoulVoice 引擎时显示禁用提示
+            st.warning("⚠️ SoulVoice TTS 不支持精确字幕生成")
+            st.info("💡 建议使用专业剪辑工具（如剪映、PR等）手动添加字幕")
+
+            # 强制禁用字幕
+            st.session_state['subtitle_enabled'] = False
+
+            # 显示禁用状态的复选框
+            st.checkbox(
+                tr("Enable Subtitles"),
+                value=False,
+                disabled=True,
+                help="SoulVoice 引擎不支持字幕生成，请使用其他 TTS 引擎"
+            )
+        else:
+            # 其他引擎正常显示字幕选项
+            enable_subtitles = st.checkbox(tr("Enable Subtitles"), value=True)
+            st.session_state['subtitle_enabled'] = enable_subtitles
+
+            if enable_subtitles:
+                render_font_settings(tr)
+                render_position_settings(tr)
+                render_style_settings(tr)
 
 
 def render_font_settings(tr):

@@ -57,14 +57,33 @@ class BaseLLMProvider(ABC):
         """验证配置参数"""
         if not self.api_key:
             raise ConfigurationError("API密钥不能为空", "api_key")
-        
+
         if not self.model_name:
             raise ConfigurationError("模型名称不能为空", "model_name")
-        
-        if self.model_name not in self.supported_models:
-            from .exceptions import ModelNotSupportedError
-            raise ModelNotSupportedError(self.model_name, self.provider_name)
+
+        # 检查模型支持情况
+        self._validate_model_support()
     
+    def _validate_model_support(self):
+        """验证模型支持情况"""
+        from app.config import config
+        from .exceptions import ModelNotSupportedError
+        from loguru import logger
+
+        # 获取模型验证模式配置
+        strict_model_validation = config.app.get('strict_model_validation', True)
+
+        if self.model_name not in self.supported_models:
+            if strict_model_validation:
+                # 严格模式：抛出异常
+                raise ModelNotSupportedError(self.model_name, self.provider_name)
+            else:
+                # 宽松模式：仅记录警告
+                logger.warning(
+                    f"模型 {self.model_name} 未在供应商 {self.provider_name} 的预定义支持列表中，"
+                    f"但已启用宽松验证模式。支持的模型列表: {self.supported_models}"
+                )
+
     def _initialize(self):
         """初始化提供商特定设置，子类可重写"""
         pass
@@ -77,11 +96,15 @@ class BaseLLMProvider(ABC):
     def _handle_api_error(self, status_code: int, response_text: str) -> LLMServiceError:
         """处理API错误，返回适当的异常"""
         from .exceptions import APICallError, RateLimitError, AuthenticationError
-        
+
         if status_code == 401:
             return AuthenticationError()
         elif status_code == 429:
             return RateLimitError()
+        elif status_code in [502, 503, 504]:
+            return APICallError(f"服务器错误 HTTP {status_code}", status_code, response_text)
+        elif status_code == 524:
+            return APICallError(f"服务器处理超时 HTTP {status_code}", status_code, response_text)
         else:
             return APICallError(f"HTTP {status_code}", status_code, response_text)
 

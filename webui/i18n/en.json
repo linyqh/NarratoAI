@@ -29,7 +29,7 @@
     "Clip Duration": "Maximum Clip Duration (Seconds) (**Not the total length of the video**, refers to the length of each **composite segment**)",
     "Number of Videos Generated Simultaneously": "Number of Videos Generated Simultaneously",
     "Audio Settings": "**Audio Settings**",
-    "Speech Synthesis": "Speech Synthesis Voice (:red[**Keep consistent with the script language**. Note: V2 version performs better, but requires an API KEY])",
+    "Speech Synthesis": "Speech Synthesis Voice (:red[**Keep consistent with the script language**. Note: V2 version performs better, but requires an API KEY; SoulVoice provides high-quality Chinese voices])",
     "Speech Region": "Service Region (:red[Required, [Click to Get](https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/SpeechServices)])",
     "Speech Key": "API Key (:red[Required, either Key 1 or Key 2 is acceptable [Click to Get](https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/SpeechServices)])",
     "Speech Volume": "Speech Volume (1.0 represents 100%)",

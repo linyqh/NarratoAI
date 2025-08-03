@@ -509,6 +509,12 @@ def clean_model_output(output):
 
 
 def cut_video(params, progress_callback=None):
+    """
+    旧的视频裁剪函数 - 已弃用
+
+    注意：此函数已被统一裁剪策略取代，不再推荐使用。
+    新的实现请使用 task.start_subclip_unified() 函数。
+    """
     try:
         task_id = str(uuid4())
         st.session_state['task_id'] = task_id

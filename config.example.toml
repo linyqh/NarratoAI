@@ -1,5 +1,19 @@
 [app]
-    project_version="0.6.8"
+    project_version="0.7.0"
+
+    # 模型验证模式配置
+    # true: 严格模式，只允许使用预定义支持列表中的模型（默认）
+    # false: 宽松模式，允许使用任何模型名称，仅记录警告
+    strict_model_validation = true
+
+    # LLM API 超时配置（秒）
+    # 视觉模型基础超时时间
+    llm_vision_timeout = 120
+    # 文本模型基础超时时间（解说文案生成等复杂任务需要更长时间）
+    llm_text_timeout = 180
+    # API 重试次数
+    llm_max_retries = 3
+
     # 支持视频理解的大模型提供商
     #   gemini  (谷歌, 需要 VPN)
     #   siliconflow (硅基流动)
@@ -76,6 +90,37 @@
 
     # webui界面是否显示配置项
     hide_config = true
+
+[azure]
+    # Azure TTS 配置
+    speech_key = ""
+    speech_region = ""
+
+[soulvoice]
+    # SoulVoice TTS API 密钥
+    api_key = ""
+    # 音色 URI（必需）
+    voice_uri = "speech:mcg3fdnx:clzkyf4vy00e5qr6hywum4u84:bzznlkuhcjzpbosexitr"
+    # API 接口地址（可选，默认值如下）
+    api_url = "https://tts.scsmtech.cn/tts"
+    # 默认模型（可选）
+    model = "FunAudioLLM/CosyVoice2-0.5B"
+
+[ui]
+    # TTS引擎选择 (edge_tts, azure_speech, soulvoice)
+    tts_engine = "edge_tts"
+
+    # Edge TTS 配置
+    edge_voice_name = "zh-CN-XiaoyiNeural-Female"
+    edge_volume = 80
+    edge_rate = 1.0
+    edge_pitch = 0
+
+    # Azure Speech Services 配置
+    azure_voice_name = "zh-CN-XiaoyiNeural-Female"
+    azure_volume = 80
+    azure_rate = 1.0
+    azure_pitch = 0
 
 [proxy]
     # clash 默认地址：http://127.0.0.1:7890
