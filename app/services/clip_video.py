@@ -546,6 +546,359 @@ def try_fallback_encoding(
     return execute_simple_command(fallback_cmd, timestamp, "通用Fallback")
 
 
+def _process_narration_only_segment(
+    video_origin_path: str,
+    script_item: Dict,
+    tts_map: Dict,
+    output_dir: str,
+    encoder_config: Dict,
+    hwaccel_args: List[str]
+) -> Optional[str]:
+    """
+    处理OST=0的纯解说片段
+    - 根据TTS音频时长动态裁剪
+    - 移除原声，生成静音视频
+    """
+    _id = script_item["_id"]
+    timestamp = script_item["timestamp"]
+
+    # 获取对应的TTS结果
+    tts_item = tts_map.get(_id)
+    if not tts_item:
+        logger.error(f"未找到片段 {_id} 的TTS结果")
+        return None
+
+    # 解析起始时间，使用TTS音频时长计算结束时间
+    start_time, _ = parse_timestamp(timestamp)
+    duration = tts_item["duration"]
+    calculated_end_time = calculate_end_time(start_time, duration, extra_seconds=0)
+
+    # 转换为FFmpeg兼容的时间格式
+    ffmpeg_start_time = start_time.replace(',', '.')
+    ffmpeg_end_time = calculated_end_time.replace(',', '.')
+
+    # 生成输出文件名
+    safe_start_time = start_time.replace(':', '-').replace(',', '-')
+    safe_end_time = calculated_end_time.replace(':', '-').replace(',', '-')
+    output_filename = f"ost0_vid_{safe_start_time}@{safe_end_time}.mp4"
+    output_path = os.path.join(output_dir, output_filename)
+
+    # 构建FFmpeg命令 - 移除音频
+    cmd = _build_ffmpeg_command_with_audio_control(
+        video_origin_path, output_path, ffmpeg_start_time, ffmpeg_end_time,
+        encoder_config, hwaccel_args, remove_audio=True
+    )
+
+    # 执行命令
+    success = execute_ffmpeg_with_fallback(
+        cmd, timestamp, video_origin_path, output_path,
+        ffmpeg_start_time, ffmpeg_end_time
+    )
+
+    return output_path if success else None
+
+
+def _process_original_audio_segment(
+    video_origin_path: str,
+    script_item: Dict,
+    output_dir: str,
+    encoder_config: Dict,
+    hwaccel_args: List[str]
+) -> Optional[str]:
+    """
+    处理OST=1的纯原声片段
+    - 严格按照脚本timestamp精确裁剪
+    - 保持原声不变
+    """
+    _id = script_item["_id"]
+    timestamp = script_item["timestamp"]
+
+    # 严格按照timestamp进行裁剪
+    start_time, end_time = parse_timestamp(timestamp)
+
+    # 转换为FFmpeg兼容的时间格式
+    ffmpeg_start_time = start_time.replace(',', '.')
+    ffmpeg_end_time = end_time.replace(',', '.')
+
+    # 生成输出文件名
+    safe_start_time = start_time.replace(':', '-').replace(',', '-')
+    safe_end_time = end_time.replace(':', '-').replace(',', '-')
+    output_filename = f"ost1_vid_{safe_start_time}@{safe_end_time}.mp4"
+    output_path = os.path.join(output_dir, output_filename)
+
+    # 构建FFmpeg命令 - 保持原声
+    cmd = _build_ffmpeg_command_with_audio_control(
+        video_origin_path, output_path, ffmpeg_start_time, ffmpeg_end_time,
+        encoder_config, hwaccel_args, remove_audio=False
+    )
+
+    # 执行命令
+    success = execute_ffmpeg_with_fallback(
+        cmd, timestamp, video_origin_path, output_path,
+        ffmpeg_start_time, ffmpeg_end_time
+    )
+
+    return output_path if success else None
+
+
+def _process_mixed_segment(
+    video_origin_path: str,
+    script_item: Dict,
+    tts_map: Dict,
+    output_dir: str,
+    encoder_config: Dict,
+    hwaccel_args: List[str]
+) -> Optional[str]:
+    """
+    处理OST=2的解说+原声混合片段
+    - 根据TTS音频时长动态裁剪
+    - 保持原声，确保视频时长等于TTS音频时长
+    """
+    _id = script_item["_id"]
+    timestamp = script_item["timestamp"]
+
+    # 获取对应的TTS结果
+    tts_item = tts_map.get(_id)
+    if not tts_item:
+        logger.error(f"未找到片段 {_id} 的TTS结果")
+        return None
+
+    # 解析起始时间，使用TTS音频时长计算结束时间
+    start_time, _ = parse_timestamp(timestamp)
+    duration = tts_item["duration"]
+    calculated_end_time = calculate_end_time(start_time, duration, extra_seconds=0)
+
+    # 转换为FFmpeg兼容的时间格式
+    ffmpeg_start_time = start_time.replace(',', '.')
+    ffmpeg_end_time = calculated_end_time.replace(',', '.')
+
+    # 生成输出文件名
+    safe_start_time = start_time.replace(':', '-').replace(',', '-')
+    safe_end_time = calculated_end_time.replace(':', '-').replace(',', '-')
+    output_filename = f"ost2_vid_{safe_start_time}@{safe_end_time}.mp4"
+    output_path = os.path.join(output_dir, output_filename)
+
+    # 构建FFmpeg命令 - 保持原声
+    cmd = _build_ffmpeg_command_with_audio_control(
+        video_origin_path, output_path, ffmpeg_start_time, ffmpeg_end_time,
+        encoder_config, hwaccel_args, remove_audio=False
+    )
+
+    # 执行命令
+    success = execute_ffmpeg_with_fallback(
+        cmd, timestamp, video_origin_path, output_path,
+        ffmpeg_start_time, ffmpeg_end_time
+    )
+
+    return output_path if success else None
+
+
+def _build_ffmpeg_command_with_audio_control(
+    input_path: str,
+    output_path: str,
+    start_time: str,
+    end_time: str,
+    encoder_config: Dict[str, str],
+    hwaccel_args: List[str] = None,
+    remove_audio: bool = False
+) -> List[str]:
+    """
+    构建支持音频控制的FFmpeg命令
+
+    Args:
+        input_path: 输入视频路径
+        output_path: 输出视频路径
+        start_time: 开始时间
+        end_time: 结束时间
+        encoder_config: 编码器配置
+        hwaccel_args: 硬件加速参数
+        remove_audio: 是否移除音频（OST=0时为True）
+
+    Returns:
+        List[str]: ffmpeg命令列表
+    """
+    cmd = ["ffmpeg", "-y"]
+
+    # 硬件加速设置（参考原有逻辑）
+    if encoder_config["video_codec"] == "h264_nvenc":
+        # 对于NVENC，不使用硬件解码以避免滤镜链问题
+        pass
+    elif hwaccel_args:
+        cmd.extend(hwaccel_args)
+
+    # 输入文件
+    cmd.extend(["-i", input_path])
+
+    # 时间范围
+    cmd.extend(["-ss", start_time, "-to", end_time])
+
+    # 视频编码器设置
+    cmd.extend(["-c:v", encoder_config["video_codec"]])
+
+    # 音频处理
+    if remove_audio:
+        # OST=0: 移除音频
+        cmd.extend(["-an"])  # -an 表示不包含音频流
+        logger.debug("OST=0: 移除音频流")
+    else:
+        # OST=1,2: 保持原声
+        cmd.extend(["-c:a", encoder_config["audio_codec"]])
+        cmd.extend(["-ar", "44100", "-ac", "2"])
+        logger.debug("OST=1/2: 保持原声")
+
+    # 像素格式
+    cmd.extend(["-pix_fmt", encoder_config["pixel_format"]])
+
+    # 质量和预设参数（参考原有逻辑）
+    if encoder_config["video_codec"] == "h264_nvenc":
+        cmd.extend(["-preset", encoder_config["preset"]])
+        cmd.extend(["-cq", encoder_config["quality_value"]])
+        cmd.extend(["-profile:v", "main"])
+    elif encoder_config["video_codec"] == "h264_amf":
+        cmd.extend(["-quality", encoder_config["preset"]])
+        cmd.extend(["-qp_i", encoder_config["quality_value"]])
+    elif encoder_config["video_codec"] == "h264_qsv":
+        cmd.extend(["-preset", encoder_config["preset"]])
+        cmd.extend(["-global_quality", encoder_config["quality_value"]])
+    elif encoder_config["video_codec"] == "h264_videotoolbox":
+        cmd.extend(["-profile:v", "high"])
+        cmd.extend(["-b:v", encoder_config["quality_value"]])
+    else:
+        # 软件编码器（libx264）
+        cmd.extend(["-preset", encoder_config["preset"]])
+        cmd.extend(["-crf", encoder_config["quality_value"]])
+
+    # 优化参数
+    cmd.extend(["-avoid_negative_ts", "make_zero"])
+    cmd.extend(["-movflags", "+faststart"])
+
+    # 输出文件
+    cmd.append(output_path)
+
+    return cmd
+
+
+def clip_video_unified(
+        video_origin_path: str,
+        script_list: List[Dict],
+        tts_results: List[Dict],
+        output_dir: Optional[str] = None,
+        task_id: Optional[str] = None
+) -> Dict[str, str]:
+    """
+    基于OST类型的统一视频裁剪策略 - 消除双重裁剪问题
+
+    Args:
+        video_origin_path: 原始视频的路径
+        script_list: 完整的脚本列表，包含所有片段信息
+        tts_results: TTS结果列表，仅包含OST=0和OST=2的片段
+        output_dir: 输出目录路径，默认为None时会自动生成
+        task_id: 任务ID，用于生成唯一的输出目录，默认为None时会自动生成
+
+    Returns:
+        Dict[str, str]: 片段ID到裁剪后视频路径的映射
+    """
+    # 检查视频文件是否存在
+    if not os.path.exists(video_origin_path):
+        raise FileNotFoundError(f"视频文件不存在: {video_origin_path}")
+
+    # 如果未提供task_id，则根据输入生成一个唯一ID
+    if task_id is None:
+        content_for_hash = f"{video_origin_path}_{json.dumps(script_list)}"
+        task_id = hashlib.md5(content_for_hash.encode()).hexdigest()
+
+    # 设置输出目录
+    if output_dir is None:
+        output_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "storage", "temp", "clip_video_unified", task_id
+        )
+
+    # 确保输出目录存在
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    # 创建TTS结果的快速查找映射
+    tts_map = {item['_id']: item for item in tts_results}
+
+    # 获取硬件加速支持
+    hwaccel_type = check_hardware_acceleration()
+    hwaccel_args = []
+
+    if hwaccel_type:
+        hwaccel_args = ffmpeg_utils.get_ffmpeg_hwaccel_args()
+        hwaccel_info = ffmpeg_utils.get_ffmpeg_hwaccel_info()
+        logger.info(f"🚀 使用硬件加速: {hwaccel_type} ({hwaccel_info.get('message', '')})")
+    else:
+        logger.info("🔧 使用软件编码")
+
+    # 获取编码器配置
+    encoder_config = get_safe_encoder_config(hwaccel_type)
+    logger.debug(f"编码器配置: {encoder_config}")
+
+    # 统计信息
+    total_clips = len(script_list)
+    result = {}
+    failed_clips = []
+    success_count = 0
+
+    logger.info(f"📹 开始统一视频裁剪，总共{total_clips}个片段")
+
+    for i, script_item in enumerate(script_list, 1):
+        _id = script_item.get("_id")
+        ost = script_item.get("OST", 0)
+        timestamp = script_item["timestamp"]
+
+        logger.info(f"📹 [{i}/{total_clips}] 处理片段 ID:{_id}, OST:{ost}, 时间戳:{timestamp}")
+
+        try:
+            if ost == 0:  # 纯解说片段
+                output_path = _process_narration_only_segment(
+                    video_origin_path, script_item, tts_map, output_dir,
+                    encoder_config, hwaccel_args
+                )
+            elif ost == 1:  # 纯原声片段
+                output_path = _process_original_audio_segment(
+                    video_origin_path, script_item, output_dir,
+                    encoder_config, hwaccel_args
+                )
+            elif ost == 2:  # 解说+原声混合片段
+                output_path = _process_mixed_segment(
+                    video_origin_path, script_item, tts_map, output_dir,
+                    encoder_config, hwaccel_args
+                )
+            else:
+                logger.warning(f"未知的OST类型: {ost}，跳过片段 {_id}")
+                continue
+
+            if output_path and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                result[_id] = output_path
+                success_count += 1
+                logger.info(f"✅ [{i}/{total_clips}] 片段处理成功: OST={ost}, ID={_id}")
+            else:
+                failed_clips.append(f"ID:{_id}, OST:{ost}")
+                logger.error(f"❌ [{i}/{total_clips}] 片段处理失败: OST={ost}, ID={_id}")
+
+        except Exception as e:
+            failed_clips.append(f"ID:{_id}, OST:{ost}")
+            logger.error(f"❌ [{i}/{total_clips}] 片段处理异常: OST={ost}, ID={_id}, 错误: {str(e)}")
+
+    # 最终统计
+    logger.info(f"📊 统一视频裁剪完成: 成功 {success_count}/{total_clips}, 失败 {len(failed_clips)}")
+
+    # 检查是否有失败的片段
+    if failed_clips:
+        logger.warning(f"⚠️  以下片段处理失败: {failed_clips}")
+        if len(failed_clips) == total_clips:
+            raise RuntimeError("所有视频片段处理都失败了，请检查视频文件和ffmpeg配置")
+        elif len(failed_clips) > total_clips / 2:
+            logger.warning(f"⚠️  超过一半的片段处理失败 ({len(failed_clips)}/{total_clips})，请检查硬件加速配置")
+
+    if success_count > 0:
+        logger.info(f"🎉 统一视频裁剪任务完成! 输出目录: {output_dir}")
+
+    return result
+
+
 def clip_video(
         video_origin_path: str,
         tts_result: List[Dict],

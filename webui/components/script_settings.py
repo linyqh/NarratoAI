@@ -336,8 +336,8 @@ def render_script_buttons(tr, params):
         height=180
     )
 
-    # 操作按钮行
-    button_cols = st.columns(3)
+    # 操作按钮行 - 移除裁剪视频按钮，使用统一裁剪策略
+    button_cols = st.columns(2)  # 改为2列布局
     with button_cols[0]:
         if st.button(tr("Check Format"), key="check_format", use_container_width=True):
             check_script_format(tr, video_clip_json_details)
@@ -345,11 +345,6 @@ def render_script_buttons(tr, params):
     with button_cols[1]:
         if st.button(tr("Save Script"), key="save_script", use_container_width=True):
             save_script(tr, video_clip_json_details)
-
-    with button_cols[2]:
-        script_valid = st.session_state.get('script_format_valid', False)
-        if st.button(tr("Crop Video"), key="crop_video", disabled=not script_valid, use_container_width=True):
-            crop_video(tr, params)
 
 
 def check_script_format(tr, script_content):
@@ -414,26 +409,7 @@ def save_script(tr, video_clip_json_details):
             st.stop()
 
 
-def crop_video(tr, params):
-    """裁剪视频"""
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-
-    def update_progress(progress):
-        progress_bar.progress(progress)
-        status_text.text(f"剪辑进度: {progress}%")
-
-    try:
-        utils.cut_video(params, update_progress)
-        time.sleep(0.5)
-        progress_bar.progress(100)
-        st.success("视频剪辑成功完成！")
-    except Exception as e:
-        st.error(f"剪辑过程中发生错误: {str(e)}")
-    finally:
-        time.sleep(1)
-        progress_bar.empty()
-        status_text.empty()
+# crop_video函数已移除 - 现在使用统一裁剪策略，不再需要预裁剪步骤
 
 
 def get_script_params():

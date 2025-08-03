@@ -106,8 +106,7 @@ def init_global_state():
         st.session_state['video_plot'] = ''
     if 'ui_language' not in st.session_state:
         st.session_state['ui_language'] = config.ui.get("language", utils.get_system_locale())
-    if 'subclip_videos' not in st.session_state:
-        st.session_state['subclip_videos'] = {}
+    # 移除subclip_videos初始化 - 现在使用统一裁剪策略
 
 
 def tr(key):
@@ -136,11 +135,9 @@ def render_generate_button():
         logger.add(log_received)
 
         config.save_config()
-        task_id = st.session_state.get('task_id')
 
-        if not task_id:
-            st.error(tr("请先裁剪视频"))
-            return
+        # 移除task_id检查 - 现在使用统一裁剪策略，不再需要预裁剪
+        # 直接检查必要的文件是否存在
         if not st.session_state.get('video_clip_json_path'):
             st.error(tr("脚本文件不能为空"))
             return
@@ -168,10 +165,14 @@ def render_generate_button():
         # 创建参数对象
         params = VideoClipParams(**all_params)
 
-        result = tm.start_subclip(
+        # 使用新的统一裁剪策略，不再需要预裁剪的subclip_videos
+        # 生成一个新的task_id用于本次处理
+        import uuid
+        task_id = str(uuid.uuid4())
+
+        result = tm.start_subclip_unified(
             task_id=task_id,
-            params=params,
-            subclip_path_videos=st.session_state['subclip_videos']
+            params=params
         )
 
         video_files = result.get("videos", [])
