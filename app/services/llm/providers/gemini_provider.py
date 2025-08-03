@@ -27,6 +27,7 @@ class GeminiVisionProvider(VisionModelProvider):
     @property
     def supported_models(self) -> List[str]:
         return [
+            "gemini-2.5-flash",
             "gemini-2.0-flash-lite",
             "gemini-2.0-flash",
             "gemini-1.5-pro",
@@ -136,25 +137,72 @@ class GeminiVisionProvider(VisionModelProvider):
         return base64.b64encode(img_bytes).decode('utf-8')
     
     async def _make_api_call(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """执行原生Gemini API调用"""
+        """执行原生Gemini API调用，包含重试机制"""
+        from app.config import config
+
         url = f"{self.base_url}/models/{self.model_name}:generateContent?key={self.api_key}"
-        
-        response = await asyncio.to_thread(
-            requests.post,
-            url,
-            json=payload,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "NarratoAI/1.0"
-            },
-            timeout=120
-        )
-        
-        if response.status_code != 200:
-            error = self._handle_api_error(response.status_code, response.text)
-            raise error
-        
-        return response.json()
+
+        max_retries = config.app.get('llm_max_retries', 3)
+        base_timeout = config.app.get('llm_vision_timeout', 120)
+
+        for attempt in range(max_retries):
+            try:
+                # 根据尝试次数调整超时时间
+                timeout = base_timeout * (attempt + 1)
+                logger.debug(f"Gemini API调用尝试 {attempt + 1}/{max_retries}，超时设置: {timeout}秒")
+
+                response = await asyncio.to_thread(
+                    requests.post,
+                    url,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "NarratoAI/1.0"
+                    },
+                    timeout=timeout
+                )
+
+                if response.status_code == 200:
+                    return response.json()
+
+                # 处理特定的错误状态码
+                if response.status_code == 429:
+                    # 速率限制，等待后重试
+                    wait_time = 30 * (attempt + 1)
+                    logger.warning(f"Gemini API速率限制，等待 {wait_time} 秒后重试")
+                    await asyncio.sleep(wait_time)
+                    continue
+                elif response.status_code in [502, 503, 504, 524]:
+                    # 服务器错误或超时，可以重试
+                    if attempt < max_retries - 1:
+                        wait_time = 10 * (attempt + 1)
+                        logger.warning(f"Gemini API服务器错误 {response.status_code}，等待 {wait_time} 秒后重试")
+                        await asyncio.sleep(wait_time)
+                        continue
+
+                # 其他错误，直接抛出
+                error = self._handle_api_error(response.status_code, response.text)
+                raise error
+
+            except requests.exceptions.Timeout:
+                if attempt < max_retries - 1:
+                    wait_time = 15 * (attempt + 1)
+                    logger.warning(f"Gemini API请求超时，等待 {wait_time} 秒后重试")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    raise APICallError("Gemini API请求超时，已达到最大重试次数")
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    wait_time = 10 * (attempt + 1)
+                    logger.warning(f"Gemini API网络错误: {str(e)}，等待 {wait_time} 秒后重试")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    raise APICallError(f"Gemini API网络错误: {str(e)}")
+
+        # 如果所有重试都失败了
+        raise APICallError("Gemini API调用失败，已达到最大重试次数")
     
     def _parse_vision_response(self, response_data: Dict[str, Any]) -> str:
         """解析视觉分析响应"""
@@ -192,6 +240,7 @@ class GeminiTextProvider(TextModelProvider):
     @property
     def supported_models(self) -> List[str]:
         return [
+            "gemini-2.5-flash",
             "gemini-2.0-flash-lite",
             "gemini-2.0-flash",
             "gemini-1.5-pro",
@@ -278,25 +327,72 @@ class GeminiTextProvider(TextModelProvider):
         return self._parse_text_response(response_data)
     
     async def _make_api_call(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """执行原生Gemini API调用"""
+        """执行原生Gemini API调用，包含重试机制"""
+        from app.config import config
+
         url = f"{self.base_url}/models/{self.model_name}:generateContent?key={self.api_key}"
-        
-        response = await asyncio.to_thread(
-            requests.post,
-            url,
-            json=payload,
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "NarratoAI/1.0"
-            },
-            timeout=120
-        )
-        
-        if response.status_code != 200:
-            error = self._handle_api_error(response.status_code, response.text)
-            raise error
-        
-        return response.json()
+
+        max_retries = config.app.get('llm_max_retries', 3)
+        base_timeout = config.app.get('llm_text_timeout', 180)  # 文本生成任务使用更长的基础超时时间
+
+        for attempt in range(max_retries):
+            try:
+                # 根据尝试次数调整超时时间
+                timeout = base_timeout * (attempt + 1)
+                logger.debug(f"Gemini文本API调用尝试 {attempt + 1}/{max_retries}，超时设置: {timeout}秒")
+
+                response = await asyncio.to_thread(
+                    requests.post,
+                    url,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "NarratoAI/1.0"
+                    },
+                    timeout=timeout
+                )
+
+                if response.status_code == 200:
+                    return response.json()
+
+                # 处理特定的错误状态码
+                if response.status_code == 429:
+                    # 速率限制，等待后重试
+                    wait_time = 30 * (attempt + 1)
+                    logger.warning(f"Gemini API速率限制，等待 {wait_time} 秒后重试")
+                    await asyncio.sleep(wait_time)
+                    continue
+                elif response.status_code in [502, 503, 504, 524]:
+                    # 服务器错误或超时，可以重试
+                    if attempt < max_retries - 1:
+                        wait_time = 15 * (attempt + 1)
+                        logger.warning(f"Gemini API服务器错误 {response.status_code}，等待 {wait_time} 秒后重试")
+                        await asyncio.sleep(wait_time)
+                        continue
+
+                # 其他错误，直接抛出
+                error = self._handle_api_error(response.status_code, response.text)
+                raise error
+
+            except requests.exceptions.Timeout:
+                if attempt < max_retries - 1:
+                    wait_time = 20 * (attempt + 1)
+                    logger.warning(f"Gemini文本API请求超时，等待 {wait_time} 秒后重试")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    raise APICallError("Gemini文本API请求超时，已达到最大重试次数")
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    wait_time = 15 * (attempt + 1)
+                    logger.warning(f"Gemini文本API网络错误: {str(e)}，等待 {wait_time} 秒后重试")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    raise APICallError(f"Gemini文本API网络错误: {str(e)}")
+
+        # 如果所有重试都失败了
+        raise APICallError("Gemini文本API调用失败，已达到最大重试次数")
     
     def _parse_text_response(self, response_data: Dict[str, Any]) -> str:
         """解析文本生成响应"""

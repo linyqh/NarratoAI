@@ -213,7 +213,8 @@ class LLMConfigValidator:
                 "确保所有API密钥都已正确配置",
                 "建议为每个提供商配置base_url以提高稳定性",
                 "定期检查模型名称是否为最新版本",
-                "建议配置多个提供商作为备用方案"
+                "建议配置多个提供商作为备用方案",
+                "如果使用新发布的模型遇到MODEL_NOT_SUPPORTED错误，可以设置 strict_model_validation = false 启用宽松验证模式"
             ]
         }
         
@@ -252,8 +253,8 @@ class LLMConfigValidator:
         """获取示例模型名称"""
         examples = {
             "gemini": {
-                "vision": ["gemini-2.0-flash-lite", "gemini-2.0-flash"],
-                "text": ["gemini-2.0-flash", "gemini-1.5-pro"]
+                "vision": ["gemini-2.5-flash", "gemini-2.0-flash-lite", "gemini-2.0-flash"],
+                "text": ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
             },
             "openai": {
                 "vision": [],
