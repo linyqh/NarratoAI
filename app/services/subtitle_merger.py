@@ -62,91 +62,127 @@ def parse_edited_time_range(time_range_str):
 def merge_subtitle_files(subtitle_items, output_file=None):
     """
     合并多个SRT字幕文件
-    
+
     参数:
         subtitle_items: 字典列表，每个字典包含subtitle文件路径和editedTimeRange
         output_file: 输出文件的路径，如果为None则自动生成
-    
+
     返回:
-        合并后的字幕文件路径
+        合并后的字幕文件路径，如果没有有效字幕则返回None
     """
     # 按照editedTimeRange的开始时间排序
-    sorted_items = sorted(subtitle_items, 
+    sorted_items = sorted(subtitle_items,
                          key=lambda x: parse_edited_time_range(x.get('editedTimeRange', ''))[0] or timedelta())
-    
+
     merged_subtitles = []
     subtitle_index = 1
-    
+    valid_items_count = 0
+
     for item in sorted_items:
         if not item.get('subtitle') or not os.path.exists(item.get('subtitle')):
+            print(f"跳过项目 {item.get('_id')}：字幕文件不存在或路径为空")
             continue
-            
+
         # 从editedTimeRange获取起始时间偏移
         offset_time, _ = parse_edited_time_range(item.get('editedTimeRange', ''))
-        
+
         if offset_time is None:
             print(f"警告: 无法从项目 {item.get('_id')} 的editedTimeRange中提取时间范围，跳过该项")
             continue
-        
-        with open(item['subtitle'], 'r', encoding='utf-8') as file:
-            content = file.read()
-            
-        # 解析字幕文件
-        subtitle_blocks = re.split(r'\n\s*\n', content.strip())
-        
-        for block in subtitle_blocks:
-            lines = block.strip().split('\n')
-            if len(lines) < 3:  # 确保块有足够的行数
+
+        try:
+            with open(item['subtitle'], 'r', encoding='utf-8') as file:
+                content = file.read().strip()
+
+            # 检查文件内容是否为空
+            if not content:
+                print(f"跳过项目 {item.get('_id')}：字幕文件内容为空")
                 continue
-                
-            # 解析时间轴行
-            time_line = lines[1]
-            time_parts = time_line.split(' --> ')
-            if len(time_parts) != 2:
-                continue
-                
-            start_time = parse_time(time_parts[0])
-            end_time = parse_time(time_parts[1])
-            
-            # 应用时间偏移
-            adjusted_start_time = start_time + offset_time
-            adjusted_end_time = end_time + offset_time
-            
-            # 重建字幕块
-            adjusted_time_line = f"{format_time(adjusted_start_time)} --> {format_time(adjusted_end_time)}"
-            text_lines = lines[2:]
-            
-            new_block = [
-                str(subtitle_index),
-                adjusted_time_line,
-                *text_lines
-            ]
-            
-            merged_subtitles.append('\n'.join(new_block))
-            subtitle_index += 1
-    
+
+            valid_items_count += 1
+
+            # 解析字幕文件
+            subtitle_blocks = re.split(r'\n\s*\n', content)
+
+            for block in subtitle_blocks:
+                lines = block.strip().split('\n')
+                if len(lines) < 3:  # 确保块有足够的行数
+                    continue
+
+                # 解析时间轴行
+                time_line = lines[1]
+                time_parts = time_line.split(' --> ')
+                if len(time_parts) != 2:
+                    continue
+
+                start_time = parse_time(time_parts[0])
+                end_time = parse_time(time_parts[1])
+
+                # 应用时间偏移
+                adjusted_start_time = start_time + offset_time
+                adjusted_end_time = end_time + offset_time
+
+                # 重建字幕块
+                adjusted_time_line = f"{format_time(adjusted_start_time)} --> {format_time(adjusted_end_time)}"
+                text_lines = lines[2:]
+
+                new_block = [
+                    str(subtitle_index),
+                    adjusted_time_line,
+                    *text_lines
+                ]
+
+                merged_subtitles.append('\n'.join(new_block))
+                subtitle_index += 1
+        except Exception as e:
+            print(f"处理项目 {item.get('_id')} 的字幕文件时出错: {str(e)}")
+            continue
+
+    # 检查是否有有效的字幕内容
+    if not merged_subtitles:
+        print(f"警告: 没有找到有效的字幕内容，共检查了 {len(subtitle_items)} 个项目，其中 {valid_items_count} 个有有效文件")
+        return None
+
     # 确定输出文件路径
     if output_file is None:
-        dir_path = os.path.dirname(sorted_items[0]['subtitle'])
+        # 找到第一个有效的字幕文件来确定目录
+        valid_item = None
+        for item in sorted_items:
+            if item.get('subtitle') and os.path.exists(item.get('subtitle')):
+                valid_item = item
+                break
+
+        if not valid_item:
+            print("错误: 无法确定输出目录，没有找到有效的字幕文件")
+            return None
+
+        dir_path = os.path.dirname(valid_item['subtitle'])
         first_start = parse_edited_time_range(sorted_items[0]['editedTimeRange'])[0]
         last_end = parse_edited_time_range(sorted_items[-1]['editedTimeRange'])[1]
-        
-        first_start_h, first_start_m, first_start_s = int(first_start.seconds // 3600), int((first_start.seconds % 3600) // 60), int(first_start.seconds % 60)
-        last_end_h, last_end_m, last_end_s = int(last_end.seconds // 3600), int((last_end.seconds % 3600) // 60), int(last_end.seconds % 60)
-        
-        first_start_str = f"{first_start_h:02d}_{first_start_m:02d}_{first_start_s:02d}"
-        last_end_str = f"{last_end_h:02d}_{last_end_m:02d}_{last_end_s:02d}"
-        
-        output_file = os.path.join(dir_path, f"merged_subtitle_{first_start_str}-{last_end_str}.srt")
-    
+
+        if first_start and last_end:
+            first_start_h, first_start_m, first_start_s = int(first_start.seconds // 3600), int((first_start.seconds % 3600) // 60), int(first_start.seconds % 60)
+            last_end_h, last_end_m, last_end_s = int(last_end.seconds // 3600), int((last_end.seconds % 3600) // 60), int(last_end.seconds % 60)
+
+            first_start_str = f"{first_start_h:02d}_{first_start_m:02d}_{first_start_s:02d}"
+            last_end_str = f"{last_end_h:02d}_{last_end_m:02d}_{last_end_s:02d}"
+
+            output_file = os.path.join(dir_path, f"merged_subtitle_{first_start_str}-{last_end_str}.srt")
+        else:
+            output_file = os.path.join(dir_path, f"merged_subtitle.srt")
+
     # 合并所有字幕块
     merged_content = '\n\n'.join(merged_subtitles)
-    
+
     # 写入合并后的内容
-    with open(output_file, 'w', encoding='utf-8') as file:
-        file.write(merged_content)
-    
-    return output_file
+    try:
+        with open(output_file, 'w', encoding='utf-8') as file:
+            file.write(merged_content)
+        print(f"字幕文件合并成功: {output_file}，包含 {len(merged_subtitles)} 个字幕条目")
+        return output_file
+    except Exception as e:
+        print(f"写入字幕文件失败: {str(e)}")
+        return None
 
 
 if __name__ == '__main__':
