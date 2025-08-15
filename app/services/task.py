@@ -197,10 +197,20 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     # 获取优化的音量配置
     optimized_volumes = get_recommended_volumes_for_content('mixed')
 
+    # 检查是否有OST=1的原声片段，如果有，则保持原声音量为1.0不变
+    has_original_audio_segments = any(segment['OST'] == 1 for segment in list_script)
+
     # 应用用户设置和优化建议的组合
     # 如果用户设置了非默认值，优先使用用户设置
     final_tts_volume = params.tts_volume if hasattr(params, 'tts_volume') and params.tts_volume != 1.0 else optimized_volumes['tts_volume']
-    final_original_volume = params.original_volume if hasattr(params, 'original_volume') and params.original_volume != 0.7 else optimized_volumes['original_volume']
+
+    # 关键修复：如果有原声片段，保持原声音量为1.0，确保与原视频音量一致
+    if has_original_audio_segments:
+        final_original_volume = 1.0  # 保持原声音量不变
+        logger.info("检测到原声片段，原声音量设置为1.0以保持与原视频一致")
+    else:
+        final_original_volume = params.original_volume if hasattr(params, 'original_volume') and params.original_volume != 0.7 else optimized_volumes['original_volume']
+
     final_bgm_volume = params.bgm_volume if hasattr(params, 'bgm_volume') and params.bgm_volume != 0.3 else optimized_volumes['bgm_volume']
 
     logger.info(f"音量配置 - TTS: {final_tts_volume}, 原声: {final_original_volume}, BGM: {final_bgm_volume}")
@@ -391,9 +401,19 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
     # 获取优化的音量配置
     optimized_volumes = get_recommended_volumes_for_content('mixed')
 
+    # 检查是否有OST=1的原声片段，如果有，则保持原声音量为1.0不变
+    has_original_audio_segments = any(segment['OST'] == 1 for segment in list_script)
+
     # 应用用户设置和优化建议的组合
     final_tts_volume = params.tts_volume if hasattr(params, 'tts_volume') and params.tts_volume != 1.0 else optimized_volumes['tts_volume']
-    final_original_volume = params.original_volume if hasattr(params, 'original_volume') and params.original_volume != 0.7 else optimized_volumes['original_volume']
+
+    # 关键修复：如果有原声片段，保持原声音量为1.0，确保与原视频音量一致
+    if has_original_audio_segments:
+        final_original_volume = 1.0  # 保持原声音量不变
+        logger.info("检测到原声片段，原声音量设置为1.0以保持与原视频一致")
+    else:
+        final_original_volume = params.original_volume if hasattr(params, 'original_volume') and params.original_volume != 0.7 else optimized_volumes['original_volume']
+
     final_bgm_volume = params.bgm_volume if hasattr(params, 'bgm_volume') and params.bgm_volume != 0.3 else optimized_volumes['bgm_volume']
 
     logger.info(f"音量配置 - TTS: {final_tts_volume}, 原声: {final_original_volume}, BGM: {final_bgm_volume}")

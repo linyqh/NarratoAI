@@ -137,8 +137,12 @@ def merge_materials(
             try:
                 original_audio = video_clip.audio
                 if original_audio:
-                    original_audio = original_audio.with_effects([afx.MultiplyVolume(original_audio_volume)])
-                    logger.info(f"已提取视频原声，音量设置为: {original_audio_volume}")
+                    # 关键修复：只有当音量不为1.0时才进行音量调整，保持原声音量不变
+                    if abs(original_audio_volume - 1.0) > 0.001:  # 使用小的容差值比较浮点数
+                        original_audio = original_audio.with_effects([afx.MultiplyVolume(original_audio_volume)])
+                        logger.info(f"已提取视频原声，音量调整为: {original_audio_volume}")
+                    else:
+                        logger.info("已提取视频原声，保持原始音量不变")
                 else:
                     logger.warning("视频没有音轨，无法提取原声")
             except Exception as e:
