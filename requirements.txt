@@ -1,45 +1,35 @@
-# 必须项
-requests~=2.32.0
+# 核心依赖
+requests>=2.32.0
 moviepy==2.1.1
 edge-tts==6.1.19
-streamlit~=1.45.0
+streamlit>=1.45.0
 watchdog==6.0.0
-loguru~=0.7.3
-tomli~=2.2.1
+loguru>=0.7.3
+tomli>=2.2.1
+tomli-w>=1.0.0
 pydub==0.25.1
 pysrt==1.1.2
 
-openai~=1.77.0
+# AI 服务依赖
+openai>=1.77.0
 google-generativeai>=0.8.5
-azure-cognitiveservices-speech~=1.37.0
+azure-cognitiveservices-speech>=1.37.0
 
-# 待优化项
-# opencv-python==4.11.0.86
-# scikit-learn==1.6.1
+# 图像处理依赖
+Pillow>=10.3.0
 
+# 进度条和重试机制
+tqdm>=4.66.6
+tenacity>=9.0.0
 
+# 可选依赖（根据功能需要）
+# 如果需要本地语音识别，取消注释下面的行
+# faster-whisper>=1.0.1
 
-# faster-whisper~=1.0.1
-# tomli~=2.0.1
-# aiohttp~=3.10.10
-# httpx==0.27.2
-# urllib3~=2.2.1
+# 如果需要 OpenCV 图像处理，取消注释下面的行
+# opencv-python>=4.11.0.86
 
-# python-multipart~=0.0.9
-# redis==5.0.3
-# opencv-python~=4.10.0.84
-# git-changelog~=2.5.2
-# watchdog==5.0.2
-# pydub==0.25.1
-# psutil>=5.9.0
-# scikit-learn~=1.5.2
-# pillow==10.3.0
-# python-dotenv~=1.0.1
-
-# tqdm>=4.66.6
-# tenacity>=9.0.0
-# tiktoken==0.8.0
-# pysrt==1.1.2
-# transformers==4.50.0
-
-# yt-dlp==2025.4.30
+# 如果需要 CUDA 支持，取消注释下面的行
+# torch>=2.0.0
+# torchvision>=0.15.0
+# torchaudio>=2.0.0
