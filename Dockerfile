@@ -55,7 +55,7 @@ RUN git lfs install
 COPY . .
 
 # 暴露端口
-EXPOSE 8501 8080
+EXPOSE 8501
 
 # 使用脚本作为入口点
 COPY docker-entrypoint.sh /usr/local/bin/
