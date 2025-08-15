@@ -136,11 +136,21 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
                 list_script=new_script_list
             )
             logger.info(f"音频文件合并成功->{merged_audio_path}")
+
             # 合并字幕文件
             merged_subtitle_path = subtitle_merger.merge_subtitle_files(new_script_list)
-            logger.info(f"字幕文件合并成功->{merged_subtitle_path}")
+            if merged_subtitle_path:
+                logger.info(f"字幕文件合并成功->{merged_subtitle_path}")
+            else:
+                logger.warning("没有有效的字幕内容，将生成无字幕视频")
+                merged_subtitle_path = ""
         except Exception as e:
-            logger.error(f"合并音频文件失败: {str(e)}")
+            logger.error(f"合并音频/字幕文件失败: {str(e)}")
+            # 确保即使合并失败也有默认值
+            if 'merged_audio_path' not in locals():
+                merged_audio_path = ""
+            if 'merged_subtitle_path' not in locals():
+                merged_subtitle_path = ""
     else:
         logger.warning("没有需要合并的音频/字幕")
         merged_audio_path = ""
@@ -351,11 +361,21 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
                 list_script=new_script_list
             )
             logger.info(f"音频文件合并成功->{merged_audio_path}")
+
             # 合并字幕文件
             merged_subtitle_path = subtitle_merger.merge_subtitle_files(new_script_list)
-            logger.info(f"字幕文件合并成功->{merged_subtitle_path}")
+            if merged_subtitle_path:
+                logger.info(f"字幕文件合并成功->{merged_subtitle_path}")
+            else:
+                logger.warning("没有有效的字幕内容，将生成无字幕视频")
+                merged_subtitle_path = ""
         except Exception as e:
-            logger.error(f"合并音频文件失败: {str(e)}")
+            logger.error(f"合并音频/字幕文件失败: {str(e)}")
+            # 确保即使合并失败也有默认值
+            if 'merged_audio_path' not in locals():
+                merged_audio_path = ""
+            if 'merged_subtitle_path' not in locals():
+                merged_subtitle_path = ""
     else:
         logger.warning("没有需要合并的音频/字幕")
         merged_audio_path = ""
