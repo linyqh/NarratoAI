@@ -29,6 +29,40 @@ from app.models.schema import AudioVolumeDefaults
 from app.services.audio_normalizer import AudioNormalizer, normalize_audio_for_mixing
 
 
+def is_valid_subtitle_file(subtitle_path: str) -> bool:
+    """
+    检查字幕文件是否有效
+
+    参数:
+        subtitle_path: 字幕文件路径
+
+    返回:
+        bool: 如果字幕文件存在且包含有效内容则返回True，否则返回False
+    """
+    if not subtitle_path or not os.path.exists(subtitle_path):
+        return False
+
+    try:
+        with open(subtitle_path, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+
+        # 检查文件是否为空
+        if not content:
+            return False
+
+        # 检查是否包含时间戳格式（SRT格式的基本特征）
+        # SRT格式应该包含类似 "00:00:00,000 --> 00:00:00,000" 的时间戳
+        import re
+        time_pattern = r'\d{2}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2}:\d{2}:\d{2},\d{3}'
+        if not re.search(time_pattern, content):
+            return False
+
+        return True
+    except Exception as e:
+        logger.warning(f"检查字幕文件时出错: {str(e)}")
+        return False
+
+
 def merge_materials(
     video_path: str,
     audio_path: str,
@@ -137,8 +171,12 @@ def merge_materials(
             try:
                 original_audio = video_clip.audio
                 if original_audio:
-                    original_audio = original_audio.with_effects([afx.MultiplyVolume(original_audio_volume)])
-                    logger.info(f"已提取视频原声，音量设置为: {original_audio_volume}")
+                    # 关键修复：只有当音量不为1.0时才进行音量调整，保持原声音量不变
+                    if abs(original_audio_volume - 1.0) > 0.001:  # 使用小的容差值比较浮点数
+                        original_audio = original_audio.with_effects([afx.MultiplyVolume(original_audio_volume)])
+                        logger.info(f"已提取视频原声，音量调整为: {original_audio_volume}")
+                    else:
+                        logger.info("已提取视频原声，保持原始音量不变")
                 else:
                     logger.warning("视频没有音轨，无法提取原声")
             except Exception as e:
@@ -314,34 +352,36 @@ def merge_materials(
             color=subtitle_color,
         )
     
-    # 处理字幕 - 修复字幕开关bug
-    if subtitle_enabled and subtitle_path and os.path.exists(subtitle_path):
-        logger.info("字幕已启用，开始处理字幕文件")
-        try:
-            # 加载字幕文件
-            sub = SubtitlesClip(
-                subtitles=subtitle_path,
-                encoding="utf-8",
-                make_textclip=make_textclip
-            )
+    # 处理字幕 - 修复字幕开关bug和空字幕文件问题
+    if subtitle_enabled and subtitle_path:
+        if is_valid_subtitle_file(subtitle_path):
+            logger.info("字幕已启用，开始处理字幕文件")
+            try:
+                # 加载字幕文件
+                sub = SubtitlesClip(
+                    subtitles=subtitle_path,
+                    encoding="utf-8",
+                    make_textclip=make_textclip
+                )
 
-            # 创建每个字幕片段
-            text_clips = []
-            for item in sub.subtitles:
-                clip = create_text_clip(subtitle_item=item)
-                text_clips.append(clip)
+                # 创建每个字幕片段
+                text_clips = []
+                for item in sub.subtitles:
+                    clip = create_text_clip(subtitle_item=item)
+                    text_clips.append(clip)
 
-            # 合成视频和字幕
-            video_clip = CompositeVideoClip([video_clip, *text_clips])
-            logger.info(f"已添加{len(text_clips)}个字幕片段")
-        except Exception as e:
-            logger.error(f"处理字幕失败: \n{traceback.format_exc()}")
+                # 合成视频和字幕
+                video_clip = CompositeVideoClip([video_clip, *text_clips])
+                logger.info(f"已添加{len(text_clips)}个字幕片段")
+            except Exception as e:
+                logger.error(f"处理字幕失败: \n{traceback.format_exc()}")
+                logger.warning("字幕处理失败，继续生成无字幕视频")
+        else:
+            logger.warning(f"字幕文件无效或为空: {subtitle_path}，跳过字幕处理")
     elif not subtitle_enabled:
         logger.info("字幕已禁用，跳过字幕处理")
     elif not subtitle_path:
         logger.info("未提供字幕文件路径，跳过字幕处理")
-    elif not os.path.exists(subtitle_path):
-        logger.warning(f"字幕文件不存在: {subtitle_path}，跳过字幕处理")
     
     # 导出最终视频
     try:

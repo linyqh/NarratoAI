@@ -1,24 +1,99 @@
-# Exclude common Python files and directories
-venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.pyz
-*.pyw
-*.pyi
-*.egg-info/
-
-# Exclude development and local files
-.env
-.env.*
-*.log
-*.db
-
-# Exclude version control system files
+# Git 相关
 .git/
 .gitignore
+.gitattributes
 .svn/
 
-storage/
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 虚拟环境
+.env
+.env.*
+.venv
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE 相关
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统相关
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 日志和数据库文件
+*.log
+*.db
+logs/
+
+# 临时文件
+*.tmp
+*.temp
+temp/
+tmp/
+
+# 存储目录（运行时生成的内容）
+storage/temp/
+storage/tasks/
+storage/demo.py
+
+# 缓存目录
+.cache/
+.pytest_cache/
+
+# 文档（保留必要的）
+docs/
+*.md
+!README.md
+
+# Docker 相关文件（避免递归复制）
+Dockerfile.*
+docker-compose.*.yml
+
+# 配置文件（使用示例配置）
 config.toml
+
+# 资源文件中的大文件
+resource/videos/
+resource/songs/
+
+# 测试文件
+tests/
+test_*
+*_test.py
+
+# 其他不必要的文件
+*.bak
+*.orig
+*.rej

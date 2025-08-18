@@ -157,15 +157,15 @@
     "API rate limit exceeded. Please wait about an hour and try again.": "API 调用次数已达到限制，请等待约一小时后再试。",
     "Resources exhausted. Please try again later.": "资源已耗尽，请稍后再试。",
     "Transcription Failed": "转录失败",
-    "Short Generate": "短剧混剪 (高燃剪辑)",
+    "Short Generate": "短剧混剪 (实验)",
     "Generate Short Video Script": "AI生成短剧混剪脚本",
     "Adjust the volume of the original audio": "调整原始音频的音量",
     "Original Volume": "视频音量",
-    "Auto Generate": "纪录片解说 (画面解说)",
+    "Auto Generate": "逐帧解说",
     "Frame Interval (seconds)": "帧间隔 (秒)",
     "Frame Interval (seconds) (More keyframes consume more tokens)": "帧间隔 (秒) (更多关键帧消耗更多令牌)",
     "Batch Size": "批处理大小",
     "Batch Size (More keyframes consume more tokens)": "批处理大小, 每批处理越少消耗 token 越多",
-    "Short Drama Summary": "短剧解说(仅支持 gemini-2.0-flash)"
+    "Short Drama Summary": "短剧解说"
   }
 }

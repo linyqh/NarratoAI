@@ -566,9 +566,14 @@ def combine_clip_videos(
             with open(filter_script, 'w') as f:
                 f.write(f"[0:a]volume=0.0[silence];\n")  # 首先静音背景轨道
 
-                # 添加每个音频文件
+                # 添加每个音频文件，并补偿amix的音量稀释
+                # amix会将n个输入的音量平均分配，所以我们需要将每个输入的音量提高n倍来保持原始音量
+                num_inputs = len(audio_timings) + 1  # +1 for silence track
+                volume_compensation = num_inputs  # 补偿系数
+
                 for i, timing in enumerate(audio_timings):
-                    f.write(f"[{i+1}:a]adelay={int(timing['start']*1000)}|{int(timing['start']*1000)}[a{i}];\n")
+                    # 为每个音频添加音量补偿，确保原声保持原始音量
+                    f.write(f"[{i+1}:a]volume={volume_compensation},adelay={int(timing['start']*1000)}|{int(timing['start']*1000)}[a{i}];\n")
 
                 # 混合所有音频
                 mix_str = "[silence]"
