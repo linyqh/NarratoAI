@@ -64,6 +64,8 @@ _**1. NarratoAI 是一款完全免费的软件，近期在社交媒体(抖音等
 
 <img src="https://github.com/user-attachments/assets/464b877c-b061-4856-8260-a0ef6fad7e52" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
 <img src="https://github.com/user-attachments/assets/9cc0e5e4-bd5b-4655-b5ef-7d9085cdbc50" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
+<img src="https://github.com/user-attachments/assets/9d7a6ea9-4bca-42b5-a61e-7e464037930f" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
+<img src="https://github.com/user-attachments/assets/09eeb94d-c670-4d7d-ba19-c0468bed3291" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
 
 _**2. 近期在 x (推特) 上发现有人冒充作者在 pump.fun 平台上发行代币！ 这是骗子！！！ 不要被割了韭菜
 ！！！目前 NarratoAI 没有在 x(推特) 上做任何官方宣传，注意甄别**_
