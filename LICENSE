@@ -1,16 +1,18 @@
-MIT License
+Modified MIT License - Non-Commercial Use Only
 
 Copyright (c) 2024 linyq
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, merge, publish, and distribute the Software, subject to the
+following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. The Software is provided **for personal, educational, or research purposes only**.
+2. Commercial use of the Software, including but not limited to incorporating
+   it into paid products, services, or platforms, is strictly prohibited
+   without prior written permission from the copyright holder.
+3. The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -19,3 +21,25 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+-------------------------------------------------------
+中文说明（仅供参考，以英文条款为准）：
+
+修改后的 MIT 协议 - 仅限非商业用途
+
+版权所有 (c) 2024 linyq
+
+任何人均可免费获取本软件及相关文档的副本，并享有以下权利：
+- 使用、复制、修改、合并、发布、分发本软件；
+
+但必须遵守以下条件：
+1. 本软件仅限用于 **个人、学习或科研用途**。
+2. 严禁任何商业用途，包括但不限于将本软件用于收费产品、商业服务、
+   SaaS 平台或任何形式的营利行为。若需商业授权，必须事先获得版权所有者书面许可。
+3. 上述版权声明及许可条款必须包含在本软件的所有副本或重要部分中。
+
+免责声明：
+本软件按“现状”提供，不附带任何明示或暗示的担保，包括但不限于
+适销性、特定用途适用性和非侵权担保。作者或版权持有人在任何情况下
+不对因使用本软件或与本软件有关的行为造成的任何损害承担责任。
