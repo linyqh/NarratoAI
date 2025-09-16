@@ -24,7 +24,8 @@ def get_tts_engine_options():
     return {
         "edge_tts": "Edge TTS",
         "azure_speech": "Azure Speech Services",
-        "soulvoice": "SoulVoice"
+        "soulvoice": "SoulVoice",
+        "tencent_tts": "腾讯云 TTS"
     }
 
 
@@ -48,6 +49,12 @@ def get_tts_engine_descriptions():
             "features": "提供免费额度，支持语音克隆，支持微信购买额度，无需信用卡，性价比极高",
             "use_case": "个人用户和中小企业，需要语音克隆功能",
             "registration": "https://soulvoice.scsmtech.cn/"
+        },
+        "tencent_tts": {
+            "title": "腾讯云 TTS",
+            "features": "提供免费额度，音质优秀，支持多种音色，国内访问速度快",
+            "use_case": "个人和企业用户，需要稳定的中文语音合成",
+            "registration": "https://console.cloud.tencent.com/tts"
         }
     }
 
@@ -126,6 +133,8 @@ def render_tts_settings(tr):
         render_azure_speech_settings(tr)
     elif selected_engine == "soulvoice":
         render_soulvoice_engine_settings(tr)
+    elif selected_engine == "tencent_tts":
+        render_tencent_tts_settings(tr)
 
     # 4. 试听功能
     render_voice_preview_new(tr, selected_engine)
@@ -357,6 +366,117 @@ def render_azure_speech_settings(tr):
         st.warning("⚠️ 请配置 API Key")
 
 
+def render_tencent_tts_settings(tr):
+    """渲染腾讯云 TTS 引擎设置"""
+    # Secret ID 输入
+    secret_id = st.text_input(
+        "Secret ID",
+        value=config.tencent.get("secret_id", ""),
+        help="请输入您的腾讯云 Secret ID"
+    )
+
+    # Secret Key 输入
+    secret_key = st.text_input(
+        "Secret Key",
+        value=config.tencent.get("secret_key", ""),
+        type="password",
+        help="请输入您的腾讯云 Secret Key"
+    )
+
+    # 地域选择
+    region_options = [
+        "ap-beijing",
+        "ap-shanghai",
+        "ap-guangzhou",
+        "ap-chengdu",
+        "ap-nanjing",
+        "ap-singapore",
+        "ap-hongkong"
+    ]
+    
+    saved_region = config.tencent.get("region", "ap-beijing")
+    if saved_region not in region_options:
+        region_options.append(saved_region)
+    
+    region = st.selectbox(
+        "服务地域",
+        options=region_options,
+        index=region_options.index(saved_region),
+        help="选择腾讯云 TTS 服务地域"
+    )
+
+    # 音色选择
+    voice_type_options = {
+        "101001": "智瑜 - 女声（推荐）",
+        "101002": "智聆 - 女声",
+        "101003": "智美 - 女声",
+        "101004": "智云 - 男声",
+        "101005": "智莉 - 女声",
+        "101006": "智言 - 男声",
+        "101007": "智娜 - 女声",
+        "101008": "智琪 - 女声",
+        "101009": "智芸 - 女声",
+        "101010": "智华 - 男声",
+        "101011": "智燕 - 女声",
+        "101012": "智丹 - 女声",
+        "101013": "智辉 - 男声",
+        "101014": "智宁 - 女声",
+        "101015": "智萌 - 女声",
+        "101016": "智甜 - 女声",
+        "101017": "智蓉 - 女声",
+        "101018": "智靖 - 男声"
+    }
+    
+    saved_voice_type = config.ui.get("tencent_voice_type", "101001")
+    if saved_voice_type not in voice_type_options:
+        voice_type_options[saved_voice_type] = f"自定义音色 ({saved_voice_type})"
+    
+    selected_voice_display = st.selectbox(
+        "音色选择",
+        options=list(voice_type_options.values()),
+        index=list(voice_type_options.keys()).index(saved_voice_type),
+        help="选择腾讯云 TTS 音色"
+    )
+    
+    # 获取实际的音色ID
+    voice_type = list(voice_type_options.keys())[
+        list(voice_type_options.values()).index(selected_voice_display)
+    ]
+    
+    # 语速调节
+    voice_rate = st.slider(
+        "语速调节",
+        min_value=0.5,
+        max_value=2.0,
+        value=config.ui.get("tencent_rate", 1.0),
+        step=0.1,
+        help="调节语音速度 (0.5-2.0)"
+    )
+    
+    # 显示音色说明
+    with st.expander("💡 腾讯云 TTS 音色说明", expanded=False):
+        st.write("**女声音色：**")
+        female_voices = [(k, v) for k, v in voice_type_options.items() if "女声" in v]
+        for voice_id, voice_desc in female_voices[:6]:  # 显示前6个
+            st.write(f"• {voice_desc} (ID: {voice_id})")
+        
+        st.write("")
+        st.write("**男声音色：**")
+        male_voices = [(k, v) for k, v in voice_type_options.items() if "男声" in v]
+        for voice_id, voice_desc in male_voices:
+            st.write(f"• {voice_desc} (ID: {voice_id})")
+        
+        st.write("")
+        st.info("💡 更多音色请参考腾讯云官方文档")
+    
+    # 保存配置
+    config.tencent["secret_id"] = secret_id
+    config.tencent["secret_key"] = secret_key
+    config.tencent["region"] = region
+    config.ui["tencent_voice_type"] = voice_type
+    config.ui["tencent_rate"] = voice_rate
+
+
 def render_soulvoice_engine_settings(tr):
     """渲染 SoulVoice 引擎设置"""
     # API Key 输入
@@ -453,6 +573,11 @@ def render_voice_preview_new(tr, selected_engine):
                     voice_name = voice_uri if voice_uri.startswith("soulvoice:") else f"soulvoice:{voice_uri}"
             voice_rate = 1.0  # SoulVoice 使用默认语速
             voice_pitch = 1.0  # SoulVoice 不支持音调调节
+        elif selected_engine == "tencent_tts":
+            voice_type = config.ui.get("tencent_voice_type", "101001")
+            voice_name = f"tencent:{voice_type}"
+            voice_rate = config.ui.get("tencent_rate", 1.0)
+            voice_pitch = 1.0  # 腾讯云 TTS 不支持音调调节
 
         if not voice_name:
             st.error("请先配置语音设置")
