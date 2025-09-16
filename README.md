@@ -35,6 +35,7 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 本项目仅供学习和研究使用，不得商用。如需商业授权，请联系作者。
 
 ## 最新资讯
+- 2025.08.18 发布新版本 0.7.1，支持 **语音克隆** 和 最新大模型
 - 2025.05.11 发布新版本 0.6.0，支持 **短剧解说** 和 优化剪辑流程
 - 2025.03.06 发布新版本 0.5.2，支持 DeepSeek R1 和 DeepSeek V3 模型进行短剧混剪
 - 2024.12.16 发布新版本 0.3.9，支持阿里 Qwen2-VL 模型理解视频；支持短剧混剪
@@ -44,7 +45,7 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 - 2024.11.10 发布新版本 v0.3.5；优化视频剪辑流程，
 
 ## 重磅福利 🎉
-即日起全面支持DeepSeek模型！注册即享2000万免费Token（价值14元平台配额），剪辑10分钟视频仅需0.1元！  
+即日起全面支持国产模型！注册即享2000万免费Token（价值14元平台配额），剪辑10分钟视频仅需0.1元！  
 
 🔥 快速领福利：  
 1️⃣ 点击链接注册：https://cloud.siliconflow.cn/i/pyOKqFCV  
@@ -57,25 +58,21 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 
 立即行动，用「pyOKqFCV」解锁你的AI生产力！
 
-😊 更新步骤：
-整合包：点击 update.bat 一键更新脚本
-代码构建：使用 git pull 拉去最新代码
 
 ## ⚠️谨防被骗 📢
 
-_**1. NarratoAI 是一款完全免费的软件，近期在社交媒体(抖音等)上发现，有人将 NarratoAI 改名后售卖，下面是部分截图，切忌不要上当受骗！！！**_
+_**1. NarratoAI 是一款完全免费的软件，近期在社交媒体(抖音,B站等)上发现，有人将 NarratoAI 改名后售卖，下面是部分截图，请大家务必提高警惕，切勿上当受骗**_
 
-<img src="https://github.com/user-attachments/assets/464b877c-b061-4856-8260-a0ef6fad7e52" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
-<img src="https://github.com/user-attachments/assets/9cc0e5e4-bd5b-4655-b5ef-7d9085cdbc50" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
-<img src="https://github.com/user-attachments/assets/9d7a6ea9-4bca-42b5-a61e-7e464037930f" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
-<img src="https://github.com/user-attachments/assets/09eeb94d-c670-4d7d-ba19-c0468bed3291" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
+---
 
-_**2. 近期在 x (推特) 上发现有人冒充作者在 pump.fun 平台上发行代币！ 这是骗子！！！ 不要被割了韭菜
-！！！目前 NarratoAI 没有在 x(推特) 上做任何官方宣传，注意甄别**_
+<div style="display: flex; flex-wrap: wrap; justify-content: space-around; align-items: flex-start; gap: 10px;">
+  <img src="https://github.com/user-attachments/assets/9cc0e5e4-bd5b-4655-b5ef-7d9085cdbc50" alt="诈骗截图 1" style="width: 23%; max-width: 250px; height: auto; border: 1px solid #ddd; border-radius: 5px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);">
+  <img src="https://github.com/user-attachments/assets/464b877c-b061-4856-8260-a0ef6fad7e52" alt="诈骗截图 2" style="width: 23%; max-width: 250px; height: auto; border: 1px solid #ddd; border-radius: 5px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);">
+  <img src="https://github.com/user-attachments/assets/9d7a6ea9-4bca-42b5-a61e-7e464037930f" alt="诈骗截图 3" style="width: 23%; max-width: 250px; height: auto; border: 1px solid #ddd; border-radius: 5px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);">
+  <img src="https://github.com/user-attachments/assets/09eeb94d-c670-4d7d-ba19-c0468bed3291" alt="诈骗截图 4" style="width: 23%; max-width: 250px; height: auto; border: 1px solid #ddd; border-radius: 5px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);">
+</div>
 
-下面是此人 x(推特) 首页截图
-
-<img src="https://github.com/user-attachments/assets/c492ab99-52cd-4ba2-8695-1bd2073ecf12" alt="Screenshot_20250109_114131_Samsung Internet" style="width:30%; height:auto;">
+---
 
 ## 未来计划 🥳
 - [x] windows 整合包发布
