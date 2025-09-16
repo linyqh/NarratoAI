@@ -1081,7 +1081,7 @@ def should_use_azure_speech_services(voice_name: str) -> bool:
 
 
 def tts(
-    text: str, voice_name: str, voice_rate: float, voice_pitch: float, voice_file: str, tts_engine: str = "azure"
+    text: str, voice_name: str, voice_rate: float, voice_pitch: float, voice_file: str, tts_engine: str
 ) -> Union[SubMaker, None]:
     logger.info(f"使用 TTS 引擎: '{tts_engine}', 语音: '{voice_name}'")
 
