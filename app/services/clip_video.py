@@ -18,7 +18,6 @@ from pathlib import Path
 
 from app.utils import ffmpeg_utils
 
-
 def parse_timestamp(timestamp: str) -> tuple:
     """
     解析时间戳字符串，返回开始和结束时间

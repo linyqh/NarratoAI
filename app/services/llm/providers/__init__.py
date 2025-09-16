@@ -43,5 +43,5 @@ __all__ = [
     'QwenTextProvider',
     'DeepSeekTextProvider',
     'SiliconflowVisionProvider',
-    'SiliconflowTextProvider'
+    'SiliconflowTextProvider',
 ]

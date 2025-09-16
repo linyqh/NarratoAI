@@ -5,6 +5,7 @@ import traceback
 import edge_tts
 import asyncio
 import requests
+import uuid
 from loguru import logger
 from typing import List, Union, Tuple
 from datetime import datetime
@@ -1080,17 +1081,27 @@ def should_use_azure_speech_services(voice_name: str) -> bool:
 
 
 def tts(
-    text: str, voice_name: str, voice_rate: float, voice_pitch: float, voice_file: str
+    text: str, voice_name: str, voice_rate: float, voice_pitch: float, voice_file: str, tts_engine: str = "azure"
 ) -> Union[SubMaker, None]:
-    # 检查是否为 SoulVoice 引擎
-    if is_soulvoice_voice(voice_name):
+    logger.info(f"使用 TTS 引擎: '{tts_engine}', 语音: '{voice_name}'")
+
+    if tts_engine == "tencent":
+        logger.info("分发到腾讯云 TTS")
+        return tencent_tts(text, voice_name, voice_file, speed=voice_rate)
+    
+    if tts_engine == "soulvoice":
+        logger.info("分发到 SoulVoice TTS")
         return soulvoice_tts(text, voice_name, voice_file, speed=voice_rate)
 
-    # 检查是否应该使用 Azure Speech Services
-    if should_use_azure_speech_services(voice_name):
-        return azure_tts_v2(text, voice_name, voice_file)
+    if tts_engine == "azure":
+        if should_use_azure_speech_services(voice_name):
+            logger.info("分发到 Azure Speech Services (V2)")
+            return azure_tts_v2(text, voice_name, voice_file)
+        logger.info("分发到 Edge TTS (Azure V1)")
+        return azure_tts_v1(text, voice_name, voice_rate, voice_pitch, voice_file)
 
-    # 默认使用 Edge TTS (Azure V1)
+    # Fallback for unknown engine - default to azure v1
+    logger.warning(f"未知的 TTS 引擎: '{tts_engine}', 将默认使用 Edge TTS (Azure V1)。")
     return azure_tts_v1(text, voice_name, voice_rate, voice_pitch, voice_file)
 
 
@@ -1483,7 +1494,7 @@ def get_audio_duration(sub_maker: submaker.SubMaker):
     return sub_maker.offset[-1][1] / 10000000
 
 
-def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: float, voice_pitch: float):
+def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: float, voice_pitch: float, tts_engine: str = "azure"):
     """
     根据JSON文件中的多段文本进行TTS转换
     
@@ -1491,6 +1502,7 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
     :param list_script: 脚本列表
     :param voice_name: 语音名称
     :param voice_rate: 语音速率
+    :param tts_engine: TTS 引擎
     :return: 生成的音频文件列表
     """
     voice_name = parse_voice_name(voice_name)
@@ -1512,6 +1524,7 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                 voice_rate=voice_rate,
                 voice_pitch=voice_pitch,
                 voice_file=audio_file,
+                tts_engine=tts_engine,
             )
 
             if sub_maker is None:
@@ -1581,14 +1594,6 @@ def get_audio_duration_from_file(audio_file: str) -> float:
         # 如果所有方法都失败，返回一个基于文本长度的估算
         return 3.0  # 默认3秒，避免返回0
 
-
-def is_soulvoice_voice(voice_name: str) -> bool:
-    """
-    检查是否为 SoulVoice 语音
-    """
-    return voice_name.startswith("soulvoice:") or voice_name.startswith("speech:")
-
-
 def parse_soulvoice_voice(voice_name: str) -> str:
     """
     解析 SoulVoice 语音名称
@@ -1599,6 +1604,118 @@ def parse_soulvoice_voice(voice_name: str) -> str:
     if voice_name.startswith("soulvoice:"):
         return voice_name[10:]  # 移除 "soulvoice:" 前缀
     return voice_name
+
+def parse_tencent_voice(voice_name: str) -> str:
+    """
+    解析腾讯云 TTS 语音名称
+    支持格式：tencent:101001
+    """
+    if voice_name.startswith("tencent:"):
+        return voice_name[8:]  # 移除 "tencent:" 前缀
+    return voice_name
+
+
+def tencent_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.0) -> Union[SubMaker, None]:
+    """
+    使用腾讯云 TTS 生成语音
+    """
+    try:
+        # 导入腾讯云 SDK
+        from tencentcloud.common import credential
+        from tencentcloud.common.profile.client_profile import ClientProfile
+        from tencentcloud.common.profile.http_profile import HttpProfile
+        from tencentcloud.tts.v20190823 import tts_client, models
+        import base64
+    except ImportError as e:
+        logger.error(f"腾讯云 SDK 未安装: {e}")
+        return None
+    
+    # 获取腾讯云配置
+    tencent_config = config.tencent
+    secret_id = tencent_config.get("secret_id")
+    secret_key = tencent_config.get("secret_key")
+    region = tencent_config.get("region", "ap-beijing")
+    
+    if not secret_id or not secret_key:
+        logger.error("腾讯云 TTS 配置不完整，请检查 secret_id 和 secret_key")
+        return None
+    
+    # 解析语音名称
+    voice_type = parse_tencent_voice(voice_name)
+    
+    # 转换速度参数 (腾讯云支持 -2 到 2 的范围)
+    speed_value = max(-2.0, min(2.0, (speed - 1.0) * 2))
+    
+    for i in range(3):
+        try:
+            logger.info(f"第 {i+1} 次使用腾讯云 TTS 生成音频")
+            
+            # 创建认证对象
+            cred = credential.Credential(secret_id, secret_key)
+            
+            # 创建 HTTP 配置
+            httpProfile = HttpProfile()
+            httpProfile.endpoint = "tts.tencentcloudapi.com"
+            
+            # 创建客户端配置
+            clientProfile = ClientProfile()
+            clientProfile.httpProfile = httpProfile
+            
+            # 创建客户端
+            client = tts_client.TtsClient(cred, region, clientProfile)
+            
+            req = models.TextToVoiceRequest()
+            req.Text = text
+            req.SessionId = str(uuid.uuid4())
+            req.VoiceType = int(voice_type) if voice_type.isdigit() else 101001
+            req.Speed = speed_value
+            req.SampleRate = 16000
+            req.Codec = "mp3"
+            req.ProjectId = 0
+            req.ModelType = 1
+            req.PrimaryLanguage = 1
+            req.EnableSubtitle = True
+
+            # 发送请求
+            resp = client.TextToVoice(req)
+            
+            # 检查响应
+            if not resp.Audio:
+                logger.warning(f"腾讯云 TTS 返回空音频数据")
+                if i < 2:
+                    time.sleep(1)
+                continue
+            
+            # 解码音频数据
+            audio_data = base64.b64decode(resp.Audio)
+            
+            # 写入文件
+            with open(voice_file, "wb") as f:
+                f.write(audio_data)
+
+            # 创建字幕对象
+            sub_maker = SubMaker()
+            if resp.Subtitles:
+                for sub in resp.Subtitles:
+                    start_ms = sub.BeginTime
+                    end_ms = sub.EndTime
+                    text = sub.Text
+                    # 转换为 100ns 单位
+                    sub_maker.create_sub((start_ms * 10000, end_ms * 10000), text)
+            else:
+                # 如果没有字幕返回，则使用估算作为后备方案
+                duration_ms = len(text) * 200
+                sub_maker.create_sub((0, duration_ms * 10000), text)
+
+            logger.info(f"腾讯云 TTS 生成成功，文件大小: {len(audio_data)} 字节")
+            return sub_maker
+
+        except Exception as e:
+            logger.error(f"腾讯云 TTS 生成音频时出错: {str(e)}")
+            if i < 2:
+                 time.sleep(1)
+     
+    return None
 
 
 def soulvoice_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.0) -> Union[SubMaker, None]:

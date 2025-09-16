@@ -73,6 +73,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     tts_results = voice.tts_multiple(
         task_id=task_id,
         list_script=tts_segments,  # 只传入需要TTS的片段
+        tts_engine=params.tts_engine,
         voice_name=params.voice_name,
         voice_rate=params.voice_rate,
         voice_pitch=params.voice_pitch,
@@ -317,6 +318,7 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
     tts_results = voice.tts_multiple(
         task_id=task_id,
         list_script=tts_segments,  # 只传入需要TTS的片段
+        tts_engine=params.tts_engine,
         voice_name=params.voice_name,
         voice_rate=params.voice_rate,
         voice_pitch=params.voice_pitch,
