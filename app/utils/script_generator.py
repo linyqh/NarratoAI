@@ -230,7 +230,7 @@ class GeminiOpenAIGenerator(BaseGenerator):
                 }
 
                 # 构建请求URL
-                url = f"{self.base_url}/models/{self.model_name}:generateContent?key={self.api_key}"
+                url = f"{self.base_url}/models/{self.model_name}:generateContent"
 
                 # 发送请求
                 response = requests.post(
@@ -238,7 +238,7 @@ class GeminiOpenAIGenerator(BaseGenerator):
                     json=request_data,
                     headers={
                         "Content-Type": "application/json",
-                        "User-Agent": "NarratoAI/1.0"
+                        "x-goog-api-key": self.api_key
                     },
                     timeout=120
                 )

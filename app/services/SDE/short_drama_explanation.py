@@ -152,13 +152,13 @@ class SubtitleAnalyzer:
             }
 
             # 构建请求URL
-            url = f"{self.base_url}/models/{self.model}:generateContent?key={self.api_key}"
+            url = f"{self.base_url}/models/{self.model}:generateContent"
 
             # 发送请求
             response = requests.post(
                 url,
                 json=payload,
-                headers={"Content-Type": "application/json", "User-Agent": "NarratoAI/1.0"},
+                headers={"Content-Type": "application/json", "x-goog-api-key": self.api_key},
                 timeout=120
             )
 
@@ -440,13 +440,13 @@ class SubtitleAnalyzer:
             }
 
             # 构建请求URL
-            url = f"{self.base_url}/models/{self.model}:generateContent?key={self.api_key}"
+            url = f"{self.base_url}/models/{self.model}:generateContent"
 
             # 发送请求
             response = requests.post(
                 url,
                 json=payload,
-                headers={"Content-Type": "application/json", "User-Agent": "NarratoAI/1.0"},
+                headers={"Content-Type": "application/json", "x-goog-api-key": self.api_key},
                 timeout=120
             )
 

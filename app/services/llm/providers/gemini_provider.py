@@ -140,7 +140,7 @@ class GeminiVisionProvider(VisionModelProvider):
         """执行原生Gemini API调用，包含重试机制"""
         from app.config import config
 
-        url = f"{self.base_url}/models/{self.model_name}:generateContent?key={self.api_key}"
+        url = f"{self.base_url}/models/{self.model_name}:generateContent"
 
         max_retries = config.app.get('llm_max_retries', 3)
         base_timeout = config.app.get('llm_vision_timeout', 120)
@@ -157,7 +157,7 @@ class GeminiVisionProvider(VisionModelProvider):
                     json=payload,
                     headers={
                         "Content-Type": "application/json",
-                        "User-Agent": "NarratoAI/1.0"
+                        "x-goog-api-key": self.api_key
                     },
                     timeout=timeout
                 )
@@ -330,7 +330,7 @@ class GeminiTextProvider(TextModelProvider):
         """执行原生Gemini API调用，包含重试机制"""
         from app.config import config
 
-        url = f"{self.base_url}/models/{self.model_name}:generateContent?key={self.api_key}"
+        url = f"{self.base_url}/models/{self.model_name}:generateContent"
 
         max_retries = config.app.get('llm_max_retries', 3)
         base_timeout = config.app.get('llm_text_timeout', 180)  # 文本生成任务使用更长的基础超时时间
@@ -347,7 +347,7 @@ class GeminiTextProvider(TextModelProvider):
                     json=payload,
                     headers={
                         "Content-Type": "application/json",
-                        "User-Agent": "NarratoAI/1.0"
+                        "x-goog-api-key": self.api_key
                     },
                     timeout=timeout
                 )
