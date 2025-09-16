@@ -107,7 +107,7 @@ class VisionAnalyzer:
         }
 
         # 构建请求URL
-        url = f"{self.base_url}/models/{self.model_name}:generateContent?key={self.api_key}"
+        url = f"{self.base_url}/models/{self.model_name}:generateContent"
 
         # 发送请求
         response = await asyncio.to_thread(
@@ -116,7 +116,7 @@ class VisionAnalyzer:
             json=request_data,
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": "NarratoAI/1.0"
+                "x-goog-api-key": self.api_key
             },
             timeout=120  # 增加超时时间
         )

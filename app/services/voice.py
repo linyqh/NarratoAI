@@ -1085,7 +1085,7 @@ def tts(
 ) -> Union[SubMaker, None]:
     logger.info(f"使用 TTS 引擎: '{tts_engine}', 语音: '{voice_name}'")
 
-    if tts_engine == "tencent":
+    if tts_engine == "tencent_tts":
         logger.info("分发到腾讯云 TTS")
         return tencent_tts(text, voice_name, voice_file, speed=voice_rate)
     
@@ -1093,11 +1093,15 @@ def tts(
         logger.info("分发到 SoulVoice TTS")
         return soulvoice_tts(text, voice_name, voice_file, speed=voice_rate)
 
-    if tts_engine == "azure":
+    if tts_engine == "azure_speech":
         if should_use_azure_speech_services(voice_name):
             logger.info("分发到 Azure Speech Services (V2)")
             return azure_tts_v2(text, voice_name, voice_file)
         logger.info("分发到 Edge TTS (Azure V1)")
+        return azure_tts_v1(text, voice_name, voice_rate, voice_pitch, voice_file)
+    
+    if tts_engine == "edge_tts":
+        logger.info("分发到 Edge TTS")
         return azure_tts_v1(text, voice_name, voice_rate, voice_pitch, voice_file)
 
     # Fallback for unknown engine - default to azure v1

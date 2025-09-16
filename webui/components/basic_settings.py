@@ -138,6 +138,7 @@ def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
         str: 测试结果消息
     """
     import requests
+    logger.debug(f"大模型连通性测试: {base_url} 模型: {model_name} apikey: {api_key}")
     if provider.lower() == 'gemini':
         # 原生Gemini API测试
         try:
@@ -145,43 +146,21 @@ def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
             request_data = {
                 "contents": [{
                     "parts": [{"text": "直接回复我文本'当前网络可用'"}]
-                }],
-                "generationConfig": {
-                    "temperature": 1.0,
-                    "topK": 40,
-                    "topP": 0.95,
-                    "maxOutputTokens": 100,
-                },
-                "safetySettings": [
-                    {
-                        "category": "HARM_CATEGORY_HARASSMENT",
-                        "threshold": "BLOCK_NONE"
-                    },
-                    {
-                        "category": "HARM_CATEGORY_HATE_SPEECH",
-                        "threshold": "BLOCK_NONE"
-                    },
-                    {
-                        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                        "threshold": "BLOCK_NONE"
-                    },
-                    {
-                        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                        "threshold": "BLOCK_NONE"
-                    }
-                ]
+                }]
             }
 
             # 构建请求URL
-            api_base_url = base_url or "https://generativelanguage.googleapis.com/v1beta"
-            url = f"{api_base_url}/models/{model_name}:generateContent?key={api_key}"
-
+            api_base_url = base_url
+            url = f"{api_base_url}/models/{model_name}:generateContent"
             # 发送请求
             response = requests.post(
                 url,
                 json=request_data,
-                headers={"Content-Type": "application/json"},
-                timeout=30
+                headers={
+                    "x-goog-api-key": api_key,
+                    "Content-Type": "application/json"
+                    },
+                timeout=10
             )
 
             if response.status_code == 200:
@@ -190,7 +169,6 @@ def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
                 return False, f"{tr('原生Gemini模型连接失败')}: HTTP {response.status_code}"
         except Exception as e:
             return False, f"{tr('原生Gemini模型连接失败')}: {str(e)}"
-
     elif provider.lower() == 'gemini(openai)':
         # OpenAI兼容的Gemini代理测试
         try:
@@ -215,23 +193,6 @@ def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
                 return False, f"{tr('OpenAI兼容Gemini代理连接失败')}: HTTP {response.status_code}"
         except Exception as e:
             return False, f"{tr('OpenAI兼容Gemini代理连接失败')}: {str(e)}"
-    elif provider.lower() == 'narratoapi':
-        try:
-            # 构建测试请求
-            headers = {
-                "Authorization": f"Bearer {api_key}"
-            }
-        
-            test_url = f"{base_url.rstrip('/')}/health"
-            response = requests.get(test_url, headers=headers, timeout=10)
-        
-            if response.status_code == 200:
-                return True, tr("NarratoAPI is available")
-            else:
-                return False, f"{tr('NarratoAPI is not available')}: HTTP {response.status_code}"
-        except Exception as e:
-            return False, f"{tr('NarratoAPI is not available')}: {str(e)}"
-
     else:
         from openai import OpenAI
         try:
@@ -441,7 +402,8 @@ def test_text_model_connection(api_key, base_url, model_name, provider, tr):
         str: 测试结果消息
     """
     import requests
-    
+    logger.debug(f"大模型连通性测试: {base_url} 模型: {model_name} apikey: {api_key}")
+
     try:
         # 构建统一的测试请求（遵循OpenAI格式）
         headers = {
@@ -457,43 +419,22 @@ def test_text_model_connection(api_key, base_url, model_name, provider, tr):
                 request_data = {
                     "contents": [{
                         "parts": [{"text": "直接回复我文本'当前网络可用'"}]
-                    }],
-                    "generationConfig": {
-                        "temperature": 1.0,
-                        "topK": 40,
-                        "topP": 0.95,
-                        "maxOutputTokens": 100,
-                    },
-                    "safetySettings": [
-                        {
-                            "category": "HARM_CATEGORY_HARASSMENT",
-                            "threshold": "BLOCK_NONE"
-                        },
-                        {
-                            "category": "HARM_CATEGORY_HATE_SPEECH",
-                            "threshold": "BLOCK_NONE"
-                        },
-                        {
-                            "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            "threshold": "BLOCK_NONE"
-                        },
-                        {
-                            "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                            "threshold": "BLOCK_NONE"
-                        }
-                    ]
+                    }]
                 }
 
                 # 构建请求URL
-                api_base_url = base_url or "https://generativelanguage.googleapis.com/v1beta"
-                url = f"{api_base_url}/models/{model_name}:generateContent?key={api_key}"
+                api_base_url = base_url
+                url = f"{api_base_url}/models/{model_name}:generateContent"
 
                 # 发送请求
                 response = requests.post(
                     url,
                     json=request_data,
-                    headers={"Content-Type": "application/json"},
-                    timeout=30
+                    headers={
+                        "x-goog-api-key": api_key,
+                        "Content-Type": "application/json"
+                    },
+                    timeout=10
                 )
 
                 if response.status_code == 200:
