@@ -1,5 +1,5 @@
 [app]
-    project_version="0.7.1"
+    project_version="0.7.2"
 
     # 模型验证模式配置
     # true: 严格模式，只允许使用预定义支持列表中的模型（默认）
