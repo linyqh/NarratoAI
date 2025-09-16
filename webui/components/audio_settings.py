@@ -591,6 +591,7 @@ def render_voice_preview_new(tr, selected_engine):
                 voice_rate=voice_rate,
                 voice_pitch=voice_pitch,
                 voice_file=audio_file,
+                tts_engine=st.session_state.get('tts_engine')
             )
 
             if sub_maker and os.path.exists(audio_file):
