@@ -96,6 +96,14 @@
     speech_key = ""
     speech_region = ""
 
+[tencent]
+    # 腾讯云 TTS 配置
+    # 访问 https://console.cloud.tencent.com/cam/capi 获取你的密钥
+    secret_id = ""
+    secret_key = ""
+    # 地域配置，默认为 ap-beijing
+    region = "ap-beijing"
+
 [soulvoice]
     # SoulVoice TTS API 密钥
     api_key = ""
@@ -107,7 +115,7 @@
     model = "FunAudioLLM/CosyVoice2-0.5B"
 
 [ui]
-    # TTS引擎选择 (edge_tts, azure_speech, soulvoice)
+    # TTS引擎选择 (edge_tts, azure_speech, soulvoice, tencent_tts)
     tts_engine = "edge_tts"
 
     # Edge TTS 配置
