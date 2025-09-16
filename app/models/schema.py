@@ -176,7 +176,7 @@ class VideoClipParams(BaseModel):
     voice_volume: Optional[float] = Field(default=AudioVolumeDefaults.VOICE_VOLUME, description="解说语音音量")
     voice_rate: Optional[float] = Field(default=1.0, description="语速")
     voice_pitch: Optional[float] = Field(default=1.0, description="语调")
-    tts_engine: Optional[str] = Field(default="tencent", description="TTS 引擎")
+    tts_engine: Optional[str] = Field(default="", description="TTS 引擎")
     bgm_name: Optional[str] = Field(default="random", description="背景音乐名称")
     bgm_type: Optional[str] = Field(default="random", description="背景音乐类型")
     bgm_file: Optional[str] = Field(default="", description="背景音乐文件")

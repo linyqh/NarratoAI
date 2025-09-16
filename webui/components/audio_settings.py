@@ -112,6 +112,7 @@ def render_tts_settings(tr):
 
     # 保存TTS引擎选择
     config.ui["tts_engine"] = selected_engine
+    st.session_state['tts_engine'] = selected_engine
 
     # 2. 显示引擎详细说明
     if selected_engine in engine_descriptions:
@@ -490,17 +491,14 @@ def render_soulvoice_engine_settings(tr):
     # 音色 URI 输入
     voice_uri = st.text_input(
         "音色URI",
-        value=config.soulvoice.get("voice_uri", "speech:mcg3fdnx:clzkyf4vy00e5qr6hywum4u84:bzznlkuhcjzpbosexitr"),
+        value=config.soulvoice.get("voice_uri", "speech:2c2hp73s:clzkyf4vy00e5qr6hywum4u84:itjmezhxyynkyzrhhjav"),
         help="请输入 SoulVoice 音色标识符",
-        placeholder="speech:mcg3fdnx:clzkyf4vy00e5qr6hywum4u84:bzznlkuhcjzpbosexitr"
+        placeholder="speech:2c2hp73s:clzkyf4vy00e5qr6hywum4u84:itjmezhxyynkyzrhhjav"
     )
 
     # 模型名称选择
     model_options = [
-        "FunAudioLLM/CosyVoice2-0.5B",
-        "FunAudioLLM/CosyVoice-300M",
-        "FunAudioLLM/CosyVoice-300M-SFT",
-        "FunAudioLLM/CosyVoice-300M-Instruct"
+        "FunAudioLLM/CosyVoice2-0.5B"
     ]
 
     saved_model = config.soulvoice.get("model", "FunAudioLLM/CosyVoice2-0.5B")
@@ -636,7 +634,7 @@ def render_soulvoice_settings(tr):
     saved_api_key = config.soulvoice.get("api_key", "")
     saved_api_url = config.soulvoice.get("api_url", "https://tts.scsmtech.cn/tts")
     saved_model = config.soulvoice.get("model", "FunAudioLLM/CosyVoice2-0.5B")
-    saved_voice_uri = config.soulvoice.get("voice_uri", "speech:mcg3fdnx:clzkyf4vy00e5qr6hywum4u84:bzznlkuhcjzpbosexitr")
+    saved_voice_uri = config.soulvoice.get("voice_uri", "speech:2c2hp73s:clzkyf4vy00e5qr6hywum4u84:itjmezhxyynkyzrhhjav")
 
     # API Key 输入
     api_key = st.text_input(
@@ -650,8 +648,8 @@ def render_soulvoice_settings(tr):
     voice_uri = st.text_input(
         "音色 URI",
         value=saved_voice_uri,
-        help="请输入 SoulVoice 音色标识符，格式如：speech:mcg3fdnx:clzkyf4vy00e5qr6hywum4u84:bzznlkuhcjzpbosexitr",
-        placeholder="speech:mcg3fdnx:clzkyf4vy00e5qr6hywum4u84:bzznlkuhcjzpbosexitr"
+        help="请输入 SoulVoice 音色标识符，格式如：speech:2c2hp73s:clzkyf4vy00e5qr6hywum4u84:itjmezhxyynkyzrhhjav",
+        placeholder="speech:2c2hp73s:clzkyf4vy00e5qr6hywum4u84:itjmezhxyynkyzrhhjav"
     )
 
     # API URL 输入（可选）
@@ -822,4 +820,5 @@ def get_audio_params():
         'bgm_type': st.session_state.get('bgm_type', 'random'),
         'bgm_file': st.session_state.get('bgm_file', ''),
         'bgm_volume': st.session_state.get('bgm_volume', AudioVolumeDefaults.BGM_VOLUME),
+        'tts_engine': st.session_state.get('tts_engine', "edge_tts"),
     }
