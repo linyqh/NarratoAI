@@ -37,3 +37,6 @@ app/models/bert/*
 
 bug清单.md
 task.md
+.claude/*
+.serena/*
+CLAUDE.md
