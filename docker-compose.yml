@@ -12,7 +12,7 @@ services:
     volumes:
       - ./storage:/NarratoAI/storage
       - ./config.toml:/NarratoAI/config.toml
-      - ./resource:/NarratoAI/resource:ro
+      - ./resource:/NarratoAI/resource:rw
 
     environment:
       - PYTHONUNBUFFERED=1
