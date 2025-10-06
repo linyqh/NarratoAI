@@ -24,7 +24,6 @@ def get_tts_engine_options():
     return {
         "edge_tts": "Edge TTS",
         "azure_speech": "Azure Speech Services",
-        "soulvoice": "SoulVoice",
         "tencent_tts": "腾讯云 TTS"
     }
 
@@ -43,12 +42,6 @@ def get_tts_engine_descriptions():
             "features": "提供一定免费额度，超出后按量付费，需要绑定海外信用卡",
             "use_case": "企业级应用，需要稳定服务",
             "registration": "https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/SpeechServices"
-        },
-        "soulvoice": {
-            "title": "SoulVoice",
-            "features": "提供免费额度，支持语音克隆，支持微信购买额度，无需信用卡，性价比极高",
-            "use_case": "个人用户和中小企业，需要语音克隆功能",
-            "registration": "https://soulvoice.scsmtech.cn/"
         },
         "tencent_tts": {
             "title": "腾讯云 TTS",
@@ -478,72 +471,6 @@ def render_tencent_tts_settings(tr):
     config.ui["tencent_rate"] = voice_rate
 
 
-def render_soulvoice_engine_settings(tr):
-    """渲染 SoulVoice 引擎设置"""
-    # API Key 输入
-    api_key = st.text_input(
-        "API Key",
-        value=config.soulvoice.get("api_key", ""),
-        type="password",
-        help="请输入您的 SoulVoice API 密钥"
-    )
-
-    # 音色 URI 输入
-    voice_uri = st.text_input(
-        "音色URI",
-        value=config.soulvoice.get("voice_uri", "speech:2c2hp73s:clzkyf4vy00e5qr6hywum4u84:itjmezhxyynkyzrhhjav"),
-        help="请输入 SoulVoice 音色标识符",
-        placeholder="speech:2c2hp73s:clzkyf4vy00e5qr6hywum4u84:itjmezhxyynkyzrhhjav"
-    )
-
-    # 模型名称选择
-    model_options = [
-        "FunAudioLLM/CosyVoice2-0.5B"
-    ]
-
-    saved_model = config.soulvoice.get("model", "FunAudioLLM/CosyVoice2-0.5B")
-    if saved_model not in model_options:
-        model_options.append(saved_model)
-
-    model = st.selectbox(
-        "模型名称",
-        options=model_options,
-        index=model_options.index(saved_model),
-        help="选择使用的 TTS 模型"
-    )
-
-    # 高级设置
-    with st.expander("高级设置", expanded=False):
-        api_url = st.text_input(
-            "API 地址",
-            value=config.soulvoice.get("api_url", "https://tts.scsmtech.cn/tts"),
-            help="SoulVoice API 接口地址"
-        )
-
-    # 保存配置
-    config.soulvoice["api_key"] = api_key
-    config.soulvoice["voice_uri"] = voice_uri
-    config.soulvoice["model"] = model
-    config.soulvoice["api_url"] = api_url
-
-    # 设置兼容性配置
-    if voice_uri:
-        # 确保音色 URI 有正确的前缀
-        if not voice_uri.startswith("soulvoice:") and not voice_uri.startswith("speech:"):
-            voice_name = f"soulvoice:{voice_uri}"
-        else:
-            voice_name = voice_uri if voice_uri.startswith("soulvoice:") else f"soulvoice:{voice_uri}"
-        config.ui["voice_name"] = voice_name
-
-    # 显示配置状态
-    if api_key and voice_uri:
-        st.success("✅ SoulVoice 配置已设置")
-    elif not api_key:
-        st.warning("⚠️ 请配置 SoulVoice API Key")
-    elif not voice_uri:
-        st.warning("⚠️ 请配置音色 URI")
-
-
 def render_voice_preview_new(tr, selected_engine):
     """渲染新的语音试听功能"""
     if st.button("🎵 试听语音合成", use_container_width=True):
@@ -628,58 +555,6 @@ def render_azure_v2_settings(tr):
 
     config.azure["speech_region"] = azure_speech_region
     config.azure["speech_key"] = azure_speech_key
-
-
-def render_soulvoice_settings(tr):
-    """渲染 SoulVoice 语音设置（保留兼容性）"""
-    saved_api_key = config.soulvoice.get("api_key", "")
-    saved_api_url = config.soulvoice.get("api_url", "https://tts.scsmtech.cn/tts")
-    saved_model = config.soulvoice.get("model", "FunAudioLLM/CosyVoice2-0.5B")
-    saved_voice_uri = config.soulvoice.get("voice_uri", "speech:2c2hp73s:clzkyf4vy00e5qr6hywum4u84:itjmezhxyynkyzrhhjav")
-
-    # API Key 输入
-    api_key = st.text_input(
-        "SoulVoice API Key",
-        value=saved_api_key,
-        type="password",
-        help="请输入您的 SoulVoice API 密钥"
-    )
-
-    # 音色 URI 输入
-    voice_uri = st.text_input(
-        "音色 URI",
-        value=saved_voice_uri,
-        help="请输入 SoulVoice 音色标识符，格式如：speech:2c2hp73s:clzkyf4vy00e5qr6hywum4u84:itjmezhxyynkyzrhhjav",
-        placeholder="speech:2c2hp73s:clzkyf4vy00e5qr6hywum4u84:itjmezhxyynkyzrhhjav"
-    )
-
-    # API URL 输入（可选）
-    with st.expander("高级设置", expanded=False):
-        api_url = st.text_input(
-            "API 地址",
-            value=saved_api_url,
-            help="SoulVoice API 接口地址"
-        )
-
-        model = st.text_input(
-            "模型名称",
-            value=saved_model,
-            help="使用的 TTS 模型"
-        )
-
-    # 保存配置
-    config.soulvoice["api_key"] = api_key
-    config.soulvoice["voice_uri"] = voice_uri
-    config.soulvoice["api_url"] = api_url
-    config.soulvoice["model"] = model
-
-    # 显示配置状态
-    if api_key and voice_uri:
-        st.success("✅ SoulVoice 配置已设置")
-    elif not api_key:
-        st.warning("⚠️ 请配置 SoulVoice API Key")
-    elif not voice_uri:
-        st.warning("⚠️ 请配置音色 URI")
 
 
 def render_voice_parameters(tr, voice_name):
