@@ -52,20 +52,23 @@ class ScriptGenerator:
             # 提取关键帧
             progress_callback(10, "正在提取关键帧...")
             keyframe_files = await self._extract_keyframes(
-                video_path, 
+                video_path,
                 skip_seconds,
                 threshold
             )
-            
-            if vision_llm_provider == "gemini":
+
+            normalized_provider = (vision_llm_provider or "gemini").lower()
+
+            if normalized_provider in {"gemini", "gemini(openai)"}:
                 script = await self._process_with_gemini(
                     keyframe_files,
                     video_theme,
                     custom_prompt,
                     vision_batch_size,
-                    progress_callback
+                    progress_callback,
+                    normalized_provider
                 )
-            elif vision_llm_provider == "narratoapi":
+            elif normalized_provider == "narratoapi":
                 script = await self._process_with_narrato(
                     keyframe_files,
                     video_theme,
@@ -132,11 +135,12 @@ class ScriptGenerator:
         video_theme: str,
         custom_prompt: str,
         vision_batch_size: int,
-        progress_callback: Callable[[float, str], None]
+        progress_callback: Callable[[float, str], None],
+        vision_provider: str
     ) -> str:
         """使用Gemini处理视频帧"""
         progress_callback(30, "正在初始化视觉分析器...")
-        
+
         # 获取Gemini配置
         vision_api_key = config.app.get("vision_gemini_api_key")
         vision_model = config.app.get("vision_gemini_model_name")
@@ -146,7 +150,9 @@ class ScriptGenerator:
             raise ValueError("未配置 Gemini API Key 或者模型")
 
         # 根据提供商类型选择合适的分析器
-        if vision_provider == 'gemini(openai)':
+        provider = (vision_provider or "gemini").lower()
+
+        if provider == 'gemini(openai)':
             # 使用OpenAI兼容的Gemini代理
             from app.utils.gemini_openai_analyzer import GeminiOpenAIAnalyzer
             analyzer = GeminiOpenAIAnalyzer(

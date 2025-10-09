@@ -1,5 +1,6 @@
 import locale
 import os
+import re
 import traceback
 
 import requests
@@ -350,8 +351,14 @@ def split_timestamp(timestamp):
 
 def reduce_video_time(txt: str, duration: float = 0.21531):
     """
-    按照字数缩减视频时长，一个字耗时约 0.21531 s,
+    按照字数缩减视频时长，一个字耗时约 0.21531 秒
+
+    Args:
+        txt: 用于估算时长的文本内容
+        duration: 每个字占用的秒数，默认约为 0.21531 秒
+
     Returns:
+        int: 根据文本长度估算的时长（秒），向下取整
     """
     # 返回结果四舍五入为整数
     duration = len(txt) * duration
@@ -500,12 +507,20 @@ def add_new_timestamps(scenes):
     return updated_scenes
 
 
-def clean_model_output(output):
-    # 移除可能的代码块标记
-    output = output.strip('```json').strip('```')
-    # 移除开头和结尾的空白字符
-    output = output.strip()
-    return output
+def clean_model_output(output: str) -> str:
+    """清理模型输出，去除包裹的Markdown代码块标记"""
+    if not isinstance(output, str):
+        return output
+
+    cleaned_output = output.strip()
+
+    # 去除形如```json或```的起始代码块标记
+    cleaned_output = re.sub(r"^```(?:json)?\s*\n?", "", cleaned_output, flags=re.IGNORECASE)
+
+    # 去除结尾的```代码块标记
+    cleaned_output = re.sub(r"\n?```$", "", cleaned_output).strip()
+
+    return cleaned_output
 
 
 def cut_video(params, progress_callback=None):
@@ -582,7 +597,7 @@ def clear_keyframes_cache(video_path: str = None):
             return
 
         if video_path:
-            # 理指定视频的缓存
+            # 清理指定视频的缓存
             video_hash = md5(video_path + str(os.path.getmtime(video_path)))
             video_keyframes_dir = os.path.join(keyframes_dir, video_hash)
             if os.path.exists(video_keyframes_dir):
