@@ -1,3 +1,5 @@
+
+from loguru import logger
 import streamlit as st
 from app.config import config
 from webui.utils.cache import get_fonts_cache
@@ -9,14 +11,15 @@ def render_subtitle_panel(tr):
     with st.container(border=True):
         st.write(tr("Subtitle Settings"))
 
-        # 检查是否选择了 SoulVoice 引擎
+        # 检查是否选择了 SoulVoice qwen3_tts引擎
         from app.services import voice
-        current_voice = st.session_state.get('voice_name', '')
-        is_soulvoice = voice.is_soulvoice_voice(current_voice)
+        # current_voice = st.session_state.get('voice_name', '')
+        tts_engine = config.ui.get('tts_engine', '')
+        is_disabled_subtitle = is_disabled_subtitle_settings(tts_engine)
 
-        if is_soulvoice:
+        if is_disabled_subtitle:
             # SoulVoice 引擎时显示禁用提示
-            st.warning("⚠️ SoulVoice TTS 不支持精确字幕生成")
+            st.warning(f"⚠️ {tts_engine}不支持精确字幕生成")
             st.info("💡 建议使用专业剪辑工具（如剪映、PR等）手动添加字幕")
 
             # 强制禁用字幕
@@ -83,6 +86,10 @@ def render_font_settings(tr):
         config.ui["font_size"] = font_size
         st.session_state['font_size'] = font_size
 
+
+def is_disabled_subtitle_settings(tts_engine:str)->bool:
+    """是否禁用字幕设置"""
+    return tts_engine=="soulvoice" or tts_engine=="qwen3_tts"
 
 def render_position_settings(tr):
     """渲染位置设置"""
