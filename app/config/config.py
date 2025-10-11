@@ -51,6 +51,7 @@ def save_config():
         _cfg["tencent"] = tencent
         _cfg["soulvoice"] = soulvoice
         _cfg["ui"] = ui
+        _cfg["tts_qwen"] = tts_qwen
         f.write(toml.dumps(_cfg))
 
 
@@ -63,6 +64,7 @@ tencent = _cfg.get("tencent", {})
 soulvoice = _cfg.get("soulvoice", {})
 ui = _cfg.get("ui", {})
 frames = _cfg.get("frames", {})
+tts_qwen = _cfg.get("tts_qwen", {})
 
 hostname = socket.gethostname()
 
