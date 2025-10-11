@@ -114,8 +114,14 @@
     # 默认模型（可选）
     model = "FunAudioLLM/CosyVoice2-0.5B"
 
+[tts_qwen]
+    # 通义千问 Qwen3 TTS 配置
+    # 访问 https://bailian.console.aliyun.com/?tab=model#/api-key 获取你的 API 密钥
+    api_key = ""
+    model_name = "qwen3-tts-flash"
+
 [ui]
-    # TTS引擎选择 (edge_tts, azure_speech, soulvoice, tencent_tts)
+    # TTS引擎选择 (edge_tts, azure_speech, soulvoice, tencent_tts, tts_qwen)
     tts_engine = "edge_tts"
 
     # Edge TTS 配置
