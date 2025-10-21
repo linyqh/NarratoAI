@@ -16,21 +16,8 @@ from .exceptions import LLMServiceError
 # 导入新的提示词管理系统
 from app.services.prompts import PromptManager
 
-# 确保提供商已注册
-def _ensure_providers_registered():
-    """确保所有提供商都已注册"""
-    try:
-        from .manager import LLMServiceManager
-        # 检查是否有已注册的提供商
-        if not LLMServiceManager.list_text_providers() or not LLMServiceManager.list_vision_providers():
-            # 如果没有注册的提供商，强制导入providers模块
-            from . import providers
-            logger.debug("迁移适配器强制注册LLM服务提供商")
-    except Exception as e:
-        logger.error(f"迁移适配器确保LLM服务提供商注册时发生错误: {str(e)}")
-
-# 在模块加载时确保提供商已注册
-_ensure_providers_registered()
+# 提供商注册由 webui.py:main() 显式调用（见 LLM 提供商注册机制重构）
+# 这样更可靠，错误也更容易调试
 
 
 def _run_async_safely(coro_func, *args, **kwargs):

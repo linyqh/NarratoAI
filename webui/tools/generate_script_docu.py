@@ -120,31 +120,49 @@ def generate_script_docu(params):
             """
             2. 视觉分析(批量分析每一帧)
             """
-            vision_llm_provider = st.session_state.get('vision_llm_providers').lower()
-            llm_params = dict()
+            # 最佳实践：使用 get() 的默认值参数 + 从 config 获取备用值
+            vision_llm_provider = (
+                st.session_state.get('vision_llm_provider') or
+                config.app.get('vision_llm_provider', 'litellm')
+            ).lower()
+
             logger.info(f"使用 {vision_llm_provider.upper()} 进行视觉分析")
 
             try:
                 # ===================初始化视觉分析器===================
                 update_progress(30, "正在初始化视觉分析器...")
 
-                # 从配置中获取相关配置
-                if vision_llm_provider == 'gemini':
-                    vision_api_key = st.session_state.get('vision_gemini_api_key')
-                    vision_model = st.session_state.get('vision_gemini_model_name')
-                    vision_base_url = st.session_state.get('vision_gemini_base_url')
-                else:
-                    vision_api_key = st.session_state.get(f'vision_{vision_llm_provider}_api_key')
-                    vision_model = st.session_state.get(f'vision_{vision_llm_provider}_model_name')
-                    vision_base_url = st.session_state.get(f'vision_{vision_llm_provider}_base_url')
+                # 使用统一的配置键格式获取配置（支持所有 provider）
+                vision_api_key = (
+                    st.session_state.get(f'vision_{vision_llm_provider}_api_key') or
+                    config.app.get(f'vision_{vision_llm_provider}_api_key')
+                )
+                vision_model = (
+                    st.session_state.get(f'vision_{vision_llm_provider}_model_name') or
+                    config.app.get(f'vision_{vision_llm_provider}_model_name')
+                )
+                vision_base_url = (
+                    st.session_state.get(f'vision_{vision_llm_provider}_base_url') or
+                    config.app.get(f'vision_{vision_llm_provider}_base_url', '')
+                )
 
-                # 创建视觉分析器实例
+                # 验证必需配置
+                if not vision_api_key or not vision_model:
+                    raise ValueError(
+                        f"未配置 {vision_llm_provider} 的 API Key 或模型名称。"
+                        f"请在设置页面配置 vision_{vision_llm_provider}_api_key 和 vision_{vision_llm_provider}_model_name"
+                    )
+
+                # 创建视觉分析器实例（使用统一接口）
                 llm_params = {
-                  "vision_provider": vision_llm_provider,
-                  "vision_api_key": vision_api_key,
-                  "vision_model_name": vision_model,
-                  "vision_base_url": vision_base_url,
+                    "vision_provider": vision_llm_provider,
+                    "vision_api_key": vision_api_key,
+                    "vision_model_name": vision_model,
+                    "vision_base_url": vision_base_url,
                 }
+
+                logger.debug(f"视觉分析器配置: provider={vision_llm_provider}, model={vision_model}")
+
                 analyzer = create_vision_analyzer(
                     provider=vision_llm_provider,
                     api_key=vision_api_key,

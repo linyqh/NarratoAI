@@ -274,7 +274,7 @@ def detect_hardware_acceleration() -> Dict[str, Union[bool, str, List[str], None
     _FFMPEG_HW_ACCEL_INFO["platform"] = system
     _FFMPEG_HW_ACCEL_INFO["gpu_vendor"] = gpu_vendor
 
-    logger.info(f"检测硬件加速 - 平台: {system}, GPU厂商: {gpu_vendor}")
+    logger.debug(f"检测硬件加速 - 平台: {system}, GPU厂商: {gpu_vendor}")
 
     # 获取FFmpeg支持的硬件加速器列表
     try:
@@ -338,7 +338,7 @@ def detect_hardware_acceleration() -> Dict[str, Union[bool, str, List[str], None
                 _FFMPEG_HW_ACCEL_INFO["is_dedicated_gpu"] = gpu_vendor in ["nvidia", "amd"] or (gpu_vendor == "intel" and "arc" in _get_gpu_info().lower())
 
                 _FFMPEG_HW_ACCEL_INFO["message"] = f"使用 {method} 硬件加速 ({gpu_vendor} GPU)"
-                logger.info(f"硬件加速检测成功: {method} ({gpu_vendor})")
+                logger.debug(f"硬件加速检测成功: {method} ({gpu_vendor})")
                 break
 
         # 如果没有找到硬件加速，设置软件编码作为备用
@@ -346,7 +346,7 @@ def detect_hardware_acceleration() -> Dict[str, Union[bool, str, List[str], None
             _FFMPEG_HW_ACCEL_INFO["fallback_available"] = True
             _FFMPEG_HW_ACCEL_INFO["fallback_encoder"] = "libx264"
             _FFMPEG_HW_ACCEL_INFO["message"] = f"未找到可用的硬件加速，将使用软件编码 (平台: {system}, GPU: {gpu_vendor})"
-            logger.info("未检测到硬件加速，将使用软件编码")
+            logger.debug("未检测到硬件加速，将使用软件编码")
 
     finally:
         # 清理测试文件
@@ -1106,9 +1106,12 @@ def get_hwaccel_status() -> Dict[str, any]:
 def _auto_reset_on_import():
     """模块导入时自动重置硬件加速检测"""
     try:
-        # 检查是否需要重置（比如检测到配置变化）
+        # 只在平台真正改变时才重置，而不是初始化时
         current_platform = platform.system()
-        if _FFMPEG_HW_ACCEL_INFO.get("platform") != current_platform:
+        cached_platform = _FFMPEG_HW_ACCEL_INFO.get("platform")
+
+        # 只有当已经有缓存的平台信息，且平台改变了，才需要重置
+        if cached_platform is not None and cached_platform != current_platform:
             reset_hwaccel_detection()
     except Exception as e:
         logger.debug(f"自动重置检测失败: {str(e)}")

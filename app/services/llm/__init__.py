@@ -21,20 +21,8 @@ from .base import BaseLLMProvider, VisionModelProvider, TextModelProvider
 from .validators import OutputValidator, ValidationError
 from .exceptions import LLMServiceError, ProviderNotFoundError, ConfigurationError
 
-# 确保提供商在模块导入时被注册
-def _ensure_providers_registered():
-    """确保所有提供商都已注册"""
-    try:
-        # 导入providers模块会自动执行注册
-        from . import providers
-        from loguru import logger
-        logger.debug("LLM服务提供商注册完成")
-    except Exception as e:
-        from loguru import logger
-        logger.error(f"LLM服务提供商注册失败: {str(e)}")
-
-# 自动注册提供商
-_ensure_providers_registered()
+# 提供商注册由 webui.py:main() 显式调用（见 LLM 提供商注册机制重构）
+# 这样更可靠，错误也更容易调试
 
 __all__ = [
     'LLMServiceManager',

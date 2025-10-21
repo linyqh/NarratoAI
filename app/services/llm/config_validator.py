@@ -214,7 +214,7 @@ class LLMConfigValidator:
                 "建议为每个提供商配置base_url以提高稳定性",
                 "定期检查模型名称是否为最新版本",
                 "建议配置多个提供商作为备用方案",
-                "如果使用新发布的模型遇到MODEL_NOT_SUPPORTED错误，可以设置 strict_model_validation = false 启用宽松验证模式"
+                "推荐使用 LiteLLM 作为统一接口，支持 100+ providers"
             ]
         }
         
