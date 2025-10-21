@@ -1,3 +1,4 @@
+from venv import logger
 import streamlit as st
 import os
 from uuid import uuid4
@@ -24,7 +25,8 @@ def get_tts_engine_options():
     return {
         "edge_tts": "Edge TTS",
         "azure_speech": "Azure Speech Services",
-        "tencent_tts": "腾讯云 TTS"
+        "tencent_tts": "腾讯云 TTS",
+        "qwen3_tts": "通义千问 Qwen3 TTS"
     }
 
 
@@ -48,6 +50,12 @@ def get_tts_engine_descriptions():
             "features": "提供免费额度，音质优秀，支持多种音色，国内访问速度快",
             "use_case": "个人和企业用户，需要稳定的中文语音合成",
             "registration": "https://console.cloud.tencent.com/tts"
+        },
+        "qwen3_tts": {
+            "title": "通义千问 Qwen3 TTS",
+            "features": "阿里云通义千问语音合成，音质优秀，支持多种音色",
+            "use_case": "需要高质量中文语音合成的用户",
+            "registration": "https://dashscope.aliyuncs.com/"
         }
     }
 
@@ -129,6 +137,8 @@ def render_tts_settings(tr):
         render_soulvoice_engine_settings(tr)
     elif selected_engine == "tencent_tts":
         render_tencent_tts_settings(tr)
+    elif selected_engine == "qwen3_tts":
+        render_qwen3_tts_settings(tr)
 
     # 4. 试听功能
     render_voice_preview_new(tr, selected_engine)
@@ -471,7 +481,86 @@ def render_tencent_tts_settings(tr):
     config.tencent["region"] = region
     config.ui["tencent_voice_type"] = voice_type
     config.ui["tencent_rate"] = voice_rate
+    config.ui["voice_name"] = saved_voice_type #兼容性
 
+
+def render_qwen3_tts_settings(tr):
+    """渲染 Qwen3 TTS 设置"""
+    api_key = st.text_input(
+        "API Key",
+        value=config.tts_qwen.get("api_key", ""),
+        type="password",
+        help="通义千问 DashScope API Key"
+    )
+
+    model_name = st.text_input(
+        "模型名称",
+        value=config.tts_qwen.get("model_name", "qwen3-tts-flash"),
+        help="Qwen TTS 模型名，例如 qwen3-tts-flash"
+    )
+
+    # Qwen3 TTS 音色选项 - 中文名: 英文参数
+    voice_options = {
+        "芊悦": "Cherry",
+        "晨煦": "Ethan",
+        "不吃鱼": "Nofish",
+        "詹妮弗": "Jennifer",
+        "甜茶": "Ryan",
+        "卡捷琳娜": "Katerina",
+        "墨讲师": "Elias",
+        "上海-阿珍": "Jada",
+        "北京-晓东": "Dylan",
+        "四川-晴儿": "Sunny",
+        "南京-老李": "Li",
+        "陕西-秦川": "Marcus",
+        "闽南-阿杰": "Roy",
+        "天津-李彼得": "Peter",
+        "粤语-阿强": "Rocky",
+        "粤语-阿清": "Kiki",
+        "四川-程川": "Eric"
+    }
+    
+    # 显示给用户的中文名称列表
+    display_names = list(voice_options.keys())
+    saved_voice_param = config.ui.get("qwen_voice_type", "Cherry")
+    
+    # 如果保存的英文参数不在选项中，查找对应的中文名称
+    saved_display_name = "芊悦"  # 默认值
+    for chinese_name, english_param in voice_options.items():
+        if english_param == saved_voice_param:
+            saved_display_name = chinese_name
+            break
+    
+    # 如果保存的音色不在选项中，添加到自定义选项
+    if saved_display_name not in display_names:
+        display_names.append(saved_display_name)
+        voice_options[saved_display_name] = saved_voice_param
+
+    selected_display_name = st.selectbox(
+        "音色选择",
+        options=display_names,
+        index=display_names.index(saved_display_name) if saved_display_name in display_names else 0,
+        help="选择Qwen3 TTS音色"
+    )
+    
+    # 获取对应的英文参数
+    voice_type = voice_options.get(selected_display_name, "Cherry")
+
+    voice_rate = st.slider(
+        "语速调节",
+        min_value=0.5,
+        max_value=2.0,
+        value=1.0,
+        step=0.1,
+        help="调节语音速度 (0.5-2.0)"
+    )
+
+    # 保存配置
+    config.tts_qwen["api_key"] = api_key
+    config.tts_qwen["model_name"] = model_name
+    config.ui["qwen_voice_type"] = voice_type
+    config.ui["qwen3_rate"] = voice_rate
+    config.ui["voice_name"] = voice_type #兼容性
 
 def render_voice_preview_new(tr, selected_engine):
     """渲染新的语音试听功能"""
@@ -505,6 +594,11 @@ def render_voice_preview_new(tr, selected_engine):
             voice_name = f"tencent:{voice_type}"
             voice_rate = config.ui.get("tencent_rate", 1.0)
             voice_pitch = 1.0  # 腾讯云 TTS 不支持音调调节
+        elif selected_engine == "qwen3_tts":
+            vt = config.ui.get("qwen_voice_type", "Cherry")
+            voice_name = f"qwen3:{vt}"
+            voice_rate = config.ui.get("qwen3_rate", 1.0)
+            voice_pitch = 1.0  # Qwen3 TTS 不支持音调调节
 
         if not voice_name:
             st.error("请先配置语音设置")

@@ -1089,6 +1089,10 @@ def tts(
         logger.info("分发到腾讯云 TTS")
         return tencent_tts(text, voice_name, voice_file, speed=voice_rate)
     
+    if tts_engine == "qwen3_tts":
+        logger.info("分发到 Qwen3 TTS", voice_name)
+        return qwen3_tts(text, voice_name, voice_file, speed=voice_rate)
+    
     if tts_engine == "soulvoice":
         logger.info("分发到 SoulVoice TTS")
         return soulvoice_tts(text, voice_name, voice_file, speed=voice_rate)
@@ -1538,7 +1542,7 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                 continue
             else:
                 # SoulVoice 引擎不生成字幕文件
-                if is_soulvoice_voice(voice_name):
+                if is_soulvoice_voice(voice_name) or is_qwen_engine(tts_engine):
                     # 获取实际音频文件的时长
                     duration = get_audio_duration_from_file(audio_file)
                     if duration <= 0:
@@ -1617,6 +1621,111 @@ def parse_tencent_voice(voice_name: str) -> str:
     if voice_name.startswith("tencent:"):
         return voice_name[8:]  # 移除 "tencent:" 前缀
     return voice_name
+
+
+def parse_qwen3_voice(voice_name: str) -> str:
+    """
+    解析 Qwen3 语音名称
+    """
+    if isinstance(voice_name, str) and voice_name.startswith("qwen3:"):
+        return voice_name[6:]
+    return voice_name
+
+
+def qwen3_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.0) -> Union[SubMaker, None]:
+    """
+    使用通义千问 Qwen3 TTS 生成语音（仅使用 DashScope SDK）
+    """
+    # 读取配置
+    tts_qwen_cfg = getattr(config, "tts_qwen", {}) or {}
+    api_key = tts_qwen_cfg.get("api_key", "")
+    model_name = tts_qwen_cfg.get("model_name", "qwen3-tts-flash")
+    if not api_key:
+        logger.error("Qwen3 TTS API key 未配置")
+        return None
+
+    # 准备参数
+    voice_type = parse_qwen3_voice(voice_name)
+    safe_speed = float(max(0.5, min(2.0, speed)))
+    text = text.strip()
+
+
+
+    # SDK 调用
+    try:
+        import dashscope
+    except ImportError:
+        logger.error("未安装 dashscope SDK，请执行: pip install dashscope")
+        return None
+    except Exception as e:
+        logger.error(f"DashScope SDK 初始化失败: {e}")
+        return None
+
+    # Qwen3 TTS 直接使用英文参数，不需要映射
+    mapped_voice = voice_type or "Cherry"
+
+    for i in range(3):
+        try:
+            # 打印详细的请求参数日志
+            logger.info(f"=== Qwen3 TTS 请求参数 (第 {i+1} 次调用) ===")
+
+            # 官方推荐：使用 MultiModalConversation.call
+            result = dashscope.MultiModalConversation.call(
+                # 仅支持 qwen-tts 系列模型
+                model=(model_name or "qwen3-tts-flash"),
+                # 同时显式传入 api_key，并兼容示例中从环境变量读取
+                api_key=api_key,
+                text=text,
+                voice=mapped_voice
+            )
+            logger.info(f"Qwen3 TTS API 响应: {result}")
+        
+
+            audio_bytes: bytes | None = None
+
+            # 解析返回结果，提取音频URL并下载
+            try:# 假设 result 是你收到的字符串
+                audio_url = None
+                
+                if result.output and result.output.audio:
+                    audio_url = result.output.audio.url
+                # 从响应中提取音频URL
+    
+                if audio_url:
+                    # 直接下载音频文件
+                    response = requests.get(audio_url, timeout=30)
+                    response.raise_for_status()
+                    audio_bytes = response.content
+                else:
+                    logger.warning("API响应中未找到音频URL")
+                    
+            except Exception as e:
+                logger.error(f"解析API响应失败: {str(e)}")
+
+            if not audio_bytes:
+                logger.warning("DashScope SDK 返回空音频数据，重试")
+                if i < 2:
+                    time.sleep(1)
+                continue
+
+            # 写入文件
+            with open(voice_file, "wb") as f:
+                f.write(audio_bytes)
+
+            # 估算字幕
+            sub = SubMaker()
+            est_ms = max(800, int(len(text) * 180))
+            sub.create_sub((0, est_ms), text)
+            
+            logger.info(f"Qwen3 TTS 生成成功（DashScope SDK），文件大小: {len(audio_bytes)} 字节")
+            return sub
+
+        except Exception as e:
+            logger.error(f"DashScope SDK 合成失败: {e}")
+            if i < 2:
+                time.sleep(1)
+
+    return None
 
 
 def tencent_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.0) -> Union[SubMaker, None]:
@@ -1819,6 +1928,8 @@ def is_soulvoice_voice(voice_name: str) -> bool:
     """
     return voice_name.startswith("soulvoice:") or voice_name.startswith("speech:")
 
+def is_qwen_engine(tts_engine: str) -> bool:
+    return tts_engine == "qwen3_tts"
 
 def parse_soulvoice_voice(voice_name: str) -> str:
     """

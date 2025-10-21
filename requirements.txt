@@ -16,6 +16,7 @@ litellm>=1.70.0  # 统一的 LLM 接口，支持 100+ providers
 google-generativeai>=0.8.5  # LiteLLM 会使用此库调用 Gemini
 azure-cognitiveservices-speech>=1.37.0
 tencentcloud-sdk-python>=3.0.1200
+dashscope>=1.24.6
 
 # 图像处理依赖
 Pillow>=10.3.0
