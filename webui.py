@@ -35,7 +35,7 @@ def init_log():
     """初始化日志配置"""
     from loguru import logger
     logger.remove()
-    _lvl = "DEBUG"
+    _lvl = "INFO"  # 改为 INFO 级别，过滤掉 DEBUG 日志
 
     def format_record(record):
         # 简化日志格式化处理，不尝试按特定字符串过滤torch相关内容
@@ -50,13 +50,23 @@ def init_log():
                   '- <level>{message}</>' + "\n"
         return _format
 
-    # 替换为更简单的过滤方式，避免在过滤时访问message内容
-    # 此处先不设置复杂的过滤器，等应用启动后再动态添加
+    # 添加日志过滤器
+    def log_filter(record):
+        """过滤不必要的日志消息"""
+        # 过滤掉启动时的噪音日志（即使在 DEBUG 模式下也可以选择过滤）
+        ignore_patterns = [
+            "Examining the path of torch.classes raised",
+            "torch.cuda.is_available()",
+            "CUDA initialization"
+        ]
+        return not any(pattern in record["message"] for pattern in ignore_patterns)
+
     logger.add(
         sys.stdout,
         level=_lvl,
         format=format_record,
-        colorize=True
+        colorize=True,
+        filter=log_filter
     )
 
     # 应用启动后，可以再添加更复杂的过滤器
@@ -190,23 +200,37 @@ def render_generate_button():
         logger.info(tr("视频生成完成"))
 
 
-# 全局变量，记录是否已经打印过硬件加速信息
-_HAS_LOGGED_HWACCEL_INFO = False
-
 def main():
     """主函数"""
-    global _HAS_LOGGED_HWACCEL_INFO
     init_log()
     init_global_state()
 
-    # 检测FFmpeg硬件加速，但只打印一次日志
+    # ===== 显式注册 LLM 提供商（最佳实践）=====
+    # 在应用启动时立即注册，确保所有 LLM 功能可用
+    if 'llm_providers_registered' not in st.session_state:
+        try:
+            from app.services.llm.providers import register_all_providers
+            register_all_providers()
+            st.session_state['llm_providers_registered'] = True
+            logger.info("✅ LLM 提供商注册成功")
+        except Exception as e:
+            logger.error(f"❌ LLM 提供商注册失败: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            st.error(f"⚠️ LLM 初始化失败: {str(e)}\n\n请检查配置文件和依赖是否正确安装。")
+            # 不抛出异常，允许应用继续运行（但 LLM 功能不可用）
+
+    # 检测FFmpeg硬件加速，但只打印一次日志（使用 session_state 持久化）
+    if 'hwaccel_logged' not in st.session_state:
+        st.session_state['hwaccel_logged'] = False
+    
     hwaccel_info = ffmpeg_utils.detect_hardware_acceleration()
-    if not _HAS_LOGGED_HWACCEL_INFO:
+    if not st.session_state['hwaccel_logged']:
         if hwaccel_info["available"]:
-            logger.info(f"FFmpeg硬件加速检测结果: 可用 | 类型: {hwaccel_info['type']} | 编码器: {hwaccel_info['encoder']} | 独立显卡: {hwaccel_info['is_dedicated_gpu']} | 参数: {hwaccel_info['hwaccel_args']}")
+            logger.info(f"FFmpeg硬件加速检测结果: 可用 | 类型: {hwaccel_info['type']} | 编码器: {hwaccel_info['encoder']} | 独立显卡: {hwaccel_info['is_dedicated_gpu']}")
         else:
             logger.warning(f"FFmpeg硬件加速不可用: {hwaccel_info['message']}, 将使用CPU软件编码")
-        _HAS_LOGGED_HWACCEL_INFO = True
+        st.session_state['hwaccel_logged'] = True
 
     # 仅初始化基本资源，避免过早地加载依赖PyTorch的资源
     # 检查是否能分解utils.init_resources()为基本资源和高级资源(如依赖PyTorch的资源)

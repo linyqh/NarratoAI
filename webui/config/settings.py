@@ -40,13 +40,7 @@ class WebUIConfig:
     vision_batch_size: int = 5
     # 提示词
     vision_prompt: str = """..."""
-    # Narrato API 配置
-    narrato_api_url: str = "http://127.0.0.1:8000/api/v1/video/analyze"
-    narrato_api_key: str = ""
-    narrato_batch_size: int = 10
-    narrato_vision_model: str = "gemini-1.5-flash"
-    narrato_llm_model: str = "qwen-plus"
-    
+
     def __post_init__(self):
         """初始化默认值"""
         self.ui = self.ui or {}

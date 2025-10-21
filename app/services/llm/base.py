@@ -65,24 +65,15 @@ class BaseLLMProvider(ABC):
         self._validate_model_support()
     
     def _validate_model_support(self):
-        """验证模型支持情况"""
-        from app.config import config
-        from .exceptions import ModelNotSupportedError
+        """验证模型支持情况（宽松模式，仅记录警告）"""
         from loguru import logger
 
-        # 获取模型验证模式配置
-        strict_model_validation = config.app.get('strict_model_validation', True)
-
+        # LiteLLM 已提供统一的模型验证，传统 provider 使用宽松验证
         if self.model_name not in self.supported_models:
-            if strict_model_validation:
-                # 严格模式：抛出异常
-                raise ModelNotSupportedError(self.model_name, self.provider_name)
-            else:
-                # 宽松模式：仅记录警告
-                logger.warning(
-                    f"模型 {self.model_name} 未在供应商 {self.provider_name} 的预定义支持列表中，"
-                    f"但已启用宽松验证模式。支持的模型列表: {self.supported_models}"
-                )
+            logger.warning(
+                f"模型 {self.model_name} 未在供应商 {self.provider_name} 的预定义支持列表中。"
+                f"支持的模型列表: {self.supported_models}"
+            )
 
     def _initialize(self):
         """初始化提供商特定设置，子类可重写"""

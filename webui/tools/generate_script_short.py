@@ -39,7 +39,6 @@ def generate_script_short(tr, params, custom_clips=5):
             vision_api_key = st.session_state.get(f'vision_{vision_llm_provider}_api_key', "")
             vision_model = st.session_state.get(f'vision_{vision_llm_provider}_model_name', "")
             vision_base_url = st.session_state.get(f'vision_{vision_llm_provider}_base_url', "")
-            narrato_api_key = config.app.get('narrato_api_key')
 
             update_progress(20, "开始准备生成脚本")
 

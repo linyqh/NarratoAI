@@ -13,20 +13,8 @@ from .manager import LLMServiceManager
 from .validators import OutputValidator
 from .exceptions import LLMServiceError
 
-# 确保提供商已注册
-def _ensure_providers_registered():
-    """确保所有提供商都已注册"""
-    try:
-        # 检查是否有已注册的提供商
-        if not LLMServiceManager.list_text_providers() or not LLMServiceManager.list_vision_providers():
-            # 如果没有注册的提供商，强制导入providers模块
-            from . import providers
-            logger.debug("强制注册LLM服务提供商")
-    except Exception as e:
-        logger.error(f"确保LLM服务提供商注册时发生错误: {str(e)}")
-
-# 在模块加载时确保提供商已注册
-_ensure_providers_registered()
+# 提供商注册由 webui.py:main() 显式调用（见 LLM 提供商注册机制重构）
+# 这样更可靠，错误也更容易调试
 
 
 class UnifiedLLMService:
