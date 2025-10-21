@@ -457,6 +457,8 @@ def render_tencent_tts_settings(tr):
         help="调节语音速度 (0.5-2.0)"
     )
     
+    config.ui["voice_name"] = saved_voice_type  # 兼容性
+    
     # 显示音色说明
     with st.expander("💡 腾讯云 TTS 音色说明", expanded=False):
         st.write("**女声音色：**")

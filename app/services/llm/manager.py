@@ -37,16 +37,33 @@ class LLMServiceManager:
         cls._text_providers[name.lower()] = provider_class
         logger.debug(f"注册文本模型提供商: {name}")
 
+    # _ensure_providers_registered() 方法已移除
+    # 现在使用显式注册机制（见 webui.py:main()）
+    # 如需检查注册状态，使用 is_registered() 方法
+
+
     @classmethod
-    def _ensure_providers_registered(cls):
-        """确保提供商已注册"""
-        try:
-            # 如果没有注册的提供商，强制导入providers模块
-            if not cls._vision_providers or not cls._text_providers:
-                from . import providers
-                logger.debug("LLMServiceManager强制注册提供商")
-        except Exception as e:
-            logger.error(f"LLMServiceManager确保提供商注册时发生错误: {str(e)}")
+    def is_registered(cls) -> bool:
+        """
+        检查是否已注册提供商
+        
+        Returns:
+            bool: 如果已注册任何提供商则返回 True
+        """
+        return len(cls._text_providers) > 0 or len(cls._vision_providers) > 0
+    
+    @classmethod
+    def get_registered_providers_info(cls) -> dict:
+        """
+        获取已注册提供商的信息
+        
+        Returns:
+            dict: 包含视觉和文本提供商列表的字典
+        """
+        return {
+            "vision_providers": list(cls._vision_providers.keys()),
+            "text_providers": list(cls._text_providers.keys())
+        }
     
     @classmethod
     def get_vision_provider(cls, provider_name: Optional[str] = None) -> VisionModelProvider:
@@ -63,8 +80,12 @@ class LLMServiceManager:
             ProviderNotFoundError: 提供商未找到
             ConfigurationError: 配置错误
         """
-        # 确保提供商已注册
-        cls._ensure_providers_registered()
+        # 检查提供商是否已注册
+        if not cls.is_registered():
+            raise ConfigurationError(
+                "LLM 提供商未注册。请确保在应用启动时调用了 register_all_providers()。"
+                f"\n当前已注册的提供商: {cls.get_registered_providers_info()}"
+            )
 
         # 确定提供商名称
         if not provider_name:
@@ -127,8 +148,12 @@ class LLMServiceManager:
             ProviderNotFoundError: 提供商未找到
             ConfigurationError: 配置错误
         """
-        # 确保提供商已注册
-        cls._ensure_providers_registered()
+        # 检查提供商是否已注册
+        if not cls.is_registered():
+            raise ConfigurationError(
+                "LLM 提供商未注册。请确保在应用启动时调用了 register_all_providers()。"
+                f"\n当前已注册的提供商: {cls.get_registered_providers_info()}"
+            )
 
         # 确定提供商名称
         if not provider_name:
@@ -136,13 +161,19 @@ class LLMServiceManager:
         else:
             provider_name = provider_name.lower()
 
+        logger.debug(f"获取文本模型提供商: {provider_name}")
+        logger.debug(f"已注册的文本提供商: {list(cls._text_providers.keys())}")
+
         # 检查缓存
         cache_key = f"text_{provider_name}"
         if cache_key in cls._text_instance_cache:
+            logger.debug(f"从缓存获取提供商实例: {provider_name}")
             return cls._text_instance_cache[cache_key]
 
         # 检查提供商是否已注册
         if provider_name not in cls._text_providers:
+            logger.error(f"提供商未注册: {provider_name}")
+            logger.error(f"已注册的提供商列表: {list(cls._text_providers.keys())}")
             raise ProviderNotFoundError(provider_name)
         
         # 获取配置

@@ -58,8 +58,9 @@ class PromptRegistry:
         # 设置默认版本
         if is_default or name not in self._default_versions[category]:
             self._default_versions[category][name] = version
-            
-        logger.info(f"已注册提示词: {category}.{name} v{version}")
+
+        # 降级为 debug 日志，避免启动时的噪音
+        logger.debug(f"已注册提示词: {category}.{name} v{version}")
         
     def get(self, category: str, name: str, version: Optional[str] = None) -> BasePrompt:
         """

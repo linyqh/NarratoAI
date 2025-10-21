@@ -39,6 +39,49 @@ def validate_model_name(model_name: str, provider: str) -> tuple[bool, str]:
     return True, ""
 
 
+def validate_litellm_model_name(model_name: str, model_type: str) -> tuple[bool, str]:
+    """验证 LiteLLM 模型名称格式
+    
+    Args:
+        model_name: 模型名称，应为 provider/model 格式
+        model_type: 模型类型（如"视频分析"、"文案生成"）
+        
+    Returns:
+        (是否有效, 错误消息)
+    """
+    if not model_name or not model_name.strip():
+        return False, f"{model_type} 模型名称不能为空"
+    
+    model_name = model_name.strip()
+    
+    # LiteLLM 推荐格式：provider/model（如 gemini/gemini-2.0-flash-lite）
+    # 但也支持直接的模型名称（如 gpt-4o，LiteLLM 会自动推断 provider）
+    
+    # 检查是否包含 provider 前缀（推荐格式）
+    if "/" in model_name:
+        parts = model_name.split("/")
+        if len(parts) < 2 or not parts[0] or not parts[1]:
+            return False, f"{model_type} 模型名称格式错误。推荐格式: provider/model （如 gemini/gemini-2.0-flash-lite）"
+        
+        # 验证 provider 名称（只允许字母、数字、下划线、连字符）
+        provider = parts[0]
+        if not provider.replace("-", "").replace("_", "").isalnum():
+            return False, f"{model_type} Provider 名称只能包含字母、数字、下划线和连字符"
+    else:
+        # 直接模型名称也是有效的（LiteLLM 会自动推断）
+        # 但给出警告建议使用完整格式
+        logger.debug(f"{model_type} 模型名称未包含 provider 前缀，LiteLLM 将自动推断")
+    
+    # 基本长度检查
+    if len(model_name) < 3:
+        return False, f"{model_type} 模型名称过短"
+    
+    if len(model_name) > 200:
+        return False, f"{model_type} 模型名称过长"
+    
+    return True, ""
+
+
 def show_config_validation_errors(errors: list):
     """显示配置验证错误"""
     if errors:
@@ -234,87 +277,244 @@ def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
             return False, f"{tr('QwenVL model is not available')}: {str(e)}"
 
 
+
+
+def test_litellm_vision_model(api_key: str, base_url: str, model_name: str, tr) -> tuple[bool, str]:
+    """测试 LiteLLM 视觉模型连接
+    
+    Args:
+        api_key: API 密钥
+        base_url: 基础 URL（可选）
+        model_name: 模型名称（LiteLLM 格式：provider/model）
+        tr: 翻译函数
+        
+    Returns:
+        (连接是否成功, 测试结果消息)
+    """
+    try:
+        import litellm
+        import os
+        import base64
+        import io
+        from PIL import Image
+        
+        logger.debug(f"LiteLLM 视觉模型连通性测试: model={model_name}, api_key={api_key[:10]}..., base_url={base_url}")
+        
+        # 提取 provider 名称
+        provider = model_name.split("/")[0] if "/" in model_name else "unknown"
+        
+        # 设置 API key 到环境变量
+        env_key_mapping = {
+            "gemini": "GEMINI_API_KEY",
+            "google": "GEMINI_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "qwen": "QWEN_API_KEY",
+            "dashscope": "DASHSCOPE_API_KEY",
+            "siliconflow": "SILICONFLOW_API_KEY",
+        }
+        env_var = env_key_mapping.get(provider.lower(), f"{provider.upper()}_API_KEY")
+        old_key = os.environ.get(env_var)
+        os.environ[env_var] = api_key
+        
+        try:
+            # 创建测试图片（1x1 白色像素）
+            test_image = Image.new('RGB', (1, 1), color='white')
+            img_buffer = io.BytesIO()
+            test_image.save(img_buffer, format='JPEG')
+            img_bytes = img_buffer.getvalue()
+            base64_image = base64.b64encode(img_bytes).decode('utf-8')
+            
+            # 构建测试请求
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "请直接回复'连接成功'"},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    }
+                ]
+            }]
+            
+            # 准备参数
+            completion_kwargs = {
+                "model": model_name,
+                "messages": messages,
+                "temperature": 0.1,
+                "max_tokens": 50
+            }
+            
+            if base_url:
+                completion_kwargs["api_base"] = base_url
+            
+            # 调用 LiteLLM（同步调用用于测试）
+            response = litellm.completion(**completion_kwargs)
+            
+            if response and response.choices and len(response.choices) > 0:
+                return True, f"LiteLLM 视觉模型连接成功 ({model_name})"
+            else:
+                return False, f"LiteLLM 视觉模型返回空响应"
+                
+        finally:
+            # 恢复原始环境变量
+            if old_key:
+                os.environ[env_var] = old_key
+            else:
+                os.environ.pop(env_var, None)
+                
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"LiteLLM 视觉模型测试失败: {error_msg}")
+        
+        # 提供更友好的错误信息
+        if "authentication" in error_msg.lower() or "api_key" in error_msg.lower():
+            return False, f"认证失败，请检查 API Key 是否正确"
+        elif "not found" in error_msg.lower() or "404" in error_msg:
+            return False, f"模型不存在，请检查模型名称是否正确"
+        elif "rate limit" in error_msg.lower():
+            return False, f"超出速率限制，请稍后重试"
+        else:
+            return False, f"连接失败: {error_msg}"
+
+
+def test_litellm_text_model(api_key: str, base_url: str, model_name: str, tr) -> tuple[bool, str]:
+    """测试 LiteLLM 文本模型连接
+    
+    Args:
+        api_key: API 密钥
+        base_url: 基础 URL（可选）
+        model_name: 模型名称（LiteLLM 格式：provider/model）
+        tr: 翻译函数
+        
+    Returns:
+        (连接是否成功, 测试结果消息)
+    """
+    try:
+        import litellm
+        import os
+        
+        logger.debug(f"LiteLLM 文本模型连通性测试: model={model_name}, api_key={api_key[:10]}..., base_url={base_url}")
+        
+        # 提取 provider 名称
+        provider = model_name.split("/")[0] if "/" in model_name else "unknown"
+        
+        # 设置 API key 到环境变量
+        env_key_mapping = {
+            "gemini": "GEMINI_API_KEY",
+            "google": "GEMINI_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "qwen": "QWEN_API_KEY",
+            "dashscope": "DASHSCOPE_API_KEY",
+            "siliconflow": "SILICONFLOW_API_KEY",
+            "deepseek": "DEEPSEEK_API_KEY",
+            "moonshot": "MOONSHOT_API_KEY",
+        }
+        env_var = env_key_mapping.get(provider.lower(), f"{provider.upper()}_API_KEY")
+        old_key = os.environ.get(env_var)
+        os.environ[env_var] = api_key
+        
+        try:
+            # 构建测试请求
+            messages = [
+                {"role": "user", "content": "请直接回复'连接成功'"}
+            ]
+            
+            # 准备参数
+            completion_kwargs = {
+                "model": model_name,
+                "messages": messages,
+                "temperature": 0.1,
+                "max_tokens": 20
+            }
+            
+            if base_url:
+                completion_kwargs["api_base"] = base_url
+            
+            # 调用 LiteLLM（同步调用用于测试）
+            response = litellm.completion(**completion_kwargs)
+            
+            if response and response.choices and len(response.choices) > 0:
+                return True, f"LiteLLM 文本模型连接成功 ({model_name})"
+            else:
+                return False, f"LiteLLM 文本模型返回空响应"
+                
+        finally:
+            # 恢复原始环境变量
+            if old_key:
+                os.environ[env_var] = old_key
+            else:
+                os.environ.pop(env_var, None)
+                
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"LiteLLM 文本模型测试失败: {error_msg}")
+        
+        # 提供更友好的错误信息
+        if "authentication" in error_msg.lower() or "api_key" in error_msg.lower():
+            return False, f"认证失败，请检查 API Key 是否正确"
+        elif "not found" in error_msg.lower() or "404" in error_msg:
+            return False, f"模型不存在，请检查模型名称是否正确"
+        elif "rate limit" in error_msg.lower():
+            return False, f"超出速率限制，请稍后重试"
+        else:
+            return False, f"连接失败: {error_msg}"
+
 def render_vision_llm_settings(tr):
-    """渲染视频分析模型设置"""
+    """渲染视频分析模型设置（LiteLLM 统一配置）"""
     st.subheader(tr("Vision Model Settings"))
 
-    # 视频分析模型提供商选择
-    vision_providers = ['Siliconflow', 'Gemini', 'Gemini(OpenAI)', 'QwenVL', 'OpenAI']
-    saved_vision_provider = config.app.get("vision_llm_provider", "Gemini").lower()
-    saved_provider_index = 0
+    # 固定使用 LiteLLM 提供商
+    config.app["vision_llm_provider"] = "litellm"
 
-    for i, provider in enumerate(vision_providers):
-        if provider.lower() == saved_vision_provider:
-            saved_provider_index = i
-            break
+    # 获取已保存的 LiteLLM 配置
+    vision_model_name = config.app.get("vision_litellm_model_name", "gemini/gemini-2.0-flash-lite")
+    vision_api_key = config.app.get("vision_litellm_api_key", "")
+    vision_base_url = config.app.get("vision_litellm_base_url", "")
 
-    vision_provider = st.selectbox(
-        tr("Vision Model Provider"),
-        options=vision_providers,
-        index=saved_provider_index
+    # 渲染配置输入框
+    st_vision_model_name = st.text_input(
+        tr("Vision Model Name"),
+        value=vision_model_name,
+        help="LiteLLM 模型格式: provider/model\n\n"
+             "常用示例:\n"
+             "• gemini/gemini-2.0-flash-lite (推荐，速度快)\n"
+             "• gemini/gemini-1.5-pro (高精度)\n"
+             "• openai/gpt-4o, openai/gpt-4o-mini\n"
+             "• qwen/qwen2.5-vl-32b-instruct\n"
+             "• siliconflow/Qwen/Qwen2.5-VL-32B-Instruct\n\n"
+             "支持 100+ providers，详见: https://docs.litellm.ai/docs/providers"
     )
-    vision_provider = vision_provider.lower()
-    config.app["vision_llm_provider"] = vision_provider
-    st.session_state['vision_llm_providers'] = vision_provider
 
-    # 获取已保存的视觉模型配置
-    # 处理特殊的提供商名称映射
-    if vision_provider == 'gemini(openai)':
-        vision_config_key = 'vision_gemini_openai'
-    else:
-        vision_config_key = f'vision_{vision_provider}'
+    st_vision_api_key = st.text_input(
+        tr("Vision API Key"),
+        value=vision_api_key,
+        type="password",
+        help="对应 provider 的 API 密钥\n\n"
+             "获取地址:\n"
+             "• Gemini: https://makersuite.google.com/app/apikey\n"
+             "• OpenAI: https://platform.openai.com/api-keys\n"
+             "• Qwen: https://bailian.console.aliyun.com/\n"
+             "• SiliconFlow: https://cloud.siliconflow.cn/account/ak"
+    )
 
-    vision_api_key = config.app.get(f"{vision_config_key}_api_key", "")
-    vision_base_url = config.app.get(f"{vision_config_key}_base_url", "")
-    vision_model_name = config.app.get(f"{vision_config_key}_model_name", "")
+    st_vision_base_url = st.text_input(
+        tr("Vision Base URL"),
+        value=vision_base_url,
+        help="自定义 API 端点（可选）\n\n"
+             "留空使用默认端点。可用于:\n"
+             "• 代理地址（如通过 CloudFlare）\n"
+             "• 私有部署的模型服务\n"
+             "• 自定义网关\n\n"
+             "示例: https://your-proxy.com/v1"
+    )
 
-    # 渲染视觉模型配置输入框
-    st_vision_api_key = st.text_input(tr("Vision API Key"), value=vision_api_key, type="password")
-    
-    # 根据不同提供商设置默认值和帮助信息
-    if vision_provider == 'gemini':
-        st_vision_base_url = st.text_input(
-            tr("Vision Base URL"),
-            value=vision_base_url or "https://generativelanguage.googleapis.com/v1beta",
-            help=tr("原生Gemini API端点，默认: https://generativelanguage.googleapis.com/v1beta")
-        )
-        st_vision_model_name = st.text_input(
-            tr("Vision Model Name"),
-            value=vision_model_name or "gemini-2.0-flash-exp",
-            help=tr("原生Gemini模型，默认: gemini-2.0-flash-exp")
-        )
-    elif vision_provider == 'gemini(openai)':
-        st_vision_base_url = st.text_input(
-            tr("Vision Base URL"),
-            value=vision_base_url or "https://generativelanguage.googleapis.com/v1beta/openai",
-            help=tr("OpenAI兼容的Gemini代理端点，如: https://your-proxy.com/v1")
-        )
-        st_vision_model_name = st.text_input(
-            tr("Vision Model Name"),
-            value=vision_model_name or "gemini-2.0-flash-exp",
-            help=tr("OpenAI格式的Gemini模型名称，默认: gemini-2.0-flash-exp")
-        )
-    elif vision_provider == 'qwenvl':
-        st_vision_base_url = st.text_input(
-            tr("Vision Base URL"), 
-            value=vision_base_url,
-            help=tr("Default: https://dashscope.aliyuncs.com/compatible-mode/v1")
-        )
-        st_vision_model_name = st.text_input(
-            tr("Vision Model Name"), 
-            value=vision_model_name or "qwen-vl-max-latest",
-            help=tr("Default: qwen-vl-max-latest")
-        )
-    else:
-        st_vision_base_url = st.text_input(tr("Vision Base URL"), value=vision_base_url)
-        st_vision_model_name = st.text_input(tr("Vision Model Name"), value=vision_model_name)
-
-    # 在配置输入框后添加测试按钮
+    # 添加测试连接按钮
     if st.button(tr("Test Connection"), key="test_vision_connection"):
-        # 先验证配置
         test_errors = []
         if not st_vision_api_key:
-            test_errors.append("请先输入API密钥")
+            test_errors.append("请先输入 API 密钥")
         if not st_vision_model_name:
             test_errors.append("请先输入模型名称")
 
@@ -324,11 +524,10 @@ def render_vision_llm_settings(tr):
         else:
             with st.spinner(tr("Testing connection...")):
                 try:
-                    success, message = test_vision_model_connection(
+                    success, message = test_litellm_vision_model(
                         api_key=st_vision_api_key,
                         base_url=st_vision_base_url,
                         model_name=st_vision_model_name,
-                        provider=vision_provider,
                         tr=tr
                     )
 
@@ -338,38 +537,38 @@ def render_vision_llm_settings(tr):
                         st.error(message)
                 except Exception as e:
                     st.error(f"测试连接时发生错误: {str(e)}")
-                    logger.error(f"视频分析模型连接测试失败: {str(e)}")
+                    logger.error(f"LiteLLM 视频分析模型连接测试失败: {str(e)}")
 
-    # 验证和保存视觉模型配置
+    # 验证和保存配置
     validation_errors = []
     config_changed = False
 
-    # 验证API密钥
-    if st_vision_api_key:
-        is_valid, error_msg = validate_api_key(st_vision_api_key, f"视频分析({vision_provider})")
-        if is_valid:
-            config.app[f"{vision_config_key}_api_key"] = st_vision_api_key
-            st.session_state[f"{vision_config_key}_api_key"] = st_vision_api_key
-            config_changed = True
-        else:
-            validation_errors.append(error_msg)
-
-    # 验证Base URL
-    if st_vision_base_url:
-        is_valid, error_msg = validate_base_url(st_vision_base_url, f"视频分析({vision_provider})")
-        if is_valid:
-            config.app[f"{vision_config_key}_base_url"] = st_vision_base_url
-            st.session_state[f"{vision_config_key}_base_url"] = st_vision_base_url
-            config_changed = True
-        else:
-            validation_errors.append(error_msg)
-
     # 验证模型名称
     if st_vision_model_name:
-        is_valid, error_msg = validate_model_name(st_vision_model_name, f"视频分析({vision_provider})")
+        is_valid, error_msg = validate_litellm_model_name(st_vision_model_name, "视频分析")
         if is_valid:
-            config.app[f"{vision_config_key}_model_name"] = st_vision_model_name
-            st.session_state[f"{vision_config_key}_model_name"] = st_vision_model_name
+            config.app["vision_litellm_model_name"] = st_vision_model_name
+            st.session_state["vision_litellm_model_name"] = st_vision_model_name
+            config_changed = True
+        else:
+            validation_errors.append(error_msg)
+
+    # 验证 API 密钥
+    if st_vision_api_key:
+        is_valid, error_msg = validate_api_key(st_vision_api_key, "视频分析")
+        if is_valid:
+            config.app["vision_litellm_api_key"] = st_vision_api_key
+            st.session_state["vision_litellm_api_key"] = st_vision_api_key
+            config_changed = True
+        else:
+            validation_errors.append(error_msg)
+
+    # 验证 Base URL（可选）
+    if st_vision_base_url:
+        is_valid, error_msg = validate_base_url(st_vision_base_url, "视频分析")
+        if is_valid:
+            config.app["vision_litellm_base_url"] = st_vision_base_url
+            st.session_state["vision_litellm_base_url"] = st_vision_base_url
             config_changed = True
         else:
             validation_errors.append(error_msg)
@@ -377,12 +576,12 @@ def render_vision_llm_settings(tr):
     # 显示验证错误
     show_config_validation_errors(validation_errors)
 
-    # 如果配置有变化且没有验证错误，保存到文件
+    # 保存配置
     if config_changed and not validation_errors:
         try:
             config.save_config()
             if st_vision_api_key or st_vision_base_url or st_vision_model_name:
-                st.success(f"视频分析模型({vision_provider})配置已保存")
+                st.success(f"视频分析模型配置已保存（LiteLLM）")
         except Exception as e:
             st.error(f"保存配置失败: {str(e)}")
             logger.error(f"保存视频分析配置失败: {str(e)}")
@@ -492,68 +691,62 @@ def test_text_model_connection(api_key, base_url, model_name, provider, tr):
 
 
 def render_text_llm_settings(tr):
-    """渲染文案生成模型设置"""
+    """渲染文案生成模型设置（LiteLLM 统一配置）"""
     st.subheader(tr("Text Generation Model Settings"))
 
-    # 文案生成模型提供商选择
-    text_providers = ['OpenAI', 'Siliconflow', 'DeepSeek', 'Gemini', 'Gemini(OpenAI)', 'Qwen', 'Moonshot']
-    saved_text_provider = config.app.get("text_llm_provider", "OpenAI").lower()
-    saved_provider_index = 0
+    # 固定使用 LiteLLM 提供商
+    config.app["text_llm_provider"] = "litellm"
 
-    for i, provider in enumerate(text_providers):
-        if provider.lower() == saved_text_provider:
-            saved_provider_index = i
-            break
+    # 获取已保存的 LiteLLM 配置
+    text_model_name = config.app.get("text_litellm_model_name", "deepseek/deepseek-chat")
+    text_api_key = config.app.get("text_litellm_api_key", "")
+    text_base_url = config.app.get("text_litellm_base_url", "")
 
-    text_provider = st.selectbox(
-        tr("Text Model Provider"),
-        options=text_providers,
-        index=saved_provider_index
+    # 渲染配置输入框
+    st_text_model_name = st.text_input(
+        tr("Text Model Name"),
+        value=text_model_name,
+        help="LiteLLM 模型格式: provider/model\n\n"
+             "常用示例:\n"
+             "• deepseek/deepseek-chat (推荐，性价比高)\n"
+             "• gemini/gemini-2.0-flash (速度快)\n"
+             "• openai/gpt-4o, openai/gpt-4o-mini\n"
+             "• qwen/qwen-plus, qwen/qwen-turbo\n"
+             "• siliconflow/deepseek-ai/DeepSeek-R1\n"
+             "• moonshot/moonshot-v1-8k\n\n"
+             "支持 100+ providers，详见: https://docs.litellm.ai/docs/providers"
     )
-    text_provider = text_provider.lower()
-    config.app["text_llm_provider"] = text_provider
 
-    # 获取已保存的文本模型配置
-    text_api_key = config.app.get(f"text_{text_provider}_api_key")
-    text_base_url = config.app.get(f"text_{text_provider}_base_url")
-    text_model_name = config.app.get(f"text_{text_provider}_model_name")
+    st_text_api_key = st.text_input(
+        tr("Text API Key"),
+        value=text_api_key,
+        type="password",
+        help="对应 provider 的 API 密钥\n\n"
+             "获取地址:\n"
+             "• DeepSeek: https://platform.deepseek.com/api_keys\n"
+             "• Gemini: https://makersuite.google.com/app/apikey\n"
+             "• OpenAI: https://platform.openai.com/api-keys\n"
+             "• Qwen: https://bailian.console.aliyun.com/\n"
+             "• SiliconFlow: https://cloud.siliconflow.cn/account/ak\n"
+             "• Moonshot: https://platform.moonshot.cn/console/api-keys"
+    )
 
-    # 渲染文本模型配置输入框
-    st_text_api_key = st.text_input(tr("Text API Key"), value=text_api_key, type="password")
+    st_text_base_url = st.text_input(
+        tr("Text Base URL"),
+        value=text_base_url,
+        help="自定义 API 端点（可选）\n\n"
+             "留空使用默认端点。可用于:\n"
+             "• 代理地址（如通过 CloudFlare）\n"
+             "• 私有部署的模型服务\n"
+             "• 自定义网关\n\n"
+             "示例: https://your-proxy.com/v1"
+    )
 
-    # 根据不同提供商设置默认值和帮助信息
-    if text_provider == 'gemini':
-        st_text_base_url = st.text_input(
-            tr("Text Base URL"),
-            value=text_base_url or "https://generativelanguage.googleapis.com/v1beta",
-            help=tr("原生Gemini API端点，默认: https://generativelanguage.googleapis.com/v1beta")
-        )
-        st_text_model_name = st.text_input(
-            tr("Text Model Name"),
-            value=text_model_name or "gemini-2.0-flash-exp",
-            help=tr("原生Gemini模型，默认: gemini-2.0-flash-exp")
-        )
-    elif text_provider == 'gemini(openai)':
-        st_text_base_url = st.text_input(
-            tr("Text Base URL"),
-            value=text_base_url or "https://generativelanguage.googleapis.com/v1beta/openai",
-            help=tr("OpenAI兼容的Gemini代理端点，如: https://your-proxy.com/v1")
-        )
-        st_text_model_name = st.text_input(
-            tr("Text Model Name"),
-            value=text_model_name or "gemini-2.0-flash-exp",
-            help=tr("OpenAI格式的Gemini模型名称，默认: gemini-2.0-flash-exp")
-        )
-    else:
-        st_text_base_url = st.text_input(tr("Text Base URL"), value=text_base_url)
-        st_text_model_name = st.text_input(tr("Text Model Name"), value=text_model_name)
-
-    # 添加测试按钮
+    # 添加测试连接按钮
     if st.button(tr("Test Connection"), key="test_text_connection"):
-        # 先验证配置
         test_errors = []
         if not st_text_api_key:
-            test_errors.append("请先输入API密钥")
+            test_errors.append("请先输入 API 密钥")
         if not st_text_model_name:
             test_errors.append("请先输入模型名称")
 
@@ -563,11 +756,10 @@ def render_text_llm_settings(tr):
         else:
             with st.spinner(tr("Testing connection...")):
                 try:
-                    success, message = test_text_model_connection(
+                    success, message = test_litellm_text_model(
                         api_key=st_text_api_key,
                         base_url=st_text_base_url,
                         model_name=st_text_model_name,
-                        provider=text_provider,
                         tr=tr
                     )
 
@@ -577,35 +769,38 @@ def render_text_llm_settings(tr):
                         st.error(message)
                 except Exception as e:
                     st.error(f"测试连接时发生错误: {str(e)}")
-                    logger.error(f"文案生成模型连接测试失败: {str(e)}")
+                    logger.error(f"LiteLLM 文案生成模型连接测试失败: {str(e)}")
 
-    # 验证和保存文本模型配置
+    # 验证和保存配置
     text_validation_errors = []
     text_config_changed = False
 
-    # 验证API密钥
-    if st_text_api_key:
-        is_valid, error_msg = validate_api_key(st_text_api_key, f"文案生成({text_provider})")
-        if is_valid:
-            config.app[f"text_{text_provider}_api_key"] = st_text_api_key
-            text_config_changed = True
-        else:
-            text_validation_errors.append(error_msg)
-
-    # 验证Base URL
-    if st_text_base_url:
-        is_valid, error_msg = validate_base_url(st_text_base_url, f"文案生成({text_provider})")
-        if is_valid:
-            config.app[f"text_{text_provider}_base_url"] = st_text_base_url
-            text_config_changed = True
-        else:
-            text_validation_errors.append(error_msg)
-
     # 验证模型名称
     if st_text_model_name:
-        is_valid, error_msg = validate_model_name(st_text_model_name, f"文案生成({text_provider})")
+        is_valid, error_msg = validate_litellm_model_name(st_text_model_name, "文案生成")
         if is_valid:
-            config.app[f"text_{text_provider}_model_name"] = st_text_model_name
+            config.app["text_litellm_model_name"] = st_text_model_name
+            st.session_state["text_litellm_model_name"] = st_text_model_name
+            text_config_changed = True
+        else:
+            text_validation_errors.append(error_msg)
+
+    # 验证 API 密钥
+    if st_text_api_key:
+        is_valid, error_msg = validate_api_key(st_text_api_key, "文案生成")
+        if is_valid:
+            config.app["text_litellm_api_key"] = st_text_api_key
+            st.session_state["text_litellm_api_key"] = st_text_api_key
+            text_config_changed = True
+        else:
+            text_validation_errors.append(error_msg)
+
+    # 验证 Base URL（可选）
+    if st_text_base_url:
+        is_valid, error_msg = validate_base_url(st_text_base_url, "文案生成")
+        if is_valid:
+            config.app["text_litellm_base_url"] = st_text_base_url
+            st.session_state["text_litellm_base_url"] = st_text_base_url
             text_config_changed = True
         else:
             text_validation_errors.append(error_msg)
@@ -613,12 +808,12 @@ def render_text_llm_settings(tr):
     # 显示验证错误
     show_config_validation_errors(text_validation_errors)
 
-    # 如果配置有变化且没有验证错误，保存到文件
+    # 保存配置
     if text_config_changed and not text_validation_errors:
         try:
             config.save_config()
             if st_text_api_key or st_text_base_url or st_text_model_name:
-                st.success(f"文案生成模型({text_provider})配置已保存")
+                st.success(f"文案生成模型配置已保存（LiteLLM）")
         except Exception as e:
             st.error(f"保存配置失败: {str(e)}")
             logger.error(f"保存文案生成配置失败: {str(e)}")
