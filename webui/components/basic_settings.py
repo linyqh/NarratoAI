@@ -318,7 +318,7 @@ def test_litellm_vision_model(api_key: str, base_url: str, model_name: str, tr) 
         
         try:
             # 创建测试图片（1x1 白色像素）
-            test_image = Image.new('RGB', (1, 1), color='white')
+            test_image = Image.new('RGB', (30, 30), color='white')
             img_buffer = io.BytesIO()
             test_image.save(img_buffer, format='JPEG')
             img_bytes = img_buffer.getvalue()
