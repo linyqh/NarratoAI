@@ -192,7 +192,8 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         video_paths=video_clips,
         video_ost_list=video_ost,
         video_aspect=params.video_aspect,
-        threads=params.n_threads
+        threads=params.n_threads,
+        enable_crop=params.video_crop
     )
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=80)
 
@@ -408,7 +409,8 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
         video_paths=video_clips,
         video_ost_list=video_ost,
         video_aspect=params.video_aspect,
-        threads=params.n_threads
+        threads=params.n_threads,
+        enable_crop=params.video_crop
     )
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=80)
 

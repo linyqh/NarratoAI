@@ -20,6 +20,8 @@
     "Generating Video Keywords": "AI is generating the video keywords...",
     "Video Keywords": "Video Keywords (:blue[Long videos work better in conjunction with plot descriptions.])",
     "Video Settings": "**Video Settings**",
+    "Video Crop": "Video Crop",
+    "Enable center cropping to fill screen based on min dimension": "Enable center cropping to fill screen based on min dimension",
     "Video Concat Mode": "Video Concatenation Mode",
     "Random": "Random Concatenation (Recommended)",
     "Sequential": "Sequential Concatenation",

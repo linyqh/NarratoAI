@@ -49,8 +49,12 @@ class VideoAspect(str, Enum):
     def to_resolution(self):
         if self == VideoAspect.landscape.value:
             return 1920, 1080
+        elif self == VideoAspect.landscape_2.value:
+            return 1440, 1080
         elif self == VideoAspect.portrait.value:
             return 1080, 1920
+        elif self == VideoAspect.portrait_2.value:
+            return 1080, 1440
         elif self == VideoAspect.square.value:
             return 1080, 1080
         return 1080, 1920
@@ -166,6 +170,7 @@ class VideoClipParams(BaseModel):
     video_origin_path: Optional[str] = Field(default="", description="原视频路径")
     video_aspect: Optional[VideoAspect] = Field(default=VideoAspect.portrait.value, description="视频比例")
     video_language: Optional[str] = Field(default="zh-CN", description="视频语言")
+    video_crop: bool = Field(default=False, description="是否裁剪视频以填充屏幕")
 
     # video_clip_duration: Optional[int] = 5      # 视频片段时长
     # video_count: Optional[int] = 1      # 视频片段数量

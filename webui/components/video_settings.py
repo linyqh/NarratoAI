@@ -15,7 +15,10 @@ def render_video_config(tr, params):
     # 视频比例
     video_aspect_ratios = [
         (tr("Portrait"), VideoAspect.portrait.value),
+        (tr("Portrait_2"), VideoAspect.portrait_2.value),
         (tr("Landscape"), VideoAspect.landscape.value),
+        (tr("Landscape_2"), VideoAspect.landscape_2.value),
+        (tr("Square"), VideoAspect.square.value),
     ]
     selected_index = st.selectbox(
         tr("Video Ratio"),
@@ -52,11 +55,20 @@ def render_video_config(tr, params):
     )
     st.session_state['original_volume'] = params.original_volume
 
+    # 视频裁剪选项
+    params.video_crop = st.checkbox(
+        tr("Video Crop"),
+        value=False,
+        help=tr("Enable center cropping to fill screen based on min dimension")
+    )
+    st.session_state['video_crop'] = params.video_crop
+
 
 def get_video_params():
     """获取视频参数"""
     return {
         'video_aspect': st.session_state.get('video_aspect', VideoAspect.portrait.value),
         'video_quality': st.session_state.get('video_quality', '1080p'),
-        'original_volume': st.session_state.get('original_volume', AudioVolumeDefaults.ORIGINAL_VOLUME)
+        'original_volume': st.session_state.get('original_volume', AudioVolumeDefaults.ORIGINAL_VOLUME),
+        'video_crop': st.session_state.get('video_crop', False)
     }

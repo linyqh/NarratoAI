@@ -11,35 +11,11 @@
 import os
 import shutil
 import subprocess
-from enum import Enum
 from typing import List, Optional, Tuple
 from loguru import logger
 
+from app.models.schema import VideoAspect
 from app.utils import ffmpeg_utils
-
-
-class VideoAspect(Enum):
-    """视频宽高比枚举"""
-    landscape = "16:9"  # 横屏 16:9
-    landscape_2 = "4:3"
-    portrait = "9:16"   # 竖屏 9:16
-    portrait_2 = "3:4"
-    square = "1:1"      # 方形 1:1
-
-    def to_resolution(self) -> Tuple[int, int]:
-        """根据宽高比返回标准分辨率"""
-        if self == VideoAspect.portrait:
-            return 1080, 1920  # 竖屏 9:16
-        elif self == VideoAspect.portrait_2:
-            return 720, 1280   # 竖屏 4:3
-        elif self == VideoAspect.landscape:
-            return 1920, 1080  # 横屏 16:9
-        elif self == VideoAspect.landscape_2:
-            return 1280, 720   # 横屏 4:3
-        elif self == VideoAspect.square:
-            return 1080, 1080  # 方形 1:1
-        else:
-            return 1080, 1920  # 默认竖屏
 
 
 def check_ffmpeg_installation() -> bool:
@@ -133,11 +109,12 @@ def process_single_video(
         target_width: int,
         target_height: int,
         keep_audio: bool = True,
-        hwaccel: Optional[str] = None
+        hwaccel: Optional[str] = None,
+        enable_crop: bool = False
 ) -> str:
     """
     处理单个视频：调整分辨率、帧率等
-    
+
     重要修复：避免在视频滤镜处理时使用CUDA硬件解码，
     因为这会导致滤镜链格式转换错误。使用纯NVENC编码器获得最佳兼容性。
 
@@ -148,6 +125,7 @@ def process_single_video(
         target_height: 目标高度
         keep_audio: 是否保留音频
         hwaccel: 硬件加速选项
+        enable_crop: 是否启用居中裁剪（基于最小边长将画面铺满屏幕）
 
     Returns:
         str: 处理后的视频路径
@@ -200,13 +178,22 @@ def process_single_video(
             logger.warning(f"视频 {input_path} 没有音频流，将会忽略音频设置")
             command.extend(['-an'])  # 没有音频流时移除音频设置
 
-    # 视频处理参数：缩放并添加填充以保持比例
-    scale_filter = f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease"
-    pad_filter = f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2"
-    command.extend([
-        '-vf', f"{scale_filter},{pad_filter}",
-        '-r', '30',  # 设置帧率为30fps
-    ])
+    # 视频处理参数：裁剪或缩放并添加填充以保持比例
+    if enable_crop:
+        # 启用裁剪：基于长或宽的最小值进行裁剪，将画面铺满屏幕
+        crop_filter = f"scale={target_width}:{target_height}:force_original_aspect_ratio=increase,crop={target_width}:{target_height}"
+        command.extend([
+            '-vf', crop_filter,
+            '-r', '30',  # 设置帧率为30fps
+        ])
+    else:
+        # 不启用裁剪：缩放并添加填充以保持比例（原有逻辑）
+        scale_filter = f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease"
+        pad_filter = f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2"
+        command.extend([
+            '-vf', f"{scale_filter},{pad_filter}",
+            '-r', '30',  # 设置帧率为30fps
+        ])
 
     # 关键修复：选择编码器时优先使用纯NVENC（无硬件解码）
     if hwaccel:
@@ -332,6 +319,7 @@ def combine_clip_videos(
         video_aspect: VideoAspect = VideoAspect.portrait,
         threads: int = 4,
         force_software_encoding: bool = False,  # 新参数，强制使用软件编码
+        enable_crop: bool = False,  # 裁剪参数
 ) -> str:
     """
     合并子视频
@@ -342,6 +330,7 @@ def combine_clip_videos(
         video_aspect: 屏幕比例
         threads: 线程数
         force_software_encoding: 是否强制使用软件编码（忽略硬件加速检测）
+        enable_crop: 是否启用居中裁剪（基于最小边长将画面铺满屏幕）
 
     Returns:
         str: 合并后的视频路径
@@ -355,7 +344,20 @@ def combine_clip_videos(
     os.makedirs(output_dir, exist_ok=True)
 
     # 获取目标分辨率
-    aspect = VideoAspect(video_aspect)
+    # 处理从字符串创建 VideoAspect 实例的情况
+    if isinstance(video_aspect, str):
+        # 将字符串值转换为对应的 VideoAspect 枚举
+        aspect_mapping = {
+            "16:9": VideoAspect.landscape,
+            "4:3": VideoAspect.landscape_2,
+            "9:16": VideoAspect.portrait,
+            "3:4": VideoAspect.portrait_2,
+            "1:1": VideoAspect.square
+        }
+        aspect = aspect_mapping.get(video_aspect, VideoAspect.portrait)
+    else:
+        aspect = video_aspect
+    
     video_width, video_height = aspect.to_resolution()
 
     # 检测可用的硬件加速选项
@@ -424,7 +426,8 @@ def combine_clip_videos(
                     target_width=video_width,
                     target_height=video_height,
                     keep_audio=segment['keep_audio'],
-                    hwaccel=hwaccel
+                    hwaccel=hwaccel,
+                    enable_crop=enable_crop
                 )
                 processed_videos.append({
                     "index": segment["index"],
@@ -444,7 +447,8 @@ def combine_clip_videos(
                             target_width=video_width,
                             target_height=video_height,
                             keep_audio=segment['keep_audio'],
-                            hwaccel=None  # 使用软件编码
+                            hwaccel=None,  # 使用软件编码
+                            enable_crop=enable_crop
                         )
                         processed_videos.append({
                             "index": segment["index"],

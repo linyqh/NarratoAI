@@ -1,0 +1,27 @@
+[project]
+name = "narratoai"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "azure-cognitiveservices-speech>=1.37.0",
+    "dashscope>=1.24.6",
+    "edge-tts==6.1.19",
+    "ffmpeg-python>=0.2.0",
+    "google-generativeai>=0.8.5",
+    "litellm>=1.70.0",
+    "loguru>=0.7.3",
+    "moviepy==2.1.1",
+    "openai>=1.77.0",
+    "pillow>=10.3.0",
+    "pydub==0.25.1",
+    "pysrt==1.1.2",
+    "requests>=2.32.0",
+    "streamlit>=1.45.0",
+    "tenacity>=9.0.0",
+    "tencentcloud-sdk-python>=3.0.1200",
+    "tomli>=2.2.1",
+    "tomli-w>=1.0.0",
+    "tqdm>=4.66.6",
+    "watchdog==6.0.0",
+]
