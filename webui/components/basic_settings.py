@@ -96,14 +96,14 @@ def render_basic_settings(tr):
         left_config_panel = config_panels[0]
         middle_config_panel = config_panels[1]
         right_config_panel = config_panels[2]
-
+# 代理设置
         with left_config_panel:
             render_language_settings(tr)
             render_proxy_settings(tr)
-
+# 视频分析模型设置
         with middle_config_panel:
             render_vision_llm_settings(tr)  # 视频分析模型设置
-
+# 文案生成模型设置
         with right_config_panel:
             render_text_llm_settings(tr)  # 文案生成模型设置
 
@@ -298,7 +298,7 @@ def test_litellm_vision_model(api_key: str, base_url: str, model_name: str, tr) 
         import io
         from PIL import Image
         
-        logger.debug(f"LiteLLM 视觉模型连通性测试: model={model_name}, api_key={api_key[:10]}..., base_url={base_url}")
+        logger.info(f"LiteLLM 视觉模型连通性测试: model={model_name}, api_key={api_key[:10]}..., base_url={base_url}")
         
         # 提取 provider 名称
         provider = model_name.split("/")[0] if "/" in model_name else "unknown"
@@ -348,7 +348,7 @@ def test_litellm_vision_model(api_key: str, base_url: str, model_name: str, tr) 
             
             if base_url:
                 completion_kwargs["api_base"] = base_url
-            
+            logger.info(completion_kwargs)
             # 调用 LiteLLM（同步调用用于测试）
             response = litellm.completion(**completion_kwargs)
             

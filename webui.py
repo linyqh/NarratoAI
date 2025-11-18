@@ -1,3 +1,27 @@
+#
+# 7. main() 程序入口函数
+#
+# 功能组合如下：
+#
+# ✔ 初始化日志
+#
+# ✔ 初始化 session
+# ✔ 注册 LLM 提供商（OpenAI/DeepSeek 或本地模型）
+# ✔ 检查 FFmpeg 是否支持硬件加速
+# ✔ 加载基础资源文件
+# ✔ 渲染 UI：
+#
+# 基础设置
+#
+# 文本脚本设置
+#
+# 音频设置
+#
+# 视频设置
+#
+# 字幕设置
+#
+# 系统设置
 import streamlit as st
 import os
 import sys
@@ -223,7 +247,7 @@ def main():
     # 检测FFmpeg硬件加速，但只打印一次日志（使用 session_state 持久化）
     if 'hwaccel_logged' not in st.session_state:
         st.session_state['hwaccel_logged'] = False
-    
+
     hwaccel_info = ffmpeg_utils.detect_hardware_acceleration()
     if not st.session_state['hwaccel_logged']:
         if hwaccel_info["available"]:

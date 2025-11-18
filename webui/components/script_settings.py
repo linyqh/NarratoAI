@@ -231,7 +231,7 @@ def render_video_details(tr):
         )
     st.session_state['video_theme'] = video_theme
     st.session_state['custom_prompt'] = custom_prompt
-    return video_theme, custom_prompt
+    # return video_theme, custom_prompt
 
 
 def short_drama_summary(tr):

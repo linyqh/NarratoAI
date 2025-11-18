@@ -63,7 +63,7 @@ def generate_script_docu(params):
                     # 确保目录存在
                     os.makedirs(video_keyframes_dir, exist_ok=True)
 
-                    # 初始化视频处理器
+                    # 初始化视频处理器----
                     processor = video_processor.VideoProcessor(params.video_origin_path)
 
                     # 显示视频信息
@@ -178,28 +178,26 @@ def generate_script_docu(params):
 
                 # 执行异步分析
                 vision_batch_size = st.session_state.get('vision_batch_size') or config.frames.get("vision_batch_size")
-                vision_analysis_prompt = """
-我提供了 %s 张视频帧，它们按时间顺序排列，代表一个连续的视频片段。请仔细分析每一帧的内容，并关注帧与帧之间的变化，以理解整个片段的活动。
+                vision_analysis_prompt =  f"""
+                    你将收到 {len(keyframe_files)}张按时间顺序排列的视频帧。
 
-首先，请详细描述每一帧的关键视觉信息（包含：主要内容、人物、动作和场景）。
-然后，基于所有帧的分析，请用**简洁的语言**总结整个视频片段中发生的主要活动或事件流程。
+                    任务：
+                    1. 为每帧生成客观、简洁的视觉描述（人物/动作/场景）。
+                    2. 基于所有帧，生成一段简短的整体事件总结，这个批次的帧的主题是{st.session_state.get("video_theme")}。
+                    3. 输出 **合法 JSON**，且仅输出 JSON，无解释、无 Markdown、无注释。
+                    JSON 结构必须为：
+                    {{
+                    "frame_observations": [
+                        {{ "frame_number": 1, "observation": "..." }}
+                    ],
+                    "overall_activity_summary": "..."
+                    }}
 
-请务必使用 JSON 格式输出你的结果。JSON 结构应如下：
-{
-  "frame_observations": [
-    {
-      "frame_number": 1, // 或其他标识帧的方式
-      "observation": "描述每张视频帧中的主要内容、人物、动作和场景。"
-    },
-    // ... 更多帧的观察 ...
-  ],
-  "overall_activity_summary": "在这里填写你总结的整个片段的主要活动，保持简洁。"
-}
-
-请务必不要遗漏视频帧，我提供了 %s 张视频帧，frame_observations 必须包含 %s 个元素
-
-请只返回 JSON 字符串，不要包含任何其他解释性文字。
-                """
+                    要求：
+                    - frame_observations 必须严格包含 {len(keyframe_files)}个元素。
+                    - 不遗漏任何帧。
+                    - 内容客观、无臆测。
+"""
                 results = loop.run_until_complete(
                     analyzer.analyze_images(
                         images=keyframe_files,
