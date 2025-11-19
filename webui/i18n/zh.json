@@ -152,7 +152,7 @@
     "API rate limit exceeded. Please wait about an hour and try again.": "API 调用次数已达到限制，请等待约一小时后再试。",
     "Resources exhausted. Please try again later.": "资源已耗尽，请稍后再试。",
     "Transcription Failed": "转录失败",
-    "Short Generate": "短剧混剪 (实验)",
+    "Short Generate": "短剧混剪",
     "Generate Short Video Script": "AI生成短剧混剪脚本",
     "Adjust the volume of the original audio": "调整原始音频的音量",
     "Original Volume": "视频音量",
