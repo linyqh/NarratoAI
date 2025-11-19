@@ -161,6 +161,8 @@
     "Frame Interval (seconds) (More keyframes consume more tokens)": "帧间隔 (秒) (更多关键帧消耗更多令牌)",
     "Batch Size": "批处理大小",
     "Batch Size (More keyframes consume more tokens)": "批处理大小, 每批处理越少消耗 token 越多",
-    "Short Drama Summary": "短剧解说"
+    "Short Drama Summary": "短剧解说",
+    "Video Type": "视频类型",
+    "Select/Upload Script": "选择/上传脚本"
   }
 }

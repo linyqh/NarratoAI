@@ -251,7 +251,9 @@ class SubtitleAnalyzerAdapter:
                 UnifiedLLMService.analyze_subtitle,
                 subtitle_content=subtitle_content,
                 provider=self.provider,
-                temperature=1.0
+                temperature=1.0,
+                api_key=self.api_key,
+                api_base=self.base_url
             )
             
             return {
@@ -301,7 +303,9 @@ class SubtitleAnalyzerAdapter:
                 system_prompt="你是一位专业的短视频解说脚本撰写专家。",
                 provider=self.provider,
                 temperature=temperature,
-                response_format="json"
+                response_format="json",
+                api_key=self.api_key,
+                api_base=self.base_url
             )
             
             # 清理JSON输出

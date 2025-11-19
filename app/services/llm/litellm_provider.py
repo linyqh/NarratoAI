@@ -217,6 +217,12 @@ class LiteLLMVisionProvider(VisionModelProvider):
             if hasattr(self, '_api_base'):
                 completion_kwargs["api_base"] = self._api_base
 
+            # 支持动态传递 api_key 和 api_base
+            if "api_key" in kwargs:
+                completion_kwargs["api_key"] = kwargs["api_key"]
+            if "api_base" in kwargs:
+                completion_kwargs["api_base"] = kwargs["api_base"]
+
             response = await acompletion(**completion_kwargs)
 
             if response.choices and len(response.choices) > 0:
@@ -406,6 +412,12 @@ class LiteLLMTextProvider(TextModelProvider):
         # 如果有自定义 base_url，添加 api_base 参数
         if hasattr(self, '_api_base'):
             completion_kwargs["api_base"] = self._api_base
+
+        # 支持动态传递 api_key 和 api_base (修复认证问题)
+        if "api_key" in kwargs:
+            completion_kwargs["api_key"] = kwargs["api_key"]
+        if "api_base" in kwargs:
+            completion_kwargs["api_base"] = kwargs["api_base"]
 
         try:
             # 调用 LiteLLM（自动重试）

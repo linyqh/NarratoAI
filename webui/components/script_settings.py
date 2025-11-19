@@ -49,90 +49,160 @@ def render_script_panel(tr):
 
 def render_script_file(tr, params):
     """渲染脚本文件选择"""
-    script_list = [
-        (tr("None"), ""),
-        (tr("Auto Generate"), "auto"),
-        (tr("Short Generate"), "short"),
-        (tr("Short Drama Summary"), "summary"),
-        (tr("Upload Script"), "upload_script")
-    ]
+    # 定义功能模式
+    MODE_FILE = "file_selection"
+    MODE_AUTO = "auto"
+    MODE_SHORT = "short"
+    MODE_SUMMARY = "summary"
 
-    # 获取已有脚本文件
-    suffix = "*.json"
-    script_dir = utils.script_dir()
-    files = glob.glob(os.path.join(script_dir, suffix))
-    file_list = []
+    # 模式选项映射
+    mode_options = {
+        tr("Select/Upload Script"): MODE_FILE,
+        tr("Auto Generate"): MODE_AUTO,
+        tr("Short Generate"): MODE_SHORT,
+        tr("Short Drama Summary"): MODE_SUMMARY,
+    }
+    
+    # 获取当前状态
+    current_path = st.session_state.get('video_clip_json_path', '')
+    
+    # 确定当前选中的模式索引
+    default_index = 0
+    mode_keys = list(mode_options.keys())
+    
+    if current_path == "auto":
+        default_index = mode_keys.index(tr("Auto Generate"))
+    elif current_path == "short":
+        default_index = mode_keys.index(tr("Short Generate"))
+    elif current_path == "summary":
+        default_index = mode_keys.index(tr("Short Drama Summary"))
+    else:
+        default_index = mode_keys.index(tr("Select/Upload Script"))
 
-    for file in files:
-        file_list.append({
-            "name": os.path.basename(file),
-            "file": file,
-            "ctime": os.path.getctime(file)
-        })
+    # 1. 渲染功能选择下拉框
+    # 使用 segmented_control 替代 selectbox，提供更好的视觉体验
+    default_mode_label = mode_keys[default_index]
+    
+    # 定义回调函数来处理状态更新
+    def update_script_mode():
+        # 获取当前选中的标签
+        selected_label = st.session_state.script_mode_selection
+        if selected_label:
+            # 更新实际的 path 状态
+            new_mode = mode_options[selected_label]
+            st.session_state.video_clip_json_path = new_mode
+            params.video_clip_json_path = new_mode
+        else:
+            # 如果用户取消选择（segmented_control 允许取消），恢复到默认或上一个状态
+            # 这里我们强制保持当前状态，或者重置为默认
+            st.session_state.script_mode_selection = default_mode_label
 
-    file_list.sort(key=lambda x: x["ctime"], reverse=True)
-    for file in file_list:
-        display_name = file['file'].replace(config.root_dir, "")
-        script_list.append((display_name, file['file']))
-
-    # 找到保存的脚本文件在列表中的索引
-    saved_script_path = st.session_state.get('video_clip_json_path', '')
-    selected_index = 0
-    for i, (_, path) in enumerate(script_list):
-        if path == saved_script_path:
-            selected_index = i
-            break
-
-    selected_script_index = st.selectbox(
-        tr("Script Files"),
-        index=selected_index,
-        options=range(len(script_list)),
-        format_func=lambda x: script_list[x][0]
+    # 渲染组件
+    selected_mode_label = st.segmented_control(
+        tr("Video Type"),
+        options=mode_keys,
+        default=default_mode_label,
+        key="script_mode_selection",
+        on_change=update_script_mode
     )
+    
+    # 处理未选择的情况（虽然有default，但在某些交互下可能为空）
+    if not selected_mode_label:
+        selected_mode_label = default_mode_label
+        
+    selected_mode = mode_options[selected_mode_label]
 
-    script_path = script_list[selected_script_index][1]
-    st.session_state['video_clip_json_path'] = script_path
-    params.video_clip_json_path = script_path
+    # 2. 根据选择的模式处理逻辑
+    if selected_mode == MODE_FILE:
+        # --- 文件选择模式 ---
+        script_list = [
+            (tr("None"), ""),
+            (tr("Upload Script"), "upload_script")
+        ]
 
-    # 处理脚本上传
-    if script_path == "upload_script":
-        uploaded_file = st.file_uploader(
-            tr("Upload Script File"),
-            type=["json"],
-            accept_multiple_files=False,
+        # 获取已有脚本文件
+        suffix = "*.json"
+        script_dir = utils.script_dir()
+        files = glob.glob(os.path.join(script_dir, suffix))
+        file_list = []
+
+        for file in files:
+            file_list.append({
+                "name": os.path.basename(file),
+                "file": file,
+                "ctime": os.path.getctime(file)
+            })
+
+        file_list.sort(key=lambda x: x["ctime"], reverse=True)
+        for file in file_list:
+            display_name = file['file'].replace(config.root_dir, "")
+            script_list.append((display_name, file['file']))
+
+        # 找到保存的脚本文件在列表中的索引
+        # 如果当前path是特殊值(auto/short/summary)，则重置为空
+        saved_script_path = current_path if current_path not in [MODE_AUTO, MODE_SHORT, MODE_SUMMARY] else ""
+        
+        selected_index = 0
+        for i, (_, path) in enumerate(script_list):
+            if path == saved_script_path:
+                selected_index = i
+                break
+
+        selected_script_index = st.selectbox(
+            tr("Script Files"),
+            index=selected_index,
+            options=range(len(script_list)),
+            format_func=lambda x: script_list[x][0],
+            key="script_file_selection"
         )
 
-        if uploaded_file is not None:
-            try:
-                # 读取上传的JSON内容并验证格式
-                script_content = uploaded_file.read().decode('utf-8')
-                json_data = json.loads(script_content)
+        script_path = script_list[selected_script_index][1]
+        st.session_state['video_clip_json_path'] = script_path
+        params.video_clip_json_path = script_path
 
-                # 保存到脚本目录
-                script_file_path = os.path.join(script_dir, uploaded_file.name)
-                file_name, file_extension = os.path.splitext(uploaded_file.name)
+        # 处理脚本上传
+        if script_path == "upload_script":
+            uploaded_file = st.file_uploader(
+                tr("Upload Script File"),
+                type=["json"],
+                accept_multiple_files=False,
+            )
 
-                # 如果文件已存在,添加时间戳
-                if os.path.exists(script_file_path):
-                    timestamp = time.strftime("%Y%m%d%H%M%S")
-                    file_name_with_timestamp = f"{file_name}_{timestamp}"
-                    script_file_path = os.path.join(script_dir, file_name_with_timestamp + file_extension)
+            if uploaded_file is not None:
+                try:
+                    # 读取上传的JSON内容并验证格式
+                    script_content = uploaded_file.read().decode('utf-8')
+                    json_data = json.loads(script_content)
 
-                # 写入文件
-                with open(script_file_path, "w", encoding='utf-8') as f:
-                    json.dump(json_data, f, ensure_ascii=False, indent=2)
+                    # 保存到脚本目录
+                    script_file_path = os.path.join(script_dir, uploaded_file.name)
+                    file_name, file_extension = os.path.splitext(uploaded_file.name)
 
-                # 更新状态
-                st.success(tr("Script Uploaded Successfully"))
-                st.session_state['video_clip_json_path'] = script_file_path
-                params.video_clip_json_path = script_file_path
-                time.sleep(1)
-                st.rerun()
+                    # 如果文件已存在,添加时间戳
+                    if os.path.exists(script_file_path):
+                        timestamp = time.strftime("%Y%m%d%H%M%S")
+                        file_name_with_timestamp = f"{file_name}_{timestamp}"
+                        script_file_path = os.path.join(script_dir, file_name_with_timestamp + file_extension)
 
-            except json.JSONDecodeError:
-                st.error(tr("Invalid JSON format"))
-            except Exception as e:
-                st.error(f"{tr('Upload failed')}: {str(e)}")
+                    # 写入文件
+                    with open(script_file_path, "w", encoding='utf-8') as f:
+                        json.dump(json_data, f, ensure_ascii=False, indent=2)
+
+                    # 更新状态
+                    st.success(tr("Script Uploaded Successfully"))
+                    st.session_state['video_clip_json_path'] = script_file_path
+                    params.video_clip_json_path = script_file_path
+                    time.sleep(1)
+                    st.rerun()
+
+                except json.JSONDecodeError:
+                    st.error(tr("Invalid JSON format"))
+                except Exception as e:
+                    st.error(f"{tr('Upload failed')}: {str(e)}")
+    else:
+        # --- 功能生成模式 ---
+        st.session_state['video_clip_json_path'] = selected_mode
+        params.video_clip_json_path = selected_mode
 
 
 def render_video_file(tr, params):
