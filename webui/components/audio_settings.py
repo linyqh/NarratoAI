@@ -1,4 +1,3 @@
-from tkinter import N
 from venv import logger
 import streamlit as st
 import os
