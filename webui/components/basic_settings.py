@@ -5,6 +5,7 @@ import os
 from app.config import config
 from app.utils import utils
 from loguru import logger
+from app.services.llm.unified_service import UnifiedLLMService
 
 
 def validate_api_key(api_key: str, provider: str) -> tuple[bool, str]:
@@ -663,6 +664,8 @@ def render_vision_llm_settings(tr):
     if config_changed and not validation_errors:
         try:
             config.save_config()
+            # 清除缓存，确保下次使用新配置
+            UnifiedLLMService.clear_cache()
             if st_vision_api_key or st_vision_base_url or st_vision_model_name:
                 st.success(f"视频分析模型配置已保存（LiteLLM）")
         except Exception as e:
@@ -932,6 +935,8 @@ def render_text_llm_settings(tr):
     if text_config_changed and not text_validation_errors:
         try:
             config.save_config()
+            # 清除缓存，确保下次使用新配置
+            UnifiedLLMService.clear_cache()
             if st_text_api_key or st_text_base_url or st_text_model_name:
                 st.success(f"文案生成模型配置已保存（LiteLLM）")
         except Exception as e:
