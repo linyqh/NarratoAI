@@ -585,12 +585,7 @@ def render_vision_llm_settings(tr):
     st_vision_base_url = st.text_input(
         tr("Vision Base URL"),
         value=vision_base_url,
-        help="自定义 API 端点（可选）\n\n"
-             "留空使用默认端点。可用于:\n"
-             "• 代理地址（如通过 CloudFlare）\n"
-             "• 私有部署的模型服务\n"
-             "• 自定义网关\n\n"
-             "示例: https://your-proxy.com/v1"
+        help="自定义 API 端点（可选）找不到供应商才需要填自定义 url"
     )
 
     # 添加测试连接按钮
@@ -857,12 +852,7 @@ def render_text_llm_settings(tr):
     st_text_base_url = st.text_input(
         tr("Text Base URL"),
         value=text_base_url,
-        help="自定义 API 端点（可选）\n\n"
-             "留空使用默认端点。可用于:\n"
-             "• 代理地址（如通过 CloudFlare）\n"
-             "• 私有部署的模型服务\n"
-             "• 自定义网关\n\n"
-             "示例: https://your-proxy.com/v1"
+        help="自定义 API 端点（可选）找不到供应商才需要填自定义 url"
     )
 
     # 添加测试连接按钮
