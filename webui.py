@@ -26,7 +26,7 @@ st.set_page_config(
 
 # 设置页面样式
 hide_streamlit_style = """
-<style>#root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 6px; padding-bottom: 10px; padding-left: 20px; padding-right: 20px;}</style>
+<style>#root > div:nth-child(1) > div > div > div > div > section > div {padding-top: 2rem; padding-bottom: 10px; padding-left: 20px; padding-right: 20px;}</style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
