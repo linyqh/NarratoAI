@@ -1107,6 +1107,10 @@ def tts(
     if tts_engine == "edge_tts":
         logger.info("分发到 Edge TTS")
         return azure_tts_v1(text, voice_name, voice_rate, voice_pitch, voice_file)
+    
+    if tts_engine == "indextts2":
+        logger.info("分发到 IndexTTS2")
+        return indextts2_tts(text, voice_name, voice_file, speed=voice_rate)
 
     # Fallback for unknown engine - default to azure v1
     logger.warning(f"未知的 TTS 引擎: '{tts_engine}', 将默认使用 Edge TTS (Azure V1)。")
@@ -1541,8 +1545,8 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                              f"或者使用其他 tts 引擎")
                 continue
             else:
-                # SoulVoice 引擎不生成字幕文件
-                if is_soulvoice_voice(voice_name) or is_qwen_engine(tts_engine):
+                # SoulVoice、Qwen3、IndexTTS2 引擎不生成字幕文件
+                if is_soulvoice_voice(voice_name) or is_qwen_engine(tts_engine) or tts_engine == "indextts2":
                     # 获取实际音频文件的时长
                     duration = get_audio_duration_from_file(audio_file)
                     if duration <= 0:
@@ -1941,6 +1945,129 @@ def parse_soulvoice_voice(voice_name: str) -> str:
     if voice_name.startswith("soulvoice:"):
         return voice_name[10:]  # 移除 "soulvoice:" 前缀
     return voice_name
+
+
+def parse_indextts2_voice(voice_name: str) -> str:
+    """
+    解析 IndexTTS2 语音名称
+    支持格式：indextts2:reference_audio_path
+    返回参考音频文件路径
+    """
+    if voice_name.startswith("indextts2:"):
+        return voice_name[10:]  # 移除 "indextts2:" 前缀
+    return voice_name
+
+
+def indextts2_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.0) -> Union[SubMaker, None]:
+    """
+    使用 IndexTTS2 API 进行零样本语音克隆
+
+    Args:
+        text: 要转换的文本
+        voice_name: 参考音频路径（格式：indextts2:path/to/audio.wav）
+        voice_file: 输出音频文件路径
+        speed: 语音速度（此引擎暂不支持速度调节）
+
+    Returns:
+        SubMaker: 包含时间戳信息的字幕制作器，失败时返回 None
+    """
+    # 获取配置
+    api_url = config.indextts2.get("api_url", "http://192.168.3.6:8081/tts")
+    infer_mode = config.indextts2.get("infer_mode", "普通推理")
+    temperature = config.indextts2.get("temperature", 1.0)
+    top_p = config.indextts2.get("top_p", 0.8)
+    top_k = config.indextts2.get("top_k", 30)
+    do_sample = config.indextts2.get("do_sample", True)
+    num_beams = config.indextts2.get("num_beams", 3)
+    repetition_penalty = config.indextts2.get("repetition_penalty", 10.0)
+
+    # 解析参考音频路径
+    reference_audio_path = parse_indextts2_voice(voice_name)
+    
+    if not reference_audio_path or not os.path.exists(reference_audio_path):
+        logger.error(f"IndexTTS2 参考音频文件不存在: {reference_audio_path}")
+        return None
+
+    # 准备请求数据
+    files = {
+        'prompt_audio': open(reference_audio_path, 'rb')
+    }
+    
+    data = {
+        'text': text.strip(),
+        'infer_mode': infer_mode,
+        'temperature': temperature,
+        'top_p': top_p,
+        'top_k': top_k,
+        'do_sample': do_sample,
+        'num_beams': num_beams,
+        'repetition_penalty': repetition_penalty,
+    }
+
+    # 重试机制
+    for attempt in range(3):
+        try:
+            logger.info(f"第 {attempt + 1} 次调用 IndexTTS2 API")
+
+            # 设置代理
+            proxies = {}
+            if config.proxy.get("http"):
+                proxies = {
+                    'http': config.proxy.get("http"),
+                    'https': config.proxy.get("https", config.proxy.get("http"))
+                }
+
+            # 调用 API
+            response = requests.post(
+                api_url,
+                files=files,
+                data=data,
+                proxies=proxies,
+                timeout=120  # IndexTTS2 推理可能需要较长时间
+            )
+
+            if response.status_code == 200:
+                # 保存音频文件
+                with open(voice_file, 'wb') as f:
+                    f.write(response.content)
+
+                logger.info(f"IndexTTS2 成功生成音频: {voice_file}, 大小: {len(response.content)} 字节")
+
+                # IndexTTS2 不支持精确字幕生成，返回简单的 SubMaker 对象
+                sub_maker = SubMaker()
+                # 估算音频时长（基于文本长度）
+                estimated_duration_ms = max(1000, int(len(text) * 200))
+                sub_maker.create_sub((0, estimated_duration_ms * 10000), text)
+
+                return sub_maker
+
+            else:
+                logger.error(f"IndexTTS2 API 调用失败: {response.status_code} - {response.text}")
+
+        except requests.exceptions.Timeout:
+            logger.error(f"IndexTTS2 API 调用超时 (尝试 {attempt + 1}/3)")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"IndexTTS2 API 网络错误: {str(e)} (尝试 {attempt + 1}/3)")
+        except Exception as e:
+            logger.error(f"IndexTTS2 TTS 处理错误: {str(e)} (尝试 {attempt + 1}/3)")
+        finally:
+            # 确保关闭文件
+            try:
+                files['prompt_audio'].close()
+            except:
+                pass
+
+        if attempt < 2:  # 不是最后一次尝试
+            time.sleep(2)  # 等待2秒后重试
+            # 重新打开文件用于下次重试
+            if attempt < 2:
+                try:
+                    files['prompt_audio'] = open(reference_audio_path, 'rb')
+                except:
+                    pass
+
+    logger.error("IndexTTS2 TTS 生成失败，已达到最大重试次数")
+    return None
 
 
 
