@@ -10,6 +10,7 @@ def render_subtitle_panel(tr):
     """渲染字幕设置面板"""
     with st.container(border=True):
         st.write(tr("Subtitle Settings"))
+        st.info("💡 提示：目前仅 **edge-tts** 引擎支持自动生成字幕，其他 TTS 引擎暂不支持。")
 
         # 检查是否选择了 SoulVoice qwen3_tts引擎
         from app.services import voice
