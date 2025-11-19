@@ -1,4 +1,3 @@
-from venv import logger
 import streamlit as st
 import os
 from uuid import uuid4
