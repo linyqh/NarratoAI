@@ -1,5 +1,5 @@
 [app]
-    project_version="0.7.4"
+    project_version="0.7.5"
 
     # LLM API 超时配置（秒）
     llm_vision_timeout = 120  # 视觉模型基础超时时间
