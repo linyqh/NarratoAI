@@ -135,3 +135,12 @@ def get_batch_timestamps(batch_files, prev_batch_files=None):
 
     # logger.debug(f"解析时间戳: {first_frame} -> {first_timestamp}, {last_frame} -> {last_timestamp}")
     return first_timestamp, last_timestamp, timestamp_range
+
+
+def get_batch_files(keyframe_files, result, batch_size=5):
+    """
+    获取当前批次的图片文件
+    """
+    batch_start = result['batch_index'] * batch_size
+    batch_end = min(batch_start + batch_size, len(keyframe_files))
+    return keyframe_files[batch_start:batch_end]
