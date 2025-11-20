@@ -4,7 +4,7 @@
 <h3 align="center">一站式 AI 影视解说+自动化剪辑工具🎬🎞️ </h3>
 
 
-<h3>📖 <a href="README-en.md">English</a> | 简体中文 | <a href="README-ja.md">日本語</a> </h3>
+<h3>📖 <a href="README-en.md">English</a> | 简体中文 </h3>
 <div align="center">
 
 [//]: # (  <a href="https://trendshift.io/repositories/8731" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8731" alt="harry0703%2FNarratoAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>)
@@ -31,6 +31,7 @@ NarratoAI 是一个自动化影视解说工具，基于LLM实现文案撰写、�
 本项目仅供学习和研究使用，不得商用。如需商业授权，请联系作者。
 
 ## 最新资讯
+- 2025.11.20 发布新版本 0.7.5， 新增 [IndexTTS2](https://github.com/index-tts/index-tts) 语音克隆支持
 - 2025.10.15 发布新版本 0.7.3， 使用 [LiteLLM](https://github.com/BerriAI/litellm) 管理模型供应商
 - 2025.09.10 发布新版本 0.7.2，  新增腾讯云tts
 - 2025.08.18 发布新版本 0.7.1，支持 **语音克隆** 和 最新大模型

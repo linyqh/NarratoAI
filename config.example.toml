@@ -115,6 +115,27 @@
     # 访问 https://bailian.console.aliyun.com/?tab=model#/api-key 获取你的 API 密钥
     api_key = ""
     model_name = "qwen3-tts-flash"
+    
+[indextts2]
+    # IndexTTS2 语音克隆配置
+    # 这是一个开源的零样本语音克隆项目，需要自行部署
+    # 项目地址：https://github.com/index-tts/index-tts
+    # 默认 API 地址（本地部署）
+    api_url = "http://127.0.0.1:8081/tts"
+    
+    # 默认参考音频路径（可选）
+    # reference_audio = "/path/to/reference_audio.wav"
+    
+    # 推理模式：普通推理 / 快速推理
+    infer_mode = "普通推理"
+    
+    # 高级参数
+    temperature = 1.0
+    top_p = 0.8
+    top_k = 30
+    do_sample = true
+    num_beams = 3
+    repetition_penalty = 10.0
 
 [ui]
     # TTS 引擎选择
