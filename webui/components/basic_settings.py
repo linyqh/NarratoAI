@@ -20,6 +20,33 @@ def validate_api_key(api_key: str, provider: str) -> tuple[bool, str]:
     return True, ""
 
 
+def get_api_key_strength_indicator(api_key: str) -> tuple[str, str]:
+    """获取API密钥强度指示器
+    
+    Args:
+        api_key: API密钥字符串
+        
+    Returns:
+        tuple[str, str]: (指示器图标, 状态描述)
+    """
+    if not api_key or not api_key.strip():
+        return "🔴", "未设置"
+    
+    api_key = api_key.strip()
+    if len(api_key) < 10:
+        return "🟡", "格式异常"
+    
+    # 检查常见API密钥格式模式
+    if api_key.startswith('sk-') and len(api_key) >= 20:
+        return "🟢", "OpenAI格式"
+    elif api_key.startswith('AIza') and len(api_key) >= 35:
+        return "🟢", "Gemini格式"
+    elif len(api_key) >= 32 and any(c.isupper() for c in api_key) and any(c.islower() for c in api_key) and any(c.isdigit() for c in api_key):
+        return "🟢", "格式正常"
+    else:
+        return "🟡", "待验证"
+
+
 def validate_base_url(base_url: str, provider: str) -> tuple[bool, str]:
     """验证Base URL格式"""
     if not base_url or not base_url.strip():
@@ -570,17 +597,32 @@ def render_vision_llm_settings(tr):
     # 组合完整的模型名称
     st_vision_model_name = f"{selected_provider}/{model_name_input}" if selected_provider and model_name_input else ""
 
-    st_vision_api_key = st.text_input(
-        tr("Vision API Key"),
-        value=vision_api_key,
-        type="password",
-        help="对应 provider 的 API 密钥\n\n"
-             "获取地址:\n"
-             "• Gemini: https://makersuite.google.com/app/apikey\n"
-             "• OpenAI: https://platform.openai.com/api-keys\n"
-             "• Qwen: https://bailian.console.aliyun.com/\n"
-             "• SiliconFlow: https://cloud.siliconflow.cn/account/ak"
-    )
+    # 获取API密钥强度指示器
+    vision_indicator, vision_status = get_api_key_strength_indicator(vision_api_key)
+    
+    # 使用列布局来并排显示输入框和指示器
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st_vision_api_key = st.text_input(
+            tr("Vision API Key"),
+            value=vision_api_key,
+            type="password",
+            help="对应 provider 的 API 密钥\n\n"
+                 "获取地址:\n"
+                 "• Gemini: https://makersuite.google.com/app/apikey\n"
+                 "• OpenAI: https://platform.openai.com/api-keys\n"
+                 "• Qwen: https://bailian.console.aliyun.com/\n"
+                 "• SiliconFlow: https://cloud.siliconflow.cn/account/ak"
+        )
+    with col2:
+        # 显示API密钥强度指示器
+        st.metric("API状态", vision_indicator, help=f"API密钥状态: {vision_status}")
+        
+    # 实时更新指示器（当API密钥改变时）
+    if st_vision_api_key != vision_api_key:
+        new_indicator, new_status = get_api_key_strength_indicator(st_vision_api_key)
+        if new_indicator != vision_indicator:
+            st.rerun()
 
     st_vision_base_url = st.text_input(
         tr("Vision Base URL"),
@@ -835,19 +877,34 @@ def render_text_llm_settings(tr):
     # 组合完整的模型名称
     st_text_model_name = f"{selected_provider}/{model_name_input}" if selected_provider and model_name_input else ""
 
-    st_text_api_key = st.text_input(
-        tr("Text API Key"),
-        value=text_api_key,
-        type="password",
-        help="对应 provider 的 API 密钥\n\n"
-             "获取地址:\n"
-             "• DeepSeek: https://platform.deepseek.com/api_keys\n"
-             "• Gemini: https://makersuite.google.com/app/apikey\n"
-             "• OpenAI: https://platform.openai.com/api-keys\n"
-             "• Qwen: https://bailian.console.aliyun.com/\n"
-             "• SiliconFlow: https://cloud.siliconflow.cn/account/ak\n"
-             "• Moonshot: https://platform.moonshot.cn/console/api-keys"
-    )
+    # 获取API密钥强度指示器
+    text_indicator, text_status = get_api_key_strength_indicator(text_api_key)
+    
+    # 使用列布局来并排显示输入框和指示器
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st_text_api_key = st.text_input(
+            tr("Text API Key"),
+            value=text_api_key,
+            type="password",
+            help="对应 provider 的 API 密钥\n\n"
+                 "获取地址:\n"
+                 "• DeepSeek: https://platform.deepseek.com/api_keys\n"
+                 "• Gemini: https://makersuite.google.com/app/apikey\n"
+                 "• OpenAI: https://platform.openai.com/api-keys\n"
+                 "• Qwen: https://bailian.console.aliyun.com/\n"
+                 "• SiliconFlow: https://cloud.siliconflow.cn/account/ak\n"
+                 "• Moonshot: https://platform.moonshot.cn/console/api-keys"
+        )
+    with col2:
+        # 显示API密钥强度指示器
+        st.metric("API状态", text_indicator, help=f"API密钥状态: {text_status}")
+        
+    # 实时更新指示器（当API密钥改变时）
+    if st_text_api_key != text_api_key:
+        new_indicator, new_status = get_api_key_strength_indicator(st_text_api_key)
+        if new_indicator != text_indicator:
+            st.rerun()
 
     st_text_base_url = st.text_input(
         tr("Text Base URL"),
