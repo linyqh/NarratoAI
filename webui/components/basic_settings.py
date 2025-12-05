@@ -319,21 +319,27 @@ def test_litellm_vision_model(api_key: str, base_url: str, model_name: str, tr) 
         
         # SiliconFlow 特殊处理：使用 OpenAI 兼容模式
         test_model_name = model_name
-        if provider.lower() == "siliconflow":
-            # 替换 provider 为 openai
-            if "/" in model_name:
-                test_model_name = f"openai/{model_name.split('/', 1)[1]}"
-            else:
-                test_model_name = f"openai/{model_name}"
-            
-            # 确保设置了 base_url
+        # 定义 provider 到 base_url 的映射
+        PROVIDER_BASE_URLS = {
+            "siliconflow": "https://api.siliconflow.cn/v1",
+            "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        }
+        
+        provider_lower = provider.lower()
+        if provider_lower in PROVIDER_BASE_URLS:
+            # 统一构造 test_model_name（openai/<model>）
+            model_part = model_name.split("/", 1)[1] if "/" in model_name else model_name
+            test_model_name = f"openai/{model_part}"
+        
+            # 设置 base_url（如果未提供）
             if not base_url:
-                base_url = "https://api.siliconflow.cn/v1"
-            
-            # 设置 OPENAI_API_KEY (SiliconFlow 使用 OpenAI 协议)
+                base_url = PROVIDER_BASE_URLS[provider_lower]
+        
+            # 设置环境变量（两者都兼容 OpenAI 协议）
             os.environ["OPENAI_API_KEY"] = api_key
             os.environ["OPENAI_API_BASE"] = base_url
-        
+            
         try:
             # 创建测试图片（64x64 白色像素，避免某些模型对极小图片的限制）
             test_image = Image.new('RGB', (64, 64), color='white')
@@ -440,18 +446,24 @@ def test_litellm_text_model(api_key: str, base_url: str, model_name: str, tr) ->
         
         # SiliconFlow 特殊处理：使用 OpenAI 兼容模式
         test_model_name = model_name
-        if provider.lower() == "siliconflow":
-            # 替换 provider 为 openai
-            if "/" in model_name:
-                test_model_name = f"openai/{model_name.split('/', 1)[1]}"
-            else:
-                test_model_name = f"openai/{model_name}"
-            
-            # 确保设置了 base_url
+        # 定义 provider 到 base_url 的映射
+        PROVIDER_BASE_URLS = {
+            "siliconflow": "https://api.siliconflow.cn/v1",
+            "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        }
+        
+        provider_lower = provider.lower()
+        if provider_lower in PROVIDER_BASE_URLS:
+            # 统一构造 test_model_name（openai/<model>）
+            model_part = model_name.split("/", 1)[1] if "/" in model_name else model_name
+            test_model_name = f"openai/{model_part}"
+        
+            # 设置 base_url（如果未提供）
             if not base_url:
-                base_url = "https://api.siliconflow.cn/v1"
-            
-            # 设置 OPENAI_API_KEY (SiliconFlow 使用 OpenAI 协议)
+                base_url = PROVIDER_BASE_URLS[provider_lower]
+        
+            # 设置环境变量（两者都兼容 OpenAI 协议）
             os.environ["OPENAI_API_KEY"] = api_key
             os.environ["OPENAI_API_BASE"] = base_url
         
@@ -532,7 +544,7 @@ def render_vision_llm_settings(tr):
 
     # 定义支持的 provider 列表
     LITELLM_PROVIDERS = [
-        "openai", "gemini", "deepseek", "qwen", "siliconflow", "moonshot", 
+        "openai", "gemini", "deepseek", "qwen", "dashscope", "siliconflow", "moonshot", 
         "anthropic", "azure", "ollama", "vertex_ai", "mistral", "codestral", 
         "volcengine", "groq", "cohere", "together_ai", "fireworks_ai", 
         "openrouter", "replicate", "huggingface", "xai", "deepgram", "vllm", 
@@ -797,7 +809,7 @@ def render_text_llm_settings(tr):
 
     # 定义支持的 provider 列表
     LITELLM_PROVIDERS = [
-        "openai", "gemini", "deepseek", "qwen", "siliconflow", "moonshot", 
+        "openai", "gemini", "deepseek", "qwen", "dashscope", "siliconflow", "moonshot", 
         "anthropic", "azure", "ollama", "vertex_ai", "mistral", "codestral", 
         "volcengine", "groq", "cohere", "together_ai", "fireworks_ai", 
         "openrouter", "replicate", "huggingface", "xai", "deepgram", "vllm", 

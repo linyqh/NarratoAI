@@ -29,6 +29,7 @@
     #   - Gemini: gemini/gemini-1.5-pro (高精度)
     #   - OpenAI: gpt-4o, gpt-4o-mini
     #   - Qwen: qwen/qwen2.5-vl-32b-instruct
+    #   - DashScope: dashscope/qwen2.5-vl-32b-instruct
     #   - SiliconFlow: siliconflow/Qwen/Qwen2.5-VL-32B-Instruct
     vision_litellm_model_name = "gemini/gemini-2.0-flash-lite"
     vision_litellm_api_key = ""  # 填入对应 provider 的 API key
@@ -43,6 +44,7 @@
     #   - Gemini: gemini/gemini-2.0-flash (速度快)
     #   - OpenAI: gpt-4o, gpt-4o-mini, gpt-4-turbo
     #   - Qwen: qwen/qwen-plus, qwen/qwen-turbo
+    #   - DashScope: dashscope/qwen-plus, dashscope/qwen-turbo
     #   - SiliconFlow: siliconflow/deepseek-ai/DeepSeek-R1
     #   - Moonshot: moonshot/moonshot-v1-8k
     text_litellm_model_name = "deepseek/deepseek-chat"
@@ -55,7 +57,7 @@
     # OpenAI:       https://platform.openai.com/api-keys
     # Gemini:       https://makersuite.google.com/app/apikey
     # DeepSeek:     https://platform.deepseek.com/api_keys
-    # Qwen (阿里):  https://bailian.console.aliyun.com/?tab=model#/api-key
+    # Qwen (阿里)\dashscope:  https://bailian.console.aliyun.com/?tab=model#/api-key
     # SiliconFlow:  https://cloud.siliconflow.cn/account/ak (手机号注册)
     # Moonshot:     https://platform.moonshot.cn/console/api-keys
     # Anthropic:    https://console.anthropic.com/settings/keys
