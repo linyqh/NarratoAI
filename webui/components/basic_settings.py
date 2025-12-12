@@ -7,6 +7,38 @@ from app.utils import utils
 from loguru import logger
 from app.services.llm.unified_service import UnifiedLLMService
 
+# 需要用户手动填写 Base URL 的 OpenAI 兼容网关及其默认接口
+OPENAI_COMPATIBLE_GATEWAY_BASE_URLS = {
+    "siliconflow": "https://api.siliconflow.cn/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "moonshot": "https://api.moonshot.cn/v1",
+    "gemini(openai)": "",
+}
+
+
+def build_base_url_help(provider: str, model_type: str) -> tuple[str, bool, str]:
+    """
+    根据 provider 返回 Base URL 的帮助文案
+
+    Returns:
+        help_text: 显示在输入框的帮助内容
+        requires_base: 是否强制提示必须填写 Base URL
+        placeholder: 推荐的默认值（可为空字符串）
+    """
+    default_help = "自定义 API 端点（可选），当使用自建或第三方代理时需要填写"
+    provider_key = (provider or "").lower()
+    example_url = OPENAI_COMPATIBLE_GATEWAY_BASE_URLS.get(provider_key)
+
+    if example_url is not None:
+        extra = f"\n推荐接口地址: {example_url}" if example_url else ""
+        help_text = (
+            f"{model_type} 选择的提供商基于 OpenAI 兼容网关，必须填写完整的接口地址。"
+            f"{extra}"
+        )
+        return help_text, True, example_url
+
+    return default_help, False, ""
+
 
 def validate_api_key(api_key: str, provider: str) -> tuple[bool, str]:
     """验证API密钥格式"""
@@ -582,11 +614,18 @@ def render_vision_llm_settings(tr):
              "• SiliconFlow: https://cloud.siliconflow.cn/account/ak"
     )
 
+    vision_base_help, vision_base_required, vision_placeholder = build_base_url_help(
+        selected_provider, "视频分析模型"
+    )
     st_vision_base_url = st.text_input(
         tr("Vision Base URL"),
         value=vision_base_url,
-        help="自定义 API 端点（可选）找不到供应商才需要填自定义 url"
+        help=vision_base_help,
+        placeholder=vision_placeholder or None
     )
+    if vision_base_required and not st_vision_base_url:
+        info_example = vision_placeholder or "https://your-openai-compatible-endpoint/v1"
+        st.info(f"请在上方填写 OpenAI 兼容网关地址，例如：{info_example}")
 
     # 添加测试连接按钮
     if st.button(tr("Test Connection"), key="test_vision_connection"):
@@ -849,11 +888,18 @@ def render_text_llm_settings(tr):
              "• Moonshot: https://platform.moonshot.cn/console/api-keys"
     )
 
+    text_base_help, text_base_required, text_placeholder = build_base_url_help(
+        selected_provider, "文案生成模型"
+    )
     st_text_base_url = st.text_input(
         tr("Text Base URL"),
         value=text_base_url,
-        help="自定义 API 端点（可选）找不到供应商才需要填自定义 url"
+        help=text_base_help,
+        placeholder=text_placeholder or None
     )
+    if text_base_required and not st_text_base_url:
+        info_example = text_placeholder or "https://your-openai-compatible-endpoint/v1"
+        st.info(f"请在上方填写 OpenAI 兼容网关地址，例如：{info_example}")
 
     # 添加测试连接按钮
     if st.button(tr("Test Connection"), key="test_text_connection"):
