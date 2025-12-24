@@ -45,11 +45,18 @@ def generate_script_short(tr, params, custom_clips=5):
 
             update_progress(20, "开始准备生成脚本")
 
-            srt_path = params.video_origin_path.replace(".mp4", ".srt").replace("videos", "srt").replace("video", "subtitle")
-            if not os.path.exists(srt_path):
-                logger.error(f"{srt_path} 文件不存在请检查或重新转录")
-                st.error(f"{srt_path} 文件不存在请检查或重新转录")
-                st.stop()
+            # 优先使用用户上传的字幕文件
+            uploaded_subtitle = st.session_state.get('subtitle_path')
+            if uploaded_subtitle and os.path.exists(uploaded_subtitle):
+                srt_path = uploaded_subtitle
+                logger.info(f"使用用户上传的字幕文件: {srt_path}")
+            else:
+                # 回退到根据视频路径自动推断
+                srt_path = params.video_origin_path.replace(".mp4", ".srt").replace("videos", "srt").replace("video", "subtitle")
+                if not os.path.exists(srt_path):
+                    logger.error(f"{srt_path} 文件不存在请检查或重新转录")
+                    st.error(f"{srt_path} 文件不存在，请上传字幕文件或重新转录")
+                    st.stop()
 
             api_params = {
                 "vision_provider": vision_llm_provider,

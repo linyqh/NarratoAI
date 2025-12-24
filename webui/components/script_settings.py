@@ -55,6 +55,11 @@ def render_script_file(tr, params):
     MODE_SHORT = "short"
     MODE_SUMMARY = "summary"
 
+    # 处理保存脚本后的模式切换（必须在 widget 实例化之前）
+    if st.session_state.get('_switch_to_file_mode'):
+        st.session_state['script_mode_selection'] = tr("Select/Upload Script")
+        del st.session_state['_switch_to_file_mode']
+
     # 模式选项映射
     mode_options = {
         tr("Select/Upload Script"): MODE_FILE,
@@ -148,6 +153,10 @@ def render_script_file(tr, params):
                 selected_index = i
                 break
 
+        # 如果找到了保存的脚本，同步更新 selectbox 的 key 状态
+        if saved_script_path and selected_index > 0:
+            st.session_state['script_file_selection'] = selected_index
+
         selected_script_index = st.selectbox(
             tr("Script Files"),
             index=selected_index,
@@ -157,8 +166,14 @@ def render_script_file(tr, params):
         )
 
         script_path = script_list[selected_script_index][1]
-        st.session_state['video_clip_json_path'] = script_path
-        params.video_clip_json_path = script_path
+        # 只有当用户实际选择了脚本时才更新路径，避免覆盖已保存的路径
+        if script_path:
+            st.session_state['video_clip_json_path'] = script_path
+            params.video_clip_json_path = script_path
+        elif saved_script_path:
+            # 如果用户选择了 "None" 但之前有保存的脚本，保持原有路径
+            st.session_state['video_clip_json_path'] = saved_script_path
+            params.video_clip_json_path = saved_script_path
 
         # 处理脚本上传
         if script_path == "upload_script":
@@ -482,6 +497,9 @@ def save_script_with_validation(tr, video_clip_json_details):
                 json.dump(data, file, ensure_ascii=False, indent=4)
                 st.session_state['video_clip_json'] = data
                 st.session_state['video_clip_json_path'] = save_path
+                
+                # 标记需要切换到文件选择模式（在下次渲染前处理）
+                st.session_state['_switch_to_file_mode'] = True
 
                 # 更新配置
                 config.app["video_clip_json_path"] = save_path
