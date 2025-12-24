@@ -35,10 +35,13 @@ def generate_script_short(tr, params, custom_clips=5):
             text_api_key = config.app.get(f'text_{text_provider}_api_key')
             text_model = config.app.get(f'text_{text_provider}_model_name')
             text_base_url = config.app.get(f'text_{text_provider}_base_url')
-            vision_llm_provider = st.session_state.get('vision_llm_providers').lower()
-            vision_api_key = st.session_state.get(f'vision_{vision_llm_provider}_api_key', "")
-            vision_model = st.session_state.get(f'vision_{vision_llm_provider}_model_name', "")
-            vision_base_url = st.session_state.get(f'vision_{vision_llm_provider}_base_url', "")
+            
+            # 优先从 session_state 获取，若未设置则回退到 config 配置
+            vision_llm_provider = st.session_state.get('vision_llm_providers') or config.app.get('vision_llm_provider', 'gemini')
+            vision_llm_provider = vision_llm_provider.lower()
+            vision_api_key = st.session_state.get(f'vision_{vision_llm_provider}_api_key') or config.app.get(f'vision_{vision_llm_provider}_api_key', "")
+            vision_model = st.session_state.get(f'vision_{vision_llm_provider}_model_name') or config.app.get(f'vision_{vision_llm_provider}_model_name', "")
+            vision_base_url = st.session_state.get(f'vision_{vision_llm_provider}_base_url') or config.app.get(f'vision_{vision_llm_provider}_base_url', "")
 
             update_progress(20, "开始准备生成脚本")
 
