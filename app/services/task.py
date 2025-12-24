@@ -56,8 +56,8 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
             logger.error(f"无法读取视频json脚本，请检查脚本格式是否正确")
             raise ValueError("无法读取视频json脚本，请检查脚本格式是否正确")
     else:
-        logger.error(f"video_script_path: {video_script_path} \n\n", traceback.format_exc())
-        raise ValueError("解说脚本不存在！请检查配置是否正确。")
+        logger.error(f"解说脚本文件不存在: {video_script_path}，请先点击【保存脚本】按钮保存脚本后再生成视频")
+        raise ValueError("解说脚本文件不存在！请先点击【保存脚本】按钮保存脚本后再生成视频。")
 
     """
     2. 使用 TTS 生成音频素材
@@ -301,8 +301,8 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
             logger.error(f"无法读取视频json脚本，请检查脚本格式是否正确")
             raise ValueError("无法读取视频json脚本，请检查脚本格式是否正确")
     else:
-        logger.error(f"video_script_path: {video_script_path}")
-        raise ValueError("解说脚本不存在！请检查配置是否正确。")
+        logger.error(f"解说脚本文件不存在: {video_script_path}，请先点击【保存脚本】按钮保存脚本后再生成视频")
+        raise ValueError("解说脚本文件不存在！请先点击【保存脚本】按钮保存脚本后再生成视频。")
 
     """
     2. 使用 TTS 生成音频素材

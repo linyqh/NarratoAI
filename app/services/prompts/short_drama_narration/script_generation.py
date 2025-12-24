@@ -2,7 +2,7 @@
 # -*- coding: UTF-8 -*-
 
 """
-@Project: NarratoAI
+@Project: 短剧解说-文案画面匹配
 @File   : script_generation.py
 @Author : viccy同学
 @Date   : 2025/1/7

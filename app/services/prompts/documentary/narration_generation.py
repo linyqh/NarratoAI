@@ -2,7 +2,7 @@
 # -*- coding: UTF-8 -*-
 
 """
-@Project: NarratoAI
+@Project: 逐帧解说-文案生成
 @File   : narration_generation.py
 @Author : viccy同学
 @Date   : 2025/1/7

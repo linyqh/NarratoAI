@@ -2,7 +2,7 @@
 # -*- coding: UTF-8 -*-
 
 """
-@Project: NarratoAI
+@Project: 逐帧解说-画面分析
 @File   : frame_analysis.py
 @Author : viccy同学
 @Date   : 2025/1/7
