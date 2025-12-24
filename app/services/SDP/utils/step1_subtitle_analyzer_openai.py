@@ -39,6 +39,20 @@ def analyze_subtitle(
     try:
         # 加载字幕文件
         subtitles = load_srt(srt_path)
+
+        # 检查字幕是否为空
+        if not subtitles:
+            error_msg = (
+                f"字幕文件 {srt_path} 解析后无有效内容。\n"
+                f"请检查：\n"
+                f"1. 文件格式是否为标准 SRT\n"
+                f"2. 文件编码是否为 UTF-8、GBK 或 GB2312\n"
+                f"3. 文件内容是否为空"
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        logger.info(f"成功加载字幕文件 {srt_path}，共 {len(subtitles)} 条有效字幕")
         subtitle_content = "\n".join([f"{sub['timestamp']}\n{sub['text']}" for sub in subtitles])
 
         # 初始化统一LLM服务

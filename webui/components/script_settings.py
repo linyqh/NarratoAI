@@ -343,12 +343,34 @@ def short_drama_summary(tr):
     # 只有当有文件上传且尚未处理时才执行处理逻辑
     if subtitle_file is not None and not st.session_state['subtitle_file_processed']:
         try:
-            # 读取上传的SRT内容
-            script_content = subtitle_file.read().decode('utf-8')
+            # 清理文件名，防止路径污染和路径遍历攻击
+            safe_filename = os.path.basename(subtitle_file.name)
+
+            # 编码自动检测：依次尝试常见编码
+            encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312']
+            script_content = None
+            detected_encoding = None
+
+            for encoding in encodings:
+                try:
+                    subtitle_file.seek(0)  # 重置文件指针
+                    script_content = subtitle_file.read().decode(encoding)
+                    detected_encoding = encoding
+                    break
+                except UnicodeDecodeError:
+                    continue
+
+            if script_content is None:
+                st.error(tr("无法读取字幕文件，请检查文件编码（支持 UTF-8、GBK、GB2312）"))
+                st.stop()
+
+            # 验证字幕内容（简单检查）
+            if len(script_content.strip()) < 10:
+                st.warning(tr("字幕文件内容似乎为空，请检查文件"))
 
             # 保存到字幕目录
-            script_file_path = os.path.join(utils.subtitle_dir(), subtitle_file.name)
-            file_name, file_extension = os.path.splitext(subtitle_file.name)
+            script_file_path = os.path.join(utils.subtitle_dir(), safe_filename)
+            file_name, file_extension = os.path.splitext(safe_filename)
 
             # 如果文件已存在,添加时间戳
             if os.path.exists(script_file_path):
@@ -356,18 +378,22 @@ def short_drama_summary(tr):
                 file_name_with_timestamp = f"{file_name}_{timestamp}"
                 script_file_path = os.path.join(utils.subtitle_dir(), file_name_with_timestamp + file_extension)
 
-            # 直接写入SRT内容，不进行JSON转换
+            # 直接写入SRT内容（统一使用 UTF-8）
             with open(script_file_path, "w", encoding='utf-8') as f:
                 f.write(script_content)
 
             # 更新状态
-            st.success(tr("字幕上传成功"))
+            st.success(
+                f"{tr('字幕上传成功')} "
+                f"(编码: {detected_encoding.upper()}, "
+                f"大小: {len(script_content)} 字符)"
+            )
             st.session_state['subtitle_path'] = script_file_path
             st.session_state['subtitle_file_processed'] = True  # 标记已处理
-            
+
             # 避免使用rerun，使用更新状态的方式
             # st.rerun()
-            
+
         except Exception as e:
             st.error(f"{tr('Upload failed')}: {str(e)}")
 
