@@ -3,10 +3,9 @@
 """
 import traceback
 import json
-import asyncio
 from loguru import logger
 
-from .utils import load_srt
+from .utils import load_srt, load_srt_from_content
 # 导入新的提示词管理系统
 from app.services.prompts import PromptManager
 # 导入统一LLM服务
@@ -16,34 +15,43 @@ from app.services.llm.migration_adapter import _run_async_safely
 
 
 def analyze_subtitle(
-    srt_path: str,
     model_name: str,
     api_key: str = None,
     base_url: str = None,
     custom_clips: int = 5,
-    provider: str = None
+    provider: str = None,
+    srt_path: str = None,
+    subtitle_content: str = None
 ) -> dict:
     """分析字幕内容，返回完整的分析结果
 
     Args:
-        srt_path (str): SRT字幕文件路径
         model_name (str): 大模型名称
         api_key (str, optional): 大模型API密钥. Defaults to None.
         base_url (str, optional): 大模型API基础URL. Defaults to None.
         custom_clips (int): 需要提取的片段数量. Defaults to 5.
         provider (str, optional): LLM服务提供商. Defaults to None.
+        srt_path (str, optional): SRT字幕文件路径（与subtitle_content二选一）
+        subtitle_content (str, optional): SRT字幕文本内容（与srt_path二选一）
 
     Returns:
         dict: 包含剧情梗概和结构化的时间段分析的字典
     """
     try:
-        # 加载字幕文件
-        subtitles = load_srt(srt_path)
+        # 加载字幕文件或内容
+        if subtitle_content and subtitle_content.strip():
+            subtitles = load_srt_from_content(subtitle_content)
+            source_label = "字幕内容（直接传入）"
+        elif srt_path:
+            subtitles = load_srt(srt_path)
+            source_label = f"字幕文件: {srt_path}"
+        else:
+            raise ValueError("必须提供 srt_path 或 subtitle_content 参数")
 
         # 检查字幕是否为空
         if not subtitles:
             error_msg = (
-                f"字幕文件 {srt_path} 解析后无有效内容。\n"
+                f"字幕来源 [{source_label}] 解析后无有效内容。\n"
                 f"请检查：\n"
                 f"1. 文件格式是否为标准 SRT\n"
                 f"2. 文件编码是否为 UTF-8、GBK 或 GB2312\n"
@@ -52,11 +60,8 @@ def analyze_subtitle(
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        logger.info(f"成功加载字幕文件 {srt_path}，共 {len(subtitles)} 条有效字幕")
+        logger.info(f"成功加载字幕来源 [{source_label}]，共 {len(subtitles)} 条有效字幕")
         subtitle_content = "\n".join([f"{sub['timestamp']}\n{sub['text']}" for sub in subtitles])
-
-        # 初始化统一LLM服务
-        llm_service = UnifiedLLMService()
 
         # 如果没有指定provider，根据model_name推断
         if not provider:

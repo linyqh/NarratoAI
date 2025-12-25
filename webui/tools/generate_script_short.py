@@ -1,13 +1,11 @@
-import os
 import json
 import time
-import asyncio
 import traceback
-import requests
 import streamlit as st
 from loguru import logger
 
 from app.config import config
+from app.services.upload_validation import ensure_existing_file, InputValidationError
 
 
 def generate_script_short(tr, params, custom_clips=5):
@@ -31,12 +29,47 @@ def generate_script_short(tr, params, custom_clips=5):
 
     try:
         with st.spinner("正在生成脚本..."):
+            # ========== 严格验证：必须上传视频和字幕（与短剧解说保持一致）==========
+            # 1. 验证视频文件
+            video_path = getattr(params, "video_origin_path", None)
+            if not video_path or not str(video_path).strip():
+                st.error("请先选择视频文件")
+                st.stop()
+
+            try:
+                ensure_existing_file(
+                    str(video_path),
+                    label="视频",
+                    allowed_exts=(".mp4", ".mov", ".avi", ".flv", ".mkv"),
+                )
+            except InputValidationError as e:
+                st.error(str(e))
+                st.stop()
+
+            # 2. 验证字幕文件（移除推断逻辑，必须上传）
+            subtitle_path = st.session_state.get("subtitle_path")
+            if not subtitle_path or not str(subtitle_path).strip():
+                st.error("请先上传字幕文件")
+                st.stop()
+
+            try:
+                subtitle_path = ensure_existing_file(
+                    str(subtitle_path),
+                    label="字幕",
+                    allowed_exts=(".srt",),
+                )
+            except InputValidationError as e:
+                st.error(str(e))
+                st.stop()
+
+            logger.info(f"使用用户上传的字幕文件: {subtitle_path}")
+
+            # ========== 获取 LLM 配置 ==========
             text_provider = config.app.get('text_llm_provider', 'gemini').lower()
             text_api_key = config.app.get(f'text_{text_provider}_api_key')
             text_model = config.app.get(f'text_{text_provider}_model_name')
             text_base_url = config.app.get(f'text_{text_provider}_base_url')
-            
-            # 优先从 session_state 获取，若未设置则回退到 config 配置
+
             vision_llm_provider = st.session_state.get('vision_llm_providers') or config.app.get('vision_llm_provider', 'gemini')
             vision_llm_provider = vision_llm_provider.lower()
             vision_api_key = st.session_state.get(f'vision_{vision_llm_provider}_api_key') or config.app.get(f'vision_{vision_llm_provider}_api_key', "")
@@ -45,48 +78,31 @@ def generate_script_short(tr, params, custom_clips=5):
 
             update_progress(20, "开始准备生成脚本")
 
-            # 优先使用用户上传的字幕文件
-            uploaded_subtitle = st.session_state.get('subtitle_path')
-            if uploaded_subtitle and os.path.exists(uploaded_subtitle):
-                srt_path = uploaded_subtitle
-                logger.info(f"使用用户上传的字幕文件: {srt_path}")
-            else:
-                # 回退到根据视频路径自动推断
-                srt_path = params.video_origin_path.replace(".mp4", ".srt").replace("videos", "srt").replace("video", "subtitle")
-                if not os.path.exists(srt_path):
-                    logger.error(f"{srt_path} 文件不存在请检查或重新转录")
-                    st.error(f"{srt_path} 文件不存在，请上传字幕文件或重新转录")
-                    st.stop()
+            # ========== 调用后端生成脚本 ==========
+            from app.services.SDP.generate_script_short import generate_script_result
 
-            api_params = {
-                "vision_provider": vision_llm_provider,
-                "vision_api_key": vision_api_key,
-                "vision_model_name": vision_model,
-                "vision_base_url": vision_base_url or "",
-                "text_provider": text_provider,
-                "text_api_key": text_api_key,
-                "text_model_name": text_model,
-                "text_base_url": text_base_url or ""
-            }
-            from app.services.SDP.generate_script_short import generate_script
-            script = generate_script(
-                srt_path=srt_path,
-                output_path="resource/scripts/merged_subtitle.json",
+            result = generate_script_result(
                 api_key=text_api_key,
                 model_name=text_model,
+                output_path="resource/scripts/merged_subtitle.json",
                 base_url=text_base_url,
                 custom_clips=custom_clips,
-                provider=text_provider
+                provider=text_provider,
+                subtitle_file_path=subtitle_path,
             )
 
-            if script is None:
-                st.error("生成脚本失败，请检查日志")
+            if result.get("status") != "success":
+                st.error(result.get("message", "生成脚本失败，请检查日志"))
                 st.stop()
+
+            script = result.get("script")
             logger.info(f"脚本生成完成 {json.dumps(script, ensure_ascii=False, indent=4)}")
+
             if isinstance(script, list):
                 st.session_state['video_clip_json'] = script
             elif isinstance(script, str):
                 st.session_state['video_clip_json'] = json.loads(script)
+
             update_progress(80, "脚本生成完成")
 
         time.sleep(0.1)

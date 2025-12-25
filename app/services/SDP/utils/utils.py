@@ -78,3 +78,46 @@ def load_srt(file_path: str) -> List[Dict]:
 
     logger.info(f"成功解析 {len(subtitles)} 条有效字幕")
     return subtitles
+
+
+def load_srt_from_content(srt_content: str) -> List[Dict]:
+    """从字符串内容解析SRT（用于直接传入字幕内容，无需依赖文件路径）
+
+    Args:
+        srt_content: SRT格式的字幕文本内容
+
+    Returns:
+        字幕内容列表，格式同 load_srt 函数
+
+    Raises:
+        ValueError: 字幕内容为空或格式错误
+    """
+    if srt_content is None or not str(srt_content).strip():
+        raise ValueError("字幕内容为空")
+
+    try:
+        subs = pysrt.from_string(str(srt_content))
+    except Exception as e:
+        logger.error(f"无法解析字幕内容: {e}")
+        raise ValueError("无法解析字幕内容，请确保为标准 SRT 格式") from e
+
+    if not subs:
+        logger.warning("字幕内容解析后无有效内容")
+        return []
+
+    subtitles = []
+    for sub in subs:
+        text = sub.text.replace('\n', ' ').strip()
+        if not text:
+            continue
+
+        subtitles.append({
+            'number': sub.index,
+            'timestamp': f"{sub.start} --> {sub.end}",
+            'text': text,
+            'start_time': str(sub.start),
+            'end_time': str(sub.end)
+        })
+
+    logger.info(f"成功从内容解析 {len(subtitles)} 条有效字幕")
+    return subtitles
