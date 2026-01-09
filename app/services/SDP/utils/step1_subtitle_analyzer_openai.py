@@ -5,7 +5,7 @@ import traceback
 import json
 from loguru import logger
 
-from .utils import load_srt, load_srt_from_content
+from app.services.subtitle_text import has_timecodes, normalize_subtitle_text, read_subtitle_text
 # 导入新的提示词管理系统
 from app.services.prompts import PromptManager
 # 导入统一LLM服务
@@ -38,30 +38,41 @@ def analyze_subtitle(
         dict: 包含剧情梗概和结构化的时间段分析的字典
     """
     try:
-        # 加载字幕文件或内容
-        if subtitle_content and subtitle_content.strip():
-            subtitles = load_srt_from_content(subtitle_content)
+        # 读取并规范化字幕文本（不依赖结构化 SRT 解析，提升兼容性）
+        if subtitle_content and str(subtitle_content).strip():
+            normalized_subtitle_text = normalize_subtitle_text(subtitle_content)
             source_label = "字幕内容（直接传入）"
         elif srt_path:
-            subtitles = load_srt(srt_path)
-            source_label = f"字幕文件: {srt_path}"
+            decoded = read_subtitle_text(srt_path)
+            normalized_subtitle_text = decoded.text
+            source_label = f"字幕文件: {srt_path} (encoding: {decoded.encoding})"
         else:
             raise ValueError("必须提供 srt_path 或 subtitle_content 参数")
 
-        # 检查字幕是否为空
-        if not subtitles:
+        # 基础校验：必须有内容且包含可用于定位的时间码
+        if not normalized_subtitle_text or len(normalized_subtitle_text.strip()) < 10:
             error_msg = (
-                f"字幕来源 [{source_label}] 解析后无有效内容。\n"
+                f"字幕来源 [{source_label}] 内容为空或过短。\n"
                 f"请检查：\n"
                 f"1. 文件格式是否为标准 SRT\n"
-                f"2. 文件编码是否为 UTF-8、GBK 或 GB2312\n"
+                f"2. 文件编码是否为 UTF-8、UTF-16、GBK 或 GB2312\n"
                 f"3. 文件内容是否为空"
             )
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        logger.info(f"成功加载字幕来源 [{source_label}]，共 {len(subtitles)} 条有效字幕")
-        subtitle_content = "\n".join([f"{sub['timestamp']}\n{sub['text']}" for sub in subtitles])
+        if not has_timecodes(normalized_subtitle_text):
+            error_msg = (
+                f"字幕来源 [{source_label}] 未检测到有效时间码，无法进行时间段定位。\n"
+                f"请确保字幕包含类似以下格式的时间轴：\n"
+                f"00:00:01,000 --> 00:00:02,000\n"
+                f"（若毫秒分隔符为'.'，系统会自动规范化为','）"
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        logger.info(f"成功加载字幕来源 [{source_label}]，字符数: {len(normalized_subtitle_text)}")
+        subtitle_content = normalized_subtitle_text
 
         # 如果没有指定provider，根据model_name推断
         if not provider:
@@ -107,11 +118,11 @@ def analyze_subtitle(
             raise Exception("无法解析LLM返回的JSON数据")
 
         logger.info(f"字幕分析完成，找到 {len(summary_data.get('plot_titles', []))} 个关键情节")
-        print(json.dumps(summary_data, indent=4, ensure_ascii=False))
+        logger.debug(json.dumps(summary_data, indent=4, ensure_ascii=False))
 
         # 构建爆点标题列表
         plot_titles_text = ""
-        print(f"找到 {len(summary_data['plot_titles'])} 个片段")
+        logger.info(f"找到 {len(summary_data.get('plot_titles', []))} 个片段")
         for i, point in enumerate(summary_data['plot_titles'], 1):
             plot_titles_text += f"{i}. {point}\n"
 
@@ -159,4 +170,3 @@ def analyze_subtitle(
     except Exception as e:
         logger.error(f"分析字幕时发生错误: {str(e)}")
         raise Exception(f"分析字幕时发生错误：{str(e)}\n{traceback.format_exc()}")
-

@@ -1,3 +1,4 @@
+import os
 import json
 import time
 import traceback
@@ -6,6 +7,7 @@ from loguru import logger
 
 from app.config import config
 from app.services.upload_validation import ensure_existing_file, InputValidationError
+from app.utils import utils
 
 
 def generate_script_short(tr, params, custom_clips=5):
@@ -81,14 +83,23 @@ def generate_script_short(tr, params, custom_clips=5):
             # ========== 调用后端生成脚本 ==========
             from app.services.SDP.generate_script_short import generate_script_result
 
+            output_path = os.path.join(utils.script_dir(), "merged_subtitle.json")
+
+            subtitle_content = st.session_state.get("subtitle_content")
+            subtitle_kwargs = (
+                {"subtitle_content": str(subtitle_content)}
+                if subtitle_content is not None and str(subtitle_content).strip()
+                else {"subtitle_file_path": subtitle_path}
+            )
+
             result = generate_script_result(
                 api_key=text_api_key,
                 model_name=text_model,
-                output_path="resource/scripts/merged_subtitle.json",
+                output_path=output_path,
                 base_url=text_base_url,
                 custom_clips=custom_clips,
                 provider=text_provider,
-                subtitle_file_path=subtitle_path,
+                **subtitle_kwargs,
             )
 
             if result.get("status") != "success":

@@ -15,6 +15,7 @@ from typing import Dict, Any, Optional
 from loguru import logger
 from app.config import config
 from app.utils.utils import get_uuid, storage_dir
+from app.services.subtitle_text import read_subtitle_text
 # 导入新的提示词管理系统
 from app.services.prompts import PromptManager
 
@@ -309,8 +310,13 @@ class SubtitleAnalyzer:
                 }
             
             # 读取文件内容
-            with open(subtitle_file_path, 'r', encoding='utf-8') as f:
-                subtitle_content = f.read()
+            subtitle_content = read_subtitle_text(subtitle_file_path).text
+            if not subtitle_content:
+                return {
+                    "status": "error",
+                    "message": f"字幕文件内容为空或无法读取: {subtitle_file_path}",
+                    "temperature": self.temperature
+                }
             
             # 分析字幕
             return self.analyze_subtitle(subtitle_content)

@@ -8,6 +8,7 @@ from loguru import logger
 
 from app.config import config
 from app.models.schema import VideoClipParams
+from app.services.subtitle_text import decode_subtitle_bytes
 from app.utils import utils, check_script
 from webui.tools.generate_script_docu import generate_script_docu
 from webui.tools.generate_script_short import generate_script_short
@@ -190,8 +191,9 @@ def render_script_file(tr, params):
                     json_data = json.loads(script_content)
 
                     # 保存到脚本目录
-                    script_file_path = os.path.join(script_dir, uploaded_file.name)
-                    file_name, file_extension = os.path.splitext(uploaded_file.name)
+                    safe_filename = os.path.basename(uploaded_file.name)
+                    script_file_path = os.path.join(script_dir, safe_filename)
+                    file_name, file_extension = os.path.splitext(safe_filename)
 
                     # 如果文件已存在,添加时间戳
                     if os.path.exists(script_file_path):
@@ -250,8 +252,9 @@ def render_video_file(tr, params):
         )
 
         if uploaded_file is not None:
-            video_file_path = os.path.join(utils.video_dir(), uploaded_file.name)
-            file_name, file_extension = os.path.splitext(uploaded_file.name)
+            safe_filename = os.path.basename(uploaded_file.name)
+            video_file_path = os.path.join(utils.video_dir(), safe_filename)
+            file_name, file_extension = os.path.splitext(safe_filename)
 
             if os.path.exists(video_file_path):
                 timestamp = time.strftime("%Y%m%d%H%M%S")
@@ -337,6 +340,7 @@ def short_drama_summary(tr):
         st.info(f"已上传字幕: {os.path.basename(st.session_state['subtitle_path'])}")
         if st.button(tr("清除已上传字幕")):
             st.session_state['subtitle_path'] = None
+            st.session_state['subtitle_content'] = None
             st.session_state['subtitle_file_processed'] = False
             st.rerun()
     
@@ -346,22 +350,12 @@ def short_drama_summary(tr):
             # 清理文件名，防止路径污染和路径遍历攻击
             safe_filename = os.path.basename(subtitle_file.name)
 
-            # 编码自动检测：依次尝试常见编码
-            encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312']
-            script_content = None
-            detected_encoding = None
+            decoded = decode_subtitle_bytes(subtitle_file.getvalue())
+            script_content = decoded.text
+            detected_encoding = decoded.encoding
 
-            for encoding in encodings:
-                try:
-                    subtitle_file.seek(0)  # 重置文件指针
-                    script_content = subtitle_file.read().decode(encoding)
-                    detected_encoding = encoding
-                    break
-                except UnicodeDecodeError:
-                    continue
-
-            if script_content is None:
-                st.error(tr("无法读取字幕文件，请检查文件编码（支持 UTF-8、GBK、GB2312）"))
+            if not script_content:
+                st.error(tr("无法读取字幕文件，请检查文件编码（支持 UTF-8、UTF-16、GBK、GB2312）"))
                 st.stop()
 
             # 验证字幕内容（简单检查）
@@ -389,6 +383,7 @@ def short_drama_summary(tr):
                 f"大小: {len(script_content)} 字符)"
             )
             st.session_state['subtitle_path'] = script_file_path
+            st.session_state['subtitle_content'] = script_content
             st.session_state['subtitle_file_processed'] = True  # 标记已处理
 
             # 避免使用rerun，使用更新状态的方式

@@ -16,6 +16,7 @@ from loguru import logger
 
 from app.config import config
 from app.services.SDE.short_drama_explanation import analyze_subtitle, generate_narration_script
+from app.services.subtitle_text import read_subtitle_text
 # 导入新的LLM服务模块 - 确保提供商被注册
 import app.services.llm  # 这会触发提供商注册
 from app.services.llm.migration_adapter import SubtitleAnalyzerAdapter
@@ -173,8 +174,10 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
             text_base_url = config.app.get(f'text_{text_provider}_base_url')
 
             # 读取字幕文件内容（无论使用哪种实现都需要）
-            with open(subtitle_path, 'r', encoding='utf-8') as f:
-                subtitle_content = f.read()
+            subtitle_content = read_subtitle_text(subtitle_path).text
+            if not subtitle_content:
+                st.error("字幕文件内容为空或无法读取")
+                return
 
             try:
                 # 优先使用新的LLM服务架构
