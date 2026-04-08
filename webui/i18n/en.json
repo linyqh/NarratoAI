@@ -86,6 +86,21 @@
     "Hide Log": "Hide Log",
     "Upload Local Files": "Upload Local Files",
     "File Uploaded Successfully": "File Uploaded Successfully",
-    "Frame Interval (seconds)": "Frame Interval (seconds) (More keyframes consume more tokens)"
+    "Frame Interval (seconds)": "Frame Interval (seconds) (More keyframes consume more tokens)",
+    "Select Prompt Template": "Select Prompt Template",
+    "Add": "Add",
+    "Add Custom Prompt": "Add Custom Prompt",
+    "Prompt Name": "Prompt Name",
+    "Prompt Content": "Prompt Content",
+    "You can use ${drama_name}, ${plot_analysis}, ${subtitle_content} as placeholders": "You can use ${drama_name}, ${plot_analysis}, ${subtitle_content} as placeholders",
+    "Description (Optional)": "Description (Optional)",
+    "Save": "Save",
+    "Cancel": "Cancel",
+    "Please enter Prompt name and content": "Please enter Prompt name and content",
+    "Prompt saved successfully": "Prompt saved successfully",
+    "Save failed": "Save failed",
+    "Upload Subtitle File": "Upload Subtitle File",
+    "Clear Uploaded Subtitle": "Clear Uploaded Subtitle",
+    "Generate Short Drama Script": "Generate Short Drama Script"
   }
 }

@@ -163,6 +163,21 @@
     "Batch Size (More keyframes consume more tokens)": "批处理大小, 每批处理越少消耗 token 越多",
     "Short Drama Summary": "短剧解说",
     "Video Type": "视频类型",
-    "Select/Upload Script": "选择/上传脚本"
+    "Select/Upload Script": "选择/上传脚本",
+    "Select Prompt Template": "选择Prompt模板",
+    "Add": "新增",
+    "Add Custom Prompt": "新增自定义Prompt",
+    "Prompt Name": "Prompt名称",
+    "Prompt Content": "Prompt内容",
+    "You can use ${drama_name}, ${plot_analysis}, ${subtitle_content} as placeholders": "可以使用 ${drama_name}, ${plot_analysis}, ${subtitle_content} 作为占位符",
+    "Description (Optional)": "描述（可选）",
+    "Save": "保存",
+    "Cancel": "取消",
+    "Please enter Prompt name and content": "请填写Prompt名称和内容",
+    "Prompt saved successfully": "Prompt保存成功",
+    "Save failed": "保存失败",
+    "Upload Subtitle File": "上传字幕文件",
+    "Clear Uploaded Subtitle": "清除已上传字幕",
+    "Generate Short Drama Script": "生成短剧解说脚本"
   }
 }

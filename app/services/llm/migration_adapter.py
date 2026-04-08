@@ -262,7 +262,7 @@ class SubtitleAnalyzerAdapter:
                 "temperature": 1.0
             }
     
-    def generate_narration_script(self, short_name: str, plot_analysis: str, subtitle_content: str = "", temperature: float = 0.7) -> Dict[str, Any]:
+    def generate_narration_script(self, short_name: str, plot_analysis: str, subtitle_content: str = "", temperature: float = 0.7, custom_prompt: str = None) -> Dict[str, Any]:
         """
         生成解说文案 - 兼容原有接口
 
@@ -271,21 +271,29 @@ class SubtitleAnalyzerAdapter:
             plot_analysis: 剧情分析内容
             subtitle_content: 原始字幕内容，用于提供准确的时间戳信息
             temperature: 生成温度
+            custom_prompt: 自定义prompt内容，如果提供则使用此prompt而不是默认的
 
         Returns:
             生成结果字典
         """
         try:
-            # 使用新的提示词管理系统构建提示词
-            prompt = PromptManager.get_prompt(
-                category="short_drama_narration",
-                name="script_generation",
-                parameters={
-                    "drama_name": short_name,
-                    "plot_analysis": plot_analysis,
-                    "subtitle_content": subtitle_content
-                }
-            )
+            # 使用自定义prompt或默认prompt
+            if custom_prompt:
+                # 使用自定义prompt，替换占位符
+                prompt = custom_prompt.replace("${drama_name}", short_name)
+                prompt = prompt.replace("${plot_analysis}", plot_analysis)
+                prompt = prompt.replace("${subtitle_content}", subtitle_content)
+            else:
+                # 使用新的提示词管理系统构建提示词
+                prompt = PromptManager.get_prompt(
+                    category="short_drama_narration",
+                    name="script_generation",
+                    parameters={
+                        "drama_name": short_name,
+                        "plot_analysis": plot_analysis,
+                        "subtitle_content": subtitle_content
+                    }
+                )
             
             # 使用统一服务生成文案
             result = self._run_async_safely(

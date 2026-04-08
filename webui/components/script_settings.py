@@ -395,6 +395,72 @@ def short_drama_summary(tr):
     # 名称输入框
     video_theme = st.text_input(tr("短剧名称"))
     st.session_state['video_theme'] = video_theme
+    
+    # Prompt选择器
+    from app.services.custom_prompt_manager import get_custom_prompt_manager
+    
+    prompt_manager = get_custom_prompt_manager()
+    custom_prompts = prompt_manager.list_prompts()
+    
+    # 构建选项列表
+    prompt_options = [{"id": "default", "name": "默认"}]
+    for prompt in custom_prompts:
+        prompt_options.append({"id": prompt['id'], "name": prompt['name']})
+    
+    # 获取当前选择的prompt
+    current_prompt_id = st.session_state.get('selected_prompt_id', 'default')
+    
+    # 创建选择器
+    st.write(tr("Select Prompt Template"))
+    col1, col2 = st.columns([5, 1])
+    with col1:
+        selected_prompt_name = st.selectbox(
+            "",
+            options=[opt['name'] for opt in prompt_options],
+            index=next((i for i, opt in enumerate(prompt_options) if opt['id'] == current_prompt_id), 0),
+            key="prompt_selector",
+            label_visibility="collapsed"
+        )
+        # 获取选择的prompt ID
+        selected_prompt_id = next((opt['id'] for opt in prompt_options if opt['name'] == selected_prompt_name), 'default')
+        st.session_state['selected_prompt_id'] = selected_prompt_id
+    
+    with col2:
+        if st.button(tr("Add"), key="add_prompt_btn", use_container_width=True):
+            st.session_state['show_add_prompt_dialog'] = True
+    
+    # 显示新增Prompt对话框
+    if st.session_state.get('show_add_prompt_dialog', False):
+        with st.expander(tr("Add Custom Prompt"), expanded=True):
+            new_prompt_name = st.text_input(tr("Prompt Name"), key="new_prompt_name")
+            new_prompt_content = st.text_area(
+                tr("Prompt Content"),
+                height=300,
+                key="new_prompt_content",
+                help=tr("You can use ${drama_name}, ${plot_analysis}, ${subtitle_content} as placeholders")
+            )
+            new_prompt_desc = st.text_input(tr("Description (Optional)"), key="new_prompt_desc")
+            
+            col_save, col_cancel = st.columns([1, 1])
+            with col_save:
+                if st.button(tr("Save"), key="save_prompt_btn", use_container_width=True):
+                    if not new_prompt_name or not new_prompt_content:
+                        st.error(tr("Please enter Prompt name and content"))
+                    else:
+                        try:
+                            prompt_manager.save_prompt(new_prompt_name, new_prompt_content, new_prompt_desc)
+                            st.success(tr("Prompt saved successfully"))
+                            st.session_state['show_add_prompt_dialog'] = False
+                            st.session_state['selected_prompt_id'] = new_prompt_name
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"{tr('Save failed')}: {str(e)}")
+            
+            with col_cancel:
+                if st.button(tr("Cancel"), key="cancel_prompt_btn", use_container_width=True):
+                    st.session_state['show_add_prompt_dialog'] = False
+                    st.rerun()
+    
     # 数字输入框
     temperature = st.slider("temperature", 0.0, 2.0, 0.7)
     st.session_state['temperature'] = temperature

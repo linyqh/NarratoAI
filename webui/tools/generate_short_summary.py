@@ -205,6 +205,22 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
                 logger.info("字幕分析成功！")
                 update_progress(60, "正在生成文案...")
 
+                # 获取选择的prompt
+                selected_prompt_id = st.session_state.get('selected_prompt_id', 'default')
+                custom_prompt = None
+                
+                if selected_prompt_id != 'default':
+                    from app.services.custom_prompt_manager import get_custom_prompt_manager
+                    prompt_manager = get_custom_prompt_manager()
+                    prompt_data = prompt_manager.get_prompt(selected_prompt_id)
+                    if prompt_data:
+                        custom_prompt = prompt_data['content']
+                        logger.info(f"使用自定义Prompt: {prompt_data['name']}")
+                    else:
+                        logger.warning(f"未找到Prompt ID: {selected_prompt_id}，使用默认Prompt")
+                else:
+                    logger.info("使用默认Prompt")
+
                 # 根据剧情生成解说文案 - 使用新的LLM服务架构
                 try:
                     # 优先使用新的LLM服务架构
@@ -213,7 +229,8 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
                         short_name=video_theme,
                         plot_analysis=analysis_result["analysis"],
                         subtitle_content=subtitle_content,  # 传递原始字幕内容
-                        temperature=temperature
+                        temperature=temperature,
+                        custom_prompt=custom_prompt  # 传递自定义prompt
                     )
                 except Exception as e:
                     logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
