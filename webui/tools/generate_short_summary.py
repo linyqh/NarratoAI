@@ -161,6 +161,9 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
             """
             update_progress(30, "正在解析字幕...")
             # 判断字幕文件是否存在
+            if subtitle_path is None:
+                st.error("请先上传字幕文件")
+                return
             if not os.path.exists(subtitle_path):
                 st.error("字幕文件不存在")
                 return
