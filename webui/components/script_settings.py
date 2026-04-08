@@ -415,7 +415,7 @@ def short_drama_summary(tr):
     col1, col2 = st.columns([5, 1])
     with col1:
         selected_prompt_name = st.selectbox(
-            "",
+            tr("Select Prompt Template"),
             options=[opt['name'] for opt in prompt_options],
             index=next((i for i, opt in enumerate(prompt_options) if opt['id'] == current_prompt_id), 0),
             key="prompt_selector",
