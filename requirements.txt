@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # 核心依赖
 requests>=2.32.0
 moviepy==2.1.1
@@ -12,10 +13,12 @@ pysrt==1.1.2
 
 # AI 服务依赖
 openai>=1.77.0
-google-generativeai>=0.8.5  # 原生 Gemini 场景依赖
+google-generativeai>=0.8.5  # 旧版 Gemini SDK（保留以兼容老逻辑）
+google-genai>=1.0.0          # 新版 Gemini SDK（直接上传分析使用，支持 AQ.Ab8... 形式 API key）
 azure-cognitiveservices-speech>=1.37.0
 tencentcloud-sdk-python>=3.0.1200
 dashscope>=1.24.6
+
 
 # 图像处理依赖
 Pillow>=10.3.0
