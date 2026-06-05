@@ -1,12 +1,12 @@
 import streamlit as st
 import os
 import shutil
+import json
 from uuid import uuid4
 from app.config import config
 from app.services import voice
 from app.models.schema import AudioVolumeDefaults
 from app.utils import utils
-from webui.utils.cache import get_songs_cache
 
 
 INDEXTTS2_REFERENCE_AUDIO_SOURCE_DIR = "/Users/viccy/Downloads/tts-mp3-clone/mp3"
@@ -36,6 +36,10 @@ INDEXTTS2_REFERENCE_AUDIO_MAP = [
     ("sarah-en-female.mp3", "莎拉", "Sarah"),
 ]
 INDEXTTS2_REFERENCE_AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg")
+BGM_RESOURCE_DIR = "/Users/viccy/Downloads/tts-mp3-clone/bgms-safe"
+BGM_TRACKS_JSON = os.path.join(BGM_RESOURCE_DIR, "tracks.json")
+BGM_UPLOAD_SUBDIR = "uploaded_bgms"
+BGM_AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg")
 
 
 def get_soulvoice_voices():
@@ -212,11 +216,106 @@ def copy_indextts2_reference_audio(source_path):
     return target_path
 
 
+def load_bgm_tracks_metadata():
+    """读取 BGM 资源描述信息。"""
+    if not os.path.isfile(BGM_TRACKS_JSON):
+        return {}
+
+    try:
+        with open(BGM_TRACKS_JSON, "r", encoding="utf-8") as f:
+            tracks = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(tracks, list):
+        return {}
+
+    metadata = {}
+    for track in tracks:
+        if not isinstance(track, dict):
+            continue
+        filename = track.get("fileName")
+        if filename:
+            metadata[filename] = track
+
+    return metadata
+
+
+def get_bgm_resource_options():
+    """获取 BGM 资源目录中的音频选项。"""
+    options = []
+    metadata = load_bgm_tracks_metadata()
+    added_files = set()
+
+    for filename, track in metadata.items():
+        audio_path = os.path.join(BGM_RESOURCE_DIR, filename)
+        if not os.path.isfile(audio_path):
+            continue
+
+        options.append({
+            "filename": filename,
+            "path": audio_path,
+            "title": track.get("title") or os.path.splitext(filename)[0],
+            "style": track.get("style", ""),
+            "category": track.get("category", ""),
+        })
+        added_files.add(filename)
+
+    if os.path.isdir(BGM_RESOURCE_DIR):
+        for filename in sorted(os.listdir(BGM_RESOURCE_DIR)):
+            if filename in added_files:
+                continue
+            if not filename.lower().endswith(BGM_AUDIO_EXTENSIONS):
+                continue
+
+            audio_path = os.path.join(BGM_RESOURCE_DIR, filename)
+            if not os.path.isfile(audio_path):
+                continue
+
+            options.append({
+                "filename": filename,
+                "path": audio_path,
+                "title": os.path.splitext(filename)[0],
+                "style": "",
+                "category": "",
+            })
+
+    return options
+
+
+def format_bgm_resource_option(option):
+    """格式化 BGM 资源下拉显示名。"""
+    title = option.get("title") or os.path.splitext(option.get("filename", ""))[0]
+    style = option.get("style", "")
+    category = option.get("category", "")
+
+    if style:
+        return f"{title} ({style})"
+    if category:
+        return f"{title} ({category})"
+    return title
+
+
+def get_bgm_resource_index(options, saved_bgm_file):
+    """根据已保存的 BGM 文件匹配下拉选项索引。"""
+    if not options:
+        return 0
+
+    saved_filename = os.path.basename(saved_bgm_file or "")
+    for index, option in enumerate(options):
+        if option["filename"] == saved_filename:
+            return index
+
+    return 0
+
+
 def get_audio_mime_type(audio_path):
     """根据音频文件扩展名返回 MIME 类型"""
     extension = os.path.splitext(audio_path or "")[1].lower()
     if extension == ".wav":
         return "audio/wav"
+    if extension == ".flac":
+        return "audio/flac"
     if extension == ".ogg":
         return "audio/ogg"
     if extension == ".m4a":
@@ -238,6 +337,20 @@ def render_reference_audio_preview_button(reference_audio, key, tr):
         use_container_width=True,
     ):
         st.session_state["indextts2_reference_audio_preview_path"] = reference_audio
+
+
+def render_bgm_preview_button(bgm_file, key, tr):
+    """渲染 BGM 试听按钮。"""
+    can_preview = bool(bgm_file and os.path.isfile(bgm_file))
+    if st.button(
+        " ",
+        key=key,
+        icon=":material/play_arrow:",
+        help=tr("Preview Background Music Help"),
+        disabled=not can_preview,
+        use_container_width=True,
+    ):
+        st.session_state["bgm_preview_path"] = bgm_file
 
 
 def is_valid_azure_voice_name(voice_name: str) -> bool:
@@ -262,7 +375,13 @@ def render_audio_panel(tr):
         # 渲染TTS设置
         render_tts_settings(tr)
 
-        # 渲染背景音乐设置
+    # 背景音乐独立成框，放在音频设置下方
+    render_bgm_panel(tr)
+
+
+def render_bgm_panel(tr):
+    """渲染背景音乐设置面板"""
+    with st.container(border=True):
         render_bgm_settings(tr)
 
 
@@ -1356,29 +1475,106 @@ def render_voice_preview(tr, voice_name):
 
 def render_bgm_settings(tr):
     """渲染背景音乐设置"""
-    # 背景音乐选项
-    bgm_options = [
-        (tr("No Background Music"), ""),
-        (tr("Random Background Music"), "random"),
-        (tr("Custom Background Music"), "custom"),
-    ]
+    saved_bgm_file = st.session_state.get('bgm_file', '')
+    saved_bgm_source = st.session_state.get('bgm_source', 'resource')
+    if st.session_state.get('bgm_type') == "":
+        saved_bgm_source = "none"
 
-    selected_index = st.selectbox(
-        tr("Background Music"),
-        index=1,
-        options=range(len(bgm_options)),
-        format_func=lambda x: bgm_options[x][0],
+    bgm_source_options = {
+        tr("Select from Resource Directory"): "resource",
+        tr("Upload Background Music"): "upload",
+        tr("No Background Music"): "none",
+    }
+    if saved_bgm_source not in bgm_source_options.values():
+        saved_bgm_source = "resource"
+
+    default_bgm_source_label = next(
+        label
+        for label, source_value in bgm_source_options.items()
+        if source_value == saved_bgm_source
     )
 
-    # 获取选择的背景音乐类型
-    bgm_type = bgm_options[selected_index][1]
-    st.session_state['bgm_type'] = bgm_type
+    st.markdown(f"**{tr('Background Music')}**")
+    bgm_source_label = st.pills(
+        tr("Background Music Source"),
+        options=list(bgm_source_options.keys()),
+        selection_mode="single",
+        default=default_bgm_source_label,
+        key="bgm_source_selection",
+        help=tr("Background Music Source Help"),
+        label_visibility="collapsed",
+        width="stretch",
+    )
+    if not bgm_source_label:
+        bgm_source_label = default_bgm_source_label
 
-    # 自定义背景音乐处理
-    if bgm_type == "custom":
-        custom_bgm_file = st.text_input(tr("Custom Background Music File"))
-        if custom_bgm_file and os.path.exists(custom_bgm_file):
-            st.session_state['bgm_file'] = custom_bgm_file
+    bgm_source = bgm_source_options[bgm_source_label]
+    bgm_file = ""
+    bgm_name = ""
+
+    if bgm_source == "resource":
+        bgm_options = get_bgm_resource_options()
+        if bgm_options:
+            selected_bgm_index = get_bgm_resource_index(bgm_options, saved_bgm_file)
+            select_col, preview_col = st.columns([5, 1])
+            with select_col:
+                selected_bgm_option = bgm_options[st.selectbox(
+                    tr("Background Music"),
+                    options=range(len(bgm_options)),
+                    index=selected_bgm_index,
+                    format_func=lambda x: format_bgm_resource_option(bgm_options[x]),
+                    help=tr("Background Music Path Help"),
+                    label_visibility="collapsed"
+                )]
+            bgm_file = selected_bgm_option["path"]
+            bgm_name = selected_bgm_option["title"]
+            with preview_col:
+                render_bgm_preview_button(
+                    bgm_file,
+                    "resource_bgm_preview",
+                    tr,
+                )
+        else:
+            st.warning(tr("No Background Music Resources Found"))
+
+    if bgm_source == "upload":
+        if st.session_state.get('bgm_source') != "upload":
+            saved_bgm_file = ""
+        bgm_file = saved_bgm_file if saved_bgm_file and os.path.isfile(saved_bgm_file) else ""
+        bgm_name = os.path.splitext(os.path.basename(bgm_file))[0] if bgm_file else ""
+        upload_col, preview_col = st.columns([5, 1])
+        with upload_col:
+            uploaded_file = st.file_uploader(
+                tr("Upload Background Music File"),
+                type=[extension.lstrip(".") for extension in BGM_AUDIO_EXTENSIONS],
+                help=tr("Upload Background Music Help"),
+                label_visibility="collapsed"
+            )
+
+        if uploaded_file is not None:
+            target_dir = utils.storage_dir(BGM_UPLOAD_SUBDIR, create=True)
+            bgm_file = os.path.join(target_dir, f"uploaded_{uploaded_file.name}")
+            with open(bgm_file, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            bgm_name = os.path.splitext(uploaded_file.name)[0]
+            st.success(tr("Background Music uploaded").format(path=bgm_file))
+        with preview_col:
+            render_bgm_preview_button(
+                bgm_file,
+                "upload_bgm_preview",
+                tr,
+            )
+
+    preview_bgm_path = st.session_state.get("bgm_preview_path", "")
+    if preview_bgm_path == bgm_file and os.path.isfile(preview_bgm_path):
+        with open(preview_bgm_path, "rb") as audio_file:
+            st.audio(audio_file.read(), format=get_audio_mime_type(preview_bgm_path))
+
+    bgm_type = "" if bgm_source == "none" or not bgm_file else "custom"
+    st.session_state['bgm_source'] = bgm_source
+    st.session_state['bgm_type'] = bgm_type
+    st.session_state['bgm_file'] = bgm_file if bgm_type else ""
+    st.session_state['bgm_name'] = bgm_name if bgm_type else ""
 
     # 背景音乐音量 - 使用统一的默认值
     bgm_volume = st.slider(
@@ -1399,6 +1595,7 @@ def get_audio_params():
         'voice_volume': st.session_state.get('voice_volume', AudioVolumeDefaults.VOICE_VOLUME),
         'voice_rate': st.session_state.get('voice_rate', 1.0),
         'voice_pitch': st.session_state.get('voice_pitch', 1.0),
+        'bgm_name': st.session_state.get('bgm_name', ''),
         'bgm_type': st.session_state.get('bgm_type', 'random'),
         'bgm_file': st.session_state.get('bgm_file', ''),
         'bgm_volume': st.session_state.get('bgm_volume', AudioVolumeDefaults.BGM_VOLUME),

@@ -15,6 +15,121 @@ from app.services import state as sm
 from app.utils import utils
 
 
+def _is_auto_transcription_enabled(params: VideoClipParams) -> bool:
+    return bool(
+        getattr(params, "subtitle_enabled", True)
+        and getattr(params, "subtitle_auto_transcribe_enabled", False)
+    )
+
+
+def _get_auto_transcription_backend(params: VideoClipParams) -> str:
+    backend = str(getattr(params, "subtitle_auto_transcribe_backend", "") or "").strip().lower()
+    if backend not in {"local", "bailian"}:
+        backend = "local"
+    return backend
+
+
+def _build_subtitle_mask_options(params: VideoClipParams, enabled=None) -> dict:
+    mask_configured = bool(
+        getattr(params, "subtitle_enabled", True)
+        and getattr(params, "subtitle_mask_enabled", False)
+    )
+    mask_enabled = mask_configured if enabled is None else mask_configured and enabled
+    return {
+        'subtitle_mask_enabled': mask_enabled,
+        'subtitle_mask_landscape_x_percent': getattr(params, "subtitle_mask_landscape_x_percent", 10.0),
+        'subtitle_mask_landscape_y_percent': getattr(params, "subtitle_mask_landscape_y_percent", 78.0),
+        'subtitle_mask_landscape_width_percent': getattr(params, "subtitle_mask_landscape_width_percent", 80.0),
+        'subtitle_mask_landscape_height_percent': getattr(params, "subtitle_mask_landscape_height_percent", 14.0),
+        'subtitle_mask_landscape_blur_radius': getattr(params, "subtitle_mask_landscape_blur_radius", 18),
+        'subtitle_mask_landscape_opacity_percent': getattr(params, "subtitle_mask_landscape_opacity_percent", 82),
+        'subtitle_mask_portrait_x_percent': getattr(params, "subtitle_mask_portrait_x_percent", 8.0),
+        'subtitle_mask_portrait_y_percent': getattr(params, "subtitle_mask_portrait_y_percent", 79.0),
+        'subtitle_mask_portrait_width_percent': getattr(params, "subtitle_mask_portrait_width_percent", 84.0),
+        'subtitle_mask_portrait_height_percent': getattr(params, "subtitle_mask_portrait_height_percent", 16.0),
+        'subtitle_mask_portrait_blur_radius': getattr(params, "subtitle_mask_portrait_blur_radius", 26),
+        'subtitle_mask_portrait_opacity_percent': getattr(params, "subtitle_mask_portrait_opacity_percent", 84),
+    }
+
+
+def _transcribe_final_video(task_id: str, video_path: str, params: VideoClipParams) -> str:
+    """Transcribe the fully merged video into an SRT file."""
+    from app.services import fun_asr_subtitle
+
+    if not video_path or not path.exists(video_path):
+        raise FileNotFoundError(f"自动转录视频不存在: {video_path}")
+
+    backend = _get_auto_transcription_backend(params)
+    subtitle_file = path.join(utils.task_dir(task_id), "auto_transcribed_final.srt")
+    logger.info(f"开始自动转录最终视频: {video_path}, backend={backend}")
+
+    if backend == "local":
+        api_url = str(
+            getattr(params, "subtitle_auto_transcribe_api_url", "")
+            or config.fun_asr.get("api_url", fun_asr_subtitle.LOCAL_FUN_ASR_API_URL)
+        ).strip()
+        if not api_url:
+            raise ValueError("请先输入本地 FunASR-Pack API 地址")
+
+        generated_path = fun_asr_subtitle.create_with_local_fun_asr(
+            local_file=video_path,
+            subtitle_file=subtitle_file,
+            api_url=api_url,
+            hotword=str(getattr(params, "subtitle_auto_transcribe_hotword", "") or "").strip(),
+            enable_spk=bool(getattr(params, "subtitle_auto_transcribe_enable_spk", False)),
+        )
+    else:
+        api_key = str(
+            getattr(params, "subtitle_auto_transcribe_api_key", "")
+            or config.fun_asr.get("api_key", "")
+        ).strip()
+        if not api_key:
+            raise ValueError("请先输入阿里百炼 API Key")
+
+        generated_path = fun_asr_subtitle.create_with_fun_asr(
+            local_file=video_path,
+            subtitle_file=subtitle_file,
+            api_key=api_key,
+        )
+
+    if not generated_path or not path.exists(generated_path):
+        raise RuntimeError("自动转录失败：未生成字幕文件")
+
+    logger.info(f"自动转录字幕生成成功: {generated_path}")
+    return generated_path
+
+
+def _merge_auto_transcribed_subtitles(
+    source_video_path: str,
+    output_video_path: str,
+    subtitle_path: str,
+    params: VideoClipParams,
+) -> str:
+    subtitle_options = {
+        'voice_volume': 1.0,
+        'bgm_volume': 0.0,
+        'original_audio_volume': 1.0,
+        'keep_original_audio': True,
+        'subtitle_enabled': True,
+        'subtitle_font': params.font_name,
+        'subtitle_font_size': params.font_size,
+        'subtitle_color': params.text_fore_color,
+        'subtitle_bg_color': None,
+        'subtitle_position': params.subtitle_position,
+        'custom_position': params.custom_position,
+        'threads': params.n_threads,
+        **_build_subtitle_mask_options(params, enabled=True),
+    }
+    return generate_video.merge_materials(
+        video_path=source_video_path,
+        audio_path="",
+        subtitle_path=subtitle_path,
+        bgm_path="",
+        output_path=output_video_path,
+        options=subtitle_options
+    )
+
+
 def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: dict = None):
     """
     后台任务（统一视频裁剪处理）- 优化版本
@@ -200,10 +315,19 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     6. 合并字幕/BGM/配音/视频
     """
     output_video_path = path.join(utils.task_dir(task_id), f"combined.mp4")
-    logger.info(f"\n\n## 6. 最后一步: 合并字幕/BGM/配音/视频 -> {output_video_path}")
+    auto_transcription_enabled = _is_auto_transcription_enabled(params)
+    merge_output_video_path = (
+        path.join(utils.task_dir(task_id), "combined_without_auto_subtitles.mp4")
+        if auto_transcription_enabled
+        else output_video_path
+    )
+    logger.info(f"\n\n## 6. 最后一步: 合并字幕/BGM/配音/视频 -> {merge_output_video_path}")
 
     # bgm_path = '/Users/apple/Desktop/home/NarratoAI/resource/songs/bgm.mp3'
-    bgm_path = utils.get_bgm_file()
+    bgm_path = utils.get_bgm_file(
+        bgm_type=getattr(params, "bgm_type", "random"),
+        bgm_file=getattr(params, "bgm_file", ""),
+    )
 
     # 获取优化的音量配置
     optimized_volumes = get_recommended_volumes_for_content('mixed')
@@ -232,23 +356,38 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         'bgm_volume': final_bgm_volume,  # 背景音乐音量（优化后）
         'original_audio_volume': final_original_volume,  # 视频原声音量（优化后）
         'keep_original_audio': True,  # 是否保留原声
-        'subtitle_enabled': params.subtitle_enabled,  # 是否启用字幕 - 修复字幕开关bug
+        'subtitle_enabled': params.subtitle_enabled and not auto_transcription_enabled,
         'subtitle_font': params.font_name,  # 这里使用相对字体路径，会自动在 font_dir() 目录下查找
         'subtitle_font_size': params.font_size,
         'subtitle_color': params.text_fore_color,
         'subtitle_bg_color': None,  # 直接使用None表示透明背景
         'subtitle_position': params.subtitle_position,
         'custom_position': params.custom_position,
-        'threads': params.n_threads
+        'threads': params.n_threads,
+        **_build_subtitle_mask_options(params, enabled=not auto_transcription_enabled),
     }
     generate_video.merge_materials(
         video_path=combined_video_path,
         audio_path=merged_audio_path,
         subtitle_path=merged_subtitle_path,
         bgm_path=bgm_path,
-        output_path=output_video_path,
+        output_path=merge_output_video_path,
         options=options
     )
+
+    auto_subtitle_path = ""
+    if auto_transcription_enabled:
+        sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=90)
+        logger.info("\n\n## 7. 自动转录最终视频字幕")
+        auto_subtitle_path = _transcribe_final_video(task_id, merge_output_video_path, params)
+        sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=95)
+        logger.info(f"\n\n## 8. 压入自动转录字幕 -> {output_video_path}")
+        _merge_auto_transcribed_subtitles(
+            source_video_path=merge_output_video_path,
+            output_video_path=output_video_path,
+            subtitle_path=auto_subtitle_path,
+            params=params,
+        )
 
     final_video_paths.append(output_video_path)
     combined_video_paths.append(combined_video_path)
@@ -259,6 +398,8 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         "videos": final_video_paths,
         "combined_videos": combined_video_paths
     }
+    if auto_subtitle_path:
+        kwargs["subtitles"] = [auto_subtitle_path]
     sm.state.update_task(task_id, state=const.TASK_STATE_COMPLETE, progress=100, **kwargs)
     return kwargs
 
@@ -416,9 +557,18 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
     6. 合并字幕/BGM/配音/视频
     """
     output_video_path = path.join(utils.task_dir(task_id), f"combined.mp4")
-    logger.info(f"\n\n## 6. 最后一步: 合并字幕/BGM/配音/视频 -> {output_video_path}")
+    auto_transcription_enabled = _is_auto_transcription_enabled(params)
+    merge_output_video_path = (
+        path.join(utils.task_dir(task_id), "combined_without_auto_subtitles.mp4")
+        if auto_transcription_enabled
+        else output_video_path
+    )
+    logger.info(f"\n\n## 6. 最后一步: 合并字幕/BGM/配音/视频 -> {merge_output_video_path}")
 
-    bgm_path = utils.get_bgm_file()
+    bgm_path = utils.get_bgm_file(
+        bgm_type=getattr(params, "bgm_type", "random"),
+        bgm_file=getattr(params, "bgm_file", ""),
+    )
 
     # 获取优化的音量配置
     optimized_volumes = get_recommended_volumes_for_content('mixed')
@@ -446,23 +596,38 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
         'bgm_volume': final_bgm_volume,
         'original_audio_volume': final_original_volume,
         'keep_original_audio': True,
-        'subtitle_enabled': params.subtitle_enabled,
+        'subtitle_enabled': params.subtitle_enabled and not auto_transcription_enabled,
         'subtitle_font': params.font_name,
         'subtitle_font_size': params.font_size,
         'subtitle_color': params.text_fore_color,
         'subtitle_bg_color': None,
         'subtitle_position': params.subtitle_position,
         'custom_position': params.custom_position,
-        'threads': params.n_threads
+        'threads': params.n_threads,
+        **_build_subtitle_mask_options(params, enabled=not auto_transcription_enabled),
     }
     generate_video.merge_materials(
         video_path=combined_video_path,
         audio_path=merged_audio_path,
         subtitle_path=merged_subtitle_path,
         bgm_path=bgm_path,
-        output_path=output_video_path,
+        output_path=merge_output_video_path,
         options=options
     )
+
+    auto_subtitle_path = ""
+    if auto_transcription_enabled:
+        sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=90)
+        logger.info("\n\n## 7. 自动转录最终视频字幕")
+        auto_subtitle_path = _transcribe_final_video(task_id, merge_output_video_path, params)
+        sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=95)
+        logger.info(f"\n\n## 8. 压入自动转录字幕 -> {output_video_path}")
+        _merge_auto_transcribed_subtitles(
+            source_video_path=merge_output_video_path,
+            output_video_path=output_video_path,
+            subtitle_path=auto_subtitle_path,
+            params=params,
+        )
 
     final_video_paths.append(output_video_path)
     combined_video_paths.append(combined_video_path)
@@ -473,6 +638,8 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
         "videos": final_video_paths,
         "combined_videos": combined_video_paths
     }
+    if auto_subtitle_path:
+        kwargs["subtitles"] = [auto_subtitle_path]
     sm.state.update_task(task_id, state=const.TASK_STATE_COMPLETE, progress=100, **kwargs)
     return kwargs
 

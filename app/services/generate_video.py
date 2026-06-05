@@ -13,6 +13,7 @@ import traceback
 import tempfile
 from typing import Optional, Dict, Any
 from loguru import logger
+import numpy as np
 from moviepy import (
     VideoFileClip,
     AudioFileClip,
@@ -22,11 +23,205 @@ from moviepy import (
     afx
 )
 from moviepy.video.tools.subtitles import SubtitlesClip
-from PIL import ImageFont
+from PIL import ImageFont, Image, ImageDraw, ImageEnhance, ImageFilter
 
 from app.utils import utils
 from app.models.schema import AudioVolumeDefaults
 from app.services.audio_normalizer import AudioNormalizer, normalize_audio_for_mixing
+
+
+SUBTITLE_MASK_DEFAULTS = {
+    "landscape": {
+        "x_percent": 10.0,
+        "y_percent": 78.0,
+        "width_percent": 80.0,
+        "height_percent": 14.0,
+        "blur_radius": 18,
+        "opacity_percent": 82,
+    },
+    "portrait": {
+        "x_percent": 8.0,
+        "y_percent": 79.0,
+        "width_percent": 84.0,
+        "height_percent": 16.0,
+        "blur_radius": 26,
+        "opacity_percent": 84,
+    },
+}
+
+
+def _clamp(value, minimum, maximum):
+    return min(max(value, minimum), maximum)
+
+
+def _get_numeric_option(options, key, default, integer=False):
+    try:
+        value = float(options.get(key, default))
+    except (TypeError, ValueError):
+        value = float(default)
+    return int(round(value)) if integer else value
+
+
+def _get_subtitle_mask_region_options(options, orientation):
+    defaults = SUBTITLE_MASK_DEFAULTS[orientation]
+    prefix = f"subtitle_mask_{orientation}_"
+
+    x_percent = _clamp(_get_numeric_option(options, f"{prefix}x_percent", defaults["x_percent"]), 0, 99)
+    y_percent = _clamp(_get_numeric_option(options, f"{prefix}y_percent", defaults["y_percent"]), 0, 99)
+    width_percent = _clamp(
+        _get_numeric_option(options, f"{prefix}width_percent", defaults["width_percent"]),
+        2,
+        100 - x_percent,
+    )
+    height_percent = _clamp(
+        _get_numeric_option(options, f"{prefix}height_percent", defaults["height_percent"]),
+        2,
+        100 - y_percent,
+    )
+    blur_radius = _clamp(
+        _get_numeric_option(options, f"{prefix}blur_radius", defaults["blur_radius"], integer=True),
+        0,
+        200,
+    )
+    opacity_percent = _clamp(
+        _get_numeric_option(options, f"{prefix}opacity_percent", defaults["opacity_percent"], integer=True),
+        0,
+        100,
+    )
+
+    return {
+        "x_percent": x_percent,
+        "y_percent": y_percent,
+        "width_percent": width_percent,
+        "height_percent": height_percent,
+        "blur_radius": blur_radius,
+        "opacity_percent": opacity_percent,
+    }
+
+
+def _resolve_subtitle_mask_region(video_width, video_height, options):
+    orientation = "portrait" if video_height > video_width else "landscape"
+    region = _get_subtitle_mask_region_options(options, orientation)
+
+    x = _clamp(round(video_width * region["x_percent"] / 100), 0, max(0, video_width - 2))
+    y = _clamp(round(video_height * region["y_percent"] / 100), 0, max(0, video_height - 2))
+    width = _clamp(round(video_width * region["width_percent"] / 100), 2, max(2, video_width - x))
+    height = _clamp(round(video_height * region["height_percent"] / 100), 2, max(2, video_height - y))
+
+    base_height = 1920 if orientation == "portrait" else 1080
+    blur_radius = (
+        0
+        if region["blur_radius"] == 0
+        else max(1, round(region["blur_radius"] * (video_height / base_height)))
+    )
+    corner_radius = max(8, round(min(height * 0.32, blur_radius * 1.4 or height * 0.24)))
+    feather = max(6, round(max(blur_radius * 0.85, 8)))
+    padding = blur_radius
+    padded_x = max(0, x - padding)
+    padded_y = max(0, y - padding)
+    padded_width = _clamp(width + padding * 2, 2, video_width - padded_x)
+    padded_height = _clamp(height + padding * 2, 2, video_height - padded_y)
+
+    return {
+        "orientation": orientation,
+        "x": int(x),
+        "y": int(y),
+        "width": int(width),
+        "height": int(height),
+        "blur_radius": int(blur_radius),
+        "opacity": _clamp(region["opacity_percent"] / 100, 0, 1),
+        "corner_radius": int(corner_radius),
+        "feather": int(feather),
+        "padded_x": int(padded_x),
+        "padded_y": int(padded_y),
+        "padded_width": int(padded_width),
+        "padded_height": int(padded_height),
+    }
+
+
+def _build_subtitle_mask_alpha(region):
+    alpha = Image.new("L", (region["padded_width"], region["padded_height"]), 0)
+    draw = ImageDraw.Draw(alpha)
+    left = region["x"] - region["padded_x"]
+    top = region["y"] - region["padded_y"]
+    right = left + region["width"]
+    bottom = top + region["height"]
+    draw.rounded_rectangle(
+        (left, top, right, bottom),
+        radius=region["corner_radius"],
+        fill=255,
+    )
+    if region["feather"] > 0:
+        alpha = alpha.filter(ImageFilter.GaussianBlur(radius=max(1, region["feather"] / 2)))
+    return alpha
+
+
+def apply_subtitle_mask(video_clip, options):
+    """Apply a Speclip-style blurred subtitle mask before subtitle burn-in."""
+    if not options.get("subtitle_mask_enabled", False):
+        return video_clip
+
+    video_width, video_height = video_clip.size
+    region = _resolve_subtitle_mask_region(video_width, video_height, options)
+    logger.info(
+        "字幕遮罩已启用: "
+        f"{region['orientation']} x={region['x']} y={region['y']} "
+        f"w={region['width']} h={region['height']} blur={region['blur_radius']}"
+    )
+
+    alpha = _build_subtitle_mask_alpha(region)
+    tint_alpha = _clamp(round((0.05 + region["opacity"] * 0.07) * 100) / 100, 0.05, 0.14)
+    blur_sigma = (
+        max(4, round(region["blur_radius"] * (0.9 + region["opacity"] * 0.35)))
+        if region["blur_radius"] > 0
+        else 0
+    )
+    brightness = 1.0 + 0.03 + region["opacity"] * 0.04
+    contrast = 0.975 - region["opacity"] * 0.035
+    saturation = 1.0 + region["opacity"] * 0.03
+    obliterate_width = max(24, round(region["padded_width"] * 0.12))
+    obliterate_height = max(12, round(region["padded_height"] * 0.18))
+
+    def mask_frame(get_frame, t):
+        frame = np.asarray(get_frame(t))
+        if frame.dtype != np.uint8:
+            frame = np.clip(frame, 0, 255).astype(np.uint8)
+        image = Image.fromarray(frame).convert("RGB")
+        crop_box = (
+            region["padded_x"],
+            region["padded_y"],
+            region["padded_x"] + region["padded_width"],
+            region["padded_y"] + region["padded_height"],
+        )
+        mask_image = image.crop(crop_box)
+        mask_image = mask_image.resize(
+            (obliterate_width, obliterate_height),
+            Image.Resampling.BICUBIC,
+        ).resize(
+            (region["padded_width"], region["padded_height"]),
+            Image.Resampling.LANCZOS,
+        )
+
+        if blur_sigma > 0:
+            mask_image = mask_image.filter(ImageFilter.GaussianBlur(radius=blur_sigma))
+        mask_image = mask_image.filter(ImageFilter.BoxBlur(4))
+        mask_image = ImageEnhance.Brightness(mask_image).enhance(brightness)
+        mask_image = ImageEnhance.Contrast(mask_image).enhance(contrast)
+        mask_image = ImageEnhance.Color(mask_image).enhance(saturation)
+
+        blurred = mask_image.convert("RGBA")
+        blurred.putalpha(alpha)
+
+        tint = Image.new("RGBA", blurred.size, (255, 255, 255, 0))
+        tint_alpha_mask = alpha.point(lambda value: int(value * tint_alpha))
+        tint.putalpha(tint_alpha_mask)
+        masked_region = Image.alpha_composite(blurred, tint)
+
+        output = image.convert("RGBA")
+        output.alpha_composite(masked_region, dest=(region["padded_x"], region["padded_y"]))
+        return np.asarray(output.convert("RGB"))
+
+    return video_clip.transform(mask_frame)
 
 
 def is_valid_subtitle_file(subtitle_path: str) -> bool:
@@ -121,6 +316,7 @@ def merge_materials(
     threads = options.get('threads', 2)
     fps = options.get('fps', 30)
     subtitle_enabled = options.get('subtitle_enabled', True)
+    subtitle_mask_enabled = bool(options.get('subtitle_mask_enabled', False))
 
     # 配置日志 - 便于调试问题
     logger.info(f"音量配置详情:")
@@ -130,6 +326,7 @@ def merge_materials(
     logger.info(f"  - 是否保留原声: {keep_original_audio}")
     logger.info(f"字幕配置详情:")
     logger.info(f"  - 是否启用字幕: {subtitle_enabled}")
+    logger.info(f"  - 是否启用字幕遮罩: {subtitle_mask_enabled}")
     logger.info(f"  - 字幕文件路径: {subtitle_path}")
 
     # 音量参数验证
@@ -279,6 +476,9 @@ def merge_materials(
     
     # 处理视频尺寸
     video_width, video_height = video_clip.size
+
+    if subtitle_enabled and subtitle_mask_enabled:
+        video_clip = apply_subtitle_mask(video_clip, options)
     
     # 字幕处理函数
     def create_text_clip(subtitle_item):

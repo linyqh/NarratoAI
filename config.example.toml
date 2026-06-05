@@ -105,6 +105,7 @@
 [fun_asr]
     # Fun-ASR 字幕转录配置
     # backend = "local" 使用本地 FunASR-Pack API；backend = "bailian" 使用阿里百炼在线 fun-asr
+    auto_transcribe_enabled = false
     backend = "local"
     api_url = "http://127.0.0.1:7860"
     hotword = ""
@@ -170,6 +171,21 @@
     # 豆包语音 TTS 配置
     doubaotts_voice_type = "BV700_V2_streaming"
     doubaotts_rate = 1.0
+
+    # 字幕遮罩配置：用于在烧录新字幕前遮盖原视频自带字幕
+    subtitle_mask_enabled = false
+    subtitle_mask_landscape_x_percent = 10
+    subtitle_mask_landscape_y_percent = 78
+    subtitle_mask_landscape_width_percent = 80
+    subtitle_mask_landscape_height_percent = 14
+    subtitle_mask_landscape_blur_radius = 18
+    subtitle_mask_landscape_opacity_percent = 82
+    subtitle_mask_portrait_x_percent = 8
+    subtitle_mask_portrait_y_percent = 79
+    subtitle_mask_portrait_width_percent = 84
+    subtitle_mask_portrait_height_percent = 16
+    subtitle_mask_portrait_blur_radius = 26
+    subtitle_mask_portrait_opacity_percent = 84
 
 ##########################################
 # 代理和网络配置
