@@ -56,12 +56,12 @@ def render_script_file(tr, params):
     MODE_SHORT = "short"
     MODE_SUMMARY = "summary"
 
-    # 模式选项映射
+    # 模式选项映射，按工作流优先级展示
     mode_options = {
-        tr("Select/Upload Script"): MODE_FILE,
+        tr("Short Drama Summary"): MODE_SUMMARY,
         tr("Auto Generate"): MODE_AUTO,
         tr("Short Generate"): MODE_SHORT,
-        tr("Short Drama Summary"): MODE_SUMMARY,
+        tr("Select/Upload Script"): MODE_FILE,
     }
     
     # 获取当前状态
@@ -80,8 +80,7 @@ def render_script_file(tr, params):
     else:
         default_index = mode_keys.index(tr("Select/Upload Script"))
 
-    # 1. 渲染功能选择下拉框
-    # 使用 segmented_control 替代 selectbox，提供更好的视觉体验
+    # 1. 渲染功能选择组件
     default_mode_label = mode_keys[default_index]
     default_mode = mode_options[default_mode_label]
 
@@ -106,17 +105,16 @@ def render_script_file(tr, params):
             st.session_state.video_clip_json_path = new_mode
             params.video_clip_json_path = new_mode
         else:
-            # 如果用户取消选择（segmented_control 允许取消），恢复到默认或上一个状态
-            # 这里我们强制保持当前状态，或者重置为默认
-            st.session_state.script_mode_selection = default_mode_label
+            st.session_state.video_clip_json_path = default_mode
+            params.video_clip_json_path = default_mode
 
     # 渲染组件
-    selected_mode_label = st.segmented_control(
+    selected_mode_label = st.selectbox(
         tr("Video Type"),
         options=mode_keys,
+        index=None,
         key="script_mode_selection",
         on_change=update_script_mode,
-        required=True
     )
     
     # 处理旧状态为空的兜底情况
@@ -231,50 +229,115 @@ def render_script_file(tr, params):
 
 def render_video_file(tr, params):
     """渲染视频文件选择"""
-    video_list = [(tr("None"), ""), (tr("Upload Local Files"), "upload_local")]
+    source_options = {
+        tr("Select from resource directory"): "resource",
+        tr("Upload Local Files"): "upload",
+    }
+    source_labels = list(source_options.keys())
+    default_source_label = source_labels[0]
 
-    # 获取已有视频文件
-    for suffix in ["*.mp4", "*.mov", "*.avi", "*.mkv"]:
-        video_files = glob.glob(os.path.join(utils.video_dir(), suffix))
-        for file in video_files:
-            display_name = file.replace(config.root_dir, "")
-            video_list.append((display_name, file))
+    if (
+        'video_source_selection' not in st.session_state
+        or st.session_state['video_source_selection'] not in source_options
+    ):
+        st.session_state['video_source_selection'] = default_source_label
 
-    selected_video_index = st.selectbox(
-        tr("Video File"),
-        index=0,
-        options=range(len(video_list)),
-        format_func=lambda x: video_list[x][0]
+    current_source = st.session_state['video_source_selection']
+    source_caption = (
+        tr("Select a video from resource videos directory")
+        if source_options[current_source] == "resource"
+        else tr("Upload a new video file up to 2GB")
     )
+    st.markdown(f"**{tr('Video Source')}**  :gray[{source_caption}]")
 
-    video_path = video_list[selected_video_index][1]
-    st.session_state['video_origin_path'] = video_path
-    params.video_origin_path = video_path
+    source = st.selectbox(
+        tr("Video Source"),
+        options=source_labels,
+        index=None,
+        key="video_source_selection",
+        label_visibility="collapsed",
+    )
+    if not source:
+        source = default_source_label
 
-    if video_path == "upload_local":
-        uploaded_file = st.file_uploader(
-            tr("Upload Local Files"),
-            type=["mp4", "mov", "avi", "flv", "mkv"],
-            accept_multiple_files=False,
+    if source_options[source] == "resource":
+        video_files = []
+        for suffix in ["*.mp4", "*.mov", "*.avi", "*.flv", "*.mkv", "*.mpeg4"]:
+            video_files.extend(glob.glob(os.path.join(utils.video_dir(), suffix)))
+
+        video_files = sorted(video_files, key=os.path.getctime, reverse=True)
+        saved_video_path = st.session_state.get('video_origin_path', '')
+        selected_video_path = st.session_state.get('resource_video_selection')
+        if selected_video_path not in video_files:
+            st.session_state['resource_video_selection'] = (
+                saved_video_path if saved_video_path in video_files else None
+            )
+
+        def format_video_name(path):
+            return path.replace(config.root_dir, "")
+
+        video_path = st.selectbox(
+            tr("Select Video"),
+            options=video_files,
+            index=None,
+            placeholder=tr("Choose a video file"),
+            format_func=format_video_name,
+            key="resource_video_selection",
         )
 
-        if uploaded_file is not None:
-            safe_filename = os.path.basename(uploaded_file.name)
-            video_file_path = os.path.join(utils.video_dir(), safe_filename)
-            file_name, file_extension = os.path.splitext(safe_filename)
+        if video_path:
+            st.session_state['video_origin_path'] = video_path
+            params.video_origin_path = video_path
+        else:
+            st.session_state['video_origin_path'] = ""
+            params.video_origin_path = ""
+            if not video_files:
+                st.info(tr("No video files found in resource videos directory"))
+        return
 
-            if os.path.exists(video_file_path):
-                timestamp = time.strftime("%Y%m%d%H%M%S")
-                file_name_with_timestamp = f"{file_name}_{timestamp}"
-                video_file_path = os.path.join(utils.video_dir(), file_name_with_timestamp + file_extension)
+    if source_options[source] == "upload":
+        uploaded_file = st.file_uploader(
+            tr("Upload Video"),
+            type=["mp4", "mov", "avi", "flv", "mkv", "mpeg4"],
+            accept_multiple_files=False,
+            key="video_file_uploader",
+        )
 
-            with open(video_file_path, "wb") as f:
-                f.write(uploaded_file.read())
-                st.success(tr("File Uploaded Successfully"))
+        if uploaded_file is None:
+            st.session_state['video_origin_path'] = ""
+            params.video_origin_path = ""
+            st.session_state['video_file_processed'] = False
+            st.session_state['uploaded_video_path'] = ""
+            st.session_state['uploaded_video_signature'] = ""
+        else:
+            uploaded_signature = f"{uploaded_file.name}:{uploaded_file.size}"
+            uploaded_video_path = st.session_state.get('uploaded_video_path', '')
+            is_processed = (
+                st.session_state.get('video_file_processed', False)
+                and st.session_state.get('uploaded_video_signature') == uploaded_signature
+                and uploaded_video_path
+            )
+
+            if is_processed:
+                st.session_state['video_origin_path'] = uploaded_video_path
+                params.video_origin_path = uploaded_video_path
+            else:
+                safe_filename = os.path.basename(uploaded_file.name)
+                video_file_path = os.path.join(utils.video_dir(), safe_filename)
+                file_name, file_extension = os.path.splitext(safe_filename)
+
+                if os.path.exists(video_file_path):
+                    timestamp = time.strftime("%Y%m%d%H%M%S")
+                    file_name_with_timestamp = f"{file_name}_{timestamp}"
+                    video_file_path = os.path.join(utils.video_dir(), file_name_with_timestamp + file_extension)
+
+                with open(video_file_path, "wb") as f:
+                    f.write(uploaded_file.read())
                 st.session_state['video_origin_path'] = video_file_path
                 params.video_origin_path = video_file_path
-                time.sleep(1)
-                st.rerun()
+                st.session_state['uploaded_video_path'] = video_file_path
+                st.session_state['uploaded_video_signature'] = uploaded_signature
+                st.session_state['video_file_processed'] = True
 
 
 def render_short_generate_options(tr):
@@ -336,7 +399,18 @@ def short_drama_summary(tr):
         st.session_state['subtitle_file_processed'] = False
 
     render_fun_asr_transcription(tr)
-    
+
+    # 名称输入框
+    video_theme = st.text_input(tr("短剧名称"))
+    st.session_state['video_theme'] = video_theme
+    # 数字输入框
+    temperature = st.slider("temperature", 0.0, 2.0, 0.7)
+    st.session_state['temperature'] = temperature
+    return video_theme
+
+
+def render_subtitle_upload(tr):
+    """上传并保存用户提供的 SRT 字幕文件。"""
     subtitle_file = st.file_uploader(
         tr("上传字幕文件"),
         type=["srt"],
@@ -401,102 +475,180 @@ def short_drama_summary(tr):
         except Exception as e:
             st.error(f"{tr('Upload failed')}: {str(e)}")
 
-    # 名称输入框
-    video_theme = st.text_input(tr("短剧名称"))
-    st.session_state['video_theme'] = video_theme
-    # 数字输入框
-    temperature = st.slider("temperature", 0.0, 2.0, 0.7)
-    st.session_state['temperature'] = temperature
-    return video_theme
-
 
 def render_fun_asr_transcription(tr):
-    """使用阿里百炼 Fun-ASR 从本地音视频转写生成字幕。"""
+    """使用 Fun-ASR 从本地音视频转写生成字幕。"""
     def clear_fun_asr_subtitle_state():
         st.session_state['subtitle_path'] = None
         st.session_state['subtitle_content'] = None
         st.session_state['subtitle_file_processed'] = False
 
-    with st.expander(tr("Ali Bailian Fun-ASR Subtitle Transcription"), expanded=False):
-        st.caption(tr("Fun-ASR upload caption"))
-        st.markdown(
-            f"{tr('API Key URL')}: "
-            "[https://bailian.console.aliyun.com/?tab=model#/api-key]"
-            "(https://bailian.console.aliyun.com/?tab=model#/api-key)"
+    from app.services import fun_asr_subtitle
+
+    backend_options = {
+        tr("Local FunASR-Pack API"): "local",
+        tr("Ali Bailian Online Fun-ASR"): "bailian",
+        tr("上传字幕文件"): "upload",
+    }
+    saved_backend = str(config.fun_asr.get("backend", "")).strip().lower()
+    if saved_backend not in {"local", "bailian", "upload"}:
+        saved_backend = (
+            "bailian"
+            if config.fun_asr.get("api_key") and not config.fun_asr.get("api_url")
+            else "local"
         )
 
-        api_key = st.text_input(
-            tr("Ali Bailian API Key"),
-            value=config.fun_asr.get("api_key", ""),
-            type="password",
-            help=tr("Ali Bailian API Key Help"),
-            key="fun_asr_api_key",
-        )
-        uploaded_media = st.file_uploader(
-            tr("Upload media to transcribe"),
-            type=[
-                "aac", "amr", "avi", "flac", "flv", "m4a", "mkv", "mov",
-                "mp3", "mp4", "mpeg", "ogg", "opus", "wav", "webm", "wma", "wmv",
-            ],
-            accept_multiple_files=False,
-            key="fun_asr_media_uploader",
-        )
+    backend_values = list(backend_options.values())
+    backend_labels = list(backend_options.keys())
+    backend = saved_backend
+    api_key = ""
+    api_url = config.fun_asr.get("api_url", fun_asr_subtitle.LOCAL_FUN_ASR_API_URL)
+    hotword = config.fun_asr.get("hotword", "")
+    enable_spk = bool(config.fun_asr.get("enable_spk", False))
+    media_path = st.session_state.get('video_origin_path', '')
 
-        if st.button(tr("Transcribe subtitles"), key="fun_asr_transcribe"):
-            if not api_key.strip():
-                clear_fun_asr_subtitle_state()
-                st.error(tr("Please enter Ali Bailian API Key"))
-                return
-            if uploaded_media is None:
-                clear_fun_asr_subtitle_state()
-                st.error(tr("Please upload media to transcribe"))
-                return
+    subtitle_cols = st.columns([3, 2], vertical_alignment="top")
 
-            try:
-                clear_fun_asr_subtitle_state()
-                from app.services import fun_asr_subtitle
+    with subtitle_cols[0]:
+        with st.expander(tr("Ali Bailian Fun-ASR Subtitle Transcription"), expanded=False):
+            backend_label = st.radio(
+                tr("Subtitle Processing Method"),
+                options=backend_labels,
+                index=backend_values.index(saved_backend),
+                horizontal=True,
+                key="fun_asr_backend",
+            )
+            backend = backend_options[backend_label]
 
-                config.fun_asr["api_key"] = api_key.strip()
-                config.fun_asr["model"] = "fun-asr"
-                config.save_config()
+            if backend == "upload":
+                render_subtitle_upload(tr)
+            elif backend == "local":
+                st.caption(tr("Local Fun-ASR upload caption"))
+                api_url = st.text_input(
+                    tr("Local FunASR-Pack API URL"),
+                    value=api_url,
+                    help=tr("Local FunASR-Pack API URL Help"),
+                    key="fun_asr_api_url",
+                )
+                hotword = st.text_input(
+                    tr("Fun-ASR Hotword"),
+                    value=hotword,
+                    help=tr("Fun-ASR Hotword Help"),
+                    key="fun_asr_hotword",
+                )
+                enable_spk = st.checkbox(
+                    tr("Enable speaker diarization"),
+                    value=enable_spk,
+                    help=tr("Enable speaker diarization Help"),
+                    key="fun_asr_enable_spk",
+                )
+            else:
+                st.caption(tr("Fun-ASR upload caption"))
+                st.markdown(
+                    f"{tr('API Key URL')}: "
+                    "[https://bailian.console.aliyun.com/?tab=model#/api-key]"
+                    "(https://bailian.console.aliyun.com/?tab=model#/api-key)"
+                )
 
-                temp_dir = utils.temp_dir("fun_asr")
-                safe_filename = os.path.basename(uploaded_media.name)
-                media_path = os.path.join(temp_dir, safe_filename)
-                file_name, file_extension = os.path.splitext(safe_filename)
-                if os.path.exists(media_path):
-                    timestamp = time.strftime("%Y%m%d%H%M%S")
-                    media_path = os.path.join(temp_dir, f"{file_name}_{timestamp}{file_extension}")
+                api_key = st.text_input(
+                    tr("Ali Bailian API Key"),
+                    value=config.fun_asr.get("api_key", ""),
+                    type="password",
+                    help=tr("Ali Bailian API Key Help"),
+                    key="fun_asr_api_key",
+                )
 
-                with open(media_path, "wb") as f:
-                    f.write(uploaded_media.getbuffer())
-
-                subtitle_name = f"{os.path.splitext(os.path.basename(media_path))[0]}_fun_asr.srt"
-                subtitle_path = os.path.join(utils.subtitle_dir(), subtitle_name)
-
-                with st.spinner(tr("Transcribing with Fun-ASR...")):
-                    generated_path = fun_asr_subtitle.create_with_fun_asr(
-                        local_file=media_path,
-                        subtitle_file=subtitle_path,
-                        api_key=api_key.strip(),
+            if backend != "upload":
+                if media_path:
+                    st.info(
+                        tr("Using selected video for subtitle transcription").format(
+                            file=os.path.basename(media_path)
+                        )
                     )
+                else:
+                    st.warning(tr("Please select or upload a video first"))
 
-                if not generated_path or not os.path.exists(generated_path):
-                    clear_fun_asr_subtitle_state()
-                    st.error(tr("Fun-ASR failed without subtitle file"))
-                    return
+    can_transcribe = backend != "upload" and bool(media_path)
+    with subtitle_cols[1]:
+        transcribe_clicked = st.button(
+            tr("Transcribe subtitles"),
+            key="fun_asr_transcribe",
+            disabled=not can_transcribe,
+            use_container_width=True,
+        )
 
-                with open(generated_path, "r", encoding="utf-8") as f:
-                    subtitle_content = f.read()
+    if not transcribe_clicked:
+        return
 
-                st.session_state['subtitle_path'] = generated_path
-                st.session_state['subtitle_content'] = subtitle_content
-                st.session_state['subtitle_file_processed'] = True
-                st.success(tr("Subtitle transcription succeeded").format(file=os.path.basename(generated_path)))
-            except Exception as e:
-                clear_fun_asr_subtitle_state()
-                logger.error(f"Fun-ASR 字幕转写失败: {traceback.format_exc()}")
-                st.error(f"{tr('Fun-ASR transcription failed')}: {str(e)}")
+    if backend == "bailian" and not api_key.strip():
+        clear_fun_asr_subtitle_state()
+        st.error(tr("Please enter Ali Bailian API Key"))
+        return
+    if backend == "local" and not str(api_url).strip():
+        clear_fun_asr_subtitle_state()
+        st.error(tr("Please enter local FunASR-Pack API URL"))
+        return
+    if not media_path or not os.path.exists(media_path):
+        clear_fun_asr_subtitle_state()
+        st.error(tr("Selected video file does not exist"))
+        return
+
+    try:
+        clear_fun_asr_subtitle_state()
+
+        config.fun_asr["backend"] = backend
+        config.fun_asr["api_url"] = str(api_url).strip()
+        config.fun_asr["api_key"] = api_key.strip()
+        config.fun_asr["hotword"] = str(hotword).strip()
+        config.fun_asr["enable_spk"] = bool(enable_spk)
+        config.fun_asr["model"] = "fun-asr"
+        config.save_config()
+
+        subtitle_name = f"{os.path.splitext(os.path.basename(media_path))[0]}_fun_asr.srt"
+        subtitle_path = os.path.join(utils.subtitle_dir(), subtitle_name)
+
+        spinner_text = (
+            tr("Transcribing with local FunASR-Pack...")
+            if backend == "local"
+            else tr("Transcribing with Fun-ASR...")
+        )
+        with st.spinner(spinner_text):
+            if backend == "local":
+                generated_path = fun_asr_subtitle.create_with_local_fun_asr(
+                    local_file=media_path,
+                    subtitle_file=subtitle_path,
+                    api_url=str(api_url).strip(),
+                    hotword=str(hotword).strip(),
+                    enable_spk=bool(enable_spk),
+                )
+            else:
+                generated_path = fun_asr_subtitle.create_with_fun_asr(
+                    local_file=media_path,
+                    subtitle_file=subtitle_path,
+                    api_key=api_key.strip(),
+                )
+
+        if not generated_path or not os.path.exists(generated_path):
+            clear_fun_asr_subtitle_state()
+            st.error(tr("Fun-ASR failed without subtitle file"))
+            return
+
+        with open(generated_path, "r", encoding="utf-8") as f:
+            subtitle_content = f.read()
+
+        st.session_state['subtitle_path'] = generated_path
+        st.session_state['subtitle_content'] = subtitle_content
+        st.session_state['subtitle_file_processed'] = True
+        success_placeholder = st.empty()
+        success_placeholder.success(
+            tr("Subtitle transcription succeeded").format(file=os.path.basename(generated_path))
+        )
+        time.sleep(3)
+        success_placeholder.empty()
+    except Exception as e:
+        clear_fun_asr_subtitle_state()
+        logger.error(f"Fun-ASR 字幕转写失败: {traceback.format_exc()}")
+        st.error(f"{tr('Fun-ASR transcription failed')}: {str(e)}")
 
 
 def render_script_buttons(tr, params):

@@ -1,15 +1,17 @@
-"""Aliyun Bailian Fun-ASR subtitle transcription helpers.
+"""Fun-ASR subtitle transcription helpers.
 
-This module intentionally uses the REST API because the official Fun-ASR
+The Bailian path intentionally uses the REST API because the official Fun-ASR
 recorded-file API supports temporary `oss://` resources only through REST.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import requests
 from loguru import logger
@@ -21,6 +23,7 @@ UPLOAD_POLICY_URL = f"{DASHSCOPE_BASE_URL}/api/v1/uploads"
 TRANSCRIPTION_URL = f"{DASHSCOPE_BASE_URL}/api/v1/services/audio/asr/transcription"
 TASK_URL_TEMPLATE = f"{DASHSCOPE_BASE_URL}/api/v1/tasks/{{task_id}}"
 MODEL_NAME = "fun-asr"
+LOCAL_FUN_ASR_API_URL = "http://127.0.0.1:7860"
 TERMINAL_FAILED_STATUSES = {"FAILED", "CANCELED", "UNKNOWN"}
 PUNCTUATION_BREAKS = set("，。！？；,.!?;")
 
@@ -87,6 +90,85 @@ def _session_get(session, url: str, **kwargs):
 
 def _session_post(session, url: str, **kwargs):
     return session.post(url, **kwargs)
+
+
+def _require_local_file(local_file: str) -> None:
+    if not os.path.isfile(local_file):
+        raise FunAsrError(f"待转写文件不存在: {local_file}")
+
+
+def _normalize_local_api_url(api_url: str = "") -> str:
+    api_url = (api_url or LOCAL_FUN_ASR_API_URL).strip().rstrip("/")
+    if not api_url:
+        raise FunAsrError("请先填写本地 FunASR-Pack API 地址")
+    if "://" not in api_url:
+        api_url = f"http://{api_url}"
+    return api_url
+
+
+def _local_base_url(api_url: str = "") -> str:
+    api_url = _normalize_local_api_url(api_url)
+    parsed = urlparse(api_url)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/asr"):
+        path = path[:-4].rstrip("/")
+    return urlunparse(parsed._replace(path=path, params="", query="", fragment="")).rstrip("/")
+
+
+def _local_asr_url(api_url: str = "") -> str:
+    api_url = _normalize_local_api_url(api_url)
+    if urlparse(api_url).path.rstrip("/").endswith("/asr"):
+        return api_url
+    return f"{api_url}/asr"
+
+
+def _absolute_local_download_url(api_url: str, download_url: str) -> str:
+    download_url = (download_url or "").strip()
+    if not download_url:
+        return ""
+    if urlparse(download_url).scheme:
+        return download_url
+    return urljoin(f"{_local_base_url(api_url)}/", download_url)
+
+
+def _raise_for_local_http(response: requests.Response, action: str) -> None:
+    status_code = getattr(response, "status_code", 200)
+    if status_code and status_code >= 400:
+        detail = ""
+        try:
+            data = response.json()
+            if isinstance(data, dict):
+                detail = str(data.get("detail") or "")
+        except Exception:
+            detail = ""
+        suffix = f": {detail}" if detail else ""
+        raise FunAsrError(f"{action}失败{suffix}，请确认本地 FunASR-Pack 服务可用")
+
+    try:
+        response.raise_for_status()
+    except Exception as exc:
+        raise FunAsrError(f"{action}失败，请确认本地 FunASR-Pack 服务可用") from exc
+
+
+def _local_json(response: requests.Response, action: str) -> dict[str, Any]:
+    _raise_for_local_http(response, action)
+    try:
+        data = response.json()
+    except Exception as exc:
+        raise FunAsrError(f"{action}返回了无效 JSON") from exc
+    if not isinstance(data, dict):
+        raise FunAsrError(f"{action}返回格式无效")
+    return data
+
+
+def _response_text(response: requests.Response) -> str:
+    text = getattr(response, "text", None)
+    if isinstance(text, str):
+        return text
+    content = getattr(response, "content", b"")
+    if isinstance(content, bytes):
+        return content.decode("utf-8")
+    return str(content)
 
 
 def request_upload_policy(api_key: str, model: str = MODEL_NAME, session=requests) -> UploadPolicy:
@@ -416,6 +498,216 @@ def write_srt_file(srt_content: str, subtitle_file: str = "") -> str:
     with open(subtitle_file, "w", encoding="utf-8") as f:
         f.write(srt_content)
     return subtitle_file
+
+
+def copy_srt_file(source_file: str, subtitle_file: str = "") -> str:
+    """Copy an existing SRT file into NarratoAI's subtitle directory."""
+    if not os.path.isfile(source_file):
+        raise FunAsrError(f"本地 FunASR-Pack 返回的字幕文件不存在: {source_file}")
+    if not subtitle_file:
+        subtitle_file = os.path.join(utils.subtitle_dir(), f"fun_asr_local_{int(time.time())}.srt")
+    parent = os.path.dirname(subtitle_file)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    if os.path.abspath(source_file) != os.path.abspath(subtitle_file):
+        shutil.copyfile(source_file, subtitle_file)
+    return subtitle_file
+
+
+def request_local_fun_asr_health(api_url: str = LOCAL_FUN_ASR_API_URL, session=requests) -> dict[str, Any]:
+    """Fetch FunASR-Pack health metadata from the local service."""
+    response = _session_get(session, f"{_local_base_url(api_url)}/health", timeout=10)
+    return _local_json(response, "检查本地 FunASR-Pack 服务")
+
+
+def request_local_fun_asr(
+    local_file: str,
+    api_url: str = LOCAL_FUN_ASR_API_URL,
+    hotword: str = "",
+    enable_spk: Optional[bool] = None,
+    timeout: float = 600.0,
+    session=requests,
+) -> dict[str, Any]:
+    """Call the local FunASR-Pack `/asr` API and return its JSON result."""
+    _require_local_file(local_file)
+    data: dict[str, str] = {}
+    if hotword.strip():
+        data["hotword"] = hotword.strip()
+    if enable_spk is not None:
+        data["enable_spk"] = "true" if enable_spk else "false"
+
+    with open(local_file, "rb") as file_obj:
+        files = {"file": (_safe_upload_name(local_file), file_obj)}
+        response = _session_post(
+            session,
+            _local_asr_url(api_url),
+            data=data,
+            files=files,
+            timeout=timeout,
+        )
+    return _local_json(response, "调用本地 FunASR-Pack ASR API")
+
+
+def download_local_srt(
+    download_url: str,
+    api_url: str = LOCAL_FUN_ASR_API_URL,
+    subtitle_file: str = "",
+    session=requests,
+) -> str:
+    """Download an SRT exposed by FunASR-Pack and save it as a NarratoAI subtitle."""
+    absolute_url = _absolute_local_download_url(api_url, download_url)
+    if not absolute_url:
+        raise FunAsrError("本地 FunASR-Pack 结果缺少 SRT 下载地址")
+    response = _session_get(session, absolute_url, timeout=60)
+    _raise_for_local_http(response, "下载本地 FunASR-Pack SRT")
+    srt_content = _response_text(response)
+    if not srt_content.strip():
+        raise FunAsrError("本地 FunASR-Pack 返回了空 SRT")
+    return write_srt_file(srt_content, subtitle_file)
+
+
+def _local_result_items(result_json: dict[str, Any]):
+    raw = result_json.get("raw")
+    if isinstance(raw, dict):
+        yield raw
+    elif isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                yield item
+    elif result_json.get("text"):
+        yield result_json
+
+
+def _blocks_from_local_timestamp(item: dict[str, Any], max_chars: int, max_duration: float) -> list[dict[str, Any]]:
+    text = str(item.get("text") or "").strip()
+    timestamps = item.get("timestamp") or []
+    if not text or not isinstance(timestamps, list):
+        return []
+
+    non_space_chars = [char for char in text if char.strip()]
+    consume_punctuation = len(timestamps) >= len(non_space_chars)
+    blocks: list[dict[str, Any]] = []
+    current: Optional[dict[str, Any]] = None
+    timestamp_index = 0
+    last_end = 0.0
+    max_duration_ms = max_duration * 1000
+
+    for char in text:
+        if not char.strip():
+            continue
+
+        is_punctuation = char in PUNCTUATION_BREAKS
+        consume_timestamp = consume_punctuation or not is_punctuation
+        if consume_timestamp and timestamp_index < len(timestamps):
+            pair = timestamps[timestamp_index]
+            timestamp_index += 1
+            if not isinstance(pair, (list, tuple)) or len(pair) < 2:
+                continue
+            start_ms = _timestamp_ms(pair[0], "local.timestamp.start")
+            end_ms = _timestamp_ms(pair[1], "local.timestamp.end")
+            last_end = end_ms
+        else:
+            start_ms = last_end
+            end_ms = last_end if is_punctuation else last_end + 200
+            last_end = end_ms
+
+        if current is None:
+            current = {"start": start_ms, "end": end_ms, "text": char}
+        else:
+            should_split_before = (
+                len(current["text"] + char) > max_chars
+                or (end_ms - current["start"]) > max_duration_ms
+            )
+            if should_split_before:
+                _flush_block(blocks, current)
+                current = {"start": start_ms, "end": end_ms, "text": char}
+            else:
+                current["text"] += char
+                current["end"] = end_ms
+
+        if current and is_punctuation:
+            _flush_block(blocks, current)
+            current = None
+
+    if current:
+        _flush_block(blocks, current)
+    return blocks
+
+
+def local_fun_asr_result_to_srt(
+    result_json: dict[str, Any],
+    max_chars: int = 20,
+    max_duration: float = 3.5,
+) -> str:
+    """Convert a FunASR-Pack JSON response into SRT when the API SRT is unavailable."""
+    blocks: list[dict[str, Any]] = []
+    for item in _local_result_items(result_json):
+        item_blocks = _blocks_from_local_timestamp(item, max_chars, max_duration)
+        if not item_blocks:
+            text = str(item.get("text") or "").strip()
+            if text:
+                item_blocks = _blocks_from_sentence(
+                    {
+                        "begin_time": 0,
+                        "end_time": max(1500, len(text) * 180),
+                        "text": text,
+                    },
+                    max_chars=max_chars,
+                )
+        blocks.extend(item_blocks)
+
+    if not blocks:
+        raise FunAsrError("本地 FunASR-Pack 转写结果为空：未找到可用字幕内容")
+
+    lines = []
+    for index, block in enumerate(blocks, start=1):
+        lines.append(_srt_block(index, block["start"], block["end"], block["text"]))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def create_with_local_fun_asr(
+    local_file: str,
+    subtitle_file: str = "",
+    api_url: str = LOCAL_FUN_ASR_API_URL,
+    hotword: str = "",
+    enable_spk: Optional[bool] = None,
+    timeout: float = 600.0,
+    session=requests,
+) -> Optional[str]:
+    """Create an SRT file through a locally running FunASR-Pack API."""
+    try:
+        result_json = request_local_fun_asr(
+            local_file=local_file,
+            api_url=api_url,
+            hotword=hotword,
+            enable_spk=enable_spk,
+            timeout=timeout,
+            session=session,
+        )
+
+        srt_file = result_json.get("srt_file")
+        if isinstance(srt_file, str) and srt_file and os.path.isfile(srt_file):
+            output_file = copy_srt_file(srt_file, subtitle_file)
+        else:
+            downloads = result_json.get("downloads") or {}
+            download_url = downloads.get("srt") if isinstance(downloads, dict) else ""
+            if download_url:
+                output_file = download_local_srt(
+                    download_url,
+                    api_url=api_url,
+                    subtitle_file=subtitle_file,
+                    session=session,
+                )
+            else:
+                srt_content = local_fun_asr_result_to_srt(result_json)
+                output_file = write_srt_file(srt_content, subtitle_file)
+
+        logger.info(f"本地 FunASR-Pack 字幕文件已生成: {output_file}")
+        return output_file
+    except FunAsrError:
+        raise
+    except Exception as exc:
+        raise FunAsrError("本地 FunASR-Pack 字幕转写失败，请检查服务地址、文件或模型状态") from exc
 
 
 def create_with_fun_asr(
