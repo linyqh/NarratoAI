@@ -163,12 +163,8 @@ def render_tts_settings(tr):
 
 def render_edge_tts_settings(tr):
     """渲染 Edge TTS 引擎设置"""
-    # 获取支持的语音列表
-    support_locales = ["zh-CN", "en-US"]
-    all_voices = voice.get_all_azure_voices(filter_locals=support_locales)
-
-    # 只保留标准版本的语音（Edge TTS专用，不包含V2）
-    edge_voices = [v for v in all_voices if "-V2" not in v]
+    # 获取 Edge TTS 支持的全部语言和音色
+    edge_voices = voice.get_all_edge_voices()
 
     # 创建友好的显示名称
     friendly_names = {}
@@ -189,7 +185,7 @@ def render_edge_tts_settings(tr):
             # 如果没找到匹配的，使用第一个
             saved_voice_name = edge_voices[0] if edge_voices else ""
 
-    # 音色选择下拉框（Edge TTS音色相对较少，保留下拉框）
+    # 音色选择下拉框
     selected_friendly_name = st.selectbox(
         "音色选择",
         options=list(friendly_names.values()),
@@ -204,23 +200,11 @@ def render_edge_tts_settings(tr):
 
     # 显示音色信息
     with st.expander("💡 Edge TTS 音色说明", expanded=False):
-        st.write("**中文音色：**")
-        zh_voices = [v for v in edge_voices if v.startswith("zh-CN")]
-        for v in zh_voices:
+        st.write(f"已加载 {len(edge_voices)} 个音色")
+        for v in edge_voices:
             gender = "女声" if "Female" in v else "男声"
-            name = v.replace("-Female", "").replace("-Male", "").replace("zh-CN-", "").replace("Neural", "")
+            name = v.replace("-Female", "").replace("-Male", "").replace("Neural", "")
             st.write(f"• {name} ({gender})")
-
-        st.write("")
-        st.write("**英文音色：**")
-        en_voices = [v for v in edge_voices if v.startswith("en-US")][:5]  # 只显示前5个
-        for v in en_voices:
-            gender = "女声" if "Female" in v else "男声"
-            name = v.replace("-Female", "").replace("-Male", "").replace("en-US-", "").replace("Neural", "")
-            st.write(f"• {name} ({gender})")
-
-        if len([v for v in edge_voices if v.startswith("en-US")]) > 5:
-            st.write("• ... 更多英文音色")
 
     config.ui["edge_voice_name"] = voice_name
     config.ui["voice_name"] = voice_name  # 兼容性

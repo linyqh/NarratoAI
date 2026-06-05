@@ -6,6 +6,7 @@ import edge_tts
 import asyncio
 import requests
 import uuid
+from functools import lru_cache
 from loguru import logger
 from typing import List, Union, Tuple
 from datetime import datetime
@@ -282,7 +283,7 @@ Gender: Male
 Name: en-AU-NatashaNeural
 Gender: Female
 
-Name: en-AU-WilliamNeural
+Name: en-AU-WilliamMultilingualNeural
 Gender: Male
 
 Name: en-CA-ClaraNeural
@@ -369,19 +370,31 @@ Gender: Female
 Name: en-US-AndrewNeural
 Gender: Male
 
+Name: en-US-AndrewMultilingualNeural
+Gender: Male
+
 Name: en-US-AriaNeural
 Gender: Female
 
 Name: en-US-AvaNeural
 Gender: Female
 
+Name: en-US-AvaMultilingualNeural
+Gender: Female
+
 Name: en-US-BrianNeural
+Gender: Male
+
+Name: en-US-BrianMultilingualNeural
 Gender: Male
 
 Name: en-US-ChristopherNeural
 Gender: Male
 
 Name: en-US-EmmaNeural
+Gender: Female
+
+Name: en-US-EmmaMultilingualNeural
 Gender: Female
 
 Name: en-US-EricNeural
@@ -666,11 +679,23 @@ Gender: Male
 Name: it-IT-ElsaNeural
 Gender: Female
 
-Name: it-IT-GiuseppeNeural
+Name: it-IT-GiuseppeMultilingualNeural
 Gender: Male
 
 Name: it-IT-IsabellaNeural
 Gender: Female
+
+Name: iu-Cans-CA-SiqiniqNeural
+Gender: Female
+
+Name: iu-Cans-CA-TaqqiqNeural
+Gender: Male
+
+Name: iu-Latn-CA-SiqiniqNeural
+Gender: Female
+
+Name: iu-Latn-CA-TaqqiqNeural
+Gender: Male
 
 Name: ja-JP-KeitaNeural
 Gender: Male
@@ -708,7 +733,7 @@ Gender: Male
 Name: kn-IN-SapnaNeural
 Gender: Female
 
-Name: ko-KR-HyunsuNeural
+Name: ko-KR-HyunsuMultilingualNeural
 Gender: Male
 
 Name: ko-KR-InJoonNeural
@@ -822,7 +847,7 @@ Gender: Male
 Name: pt-BR-FranciscaNeural
 Gender: Female
 
-Name: pt-BR-ThalitaNeural
+Name: pt-BR-ThalitaMultilingualNeural
 Gender: Female
 
 Name: pt-PT-DuarteNeural
@@ -1304,6 +1329,52 @@ def get_edge_tts_proxy() -> str | None:
 
     proxy_url = (config.proxy.get("https") or config.proxy.get("http") or "").strip()
     return proxy_url or None
+
+
+def _run_async_safely(coro_func, *args, **kwargs):
+    """在同步代码里安全运行异步 edge_tts 调用。"""
+    def run_in_new_loop():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coro_func(*args, **kwargs))
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return run_in_new_loop()
+
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(run_in_new_loop).result()
+
+
+@lru_cache(maxsize=8)
+def _get_all_edge_voices_cached(proxy: str | None) -> list[str]:
+    async def _list_voices():
+        return await edge_tts.list_voices(proxy=proxy)
+
+    voices = []
+    for item in _run_async_safely(_list_voices):
+        name = item.get("ShortName", "").strip()
+        gender = item.get("Gender", "").strip()
+        if name and gender:
+            voices.append(f"{name}-{gender}")
+
+    voices.sort()
+    return voices
+
+
+def get_all_edge_voices() -> list[str]:
+    """获取 Edge TTS 当前支持的全部语言和音色，失败时回退到内置列表。"""
+    try:
+        return _get_all_edge_voices_cached(get_edge_tts_proxy())
+    except Exception as e:
+        logger.warning(f"获取 Edge TTS 在线音色列表失败，使用内置音色列表: {e}")
+        return [v for v in get_all_azure_voices(filter_locals=[]) if "-V2" not in v]
 
 
 def azure_tts_v1(
