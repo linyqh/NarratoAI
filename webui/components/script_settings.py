@@ -56,11 +56,6 @@ def render_script_file(tr, params):
     MODE_SHORT = "short"
     MODE_SUMMARY = "summary"
 
-    # 处理保存脚本后的模式切换（必须在 widget 实例化之前）
-    if st.session_state.get('_switch_to_file_mode'):
-        st.session_state['script_mode_selection'] = tr("Select/Upload Script")
-        del st.session_state['_switch_to_file_mode']
-
     # 模式选项映射
     mode_options = {
         tr("Select/Upload Script"): MODE_FILE,
@@ -88,6 +83,18 @@ def render_script_file(tr, params):
     # 1. 渲染功能选择下拉框
     # 使用 segmented_control 替代 selectbox，提供更好的视觉体验
     default_mode_label = mode_keys[default_index]
+    default_mode = mode_options[default_mode_label]
+
+    if st.session_state.get('_switch_to_file_mode'):
+        st.session_state['script_mode_selection'] = tr("Select/Upload Script")
+        del st.session_state['_switch_to_file_mode']
+    elif (
+        'script_mode_selection' not in st.session_state
+        or st.session_state['script_mode_selection'] not in mode_options
+    ):
+        st.session_state['script_mode_selection'] = default_mode_label
+    elif mode_options[st.session_state['script_mode_selection']] != default_mode:
+        st.session_state['script_mode_selection'] = default_mode_label
     
     # 定义回调函数来处理状态更新
     def update_script_mode():
@@ -107,12 +114,12 @@ def render_script_file(tr, params):
     selected_mode_label = st.segmented_control(
         tr("Video Type"),
         options=mode_keys,
-        default=default_mode_label,
         key="script_mode_selection",
-        on_change=update_script_mode
+        on_change=update_script_mode,
+        required=True
     )
     
-    # 处理未选择的情况（虽然有default，但在某些交互下可能为空）
+    # 处理旧状态为空的兜底情况
     if not selected_mode_label:
         selected_mode_label = default_mode_label
         

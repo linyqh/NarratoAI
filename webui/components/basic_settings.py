@@ -140,6 +140,15 @@ def show_config_validation_errors(errors: list):
             st.error(error)
 
 
+def update_app_config_if_changed(key: str, value) -> bool:
+    """Update app config only when the value really changed."""
+    if config.app.get(key) == value:
+        return False
+
+    config.app[key] = value
+    return True
+
+
 def render_basic_settings(tr):
     """渲染基础设置面板"""
     with st.expander(tr("Basic Settings"), expanded=False):
@@ -546,9 +555,11 @@ def render_vision_llm_settings(tr):
         # 这里的验证逻辑可能需要微调，因为我们现在是自动组合的
         is_valid, error_msg = validate_openai_compatible_model_name(st_vision_model_name, "视频分析")
         if is_valid:
-            config.app["vision_openai_model_name"] = st_vision_model_name
+            config_changed |= update_app_config_if_changed(
+                "vision_openai_model_name",
+                st_vision_model_name
+            )
             st.session_state["vision_openai_model_name"] = st_vision_model_name
-            config_changed = True
         else:
             validation_errors.append(error_msg)
 
@@ -556,9 +567,11 @@ def render_vision_llm_settings(tr):
     if st_vision_api_key:
         is_valid, error_msg = validate_api_key(st_vision_api_key, "视频分析")
         if is_valid:
-            config.app["vision_openai_api_key"] = st_vision_api_key
+            config_changed |= update_app_config_if_changed(
+                "vision_openai_api_key",
+                st_vision_api_key
+            )
             st.session_state["vision_openai_api_key"] = st_vision_api_key
-            config_changed = True
         else:
             validation_errors.append(error_msg)
 
@@ -566,9 +579,11 @@ def render_vision_llm_settings(tr):
     if st_vision_base_url:
         is_valid, error_msg = validate_base_url(st_vision_base_url, "视频分析")
         if is_valid:
-            config.app["vision_openai_base_url"] = st_vision_base_url
+            config_changed |= update_app_config_if_changed(
+                "vision_openai_base_url",
+                st_vision_base_url
+            )
             st.session_state["vision_openai_base_url"] = st_vision_base_url
-            config_changed = True
         else:
             validation_errors.append(error_msg)
 
@@ -804,9 +819,11 @@ def render_text_llm_settings(tr):
     if st_text_model_name:
         is_valid, error_msg = validate_openai_compatible_model_name(st_text_model_name, "文案生成")
         if is_valid:
-            config.app["text_openai_model_name"] = st_text_model_name
+            text_config_changed |= update_app_config_if_changed(
+                "text_openai_model_name",
+                st_text_model_name
+            )
             st.session_state["text_openai_model_name"] = st_text_model_name
-            text_config_changed = True
         else:
             text_validation_errors.append(error_msg)
 
@@ -814,9 +831,11 @@ def render_text_llm_settings(tr):
     if st_text_api_key:
         is_valid, error_msg = validate_api_key(st_text_api_key, "文案生成")
         if is_valid:
-            config.app["text_openai_api_key"] = st_text_api_key
+            text_config_changed |= update_app_config_if_changed(
+                "text_openai_api_key",
+                st_text_api_key
+            )
             st.session_state["text_openai_api_key"] = st_text_api_key
-            text_config_changed = True
         else:
             text_validation_errors.append(error_msg)
 
@@ -824,9 +843,11 @@ def render_text_llm_settings(tr):
     if st_text_base_url:
         is_valid, error_msg = validate_base_url(st_text_base_url, "文案生成")
         if is_valid:
-            config.app["text_openai_base_url"] = st_text_base_url
+            text_config_changed |= update_app_config_if_changed(
+                "text_openai_base_url",
+                st_text_base_url
+            )
             st.session_state["text_openai_base_url"] = st_text_base_url
-            text_config_changed = True
         else:
             text_validation_errors.append(error_msg)
 
