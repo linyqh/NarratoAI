@@ -1,18 +1,23 @@
 import os
 import glob
 import json
+import math
 import time
 import traceback
+import pandas as pd
 import streamlit as st
 from loguru import logger
 
 from app.config import config
 from app.models.schema import VideoClipParams
-from app.services.subtitle_text import decode_subtitle_bytes
+from app.services.subtitle_text import decode_subtitle_bytes, read_subtitle_text
 from app.utils import utils, check_script
 from webui.tools.generate_script_docu import generate_script_docu
 from webui.tools.generate_script_short import generate_script_short
-from webui.tools.generate_short_summary import generate_script_short_sunmmary
+from webui.tools.generate_short_summary import analyze_short_drama_plot, generate_script_short_sunmmary
+
+
+SCRIPT_TABLE_BASE_COLUMNS = ["_id", "timestamp", "picture", "narration", "OST"]
 
 
 def render_script_panel(tr):
@@ -77,8 +82,10 @@ def render_script_file(tr, params):
         default_index = mode_keys.index(tr("Short Generate"))
     elif current_path == "summary":
         default_index = mode_keys.index(tr("Short Drama Summary"))
-    else:
+    elif current_path:
         default_index = mode_keys.index(tr("Select/Upload Script"))
+    else:
+        default_index = 0
 
     # 1. 渲染功能选择组件
     default_mode_label = mode_keys[default_index]
@@ -230,16 +237,21 @@ def render_script_file(tr, params):
 def render_video_file(tr, params):
     """渲染视频文件选择"""
     source_options = {
-        tr("Select from resource directory"): "resource",
         tr("Upload Local Files"): "upload",
+        tr("Select from resource directory"): "resource",
     }
     source_labels = list(source_options.keys())
     default_source_label = source_labels[0]
+    source_default_version = "upload_first_v1"
 
-    if (
-        'video_source_selection' not in st.session_state
-        or st.session_state['video_source_selection'] not in source_options
-    ):
+    if st.session_state.get('_video_source_default_version') != source_default_version:
+        if (
+            st.session_state.get('video_source_selection') not in source_options
+            or not st.session_state.get('video_origin_path')
+        ):
+            st.session_state['video_source_selection'] = default_source_label
+        st.session_state['_video_source_default_version'] = source_default_version
+    elif st.session_state.get('video_source_selection') not in source_options:
         st.session_state['video_source_selection'] = default_source_label
 
     current_source = st.session_state['video_source_selection']
@@ -250,12 +262,13 @@ def render_video_file(tr, params):
     )
     st.markdown(f"**{tr('Video Source')}**  :gray[{source_caption}]")
 
-    source = st.selectbox(
+    source = st.pills(
         tr("Video Source"),
         options=source_labels,
-        index=None,
+        selection_mode="single",
         key="video_source_selection",
         label_visibility="collapsed",
+        width="stretch",
     )
     if not source:
         source = default_source_label
@@ -399,23 +412,84 @@ def short_drama_summary(tr):
         st.session_state['subtitle_file_processed'] = False
 
     render_fun_asr_transcription(tr)
+    render_subtitle_preview(tr)
 
-    # 名称输入框
-    video_theme = st.text_input(tr("短剧名称"))
+    current_subtitle_path = st.session_state.get('subtitle_path', '')
+    plot_analysis_source = st.session_state.get('short_drama_plot_analysis_subtitle_path')
+    if plot_analysis_source and plot_analysis_source != current_subtitle_path:
+        st.session_state['short_drama_plot_analysis'] = ""
+        st.session_state['short_drama_plot_analysis_subtitle_path'] = ""
+
+    name_cols = st.columns([4, 1.2], vertical_alignment="bottom")
+    with name_cols[0]:
+        video_theme = st.text_input(tr("短剧名称"))
+    with name_cols[1]:
+        analyze_plot_clicked = st.button(
+            tr("剧情理解"),
+            key="short_drama_plot_analysis_button",
+            disabled=not current_subtitle_path,
+            use_container_width=True,
+        )
     st.session_state['video_theme'] = video_theme
-    # 数字输入框
-    temperature = st.slider("temperature", 0.0, 2.0, 0.7)
-    st.session_state['temperature'] = temperature
+
+    if analyze_plot_clicked:
+        with st.spinner(tr("Analyzing plot...")):
+            plot_analysis = analyze_short_drama_plot(
+                current_subtitle_path,
+                st.session_state.get('temperature', 0.7),
+                tr,
+                subtitle_content=st.session_state.get('subtitle_content', ''),
+            )
+        if plot_analysis:
+            st.session_state['short_drama_plot_analysis'] = plot_analysis
+            st.session_state['short_drama_plot_analysis_subtitle_path'] = current_subtitle_path
+            st.success(tr("Plot analysis completed"))
+
+    if st.session_state.get('short_drama_plot_analysis'):
+        st.text_area(
+            tr("剧情理解结果"),
+            key="short_drama_plot_analysis",
+            height=240,
+        )
+
     return video_theme
+
+
+def render_subtitle_preview(tr):
+    """渲染可折叠的当前字幕预览；没有字幕时提示用户先转写或上传。"""
+    subtitle_path = st.session_state.get('subtitle_path', '')
+    subtitle_content = st.session_state.get('subtitle_content', '')
+
+    if subtitle_path and not subtitle_content and os.path.exists(subtitle_path):
+        subtitle_content = read_subtitle_text(subtitle_path).text
+        st.session_state['subtitle_content'] = subtitle_content
+
+    with st.expander(tr("Subtitle Preview"), expanded=False):
+        if not subtitle_path or not subtitle_content:
+            st.info(tr("Please transcribe or upload subtitles first"))
+            return
+
+        st.text_area(
+            tr("Subtitle Preview"),
+            key="subtitle_content",
+            height=180,
+            label_visibility="collapsed",
+        )
 
 
 def render_subtitle_upload(tr):
     """上传并保存用户提供的 SRT 字幕文件。"""
+    subtitle_dir_label = utils.subtitle_dir().replace(config.root_dir, ".")
+    st.markdown(
+        f"**{tr('上传字幕文件')}**  "
+        f":gray[{tr('Transcribed subtitles storage hint').format(path=subtitle_dir_label)}]"
+    )
     subtitle_file = st.file_uploader(
         tr("上传字幕文件"),
         type=["srt"],
         accept_multiple_files=False,
-        key="subtitle_file_uploader"  # 添加唯一key
+        key="subtitle_file_uploader",  # 添加唯一key
+        label_visibility="collapsed",
     )
     
     # 显示当前已上传的字幕文件路径
@@ -474,6 +548,141 @@ def render_subtitle_upload(tr):
 
         except Exception as e:
             st.error(f"{tr('Upload failed')}: {str(e)}")
+
+
+def _is_blank_table_value(value):
+    if value is None:
+        return True
+    if isinstance(value, float) and math.isnan(value):
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return False
+
+
+def _ordered_script_columns(script_rows):
+    columns = []
+    for column in SCRIPT_TABLE_BASE_COLUMNS:
+        columns.append(column)
+
+    for row in script_rows:
+        if not isinstance(row, dict):
+            continue
+        for column in row.keys():
+            if column not in columns:
+                columns.append(column)
+
+    return columns
+
+
+def _script_json_to_table(script_data):
+    if not isinstance(script_data, list):
+        script_data = []
+
+    if not script_data:
+        return pd.DataFrame(columns=SCRIPT_TABLE_BASE_COLUMNS)
+
+    if not all(isinstance(item, dict) for item in script_data):
+        rows = [
+            {"value": json.dumps(item, ensure_ascii=False)}
+            for item in script_data
+        ]
+        return pd.DataFrame(rows, columns=["value"])
+
+    columns = _ordered_script_columns(script_data)
+    return pd.DataFrame(script_data, columns=columns)
+
+
+def _normalize_script_table_value(column, value):
+    if _is_blank_table_value(value):
+        return ""
+
+    if column in {"_id", "OST"}:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return value
+
+    return value
+
+
+def _script_table_to_json(edited_data):
+    if isinstance(edited_data, pd.DataFrame):
+        records = edited_data.to_dict("records")
+    elif isinstance(edited_data, list):
+        records = edited_data
+    else:
+        records = pd.DataFrame(edited_data).to_dict("records")
+
+    script_data = []
+    for row in records:
+        if not isinstance(row, dict):
+            continue
+        if all(_is_blank_table_value(value) for value in row.values()):
+            continue
+
+        cleaned_row = {}
+        for column, value in row.items():
+            if not column:
+                continue
+            normalized_value = _normalize_script_table_value(column, value)
+            if _is_blank_table_value(normalized_value) and column not in SCRIPT_TABLE_BASE_COLUMNS:
+                continue
+            cleaned_row[column] = normalized_value
+
+        if cleaned_row:
+            script_data.append(cleaned_row)
+
+    return json.dumps(script_data, indent=2, ensure_ascii=False)
+
+
+def render_video_script_editor(tr):
+    """使用弹窗和表格编辑视频脚本 JSON。"""
+    @st.dialog(tr("Video Script"), width="large")
+    def video_script_dialog():
+        script_data = st.session_state.get('video_clip_json', [])
+        table_data = _script_json_to_table(script_data)
+        column_order = list(table_data.columns)
+
+        st.caption(tr("Video script table help"))
+        edited_table = st.data_editor(
+            table_data,
+            key="video_script_table_editor",
+            hide_index=True,
+            num_rows="dynamic",
+            use_container_width=True,
+            height=520,
+            row_height=72,
+            column_order=column_order,
+            column_config={
+                "_id": st.column_config.NumberColumn(tr("Script Column ID"), step=1, format="%d", width=52),
+                "timestamp": st.column_config.TextColumn(tr("Script Column Timestamp"), width=200),
+                "picture": st.column_config.TextColumn(tr("Script Column Picture"), width=320),
+                "narration": st.column_config.TextColumn(tr("Script Column Narration"), width=480),
+                "OST": st.column_config.NumberColumn(
+                    tr("Script Column OST"),
+                    min_value=0,
+                    max_value=2,
+                    step=1,
+                    format="%d",
+                    width=52,
+                ),
+            },
+        )
+
+        video_clip_json_details = _script_table_to_json(edited_table)
+        with st.expander(tr("Raw JSON Preview"), expanded=False):
+            st.code(video_clip_json_details, language="json")
+
+        if st.button(tr("Save Script"), key="save_script_from_dialog", use_container_width=True):
+            save_script_with_validation(tr, video_clip_json_details)
+
+    script_data = st.session_state.get('video_clip_json', [])
+    script_count = len(script_data) if isinstance(script_data, list) else 0
+    st.markdown(f"**{tr('Video Script')}**  :gray[{tr('Video script row count').format(count=script_count)}]")
+
+    if st.button(tr("Edit Video Script"), key="open_video_script_editor", use_container_width=True):
+        video_script_dialog()
 
 
 def render_fun_asr_transcription(tr):
@@ -681,20 +890,22 @@ def render_script_buttons(tr, params):
             subtitle_path = st.session_state.get('subtitle_path')
             video_theme = st.session_state.get('video_theme')
             temperature = st.session_state.get('temperature')
-            generate_script_short_sunmmary(params, subtitle_path, video_theme, temperature, tr)
+            plot_analysis = ""
+            if st.session_state.get('short_drama_plot_analysis_subtitle_path') == subtitle_path:
+                plot_analysis = st.session_state.get('short_drama_plot_analysis', '')
+            generate_script_short_sunmmary(
+                params,
+                subtitle_path,
+                video_theme,
+                temperature,
+                tr,
+                plot_analysis=plot_analysis,
+                subtitle_content=st.session_state.get('subtitle_content', ''),
+            )
         else:
             load_script(tr, script_path)
 
-    # 视频脚本编辑区
-    video_clip_json_details = st.text_area(
-        tr("Video Script"),
-        value=json.dumps(st.session_state.get('video_clip_json', []), indent=2, ensure_ascii=False),
-        height=500
-    )
-
-    # 操作按钮行 - 合并格式检查和保存功能
-    if st.button(tr("Save Script"), key="save_script", use_container_width=True):
-        save_script_with_validation(tr, video_clip_json_details)
+    render_video_script_editor(tr)
 
 
 def load_script(tr, script_path):

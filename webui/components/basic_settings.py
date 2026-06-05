@@ -167,6 +167,17 @@ def render_basic_settings(tr):
         with right_config_panel:
             render_text_llm_settings(tr)  # 文案生成模型设置
 
+        render_generation_settings(tr)
+
+
+def render_generation_settings(tr):
+    """渲染通用生成参数。"""
+    st.divider()
+    st.subheader(tr("Generation Settings"))
+    if 'temperature' not in st.session_state:
+        st.session_state['temperature'] = 0.7
+    st.slider("temperature", 0.0, 2.0, key="temperature")
+
 
 def render_language_settings(tr):
     st.subheader(tr("Proxy Settings"))

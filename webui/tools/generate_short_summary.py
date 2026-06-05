@@ -135,7 +135,58 @@ def parse_and_fix_json(json_string):
         return None
 
 
-def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperature, tr=lambda key: key):
+def analyze_short_drama_plot(subtitle_path, temperature, tr=lambda key: key, subtitle_content=None):
+    """仅执行短剧字幕剧情理解，返回可编辑的剧情分析文本。"""
+    if not subtitle_path:
+        st.error(tr("Please generate or upload subtitles first"))
+        return None
+    if not os.path.exists(subtitle_path):
+        st.error(tr("Subtitle file does not exist"))
+        return None
+
+    text_provider = config.app.get('text_llm_provider', 'gemini').lower()
+    text_api_key = config.app.get(f'text_{text_provider}_api_key')
+    text_model = config.app.get(f'text_{text_provider}_model_name')
+    text_base_url = config.app.get(f'text_{text_provider}_base_url')
+
+    subtitle_content = str(subtitle_content or "").strip() or read_subtitle_text(subtitle_path).text
+    if not subtitle_content:
+        st.error(tr("Subtitle file is empty or unreadable"))
+        return None
+
+    try:
+        logger.info("使用新的LLM服务架构进行字幕分析")
+        analyzer = SubtitleAnalyzerAdapter(text_api_key, text_model, text_base_url, text_provider)
+        analysis_result = analyzer.analyze_subtitle(subtitle_content)
+    except Exception as e:
+        logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
+        analysis_result = analyze_subtitle(
+            subtitle_content=subtitle_content,
+            api_key=text_api_key,
+            model=text_model,
+            base_url=text_base_url,
+            save_result=True,
+            temperature=temperature,
+            provider=text_provider
+        )
+
+    if analysis_result["status"] != "success":
+        logger.error(f"分析失败: {analysis_result['message']}")
+        st.error(tr("Script generation failed check logs"))
+        return None
+
+    return analysis_result["analysis"]
+
+
+def generate_script_short_sunmmary(
+    params,
+    subtitle_path,
+    video_theme,
+    temperature,
+    tr=lambda key: key,
+    plot_analysis=None,
+    subtitle_content=None,
+):
     """
     生成 短剧解说 视频脚本
     要求: 提供高质量短剧字幕
@@ -174,30 +225,36 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
             text_base_url = config.app.get(f'text_{text_provider}_base_url')
 
             # 读取字幕文件内容（无论使用哪种实现都需要）
-            subtitle_content = read_subtitle_text(subtitle_path).text
+            subtitle_content = str(subtitle_content or "").strip() or read_subtitle_text(subtitle_path).text
             if not subtitle_content:
                 st.error(tr("Subtitle file is empty or unreadable"))
                 return
 
-            try:
-                # 优先使用新的LLM服务架构
-                logger.info("使用新的LLM服务架构进行字幕分析")
-                analyzer = SubtitleAnalyzerAdapter(text_api_key, text_model, text_base_url, text_provider)
+            analyzer = SubtitleAnalyzerAdapter(text_api_key, text_model, text_base_url, text_provider)
+            if plot_analysis and str(plot_analysis).strip():
+                logger.info("使用用户编辑后的剧情理解结果生成解说文案")
+                analysis_result = {
+                    "status": "success",
+                    "analysis": str(plot_analysis).strip(),
+                }
+            else:
+                try:
+                    # 优先使用新的LLM服务架构
+                    logger.info("使用新的LLM服务架构进行字幕分析")
+                    analysis_result = analyzer.analyze_subtitle(subtitle_content)
 
-                analysis_result = analyzer.analyze_subtitle(subtitle_content)
-
-            except Exception as e:
-                logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
-                # 回退到旧的实现
-                analysis_result = analyze_subtitle(
-                    subtitle_file_path=subtitle_path,
-                    api_key=text_api_key,
-                    model=text_model,
-                    base_url=text_base_url,
-                    save_result=True,
-                    temperature=temperature,
-                    provider=text_provider
-                )
+                except Exception as e:
+                    logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
+                    # 回退到旧的实现
+                    analysis_result = analyze_subtitle(
+                        subtitle_content=subtitle_content,
+                        api_key=text_api_key,
+                        model=text_model,
+                        base_url=text_base_url,
+                        save_result=True,
+                        temperature=temperature,
+                        provider=text_provider
+                    )
             """
             3. 根据剧情生成解说文案
             """
