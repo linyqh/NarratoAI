@@ -143,10 +143,10 @@ def render_generate_button():
         # 移除task_id检查 - 现在使用统一裁剪策略，不再需要预裁剪
         # 直接检查必要的文件是否存在
         if not st.session_state.get('video_clip_json_path'):
-            st.error(tr("脚本文件不能为空"))
+            st.error(tr("Script file cannot be empty"))
             return
         if not st.session_state.get('video_origin_path'):
-            st.error(tr("视频文件不能为空"))
+            st.error(tr("Video file cannot be empty"))
             return
 
         # 获取所有参数
@@ -199,7 +199,7 @@ def render_generate_button():
                 status_text.text(f"Processing... {progress}%")
 
                 if state == const.TASK_STATE_COMPLETE:
-                    status_text.text(tr("视频生成完成"))
+                    status_text.text(tr("Video Generation Completed"))
                     progress_bar.progress(1.0)
                     
                     # 显示结果
@@ -212,11 +212,11 @@ def render_generate_button():
                     except Exception as e:
                         logger.error(f"播放视频失败: {e}")
                     
-                    st.success(tr("视频生成完成"))
+                    st.success(tr("Video Generation Completed"))
                     break
                 
                 elif state == const.TASK_STATE_FAILED:
-                    st.error(f"任务失败: {task.get('message', 'Unknown error')}")
+                    st.error(f"{tr('Task failed')}: {task.get('message', 'Unknown error')}")
                     break
             
             time.sleep(0.5)
@@ -291,23 +291,23 @@ def render_export_jianying_button():
     if 'jianying_export_error' not in st.session_state:
         st.session_state['jianying_export_error'] = None
     
-    if st.button("📤 导出到剪映草稿", use_container_width=True, type="secondary"):
+    if st.button(tr("Export to Jianying Draft"), use_container_width=True, type="secondary"):
         config.save_config()
         
         if not st.session_state.get('video_clip_json_path'):
-            st.error("脚本文件不能为空")
+            st.error(tr("Script file cannot be empty"))
             return
         if not st.session_state.get('video_origin_path'):
-            st.error("视频文件不能为空")
+            st.error(tr("Video file cannot be empty"))
             return
         
         jianying_draft_path = config.ui.get("jianying_draft_path", "")
         if not jianying_draft_path:
-            st.error("请在基础设置中配置剪映草稿地址")
+            st.error(tr("Please configure Jianying draft folder in basic settings"))
             return
         
         if not os.path.exists(jianying_draft_path):
-            st.error(f"剪映草稿文件夹不存在: {jianying_draft_path}")
+            st.error(tr("Jianying draft folder does not exist").format(path=jianying_draft_path))
             return
         
         # 显示导出表单
@@ -318,17 +318,17 @@ def render_export_jianying_button():
     # 显示导出表单
     if st.session_state['show_jianying_export_form']:
         st.markdown("---")
-        st.subheader("导出到剪映草稿")
+        st.subheader(tr("Export to Jianying Draft"))
         
         draft_name = st.text_input(
-            "请输入剪映草稿名称",
+            tr("Please enter Jianying draft name"),
             value=f"NarratoAI_{int(time.time())}",
             key="draft_name_input"
         )
         
-        if st.button("确认导出", key="confirm_export"):
+        if st.button(tr("Confirm Export"), key="confirm_export"):
             if not draft_name:
-                st.error("请输入草稿名称")
+                st.error(tr("Please enter draft name"))
                 return
             
             # 创建任务ID
@@ -340,10 +340,10 @@ def render_export_jianying_button():
                 params = get_jianying_export_params()
             except Exception as e:
                 logger.error(f"构建参数失败: {e}")
-                st.error(f"参数构建失败: {e}")
+                st.error(f"{tr('Failed to build parameters')}: {e}")
                 return
             
-            with st.spinner("正在导出到剪映草稿，请稍候..."):
+            with st.spinner(tr("Exporting to Jianying draft...")):
                 try:
                     from app.services import jianying_task
                     
@@ -359,17 +359,17 @@ def render_export_jianying_button():
                     st.session_state['jianying_export_error'] = None
                     st.session_state['show_jianying_export_form'] = False
                     
-                    st.success(f"✅ 成功导出到剪映草稿: {result['draft_name']}")
-                    st.info(f"📁 草稿已保存到: {result['draft_path']}")
+                    st.success(tr("Jianying draft exported successfully").format(name=result['draft_name']))
+                    st.info(tr("Draft saved to").format(path=result['draft_path']))
                 except Exception as e:
                     logger.error(f"导出到剪映草稿失败: {e}")
                     import traceback
                     logger.error(f"错误详情: {traceback.format_exc()}")
                     st.session_state['jianying_export_error'] = str(e)
                     st.session_state['jianying_export_result'] = None
-                    st.error(f"❌ 导出到剪映草稿失败: {e}")
+                    st.error(f"{tr('Failed to export Jianying draft')}: {e}")
         
-        if st.button("取消", key="cancel_export"):
+        if st.button(tr("Cancel"), key="cancel_export"):
             st.session_state['show_jianying_export_form'] = False
             st.session_state['jianying_export_result'] = None
             st.session_state['jianying_export_error'] = None
@@ -394,7 +394,7 @@ def main():
             logger.error(f"❌ LLM 提供商注册失败: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-            st.error(f"⚠️ LLM 初始化失败: {str(e)}\n\n请检查配置文件和依赖是否正确安装。")
+            st.error(tr("LLM initialization failed").format(error=str(e)))
             # 不抛出异常，允许应用继续运行（但 LLM 功能不可用）
 
     # 检测FFmpeg硬件加速，但只打印一次日志（使用 session_state 持久化）

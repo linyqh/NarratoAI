@@ -135,7 +135,7 @@ def parse_and_fix_json(json_string):
         return None
 
 
-def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperature):
+def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperature, tr=lambda key: key):
     """
     生成 短剧解说 视频脚本
     要求: 提供高质量短剧字幕
@@ -149,20 +149,20 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
         if message:
             status_text.text(f"{progress}% - {message}")
         else:
-            status_text.text(f"进度: {progress}%")
+            status_text.text(f"{tr('Progress')}: {progress}%")
 
     try:
-        with st.spinner("正在生成脚本..."):
+        with st.spinner(tr("Generating script...")):
             if not params.video_origin_path:
-                st.error("请先选择视频文件")
+                st.error(tr("Please select video file first"))
                 return
             """
             1. 获取字幕
             """
-            update_progress(30, "正在解析字幕...")
+            update_progress(30, tr("Parsing subtitles..."))
             # 判断字幕文件是否存在
             if not os.path.exists(subtitle_path):
-                st.error("字幕文件不存在")
+                st.error(tr("Subtitle file does not exist"))
                 return
 
             """
@@ -176,7 +176,7 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
             # 读取字幕文件内容（无论使用哪种实现都需要）
             subtitle_content = read_subtitle_text(subtitle_path).text
             if not subtitle_content:
-                st.error("字幕文件内容为空或无法读取")
+                st.error(tr("Subtitle file is empty or unreadable"))
                 return
 
             try:
@@ -203,7 +203,7 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
             """
             if analysis_result["status"] == "success":
                 logger.info("字幕分析成功！")
-                update_progress(60, "正在生成文案...")
+                update_progress(60, tr("Generating narration copy..."))
 
                 # 根据剧情生成解说文案 - 使用新的LLM服务架构
                 try:
@@ -235,11 +235,11 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
                     logger.info(narration_result["narration_script"])
                 else:
                     logger.info(f"\n解说文案生成失败: {narration_result['message']}")
-                    st.error("生成脚本失败，请检查日志")
+                    st.error(tr("Script generation failed check logs"))
                     st.stop()
             else:
                 logger.error(f"分析失败: {analysis_result['message']}")
-                st.error("生成脚本失败，请检查日志")
+                st.error(tr("Script generation failed check logs"))
                 st.stop()
 
             """
@@ -253,35 +253,35 @@ def generate_script_short_sunmmary(params, subtitle_path, video_theme, temperatu
             # 增强JSON解析，包含错误处理和修复
             narration_dict = parse_and_fix_json(narration_script)
             if narration_dict is None:
-                st.error("生成的解说文案格式错误，无法解析为JSON")
+                st.error(tr("Generated narration JSON parse failed"))
                 logger.error(f"JSON解析失败，原始内容: {narration_script}")
                 st.stop()
 
             # 验证JSON结构
             if 'items' not in narration_dict:
-                st.error("生成的解说文案缺少必要的'items'字段")
+                st.error(tr("Generated narration missing items field"))
                 logger.error(f"JSON结构错误，缺少items字段: {narration_dict}")
                 st.stop()
 
             script = json.dumps(narration_dict['items'], ensure_ascii=False, indent=2)
 
             if script is None:
-                st.error("生成脚本失败，请检查日志")
+                st.error(tr("Script generation failed check logs"))
                 st.stop()
             logger.success(f"剪辑脚本生成完成")
             if isinstance(script, list):
                 st.session_state['video_clip_json'] = script
             elif isinstance(script, str):
                 st.session_state['video_clip_json'] = json.loads(script)
-            update_progress(90, "整理输出...")
+            update_progress(90, tr("Preparing output..."))
 
         time.sleep(0.1)
         progress_bar.progress(100)
-        status_text.text("脚本生成完成！")
-        st.success("视频脚本生成成功！")
+        status_text.text(tr("Script generation completed!"))
+        st.success(tr("Video script generated successfully"))
 
     except Exception as err:
-        st.error(f"生成过程中发生错误: {str(err)}")
+        st.error(f"{tr('Generation error')}: {str(err)}")
         logger.exception(f"生成脚本时发生错误\n{traceback.format_exc()}")
     finally:
         time.sleep(2)

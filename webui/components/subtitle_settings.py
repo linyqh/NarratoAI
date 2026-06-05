@@ -10,7 +10,7 @@ def render_subtitle_panel(tr):
     """渲染字幕设置面板"""
     with st.container(border=True):
         st.write(tr("Subtitle Settings"))
-        st.info("💡 提示：目前仅 **edge-tts** 引擎支持自动生成字幕，其他 TTS 引擎暂不支持。")
+        st.info(tr("Subtitle TTS support notice"))
 
         # 检查是否选择了 SoulVoice qwen3_tts引擎
         from app.services import voice
@@ -20,8 +20,8 @@ def render_subtitle_panel(tr):
 
         if is_disabled_subtitle:
             # SoulVoice 引擎时显示禁用提示
-            st.warning(f"⚠️ {tts_engine}不支持精确字幕生成")
-            st.info("💡 建议使用专业剪辑工具（如剪映、PR等）手动添加字幕")
+            st.warning(tr("TTS engine does not support precise subtitles").format(engine=tts_engine))
+            st.info(tr("Manual subtitle editing recommendation"))
 
             # 强制禁用字幕
             st.session_state['subtitle_enabled'] = False
@@ -31,7 +31,7 @@ def render_subtitle_panel(tr):
                 tr("Enable Subtitles"),
                 value=False,
                 disabled=True,
-                help="SoulVoice 引擎不支持字幕生成，请使用其他 TTS 引擎"
+                help=tr("Disabled subtitles help")
             )
         else:
             # 其他引擎正常显示字幕选项

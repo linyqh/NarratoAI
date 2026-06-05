@@ -19,55 +19,55 @@ def get_soulvoice_voices():
     return ["soulvoice:custom"]
 
 
-def get_tts_engine_options():
+def get_tts_engine_options(tr=lambda key: key):
     """获取TTS引擎选项"""
     return {
         "edge_tts": "Edge TTS",
         "azure_speech": "Azure Speech Services",
-        "tencent_tts": "腾讯云 TTS",
-        "qwen3_tts": "通义千问 Qwen3 TTS",
-        "indextts2": "IndexTTS2 语音克隆",
-        "doubaotts": "豆包语音 TTS"
+        "tencent_tts": tr("Tencent Cloud TTS"),
+        "qwen3_tts": tr("Tongyi Qwen3 TTS"),
+        "indextts2": tr("IndexTTS2 Voice Clone"),
+        "doubaotts": tr("Doubao TTS")
     }
 
 
-def get_tts_engine_descriptions():
+def get_tts_engine_descriptions(tr=lambda key: key):
     """获取TTS引擎详细描述"""
     return {
         "edge_tts": {
             "title": "Edge TTS",
-            "features": "完全免费，但服务稳定性一般，不支持语音克隆功能",
-            "use_case": "测试和轻量级使用",
+            "features": tr("Edge TTS features"),
+            "use_case": tr("Edge TTS use case"),
             "registration": None
         },
         "azure_speech": {
             "title": "Azure Speech Services",
-            "features": "提供一定免费额度，超出后按量付费，需要绑定海外信用卡",
-            "use_case": "企业级应用，需要稳定服务",
+            "features": tr("Azure Speech Services features"),
+            "use_case": tr("Azure Speech Services use case"),
             "registration": "https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/SpeechServices"
         },
         "tencent_tts": {
-            "title": "腾讯云 TTS",
-            "features": "提供免费额度，音质优秀，支持多种音色，国内访问速度快",
-            "use_case": "个人和企业用户，需要稳定的中文语音合成",
+            "title": tr("Tencent Cloud TTS"),
+            "features": tr("Tencent Cloud TTS features"),
+            "use_case": tr("Tencent Cloud TTS use case"),
             "registration": "https://console.cloud.tencent.com/tts"
         },
         "qwen3_tts": {
-            "title": "通义千问 Qwen3 TTS",
-            "features": "阿里云通义千问语音合成，音质优秀，支持多种音色",
-            "use_case": "需要高质量中文语音合成的用户",
+            "title": tr("Tongyi Qwen3 TTS"),
+            "features": tr("Tongyi Qwen3 TTS features"),
+            "use_case": tr("High-quality Chinese speech synthesis use case"),
             "registration": "https://dashscope.aliyuncs.com/"
         },
         "indextts2": {
-            "title": "IndexTTS2 语音克隆",
-            "features": "零样本语音克隆，上传参考音频即可合成相同音色的语音，需要本地或私有部署",
-            "use_case": "下载地址：https://pan.quark.cn/s/0767c9bcefd5",
+            "title": tr("IndexTTS2 Voice Clone"),
+            "features": tr("IndexTTS2 features"),
+            "use_case": tr("IndexTTS2 download link"),
             "registration": None
         },
         "doubaotts": {
-            "title": "豆包语音 TTS",
-            "features": "火山引擎豆包语音合成，支持多种音色和情感，国内访问速度快",
-            "use_case": "需要高质量中文语音合成的用户",
+            "title": tr("Doubao TTS"),
+            "features": tr("Doubao TTS features"),
+            "use_case": tr("High-quality Chinese speech synthesis use case"),
             "registration": "https://www.volcengine.com/product/voice-tech"
         }
     }
@@ -105,8 +105,8 @@ def render_tts_settings(tr):
     # 1. TTS引擎选择器
     # st.subheader("🎤 TTS引擎选择")
 
-    engine_options = get_tts_engine_options()
-    engine_descriptions = get_tts_engine_descriptions()
+    engine_options = get_tts_engine_options(tr)
+    engine_descriptions = get_tts_engine_descriptions(tr)
 
     # 获取保存的TTS引擎设置
     saved_tts_engine = config.ui.get("tts_engine", "edge_tts")
@@ -117,11 +117,11 @@ def render_tts_settings(tr):
 
     # TTS引擎选择下拉框
     selected_engine = st.selectbox(
-        "选择TTS引擎",
+        tr("Select TTS Engine"),
         options=list(engine_options.keys()),
         format_func=lambda x: engine_options[x],
         index=list(engine_options.keys()).index(saved_tts_engine),
-        help="选择您要使用的文本转语音引擎"
+        help=tr("Select TTS Engine Help")
     )
 
     # 保存TTS引擎选择
@@ -132,12 +132,12 @@ def render_tts_settings(tr):
     if selected_engine in engine_descriptions:
         desc = engine_descriptions[selected_engine]
 
-        with st.expander(f"📋 {desc['title']} 详细说明", expanded=True):
-            st.markdown(f"**特点：** {desc['features']}")
-            st.markdown(f"**适用场景：** {desc['use_case']}")
+        with st.expander(tr("TTS Engine Details").format(engine=desc['title']), expanded=True):
+            st.markdown(f"**{tr('Features')}:** {desc['features']}")
+            st.markdown(f"**{tr('Use Case')}:** {desc['use_case']}")
 
             if desc['registration']:
-                st.markdown(f"**注册地址：** [{desc['registration']}]({desc['registration']})")
+                st.markdown(f"**{tr('Registration URL')}:** [{desc['registration']}]({desc['registration']})")
 
     # 3. 根据选择的引擎渲染对应的配置界面
     # st.subheader("⚙️ 引擎配置")
@@ -187,10 +187,10 @@ def render_edge_tts_settings(tr):
 
     # 音色选择下拉框
     selected_friendly_name = st.selectbox(
-        "音色选择",
+        tr("Voice Selection"),
         options=list(friendly_names.values()),
         index=list(friendly_names.keys()).index(saved_voice_name) if saved_voice_name in friendly_names else 0,
-        help="选择Edge TTS音色"
+        help=tr("Select Edge TTS Voice")
     )
 
     # 获取实际的语音名称
@@ -199,10 +199,10 @@ def render_edge_tts_settings(tr):
     ]
 
     # 显示音色信息
-    with st.expander("💡 Edge TTS 音色说明", expanded=False):
-        st.write(f"已加载 {len(edge_voices)} 个音色")
+    with st.expander(tr("Edge TTS Voice Description"), expanded=False):
+        st.write(tr("Loaded voice count").format(count=len(edge_voices)))
         for v in edge_voices:
-            gender = "女声" if "Female" in v else "男声"
+            gender = tr("Female Voice") if "Female" in v else tr("Male Voice")
             name = v.replace("-Female", "").replace("-Male", "").replace("Neural", "")
             st.write(f"• {name} ({gender})")
 
@@ -211,36 +211,36 @@ def render_edge_tts_settings(tr):
 
     # 音量调节
     voice_volume = st.slider(
-        "音量调节",
+        tr("Voice Volume"),
         min_value=0,
         max_value=100,
         value=int(config.ui.get("edge_volume", 80)),
         step=1,
-        help="调节语音音量 (0-100)"
+        help=tr("Voice Volume Help Percent")
     )
     config.ui["edge_volume"] = voice_volume
     st.session_state['voice_volume'] = voice_volume / 100.0
 
     # 语速调节
     voice_rate = st.slider(
-        "语速调节",
+        tr("Voice Rate"),
         min_value=0.5,
         max_value=2.0,
         value=config.ui.get("edge_rate", 1.0),
         step=0.1,
-        help="调节语音速度 (0.5-2.0倍速)"
+        help=tr("Voice Rate Help 0.5-2.0")
     )
     config.ui["edge_rate"] = voice_rate
     st.session_state['voice_rate'] = voice_rate
 
     # 语调调节
     voice_pitch = st.slider(
-        "语调调节",
+        tr("Voice Pitch"),
         min_value=-50,
         max_value=50,
         value=int(config.ui.get("edge_pitch", 0)),
         step=5,
-        help="调节语音音调 (-50%到+50%)"
+        help=tr("Voice Pitch Help Percent")
     )
     config.ui["edge_pitch"] = voice_pitch
     # 转换为比例值
@@ -251,10 +251,10 @@ def render_azure_speech_settings(tr):
     """渲染 Azure Speech Services 引擎设置"""
     # 服务区域配置
     azure_speech_region = st.text_input(
-        "服务区域",
+        tr("Service Region"),
         value=config.azure.get("speech_region", ""),
-        placeholder="例如：eastus",
-        help="Azure Speech Services 服务区域，如：eastus, westus2, eastasia 等"
+        placeholder=tr("Service Region Placeholder"),
+        help=tr("Azure Service Region Help")
     )
 
     # API Key配置
@@ -262,7 +262,7 @@ def render_azure_speech_settings(tr):
         "API Key",
         value=config.azure.get("speech_key", ""),
         type="password",
-        help="Azure Speech Services API 密钥"
+        help=tr("Azure Speech Key Help")
     )
 
     # 保存Azure配置
@@ -274,41 +274,41 @@ def render_azure_speech_settings(tr):
 
     # 音色名称输入
     voice_name = st.text_input(
-        "音色名称",
+        tr("Voice Name"),
         value=saved_voice_name,
-        help="输入Azure Speech Services音色名称，直接使用官方音色名称即可。例如：zh-CN-YunzeNeural",
+        help=tr("Azure Voice Name Help"),
         placeholder="zh-CN-YunzeNeural"
     )
 
     # 显示常用音色示例
-    with st.expander("💡 常用音色参考", expanded=False):
-        st.write("**中文音色：**")
-        st.write("• zh-CN-XiaoxiaoMultilingualNeural (女声，多语言)")
-        st.write("• zh-CN-YunzeNeural (男声)")
-        st.write("• zh-CN-YunxiNeural (男声)")
-        st.write("• zh-CN-XiaochenNeural (女声)")
+    with st.expander(tr("Common Voice Reference"), expanded=False):
+        st.write(f"**{tr('Chinese Voices')}:**")
+        st.write(f"• zh-CN-XiaoxiaoMultilingualNeural ({tr('Female Voice')}, {tr('Multilingual')})")
+        st.write(f"• zh-CN-YunzeNeural ({tr('Male Voice')})")
+        st.write(f"• zh-CN-YunxiNeural ({tr('Male Voice')})")
+        st.write(f"• zh-CN-XiaochenNeural ({tr('Female Voice')})")
         st.write("")
-        st.write("**英文音色：**")
-        st.write("• en-US-AndrewMultilingualNeural (男声，多语言)")
-        st.write("• en-US-AvaMultilingualNeural (女声，多语言)")
-        st.write("• en-US-BrianMultilingualNeural (男声，多语言)")
-        st.write("• en-US-EmmaMultilingualNeural (女声，多语言)")
+        st.write(f"**{tr('English Voices')}:**")
+        st.write(f"• en-US-AndrewMultilingualNeural ({tr('Male Voice')}, {tr('Multilingual')})")
+        st.write(f"• en-US-AvaMultilingualNeural ({tr('Female Voice')}, {tr('Multilingual')})")
+        st.write(f"• en-US-BrianMultilingualNeural ({tr('Male Voice')}, {tr('Multilingual')})")
+        st.write(f"• en-US-EmmaMultilingualNeural ({tr('Female Voice')}, {tr('Multilingual')})")
         st.write("")
-        st.info("💡 更多音色请参考 [Azure Speech Services 官方文档](https://docs.microsoft.com/en-us/azure/cognitive-services/speech-service/language-support)")
+        st.info(tr("Azure Voices Docs Notice"))
 
     # 快速选择按钮
-    st.write("**快速选择：**")
+    st.write(f"**{tr('Quick Select')}:**")
     cols = st.columns(3)
     with cols[0]:
-        if st.button("中文女声", help="zh-CN-XiaoxiaoMultilingualNeural"):
+        if st.button(tr("Chinese Female Voice"), help="zh-CN-XiaoxiaoMultilingualNeural"):
             voice_name = "zh-CN-XiaoxiaoMultilingualNeural"
             st.rerun()
     with cols[1]:
-        if st.button("中文男声", help="zh-CN-YunzeNeural"):
+        if st.button(tr("Chinese Male Voice"), help="zh-CN-YunzeNeural"):
             voice_name = "zh-CN-YunzeNeural"
             st.rerun()
     with cols[2]:
-        if st.button("英文女声", help="en-US-AvaMultilingualNeural"):
+        if st.button(tr("English Female Voice"), help="en-US-AvaMultilingualNeural"):
             voice_name = "en-US-AvaMultilingualNeural"
             st.rerun()
 
@@ -316,10 +316,10 @@ def render_azure_speech_settings(tr):
     if voice_name.strip():
         # 检查是否为有效的Azure音色格式
         if is_valid_azure_voice_name(voice_name):
-            st.success(f"✅ 音色名称有效: {voice_name}")
+            st.success(tr("Voice name valid").format(voice=voice_name))
         else:
-            st.warning(f"⚠️ 音色名称格式可能不正确: {voice_name}")
-            st.info("💡 Azure音色名称通常格式为: [语言]-[地区]-[名称]Neural")
+            st.warning(tr("Voice name format may be invalid").format(voice=voice_name))
+            st.info(tr("Azure voice name format notice"))
 
     # 保存配置
     config.ui["azure_voice_name"] = voice_name
@@ -327,36 +327,36 @@ def render_azure_speech_settings(tr):
 
     # 音量调节
     voice_volume = st.slider(
-        "音量调节",
+        tr("Voice Volume"),
         min_value=0,
         max_value=100,
         value=int(config.ui.get("azure_volume", 80)),
         step=1,
-        help="调节语音音量 (0-100)"
+        help=tr("Voice Volume Help Percent")
     )
     config.ui["azure_volume"] = voice_volume
     st.session_state['voice_volume'] = voice_volume / 100.0
 
     # 语速调节
     voice_rate = st.slider(
-        "语速调节",
+        tr("Voice Rate"),
         min_value=0.5,
         max_value=2.0,
         value=config.ui.get("azure_rate", 1.0),
         step=0.1,
-        help="调节语音速度 (0.5-2.0倍速)"
+        help=tr("Voice Rate Help 0.5-2.0")
     )
     config.ui["azure_rate"] = voice_rate
     st.session_state['voice_rate'] = voice_rate
 
     # 语调调节
     voice_pitch = st.slider(
-        "语调调节",
+        tr("Voice Pitch"),
         min_value=-50,
         max_value=50,
         value=int(config.ui.get("azure_pitch", 0)),
         step=5,
-        help="调节语音音调 (-50%到+50%)"
+        help=tr("Voice Pitch Help Percent")
     )
     config.ui["azure_pitch"] = voice_pitch
     # 转换为比例值
@@ -364,11 +364,11 @@ def render_azure_speech_settings(tr):
 
     # 显示配置状态
     if azure_speech_region and azure_speech_key:
-        st.success("✅ Azure Speech Services 配置已设置")
+        st.success(tr("Azure Speech Services configured"))
     elif not azure_speech_region:
-        st.warning("⚠️ 请配置服务区域")
+        st.warning(tr("Please configure service region"))
     elif not azure_speech_key:
-        st.warning("⚠️ 请配置 API Key")
+        st.warning(tr("Please configure API Key"))
 
 
 def render_tencent_tts_settings(tr):
@@ -377,7 +377,7 @@ def render_tencent_tts_settings(tr):
     secret_id = st.text_input(
         "Secret ID",
         value=config.tencent.get("secret_id", ""),
-        help="请输入您的腾讯云 Secret ID"
+        help=tr("Tencent Secret ID Help")
     )
 
     # Secret Key 输入
@@ -385,7 +385,7 @@ def render_tencent_tts_settings(tr):
         "Secret Key",
         value=config.tencent.get("secret_key", ""),
         type="password",
-        help="请输入您的腾讯云 Secret Key"
+        help=tr("Tencent Secret Key Help")
     )
 
     # 地域选择
@@ -404,10 +404,10 @@ def render_tencent_tts_settings(tr):
         region_options.append(saved_region)
     
     region = st.selectbox(
-        "服务地域",
+        tr("Service Region"),
         options=region_options,
         index=region_options.index(saved_region),
-        help="选择腾讯云 TTS 服务地域"
+        help=tr("Tencent Service Region Help")
     )
 
     # 音色选择
@@ -434,13 +434,13 @@ def render_tencent_tts_settings(tr):
     
     saved_voice_type = config.ui.get("tencent_voice_type", "101001")
     if saved_voice_type not in voice_type_options:
-        voice_type_options[saved_voice_type] = f"自定义音色 ({saved_voice_type})"
+        voice_type_options[saved_voice_type] = f"{tr('Custom Voice')} ({saved_voice_type})"
     
     selected_voice_display = st.selectbox(
-        "音色选择",
+        tr("Voice Selection"),
         options=list(voice_type_options.values()),
         index=list(voice_type_options.keys()).index(saved_voice_type),
-        help="选择腾讯云 TTS 音色"
+        help=tr("Select Tencent TTS Voice")
     )
     
     # 获取实际的音色ID
@@ -450,31 +450,31 @@ def render_tencent_tts_settings(tr):
     
     # 语速调节
     voice_rate = st.slider(
-        "语速调节",
+        tr("Voice Rate"),
         min_value=0.5,
         max_value=2.0,
         value=config.ui.get("tencent_rate", 1.0),
         step=0.1,
-        help="调节语音速度 (0.5-2.0)"
+        help=tr("Voice Rate Help 0.5-2.0")
     )
     
     config.ui["voice_name"] = saved_voice_type  # 兼容性
     
     # 显示音色说明
-    with st.expander("💡 腾讯云 TTS 音色说明", expanded=False):
-        st.write("**女声音色：**")
+    with st.expander(tr("Tencent Cloud TTS Voice Description"), expanded=False):
+        st.write(f"**{tr('Female Voices')}:**")
         female_voices = [(k, v) for k, v in voice_type_options.items() if "女声" in v]
         for voice_id, voice_desc in female_voices[:6]:  # 显示前6个
             st.write(f"• {voice_desc} (ID: {voice_id})")
         
         st.write("")
-        st.write("**男声音色：**")
+        st.write(f"**{tr('Male Voices')}:**")
         male_voices = [(k, v) for k, v in voice_type_options.items() if "男声" in v]
         for voice_id, voice_desc in male_voices:
             st.write(f"• {voice_desc} (ID: {voice_id})")
         
         st.write("")
-        st.info("💡 更多音色请参考腾讯云官方文档")
+        st.info(tr("Tencent More Voices Notice"))
     
     # 保存配置
     config.tencent["secret_id"] = secret_id
@@ -491,13 +491,13 @@ def render_qwen3_tts_settings(tr):
         "API Key",
         value=config.tts_qwen.get("api_key", ""),
         type="password",
-        help="通义千问 DashScope API Key"
+        help=tr("Qwen DashScope API Key Help")
     )
 
     model_name = st.text_input(
-        "模型名称",
+        tr("TTS Model Name"),
         value=config.tts_qwen.get("model_name", "qwen3-tts-flash"),
-        help="Qwen TTS 模型名，例如 qwen3-tts-flash"
+        help=tr("Qwen TTS Model Help")
     )
 
     # Qwen3 TTS 音色选项 - 中文名: 英文参数
@@ -538,22 +538,22 @@ def render_qwen3_tts_settings(tr):
         voice_options[saved_display_name] = saved_voice_param
 
     selected_display_name = st.selectbox(
-        "音色选择",
+        tr("Voice Selection"),
         options=display_names,
         index=display_names.index(saved_display_name) if saved_display_name in display_names else 0,
-        help="选择Qwen3 TTS音色"
+        help=tr("Select Qwen3 TTS Voice")
     )
     
     # 获取对应的英文参数
     voice_type = voice_options.get(selected_display_name, "Cherry")
 
     voice_rate = st.slider(
-        "语速调节",
+        tr("Voice Rate"),
         min_value=0.5,
         max_value=2.0,
         value=1.0,
         step=0.1,
-        help="调节语音速度 (0.5-2.0)"
+        help=tr("Voice Rate Help 0.5-2.0")
     )
 
     # 保存配置
@@ -570,23 +570,23 @@ def render_indextts2_tts_settings(tr):
     
     # API 地址配置
     api_url = st.text_input(
-        "API 地址",
+        tr("API URL"),
         value=config.indextts2.get("api_url", "http://127.0.0.1:8081/tts"),
-        help="IndexTTS2 API 服务地址"
+        help=tr("IndexTTS2 API URL Help")
     )
     
     # 参考音频文件路径
     reference_audio = st.text_input(
-        "参考音频路径",
+        tr("Reference Audio Path"),
         value=config.indextts2.get("reference_audio", ""),
-        help="用于语音克隆的参考音频文件路径（WAV 格式，建议 3-10 秒）"
+        help=tr("Reference Audio Path Help")
     )
     
     # 文件上传功能
     uploaded_file = st.file_uploader(
-        "或上传参考音频文件",
+        tr("Upload Reference Audio File"),
         type=["wav", "mp3"],
-        help="上传一段清晰的音频用于语音克隆"
+        help=tr("Upload Reference Audio Help")
     )
     
     if uploaded_file is not None:
@@ -597,28 +597,34 @@ def render_indextts2_tts_settings(tr):
         with open(audio_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
         reference_audio = audio_path
-        st.success(f"✅ 音频已上传: {audio_path}")
+        st.success(tr("Audio uploaded").format(path=audio_path))
     
     # 推理模式
-    infer_mode = st.selectbox(
-        "推理模式",
-        options=["普通推理", "快速推理"],
-        index=0 if config.indextts2.get("infer_mode", "普通推理") == "普通推理" else 1,
-        help="普通推理质量更高但速度较慢，快速推理速度更快但质量略低"
-    )
+    infer_mode_options = [
+        ("普通推理", tr("Standard Inference")),
+        ("快速推理", tr("Fast Inference")),
+    ]
+    infer_mode_index = 0 if config.indextts2.get("infer_mode", "普通推理") == "普通推理" else 1
+    infer_mode = infer_mode_options[st.selectbox(
+        tr("Inference Mode"),
+        options=range(len(infer_mode_options)),
+        index=infer_mode_index,
+        format_func=lambda x: infer_mode_options[x][1],
+        help=tr("Inference Mode Help")
+    )][0]
     
     # 高级参数折叠面板
-    with st.expander("🔧 高级参数", expanded=False):
+    with st.expander(tr("Advanced Parameters"), expanded=False):
         col1, col2 = st.columns(2)
         
         with col1:
             temperature = st.slider(
-                "采样温度 (Temperature)",
+                tr("Sampling Temperature"),
                 min_value=0.1,
                 max_value=2.0,
                 value=float(config.indextts2.get("temperature", 1.0)),
                 step=0.1,
-                help="控制随机性，值越高输出越随机，值越低越确定"
+                help=tr("Sampling Temperature Help")
             )
             
             top_p = st.slider(
@@ -627,7 +633,7 @@ def render_indextts2_tts_settings(tr):
                 max_value=1.0,
                 value=float(config.indextts2.get("top_p", 0.8)),
                 step=0.05,
-                help="nucleus 采样的概率阈值，值越小结果越确定"
+                help=tr("Top P Help")
             )
             
             top_k = st.slider(
@@ -636,49 +642,37 @@ def render_indextts2_tts_settings(tr):
                 max_value=100,
                 value=int(config.indextts2.get("top_k", 30)),
                 step=5,
-                help="top-k 采样的 k 值，0 表示不使用 top-k"
+                help=tr("Top K Help")
             )
         
         with col2:
             num_beams = st.slider(
-                "束搜索 (Num Beams)",
+                tr("Num Beams"),
                 min_value=1,
                 max_value=10,
                 value=int(config.indextts2.get("num_beams", 3)),
                 step=1,
-                help="束搜索的 beam 数量，值越大质量可能越好但速度越慢"
+                help=tr("Num Beams Help")
             )
             
             repetition_penalty = st.slider(
-                "重复惩罚 (Repetition Penalty)",
+                tr("Repetition Penalty"),
                 min_value=1.0,
                 max_value=20.0,
                 value=float(config.indextts2.get("repetition_penalty", 10.0)),
                 step=0.5,
-                help="值越大越能避免重复，但过大可能导致不自然"
+                help=tr("Repetition Penalty Help")
             )
             
             do_sample = st.checkbox(
-                "启用采样",
+                tr("Enable Sampling"),
                 value=config.indextts2.get("do_sample", True),
-                help="启用采样可以获得更自然的语音"
+                help=tr("Enable Sampling Help")
             )
     
     # 显示使用说明
-    with st.expander("💡 IndexTTS2 使用说明", expanded=False):
-        st.markdown("""
-        **零样本语音克隆**
-        
-        1. **准备参考音频**：上传或指定一段清晰的音频文件（建议 3-10 秒）
-        2. **设置 API 地址**：确保 IndexTTS2 服务正常运行
-        3. **开始合成**：系统会自动使用参考音频的音色合成新语音
-        
-        **注意事项**：
-        - 参考音频质量直接影响合成效果
-        - 建议使用无背景噪音的清晰音频
-        - 文本长度建议控制在合理范围内
-        - 首次合成可能需要较长时间
-        """)
+    with st.expander(tr("IndexTTS2 Usage Instructions Title"), expanded=False):
+        st.markdown(tr("IndexTTS2 Usage Instructions"))
     
     # 保存配置
     config.indextts2["api_url"] = api_url
@@ -702,7 +696,7 @@ def render_doubaotts_settings(tr):
     ak = st.text_input(
         "Access Key",
         value=config.doubaotts.get("ak", ""),
-        help="火山引擎 Access Key"
+        help=tr("Volcengine Access Key Help")
     )
 
     # SK 输入
@@ -710,14 +704,14 @@ def render_doubaotts_settings(tr):
         "Secret Key",
         value=config.doubaotts.get("sk", ""),
         type="password",
-        help="火山引擎 Secret Key"
+        help=tr("Volcengine Secret Key Help")
     )
 
     # AppID 输入
     appid = st.text_input(
         "AppID",
         value=config.doubaotts.get("appid", ""),
-        help="豆包语音应用 AppID"
+        help=tr("Doubao AppID Help")
     )
 
     # Token 输入
@@ -725,14 +719,14 @@ def render_doubaotts_settings(tr):
         "Token",
         value=config.doubaotts.get("token", ""),
         type="password",
-        help="豆包语音应用 Token"
+        help=tr("Doubao Token Help")
     )
 
     # 集群配置
     cluster = st.text_input(
-        "集群",
+        tr("Cluster"),
         value=config.doubaotts.get("cluster", "volcano_tts"),
-        help="业务集群，标准音色使用 volcano_tts"
+        help=tr("Doubao Cluster Help")
     )
 
     # 音色选择
@@ -836,13 +830,13 @@ def render_doubaotts_settings(tr):
     
     saved_voice_type = config.ui.get("doubaotts_voice_type", "BV700_streaming")
     if saved_voice_type not in voice_options:
-        voice_options[saved_voice_type] = f"自定义音色 ({saved_voice_type})"
+        voice_options[saved_voice_type] = f"{tr('Custom Voice')} ({saved_voice_type})"
     
     selected_voice_display = st.selectbox(
-        "音色选择",
+        tr("Voice Selection"),
         options=list(voice_options.values()),
         index=list(voice_options.keys()).index(saved_voice_type) if saved_voice_type in voice_options else 0,
-        help="选择豆包语音 TTS 音色"
+        help=tr("Select Doubao TTS Voice")
     )
     
     # 获取实际的音色ID
@@ -851,63 +845,63 @@ def render_doubaotts_settings(tr):
     ]
     
     # 高级参数折叠面板
-    with st.expander("🔧 高级参数", expanded=False):
+    with st.expander(tr("Advanced Parameters"), expanded=False):
         col1, col2 = st.columns(2)
         
         with col1:
             # 语速调节
             voice_rate = st.slider(
-                "语速调节",
+                tr("Voice Rate"),
                 min_value=0.2,
                 max_value=3.0,
                 value=config.ui.get("doubaotts_rate", 1.0),
                 step=0.1,
-                help="调节语音速度 (0.2-3.0)"
+                help=tr("Voice Rate Help 0.2-3.0")
             )
             
             # 音量调节
             voice_volume = st.slider(
-                "音量调节",
+                tr("Voice Volume"),
                 min_value=0.1,
                 max_value=2.0,
                 value=config.doubaotts.get("volume", 1.0),
                 step=0.1,
-                help="调节语音音量 (0.1-2.0)"
+                help=tr("Voice Volume Help 0.1-2.0")
             )
         
         with col2:
             # 音高调节
             voice_pitch = st.slider(
-                "音高调节",
+                tr("Voice Pitch"),
                 min_value=0.5,
                 max_value=1.5,
                 value=config.doubaotts.get("pitch", 1.0),
                 step=0.1,
-                help="调节语音音高 (0.5-1.5)"
+                help=tr("Voice Pitch Help 0.5-1.5")
             )
             
             # 句尾静音时长
             silence_duration = st.slider(
-                "句尾静音时长 (秒)",
+                tr("Sentence Silence Duration"),
                 min_value=0.0,
                 max_value=2.0,
                 value=config.doubaotts.get("silence_duration", 0.125),
                 step=0.05,
-                help="调节句尾静音时长 (0.0-2.0秒)"
+                help=tr("Sentence Silence Duration Help")
             )
     
     # 显示API Key申请流程
-    with st.expander("💡 豆包语音 TTS API Key申请流程", expanded=False):
-        st.write("**申请步骤：**")
-        st.write("1. 打开 [https://console.volcengine.com/iam/keymanage](https://console.volcengine.com/iam/keymanage)")
-        st.write("2. 新建 Access Key 和 Secret Key")
-        st.write("3. 打开 [https://www.volcengine.com/product/voice-tech](https://www.volcengine.com/product/voice-tech)")
-        st.write("4. 点击立即使用")
-        st.write("5. 在最左边的API服务中心找到音频生成下面的语音合成（注意：是语音合成，不是语音合成大模型）")
-        st.write("6. 翻到最下面获取 APPID 和 Access Token")
+    with st.expander(tr("Doubao TTS API Key Application Process"), expanded=False):
+        st.write(f"**{tr('Application Steps')}:**")
+        st.write(tr("Doubao TTS Step 1"))
+        st.write(tr("Doubao TTS Step 2"))
+        st.write(tr("Doubao TTS Step 3"))
+        st.write(tr("Doubao TTS Step 4"))
+        st.write(tr("Doubao TTS Step 5"))
+        st.write(tr("Doubao TTS Step 6"))
         
         st.write("")
-        st.info("💡 请将获取到的 Access Key、Secret Key、AppID 和 Token 填写到上方的配置中")
+        st.info(tr("Doubao TTS Fill Credentials Notice"))
     
     # 保存配置
     config.doubaotts["ak"] = ak
@@ -925,7 +919,7 @@ def render_doubaotts_settings(tr):
 
     # 显示配置状态
     if ak and sk and appid and token:
-        st.success("✅ 豆包语音 TTS 配置已设置")
+        st.success(tr("Doubao TTS configured"))
     else:
         missing = []
         if not ak:
@@ -937,13 +931,13 @@ def render_doubaotts_settings(tr):
         if not token:
             missing.append("Token")
         if missing:
-            st.warning(f"⚠️ 请配置: {', '.join(missing)}")
+            st.warning(tr("Please configure missing fields").format(fields=', '.join(missing)))
 
 
 def render_voice_preview_new(tr, selected_engine):
     """渲染新的语音试听功能"""
-    if st.button("🎵 试听语音合成", use_container_width=True):
-        play_content = "感谢关注 NarratoAI，有任何问题或建议，可以关注微信公众号，求助或讨论"
+    if st.button(tr("Preview Voice Synthesis"), use_container_width=True):
+        play_content = tr("Voice Preview Sample")
 
         # 根据选择的引擎获取对应的语音配置
         voice_name = ""
@@ -990,10 +984,10 @@ def render_voice_preview_new(tr, selected_engine):
             voice_pitch = 1.0  # 豆包语音 TTS 不支持音调调节
 
         if not voice_name:
-            st.error("请先配置语音设置")
+            st.error(tr("Please configure voice settings first"))
             return
 
-        with st.spinner("正在合成语音..."):
+        with st.spinner(tr("Synthesizing Voice")):
             temp_dir = utils.storage_dir("temp", create=True)
             audio_file = os.path.join(temp_dir, f"tmp-voice-{str(uuid4())}.mp3")
 
@@ -1007,7 +1001,7 @@ def render_voice_preview_new(tr, selected_engine):
             )
 
             if sub_maker and os.path.exists(audio_file):
-                st.success("✅ 语音合成成功！")
+                st.success(tr("Voice synthesis successful"))
 
                 # 播放音频
                 with open(audio_file, 'rb') as audio_file_obj:
@@ -1020,7 +1014,7 @@ def render_voice_preview_new(tr, selected_engine):
                 except:
                     pass
             else:
-                st.error("❌ 语音合成失败，请检查配置")
+                st.error(tr("Voice synthesis failed"))
 
 
 def render_azure_v2_settings(tr):
@@ -1089,7 +1083,7 @@ def render_voice_parameters(tr, voice_name):
     else:
         # SoulVoice 不支持音调调节，设置默认值
         st.session_state['voice_pitch'] = 1.0
-        st.info("ℹ️ SoulVoice 引擎不支持音调调节")
+        st.info(tr("SoulVoice pitch not supported"))
 
 
 def render_voice_preview(tr, voice_name):

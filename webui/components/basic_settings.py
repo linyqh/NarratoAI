@@ -26,7 +26,7 @@ OPENAI_COMPATIBLE_GATEWAY_BASE_URLS = {
 }
 
 
-def build_base_url_help(provider: str, model_type: str) -> tuple[str, bool, str]:
+def build_base_url_help(provider: str, model_type: str, tr=lambda key: key) -> tuple[str, bool, str]:
     """
     根据 provider 返回 Base URL 的帮助文案
 
@@ -35,14 +35,14 @@ def build_base_url_help(provider: str, model_type: str) -> tuple[str, bool, str]
         requires_base: 是否强制提示必须填写 Base URL
         placeholder: 推荐的默认值（可为空字符串）
     """
-    default_help = "自定义 API 端点（可选），当使用自建或第三方代理时需要填写"
+    default_help = tr("Custom API endpoint help")
     provider_key = (provider or "").lower()
     example_url = OPENAI_COMPATIBLE_GATEWAY_BASE_URLS.get(provider_key)
 
     if example_url is not None:
-        extra = f"\n推荐接口地址: {example_url}" if example_url else ""
+        extra = f"\n{tr('Recommended API endpoint')}: {example_url}" if example_url else ""
         help_text = (
-            f"{model_type} 选择的提供商基于 OpenAI 兼容网关，必须填写完整的接口地址。"
+            f"{tr('OpenAI compatible gateway help').format(model_type=model_type)}"
             f"{extra}"
         )
         return help_text, True, example_url
@@ -227,11 +227,11 @@ def render_proxy_settings(tr):
         config.proxy["https"] = ""
 
     # 剪映草稿地址设置
-    st.subheader("剪映草稿设置")
+    st.subheader(tr("Jianying Draft Settings"))
     jianying_draft_path = st.text_input(
-        "剪映草稿文件夹路径",
+        tr("Jianying Draft Folder Path"),
         value=config.ui.get("jianying_draft_path", ""),
-        help="剪映草稿文件夹路径，例如：C:\\Users\\用户名\\Documents\\JianyingPro Drafts"
+        help=tr("Jianying Draft Folder Path Help")
     )
     config.ui["jianying_draft_path"] = jianying_draft_path
 
@@ -479,13 +479,15 @@ def render_vision_llm_settings(tr):
         model_name_input = st.text_input(
             tr("Vision Model Name"),
             value=current_model,
-            help="输入完整模型名称\n\n"
-                 "常用示例:\n"
-                 "• Qwen/Qwen3.5-122B-A10B\n"
-                 "• gemini/gemini-2.0-flash-lite\n"
-                 "• gpt-4o\n"
-                 "• Qwen/Qwen2.5-VL-32B-Instruct (SiliconFlow)\n\n"
-                 "支持常见 OpenAI 兼容网关（如 OpenAI/DeepSeek/OpenRouter/SiliconFlow）",
+            help=(
+                tr("Model Name Input Help")
+                + "\n\n"
+                + "• Qwen/Qwen3.5-122B-A10B\n"
+                + "• gemini/gemini-2.0-flash-lite\n"
+                + "• gpt-4o\n"
+                + "• Qwen/Qwen2.5-VL-32B-Instruct (SiliconFlow)\n\n"
+                + tr("OpenAI compatible providers help")
+            ),
             key="vision_model_input"
         )
 
@@ -496,16 +498,18 @@ def render_vision_llm_settings(tr):
         tr("Vision API Key"),
         value=vision_api_key,
         type="password",
-        help="对应 provider 的 API 密钥\n\n"
-             "获取地址:\n"
-             "• Gemini: https://makersuite.google.com/app/apikey\n"
-             "• OpenAI: https://platform.openai.com/api-keys\n"
-             "• Qwen: https://bailian.console.aliyun.com/\n"
-             "• SiliconFlow: https://cloud.siliconflow.cn/account/ak"
+        help=(
+            tr("Provider API Key Help")
+            + "\n\n"
+            + "• Gemini: https://makersuite.google.com/app/apikey\n"
+            + "• OpenAI: https://platform.openai.com/api-keys\n"
+            + "• Qwen: https://bailian.console.aliyun.com/\n"
+            + "• SiliconFlow: https://cloud.siliconflow.cn/account/ak"
+        )
     )
 
     vision_base_help, vision_base_required, vision_placeholder = build_base_url_help(
-        selected_provider, "视频分析模型"
+        selected_provider, tr("Vision model"), tr
     )
     st_vision_base_url = st.text_input(
         tr("Vision Base URL"),
@@ -515,15 +519,15 @@ def render_vision_llm_settings(tr):
     )
     if vision_base_required and not st_vision_base_url:
         info_example = vision_placeholder or "https://your-openai-compatible-endpoint/v1"
-        st.info(f"请在上方填写 OpenAI 兼容网关地址，例如：{info_example}")
+        st.info(tr("Please fill OpenAI compatible gateway").format(example=info_example))
 
     # 添加测试连接按钮
     if st.button(tr("Test Connection"), key="test_vision_connection"):
         test_errors = []
         if not st_vision_api_key:
-            test_errors.append("请先输入 API 密钥")
+            test_errors.append(tr("Please enter API key"))
         if not model_name_input:
-            test_errors.append("请先输入模型名称")
+            test_errors.append(tr("Please enter model name"))
 
         if test_errors:
             for error in test_errors:
@@ -543,7 +547,7 @@ def render_vision_llm_settings(tr):
                     else:
                         st.error(message)
                 except Exception as e:
-                    st.error(f"测试连接时发生错误: {str(e)}")
+                    st.error(f"{tr('Connection test error')}: {str(e)}")
                     logger.error(f"OpenAI 兼容 视频分析模型连接测试失败: {str(e)}")
 
     # 验证和保存配置
@@ -597,9 +601,9 @@ def render_vision_llm_settings(tr):
             # 清除缓存，确保下次使用新配置
             UnifiedLLMService.clear_cache()
             if st_vision_api_key or st_vision_base_url or st_vision_model_name:
-                st.success(f"视频分析模型配置已保存（OpenAI 兼容）")
+                st.success(tr("Vision model config saved"))
         except Exception as e:
-            st.error(f"保存配置失败: {str(e)}")
+            st.error(f"{tr('Failed to save config')}: {str(e)}")
             logger.error(f"保存视频分析配置失败: {str(e)}")
 
 
@@ -742,13 +746,15 @@ def render_text_llm_settings(tr):
         model_name_input = st.text_input(
             tr("Text Model Name"),
             value=current_model,
-            help="输入完整模型名称\n\n"
-                 "常用示例:\n"
-                 "• Pro/zai-org/GLM-5\n"
-                 "• deepseek/deepseek-chat\n"
-                 "• gpt-4o\n"
-                 "• deepseek-ai/DeepSeek-R1 (SiliconFlow)\n\n"
-                 "支持常见 OpenAI 兼容网关（如 OpenAI/DeepSeek/OpenRouter/SiliconFlow）",
+            help=(
+                tr("Model Name Input Help")
+                + "\n\n"
+                + "• Pro/zai-org/GLM-5\n"
+                + "• deepseek/deepseek-chat\n"
+                + "• gpt-4o\n"
+                + "• deepseek-ai/DeepSeek-R1 (SiliconFlow)\n\n"
+                + tr("OpenAI compatible providers help")
+            ),
             key="text_model_input"
         )
 
@@ -759,18 +765,20 @@ def render_text_llm_settings(tr):
         tr("Text API Key"),
         value=text_api_key,
         type="password",
-        help="对应 provider 的 API 密钥\n\n"
-             "获取地址:\n"
-             "• DeepSeek: https://platform.deepseek.com/api_keys\n"
-             "• Gemini: https://makersuite.google.com/app/apikey\n"
-             "• OpenAI: https://platform.openai.com/api-keys\n"
-             "• Qwen: https://bailian.console.aliyun.com/\n"
-             "• SiliconFlow: https://cloud.siliconflow.cn/account/ak\n"
-             "• Moonshot: https://platform.moonshot.cn/console/api-keys"
+        help=(
+            tr("Provider API Key Help")
+            + "\n\n"
+            + "• DeepSeek: https://platform.deepseek.com/api_keys\n"
+            + "• Gemini: https://makersuite.google.com/app/apikey\n"
+            + "• OpenAI: https://platform.openai.com/api-keys\n"
+            + "• Qwen: https://bailian.console.aliyun.com/\n"
+            + "• SiliconFlow: https://cloud.siliconflow.cn/account/ak\n"
+            + "• Moonshot: https://platform.moonshot.cn/console/api-keys"
+        )
     )
 
     text_base_help, text_base_required, text_placeholder = build_base_url_help(
-        selected_provider, "文案生成模型"
+        selected_provider, tr("Text model"), tr
     )
     st_text_base_url = st.text_input(
         tr("Text Base URL"),
@@ -780,15 +788,15 @@ def render_text_llm_settings(tr):
     )
     if text_base_required and not st_text_base_url:
         info_example = text_placeholder or "https://your-openai-compatible-endpoint/v1"
-        st.info(f"请在上方填写 OpenAI 兼容网关地址，例如：{info_example}")
+        st.info(tr("Please fill OpenAI compatible gateway").format(example=info_example))
 
     # 添加测试连接按钮
     if st.button(tr("Test Connection"), key="test_text_connection"):
         test_errors = []
         if not st_text_api_key:
-            test_errors.append("请先输入 API 密钥")
+            test_errors.append(tr("Please enter API key"))
         if not model_name_input:
-            test_errors.append("请先输入模型名称")
+            test_errors.append(tr("Please enter model name"))
 
         if test_errors:
             for error in test_errors:
@@ -808,7 +816,7 @@ def render_text_llm_settings(tr):
                     else:
                         st.error(message)
                 except Exception as e:
-                    st.error(f"测试连接时发生错误: {str(e)}")
+                    st.error(f"{tr('Connection test error')}: {str(e)}")
                     logger.error(f"OpenAI 兼容 文案生成模型连接测试失败: {str(e)}")
 
     # 验证和保存配置
@@ -861,9 +869,9 @@ def render_text_llm_settings(tr):
             # 清除缓存，确保下次使用新配置
             UnifiedLLMService.clear_cache()
             if st_text_api_key or st_text_base_url or st_text_model_name:
-                st.success(f"文案生成模型配置已保存（OpenAI 兼容）")
+                st.success(tr("Text model config saved"))
         except Exception as e:
-            st.error(f"保存配置失败: {str(e)}")
+            st.error(f"{tr('Failed to save config')}: {str(e)}")
             logger.error(f"保存文案生成配置失败: {str(e)}")
 
     # # Cloudflare 特殊配置

@@ -346,7 +346,7 @@ def short_drama_summary(tr):
     
     # 显示当前已上传的字幕文件路径
     if 'subtitle_path' in st.session_state and st.session_state['subtitle_path']:
-        st.info(f"已上传字幕: {os.path.basename(st.session_state['subtitle_path'])}")
+        st.info(tr("Uploaded subtitle").format(file=os.path.basename(st.session_state['subtitle_path'])))
         if st.button(tr("清除已上传字幕")):
             st.session_state['subtitle_path'] = None
             st.session_state['subtitle_content'] = None
@@ -388,8 +388,8 @@ def short_drama_summary(tr):
             # 更新状态
             st.success(
                 f"{tr('字幕上传成功')} "
-                f"(编码: {detected_encoding.upper()}, "
-                f"大小: {len(script_content)} 字符)"
+                f"({tr('Encoding')}: {detected_encoding.upper()}, "
+                f"{tr('Size')}: {len(script_content)} {tr('Characters')})"
             )
             st.session_state['subtitle_path'] = script_file_path
             st.session_state['subtitle_content'] = script_content
@@ -417,23 +417,23 @@ def render_fun_asr_transcription(tr):
         st.session_state['subtitle_content'] = None
         st.session_state['subtitle_file_processed'] = False
 
-    with st.expander("阿里百炼 Fun-ASR 字幕转录", expanded=False):
-        st.caption("上传本地音频/视频后，将自动上传到阿里百炼临时存储并通过 fun-asr 生成 SRT 字幕。")
+    with st.expander(tr("Ali Bailian Fun-ASR Subtitle Transcription"), expanded=False):
+        st.caption(tr("Fun-ASR upload caption"))
         st.markdown(
-            "API Key 获取地址："
+            f"{tr('API Key URL')}: "
             "[https://bailian.console.aliyun.com/?tab=model#/api-key]"
             "(https://bailian.console.aliyun.com/?tab=model#/api-key)"
         )
 
         api_key = st.text_input(
-            "阿里百炼 API Key",
+            tr("Ali Bailian API Key"),
             value=config.fun_asr.get("api_key", ""),
             type="password",
-            help="请输入你自己的阿里百炼 API Key；保存配置后会写入本地 config.toml",
+            help=tr("Ali Bailian API Key Help"),
             key="fun_asr_api_key",
         )
         uploaded_media = st.file_uploader(
-            "上传需要转录的音频/视频",
+            tr("Upload media to transcribe"),
             type=[
                 "aac", "amr", "avi", "flac", "flv", "m4a", "mkv", "mov",
                 "mp3", "mp4", "mpeg", "ogg", "opus", "wav", "webm", "wma", "wmv",
@@ -442,14 +442,14 @@ def render_fun_asr_transcription(tr):
             key="fun_asr_media_uploader",
         )
 
-        if st.button("转写生成字幕", key="fun_asr_transcribe"):
+        if st.button(tr("Transcribe subtitles"), key="fun_asr_transcribe"):
             if not api_key.strip():
                 clear_fun_asr_subtitle_state()
-                st.error("请先输入阿里百炼 API Key")
+                st.error(tr("Please enter Ali Bailian API Key"))
                 return
             if uploaded_media is None:
                 clear_fun_asr_subtitle_state()
-                st.error("请先上传需要转录的音频或视频文件")
+                st.error(tr("Please upload media to transcribe"))
                 return
 
             try:
@@ -474,7 +474,7 @@ def render_fun_asr_transcription(tr):
                 subtitle_name = f"{os.path.splitext(os.path.basename(media_path))[0]}_fun_asr.srt"
                 subtitle_path = os.path.join(utils.subtitle_dir(), subtitle_name)
 
-                with st.spinner("正在使用阿里百炼 Fun-ASR 转写字幕，请稍候..."):
+                with st.spinner(tr("Transcribing with Fun-ASR...")):
                     generated_path = fun_asr_subtitle.create_with_fun_asr(
                         local_file=media_path,
                         subtitle_file=subtitle_path,
@@ -483,7 +483,7 @@ def render_fun_asr_transcription(tr):
 
                 if not generated_path or not os.path.exists(generated_path):
                     clear_fun_asr_subtitle_state()
-                    st.error("Fun-ASR 转写失败：未生成字幕文件")
+                    st.error(tr("Fun-ASR failed without subtitle file"))
                     return
 
                 with open(generated_path, "r", encoding="utf-8") as f:
@@ -492,11 +492,11 @@ def render_fun_asr_transcription(tr):
                 st.session_state['subtitle_path'] = generated_path
                 st.session_state['subtitle_content'] = subtitle_content
                 st.session_state['subtitle_file_processed'] = True
-                st.success(f"字幕转写成功: {os.path.basename(generated_path)}")
+                st.success(tr("Subtitle transcription succeeded").format(file=os.path.basename(generated_path)))
             except Exception as e:
                 clear_fun_asr_subtitle_state()
                 logger.error(f"Fun-ASR 字幕转写失败: {traceback.format_exc()}")
-                st.error(f"Fun-ASR 字幕转写失败: {str(e)}")
+                st.error(f"{tr('Fun-ASR transcription failed')}: {str(e)}")
 
 
 def render_script_buttons(tr, params):
@@ -519,7 +519,7 @@ def render_script_buttons(tr, params):
     if st.button(button_name, key="script_action", disabled=not script_path):
         if script_path == "auto":
             # 执行纪录片视频脚本生成（视频无字幕无配音）
-            generate_script_docu(params)
+            generate_script_docu(params, tr)
         elif script_path == "short":
             # 执行 短剧混剪 脚本生成
             custom_clips = st.session_state.get('custom_clips')
@@ -529,7 +529,7 @@ def render_script_buttons(tr, params):
             subtitle_path = st.session_state.get('subtitle_path')
             video_theme = st.session_state.get('video_theme')
             temperature = st.session_state.get('temperature')
-            generate_script_short_sunmmary(params, subtitle_path, video_theme, temperature)
+            generate_script_short_sunmmary(params, subtitle_path, video_theme, temperature, tr)
         else:
             load_script(tr, script_path)
 
@@ -566,7 +566,7 @@ def save_script_with_validation(tr, video_clip_json_details):
         st.stop()
 
     # 第一步：格式验证
-    with st.spinner("正在验证脚本格式..."):
+    with st.spinner(tr("Validating script format...")):
         try:
             result = check_script.check_format(video_clip_json_details)
             if not result.get('success'):
@@ -574,13 +574,13 @@ def save_script_with_validation(tr, video_clip_json_details):
                 error_message = result.get('message', '未知错误')
                 error_details = result.get('details', '')
 
-                st.error(f"**脚本格式验证失败**")
-                st.error(f"**错误信息：** {error_message}")
+                st.error(f"**{tr('Script format validation failed')}**")
+                st.error(f"**{tr('Error Message')}:** {error_message}")
                 if error_details:
-                    st.error(f"**详细说明：** {error_details}")
+                    st.error(f"**{tr('Details')}:** {error_details}")
 
                 # 显示正确格式示例
-                st.info("**正确的脚本格式示例：**")
+                st.info(f"**{tr('Correct script format example')}:**")
                 example_script = [
                     {
                         "_id": 1,
@@ -601,7 +601,7 @@ def save_script_with_validation(tr, video_clip_json_details):
                 st.stop()
 
         except Exception as e:
-            st.error(f"格式验证过程中发生错误: {str(e)}")
+            st.error(f"{tr('Script format validation error')}: {str(e)}")
             st.stop()
 
     # 第二步：保存脚本
@@ -624,7 +624,7 @@ def save_script_with_validation(tr, video_clip_json_details):
                 config.app["video_clip_json_path"] = save_path
 
                 # 显示成功消息
-                st.success("✅ 脚本格式验证通过，保存成功！")
+                st.success(tr("Script validated and saved successfully"))
 
                 # 强制重新加载页面更新选择框
                 time.sleep(0.5)  # 给一点时间让用户看到成功消息

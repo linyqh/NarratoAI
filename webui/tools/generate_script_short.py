@@ -27,21 +27,21 @@ def generate_script_short(tr, params, custom_clips=5):
         if message:
             status_text.text(f"{progress}% - {message}")
         else:
-            status_text.text(f"进度: {progress}%")
+            status_text.text(f"{tr('Progress')}: {progress}%")
 
     try:
-        with st.spinner("正在生成脚本..."):
+        with st.spinner(tr("Generating script...")):
             # ========== 严格验证：必须上传视频和字幕（与短剧解说保持一致）==========
             # 1. 验证视频文件
             video_path = getattr(params, "video_origin_path", None)
             if not video_path or not str(video_path).strip():
-                st.error("请先选择视频文件")
+                st.error(tr("Please select video file first"))
                 st.stop()
 
             try:
                 ensure_existing_file(
                     str(video_path),
-                    label="视频",
+                    label=tr("Video"),
                     allowed_exts=(".mp4", ".mov", ".avi", ".flv", ".mkv"),
                 )
             except InputValidationError as e:
@@ -51,13 +51,13 @@ def generate_script_short(tr, params, custom_clips=5):
             # 2. 验证字幕文件（移除推断逻辑，必须上传）
             subtitle_path = st.session_state.get("subtitle_path")
             if not subtitle_path or not str(subtitle_path).strip():
-                st.error("请先上传字幕文件")
+                st.error(tr("Please upload subtitle file first"))
                 st.stop()
 
             try:
                 subtitle_path = ensure_existing_file(
                     str(subtitle_path),
-                    label="字幕",
+                    label=tr("Subtitle"),
                     allowed_exts=(".srt",),
                 )
             except InputValidationError as e:
@@ -78,7 +78,7 @@ def generate_script_short(tr, params, custom_clips=5):
             vision_model = st.session_state.get(f'vision_{vision_llm_provider}_model_name') or config.app.get(f'vision_{vision_llm_provider}_model_name', "")
             vision_base_url = st.session_state.get(f'vision_{vision_llm_provider}_base_url') or config.app.get(f'vision_{vision_llm_provider}_base_url', "")
 
-            update_progress(20, "开始准备生成脚本")
+            update_progress(20, tr("Preparing script generation"))
 
             # ========== 调用后端生成脚本 ==========
             from app.services.SDP.generate_script_short import generate_script_result
@@ -103,7 +103,7 @@ def generate_script_short(tr, params, custom_clips=5):
             )
 
             if result.get("status") != "success":
-                st.error(result.get("message", "生成脚本失败，请检查日志"))
+                st.error(result.get("message", tr("Script generation failed check logs")))
                 st.stop()
 
             script = result.get("script")
@@ -114,14 +114,14 @@ def generate_script_short(tr, params, custom_clips=5):
             elif isinstance(script, str):
                 st.session_state['video_clip_json'] = json.loads(script)
 
-            update_progress(80, "脚本生成完成")
+            update_progress(80, tr("Script generation completed"))
 
         time.sleep(0.1)
         progress_bar.progress(100)
-        status_text.text("脚本生成完成！")
-        st.success("视频脚本生成成功！")
+        status_text.text(tr("Script generation completed!"))
+        st.success(tr("Video script generated successfully"))
 
     except Exception as err:
         progress_bar.progress(100)
-        st.error(f"生成过程中发生错误: {str(err)}")
+        st.error(f"{tr('Generation error')}: {str(err)}")
         logger.exception(f"生成脚本时发生错误\n{traceback.format_exc()}")
