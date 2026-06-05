@@ -224,17 +224,32 @@ def render_generate_button():
 
 def get_voice_name_for_tts_engine(tts_engine: str) -> str:
     """根据TTS引擎获取用户选择的音色"""
+    if tts_engine == 'edge_tts':
+        return config.ui.get('edge_voice_name', 'zh-CN-XiaoxiaoNeural-Female')
+    if tts_engine == 'azure_speech':
+        return config.ui.get('azure_voice_name', 'zh-CN-XiaoxiaoMultilingualNeural')
+    if tts_engine == 'tencent_tts':
+        return f"tencent:{config.ui.get('tencent_voice_type', '101001')}"
+    if tts_engine == 'qwen3_tts':
+        return f"qwen3:{config.ui.get('qwen_voice_type', 'Cherry')}"
+    if tts_engine == 'indextts2':
+        reference_audio = config.indextts2.get('reference_audio', '')
+        if reference_audio:
+            return f"indextts2:{reference_audio}"
+        return config.ui.get('voice_name', '')
     if tts_engine == 'doubaotts':
-        return st.session_state.get('voice_name', config.ui.get('doubaotts_voice_type', 'BV700_streaming'))
-    elif tts_engine == 'azure_speech':
-        return st.session_state.get('voice_name', config.ui.get('azure_voice_name', 'zh-CN-XiaoxiaoMultilingualNeural'))
-    else:
-        return st.session_state.get('voice_name', config.ui.get('edge_voice_name', 'zh-CN-XiaoxiaoNeural-Female'))
+        return config.ui.get('doubaotts_voice_type', 'BV700_streaming')
+    if tts_engine == 'soulvoice':
+        voice_uri = config.soulvoice.get('voice_uri', '')
+        if voice_uri and not voice_uri.startswith(('soulvoice:', 'speech:')):
+            return f"soulvoice:{voice_uri}"
+        return voice_uri
+    return config.ui.get('voice_name', config.ui.get('edge_voice_name', 'zh-CN-XiaoxiaoNeural-Female'))
 
 
 def get_jianying_export_params() -> VideoClipParams:
     """获取导出到剪映草稿的参数"""
-    tts_engine = st.session_state.get('tts_engine', 'azure')
+    tts_engine = st.session_state.get('tts_engine', config.ui.get('tts_engine', 'edge_tts'))
     voice_name = get_voice_name_for_tts_engine(tts_engine)
     voice_rate = st.session_state.get('voice_rate', 1.0)
     voice_pitch = st.session_state.get('voice_pitch', 1.0)
