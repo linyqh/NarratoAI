@@ -8,7 +8,7 @@ from app.config import config
 from app.services.llm.base import TextModelProvider
 from app.services.llm.manager import LLMServiceManager
 from app.services.llm.migration_adapter import LegacyLLMAdapter, VisionAnalyzerAdapter
-from app.services.llm.openai_compatible_provider import OpenAICompatibleVisionProvider
+from app.services.llm.openai_compatible_provider import OpenAICompatibleTextProvider, OpenAICompatibleVisionProvider
 from app.services.llm.providers import register_all_providers
 
 
@@ -114,6 +114,59 @@ class OpenAICompatVisionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(6, len(result))
         self.assertEqual(2, max_in_flight)
+
+
+class OpenAICompatGenerationOptionTests(unittest.TestCase):
+    def setUp(self):
+        self._original_app = dict(config.app)
+
+    def tearDown(self):
+        config.app.clear()
+        config.app.update(self._original_app)
+
+    def test_build_options_uses_generation_defaults(self):
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
+        for key in (
+            "text_openai_temperature",
+            "text_openai_top_p",
+            "text_openai_max_tokens",
+            "text_openai_thinking_level",
+        ):
+            config.app.pop(key, None)
+
+        options = provider._build_chat_completion_options("text")
+
+        self.assertEqual(1.0, options["temperature"])
+        self.assertEqual(0.95, options["top_p"])
+        self.assertEqual(65536, options["max_tokens"])
+        self.assertNotIn("extra_body", options)
+
+    def test_build_options_uses_per_model_generation_config(self):
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
+        config.app.update(
+            {
+                "text_openai_temperature": 0.3,
+                "text_openai_top_p": 0.8,
+                "text_openai_max_tokens": 2048,
+                "text_openai_thinking_level": "high",
+            }
+        )
+
+        options = provider._build_chat_completion_options("text")
+
+        self.assertEqual(0.3, options["temperature"])
+        self.assertEqual(0.8, options["top_p"])
+        self.assertEqual(2048, options["max_tokens"])
+        self.assertEqual({"reasoning_effort": "high"}, options["extra_body"])
+
+    def test_explicit_generation_options_override_config(self):
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
+        config.app["text_openai_temperature"] = 0.3
+
+        options = provider._build_chat_completion_options("text", temperature=0.9, max_tokens=512)
+
+        self.assertEqual(0.9, options["temperature"])
+        self.assertEqual(512, options["max_tokens"])
 
 
 class ExplicitVisionAdapterSettingsTests(unittest.IsolatedAsyncioTestCase):

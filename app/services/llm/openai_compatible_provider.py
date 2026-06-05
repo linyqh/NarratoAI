@@ -22,7 +22,7 @@ from openai import (
 )
 
 from app.config import config
-from app.config.defaults import normalize_openai_compatible_model_name
+from app.config.defaults import DEFAULT_LLM_GENERATION_CONFIG, normalize_openai_compatible_model_name
 from .base import TextModelProvider, VisionModelProvider
 from .exceptions import APICallError, AuthenticationError, ContentFilterError, RateLimitError
 
@@ -68,18 +68,59 @@ class _OpenAICompatibleBase:
         # SDK client 按请求参数动态构建，这里无需初始化全局状态。
         pass
 
+    def _generation_config_value(self, model_type: str, param_name: str, override: Any = None) -> Any:
+        if override is not None:
+            return override
+        return config.app.get(
+            f"{model_type}_openai_{param_name}",
+            DEFAULT_LLM_GENERATION_CONFIG[param_name],
+        )
+
+    def _build_chat_completion_options(
+        self,
+        model_type: str,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Build common OpenAI-compatible generation options from config and overrides."""
+        options: Dict[str, Any] = {
+            "temperature": float(self._generation_config_value(model_type, "temperature", temperature)),
+        }
+
+        top_p = float(self._generation_config_value(model_type, "top_p", kwargs.get("top_p")))
+        options["top_p"] = top_p
+
+        configured_max_tokens = self._generation_config_value(model_type, "max_tokens", max_tokens)
+        if configured_max_tokens is not None and int(configured_max_tokens) > 0:
+            options["max_tokens"] = int(configured_max_tokens)
+
+        extra_body: Dict[str, Any] = {}
+
+        thinking_level = str(
+            self._generation_config_value(model_type, "thinking_level", kwargs.get("thinking_level")) or "auto"
+        )
+        if thinking_level in {"low", "medium", "high"}:
+            extra_body["reasoning_effort"] = thinking_level
+
+        if extra_body:
+            options["extra_body"] = extra_body
+
+        return options
+
     def _build_client(
         self,
         api_key_override: Optional[str] = None,
         base_url_override: Optional[str] = None,
         timeout_override: Optional[float] = None,
+        max_retries_override: Optional[int] = None,
     ) -> AsyncOpenAI:
         """按请求构建 AsyncOpenAI 客户端，支持动态覆盖 api_key / base_url。"""
         api_key = api_key_override or self.api_key
         base_url = base_url_override or self.base_url or None
 
         timeout_seconds: float = timeout_override or config.app.get("llm_text_timeout", 180)
-        max_retries: int = config.app.get("llm_max_retries", 3)
+        max_retries: int = max_retries_override or config.app.get("llm_max_retries", 3)
 
         return AsyncOpenAI(
             api_key=api_key,
@@ -147,11 +188,17 @@ class OpenAICompatibleVisionProvider(_OpenAICompatibleBase, VisionModelProvider)
         )
 
         try:
+            generation_overrides = dict(kwargs)
+            completion_options = self._build_chat_completion_options(
+                "vision",
+                temperature=generation_overrides.pop("temperature", None),
+                max_tokens=generation_overrides.pop("max_tokens", None),
+                **generation_overrides,
+            )
             response = await client.chat.completions.create(
                 model=model_name,
                 messages=messages,
-                temperature=kwargs.get("temperature", 1.0),
-                max_tokens=kwargs.get("max_tokens", 4000),
+                **completion_options,
             )
             if response.choices and response.choices[0].message and response.choices[0].message.content:
                 return response.choices[0].message.content
@@ -204,13 +251,22 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
             timeout_override=config.app.get("llm_text_timeout", 180),
         )
 
+        temperature_override = kwargs.pop("temperature", None)
+        if temperature_override is None and temperature != 1.0:
+            temperature_override = temperature
+
         completion_kwargs: Dict[str, Any] = {
             "model": model_name,
             "messages": messages,
-            "temperature": temperature,
         }
-        if max_tokens:
-            completion_kwargs["max_tokens"] = max_tokens
+        completion_kwargs.update(
+            self._build_chat_completion_options(
+                "text",
+                temperature=temperature_override,
+                max_tokens=kwargs.pop("max_tokens", max_tokens),
+                **kwargs,
+            )
+        )
         if response_format == "json":
             completion_kwargs["response_format"] = {"type": "json_object"}
 

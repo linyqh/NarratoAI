@@ -18,6 +18,114 @@ from webui.tools.generate_short_summary import analyze_short_drama_plot, generat
 
 
 SCRIPT_TABLE_BASE_COLUMNS = ["_id", "timestamp", "picture", "narration", "OST"]
+VIDEO_UPLOAD_TYPES = ["mp4", "mov", "avi", "flv", "mkv", "mpeg4"]
+VIDEO_GLOB_PATTERNS = [f"*.{suffix}" for suffix in VIDEO_UPLOAD_TYPES]
+
+
+def _normalize_video_paths(paths):
+    if isinstance(paths, str):
+        paths = [paths]
+    if not paths:
+        return []
+
+    normalized_paths = []
+    seen = set()
+    for path in paths:
+        if not isinstance(path, str):
+            continue
+        path = path.strip()
+        if not path or path in seen:
+            continue
+        normalized_paths.append(path)
+        seen.add(path)
+    return normalized_paths
+
+
+def _set_video_origin_state(paths, params=None):
+    video_paths = _normalize_video_paths(paths)
+    first_video_path = video_paths[0] if video_paths else ""
+    st.session_state['video_origin_paths'] = video_paths
+    st.session_state['video_origin_path'] = first_video_path
+    if params is not None:
+        params.video_origin_path = first_video_path
+        params.video_origin_paths = video_paths
+
+
+def _selected_video_paths():
+    video_paths = _normalize_video_paths(st.session_state.get('video_origin_paths', []))
+    if not video_paths:
+        video_paths = _normalize_video_paths(st.session_state.get('video_origin_path', ''))
+    return video_paths
+
+
+def _uploaded_files_signature(uploaded_files):
+    return "|".join(f"{uploaded_file.name}:{uploaded_file.size}" for uploaded_file in uploaded_files)
+
+
+def _unique_file_path(directory, filename):
+    safe_filename = os.path.basename(filename).strip()
+    if not safe_filename:
+        safe_filename = f"video_{int(time.time())}.mp4"
+
+    os.makedirs(directory, exist_ok=True)
+    file_name, file_extension = os.path.splitext(safe_filename)
+    candidate_path = os.path.join(directory, safe_filename)
+    if not os.path.exists(candidate_path):
+        return candidate_path
+
+    timestamp = time.strftime("%Y%m%d%H%M%S")
+    counter = 1
+    while True:
+        suffix = f"_{timestamp}" if counter == 1 else f"_{timestamp}_{counter}"
+        candidate_path = os.path.join(directory, f"{file_name}{suffix}{file_extension}")
+        if not os.path.exists(candidate_path):
+            return candidate_path
+        counter += 1
+
+
+def _format_file_list_for_display(paths, max_items=3):
+    file_names = [os.path.basename(path) for path in _normalize_video_paths(paths)]
+    if len(file_names) <= max_items:
+        return ", ".join(file_names)
+    visible_names = ", ".join(file_names[:max_items])
+    return f"{visible_names} +{len(file_names) - max_items}"
+
+
+def _read_subtitle_file(path):
+    try:
+        return read_subtitle_text(path).text
+    except Exception:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+
+
+def _build_combined_subtitle_content(subtitle_paths):
+    sections = []
+    subtitle_contents = {}
+    for subtitle_path in subtitle_paths:
+        if not subtitle_path or not os.path.exists(subtitle_path):
+            continue
+        content = _read_subtitle_file(subtitle_path)
+        subtitle_contents[subtitle_path] = content
+        sections.append(f"# {os.path.basename(subtitle_path)}\n{content}".strip())
+    return "\n\n".join(sections), subtitle_contents
+
+
+def _selected_subtitle_paths():
+    subtitle_paths = _normalize_video_paths(st.session_state.get('subtitle_paths', []))
+    if not subtitle_paths:
+        subtitle_paths = _normalize_video_paths(st.session_state.get('subtitle_path', ''))
+    return subtitle_paths
+
+
+def _set_subtitle_state(subtitle_paths):
+    subtitle_paths = _normalize_video_paths(subtitle_paths)
+    subtitle_content, subtitle_contents = _build_combined_subtitle_content(subtitle_paths)
+    st.session_state['subtitle_path'] = subtitle_paths[0] if subtitle_paths else None
+    st.session_state['subtitle_paths'] = subtitle_paths
+    st.session_state['subtitle_content'] = subtitle_content if subtitle_content else None
+    st.session_state['subtitle_contents'] = subtitle_contents
+    st.session_state['subtitle_file_processed'] = bool(subtitle_paths)
 
 
 def render_script_panel(tr):
@@ -242,12 +350,12 @@ def render_video_file(tr, params):
     }
     source_labels = list(source_options.keys())
     default_source_label = source_labels[0]
-    source_default_version = "upload_first_v1"
+    source_default_version = "upload_first_v2"
 
     if st.session_state.get('_video_source_default_version') != source_default_version:
         if (
             st.session_state.get('video_source_selection') not in source_options
-            or not st.session_state.get('video_origin_path')
+            or not _selected_video_paths()
         ):
             st.session_state['video_source_selection'] = default_source_label
         st.session_state['_video_source_default_version'] = source_default_version
@@ -258,7 +366,7 @@ def render_video_file(tr, params):
     source_caption = (
         tr("Select a video from resource videos directory")
         if source_options[current_source] == "resource"
-        else tr("Upload a new video file up to 2GB")
+        else tr("Upload new video files up to 2GB each")
     )
     st.markdown(f"**{tr('Video Source')}**  :gray[{source_caption}]")
 
@@ -275,7 +383,7 @@ def render_video_file(tr, params):
 
     if source_options[source] == "resource":
         video_files = []
-        for suffix in ["*.mp4", "*.mov", "*.avi", "*.flv", "*.mkv", "*.mpeg4"]:
+        for suffix in VIDEO_GLOB_PATTERNS:
             video_files.extend(glob.glob(os.path.join(utils.video_dir(), suffix)))
 
         video_files = sorted(video_files, key=os.path.getctime, reverse=True)
@@ -299,58 +407,61 @@ def render_video_file(tr, params):
         )
 
         if video_path:
-            st.session_state['video_origin_path'] = video_path
-            params.video_origin_path = video_path
+            _set_video_origin_state([video_path], params)
         else:
-            st.session_state['video_origin_path'] = ""
-            params.video_origin_path = ""
+            _set_video_origin_state([], params)
             if not video_files:
                 st.info(tr("No video files found in resource videos directory"))
         return
 
     if source_options[source] == "upload":
-        uploaded_file = st.file_uploader(
+        uploaded_files = st.file_uploader(
             tr("Upload Video"),
-            type=["mp4", "mov", "avi", "flv", "mkv", "mpeg4"],
-            accept_multiple_files=False,
+            type=VIDEO_UPLOAD_TYPES,
+            accept_multiple_files=True,
             key="video_file_uploader",
         )
 
-        if uploaded_file is None:
-            st.session_state['video_origin_path'] = ""
-            params.video_origin_path = ""
+        if not uploaded_files:
+            _set_video_origin_state([], params)
             st.session_state['video_file_processed'] = False
             st.session_state['uploaded_video_path'] = ""
+            st.session_state['uploaded_video_paths'] = []
             st.session_state['uploaded_video_signature'] = ""
         else:
-            uploaded_signature = f"{uploaded_file.name}:{uploaded_file.size}"
-            uploaded_video_path = st.session_state.get('uploaded_video_path', '')
+            uploaded_signature = _uploaded_files_signature(uploaded_files)
+            uploaded_video_paths = _normalize_video_paths(st.session_state.get('uploaded_video_paths', []))
             is_processed = (
                 st.session_state.get('video_file_processed', False)
                 and st.session_state.get('uploaded_video_signature') == uploaded_signature
-                and uploaded_video_path
+                and uploaded_video_paths
+                and all(os.path.exists(path) for path in uploaded_video_paths)
             )
 
             if is_processed:
-                st.session_state['video_origin_path'] = uploaded_video_path
-                params.video_origin_path = uploaded_video_path
+                _set_video_origin_state(uploaded_video_paths, params)
             else:
-                safe_filename = os.path.basename(uploaded_file.name)
-                video_file_path = os.path.join(utils.video_dir(), safe_filename)
-                file_name, file_extension = os.path.splitext(safe_filename)
+                video_paths = []
+                for uploaded_file in uploaded_files:
+                    video_file_path = _unique_file_path(utils.video_dir(), uploaded_file.name)
+                    with open(video_file_path, "wb") as f:
+                        f.write(uploaded_file.read())
+                    video_paths.append(video_file_path)
 
-                if os.path.exists(video_file_path):
-                    timestamp = time.strftime("%Y%m%d%H%M%S")
-                    file_name_with_timestamp = f"{file_name}_{timestamp}"
-                    video_file_path = os.path.join(utils.video_dir(), file_name_with_timestamp + file_extension)
-
-                with open(video_file_path, "wb") as f:
-                    f.write(uploaded_file.read())
-                st.session_state['video_origin_path'] = video_file_path
-                params.video_origin_path = video_file_path
-                st.session_state['uploaded_video_path'] = video_file_path
+                _set_video_origin_state(video_paths, params)
+                st.session_state['uploaded_video_path'] = video_paths[0] if video_paths else ""
+                st.session_state['uploaded_video_paths'] = video_paths
                 st.session_state['uploaded_video_signature'] = uploaded_signature
                 st.session_state['video_file_processed'] = True
+
+            current_video_paths = _selected_video_paths()
+            if current_video_paths:
+                st.info(
+                    tr("Selected videos for processing").format(
+                        count=len(current_video_paths),
+                        files=_format_file_list_for_display(current_video_paths),
+                    )
+                )
 
 
 def render_short_generate_options(tr):
@@ -457,16 +568,36 @@ def short_drama_summary(tr):
 
 def render_subtitle_preview(tr):
     """渲染可折叠的当前字幕预览；没有字幕时提示用户先转写或上传。"""
-    subtitle_path = st.session_state.get('subtitle_path', '')
+    subtitle_paths = _selected_subtitle_paths()
     subtitle_content = st.session_state.get('subtitle_content', '')
+    subtitle_contents = st.session_state.get('subtitle_contents', {})
+    if not isinstance(subtitle_contents, dict):
+        subtitle_contents = {}
 
-    if subtitle_path and not subtitle_content and os.path.exists(subtitle_path):
-        subtitle_content = read_subtitle_text(subtitle_path).text
+    if subtitle_paths and (not subtitle_content or not subtitle_contents):
+        subtitle_content, subtitle_contents = _build_combined_subtitle_content(subtitle_paths)
         st.session_state['subtitle_content'] = subtitle_content
+        st.session_state['subtitle_contents'] = subtitle_contents
 
     with st.expander(tr("Subtitle Preview"), expanded=False):
-        if not subtitle_path or not subtitle_content:
+        if not subtitle_paths or not subtitle_content:
             st.info(tr("Please transcribe or upload subtitles first"))
+            return
+
+        if len(subtitle_paths) > 1:
+            for index, path in enumerate(subtitle_paths, start=1):
+                content = subtitle_contents.get(path, "")
+                if not content and os.path.exists(path):
+                    content = _read_subtitle_file(path)
+                st.markdown(f"**{index}. {os.path.basename(path)}**")
+                st.text_area(
+                    tr("Subtitle Preview"),
+                    value=content,
+                    height=180,
+                    label_visibility="collapsed",
+                    disabled=True,
+                    key=f"subtitle_content_preview_{index}",
+                )
             return
 
         st.text_area(
@@ -496,9 +627,7 @@ def render_subtitle_upload(tr):
     if 'subtitle_path' in st.session_state and st.session_state['subtitle_path']:
         st.info(tr("Uploaded subtitle").format(file=os.path.basename(st.session_state['subtitle_path'])))
         if st.button(tr("清除已上传字幕")):
-            st.session_state['subtitle_path'] = None
-            st.session_state['subtitle_content'] = None
-            st.session_state['subtitle_file_processed'] = False
+            _set_subtitle_state([])
             st.rerun()
     
     # 只有当有文件上传且尚未处理时才执行处理逻辑
@@ -539,9 +668,7 @@ def render_subtitle_upload(tr):
                 f"({tr('Encoding')}: {detected_encoding.upper()}, "
                 f"{tr('Size')}: {len(script_content)} {tr('Characters')})"
             )
-            st.session_state['subtitle_path'] = script_file_path
-            st.session_state['subtitle_content'] = script_content
-            st.session_state['subtitle_file_processed'] = True  # 标记已处理
+            _set_subtitle_state([script_file_path])
 
             # 避免使用rerun，使用更新状态的方式
             # st.rerun()
@@ -688,9 +815,7 @@ def render_video_script_editor(tr):
 def render_fun_asr_transcription(tr):
     """使用 Fun-ASR 从本地音视频转写生成字幕。"""
     def clear_fun_asr_subtitle_state():
-        st.session_state['subtitle_path'] = None
-        st.session_state['subtitle_content'] = None
-        st.session_state['subtitle_file_processed'] = False
+        _set_subtitle_state([])
 
     from app.services import fun_asr_subtitle
 
@@ -714,7 +839,7 @@ def render_fun_asr_transcription(tr):
     api_url = config.fun_asr.get("api_url", fun_asr_subtitle.LOCAL_FUN_ASR_API_URL)
     hotword = config.fun_asr.get("hotword", "")
     enable_spk = bool(config.fun_asr.get("enable_spk", False))
-    media_path = st.session_state.get('video_origin_path', '')
+    media_paths = _selected_video_paths()
 
     subtitle_cols = st.columns([3, 2], vertical_alignment="top")
 
@@ -768,23 +893,92 @@ def render_fun_asr_transcription(tr):
                 )
 
             if backend != "upload":
-                if media_path:
-                    st.info(
-                        tr("Using selected video for subtitle transcription").format(
-                            file=os.path.basename(media_path)
+                if media_paths:
+                    if len(media_paths) == 1:
+                        st.info(
+                            tr("Using selected video for subtitle transcription").format(
+                                file=os.path.basename(media_paths[0])
+                            )
                         )
-                    )
+                    else:
+                        st.info(
+                            tr("Using selected videos for subtitle transcription").format(
+                                count=len(media_paths),
+                                files=_format_file_list_for_display(media_paths),
+                            )
+                        )
                 else:
                     st.warning(tr("Please select or upload a video first"))
 
-    can_transcribe = backend != "upload" and bool(media_path)
+    # 上传字幕面板会在本轮渲染中更新 session_state，这里重新读取一次，保证按钮状态同步。
+    subtitle_paths = _selected_subtitle_paths()
+    can_transcribe = backend != "upload" and bool(media_paths)
+    can_correct_subtitles = bool(subtitle_paths)
     with subtitle_cols[1]:
-        transcribe_clicked = st.button(
-            tr("Transcribe subtitles"),
-            key="fun_asr_transcribe",
-            disabled=not can_transcribe,
-            use_container_width=True,
-        )
+        action_cols = st.columns(2)
+        with action_cols[0]:
+            transcribe_clicked = st.button(
+                tr("Transcribe subtitles"),
+                key="fun_asr_transcribe",
+                disabled=not can_transcribe,
+                use_container_width=True,
+            )
+        with action_cols[1]:
+            correct_clicked = st.button(
+                tr("Calibrate subtitles"),
+                key="subtitle_correct",
+                disabled=not can_correct_subtitles,
+                use_container_width=True,
+            )
+
+    if correct_clicked:
+        from app.services import subtitle_corrector
+
+        text_provider = config.app.get('text_llm_provider', 'openai').lower()
+        text_api_key = config.app.get(f'text_{text_provider}_api_key')
+        text_base_url = config.app.get(f'text_{text_provider}_base_url')
+
+        corrected_paths = []
+        try:
+            spinner_text = tr("Calibrating subtitles...")
+            with st.spinner(spinner_text):
+                progress_bar = st.progress(0) if len(subtitle_paths) > 1 else None
+                for index, subtitle_path in enumerate(subtitle_paths, start=1):
+                    subtitle_name = f"{os.path.splitext(os.path.basename(subtitle_path))[0]}_corrected.srt"
+                    output_path = _unique_file_path(utils.subtitle_dir(), subtitle_name)
+                    corrected_path = subtitle_corrector.correct_subtitle_file(
+                        subtitle_file=subtitle_path,
+                        output_file=output_path,
+                        provider=text_provider,
+                        api_key=text_api_key,
+                        base_url=text_base_url,
+                    )
+                    corrected_paths.append(corrected_path)
+                    if progress_bar:
+                        progress_bar.progress(index / len(subtitle_paths))
+
+                if progress_bar:
+                    progress_bar.empty()
+
+            _set_subtitle_state(corrected_paths)
+            success_placeholder = st.empty()
+            if len(corrected_paths) == 1:
+                success_placeholder.success(
+                    tr("Subtitle calibration succeeded").format(file=os.path.basename(corrected_paths[0]))
+                )
+            else:
+                success_placeholder.success(
+                    tr("Subtitle calibration succeeded for multiple files").format(
+                        count=len(corrected_paths),
+                        files=_format_file_list_for_display(corrected_paths),
+                    )
+                )
+            time.sleep(3)
+            success_placeholder.empty()
+        except Exception as e:
+            logger.error(f"字幕校准失败: {traceback.format_exc()}")
+            st.error(f"{tr('Subtitle calibration failed')}: {str(e)}")
+        return
 
     if not transcribe_clicked:
         return
@@ -797,9 +991,17 @@ def render_fun_asr_transcription(tr):
         clear_fun_asr_subtitle_state()
         st.error(tr("Please enter local FunASR-Pack API URL"))
         return
-    if not media_path or not os.path.exists(media_path):
+    missing_paths = [path for path in media_paths if not os.path.exists(path)]
+    if not media_paths or missing_paths:
         clear_fun_asr_subtitle_state()
-        st.error(tr("Selected video file does not exist"))
+        if missing_paths:
+            st.error(
+                tr("Selected video files do not exist").format(
+                    files=_format_file_list_for_display(missing_paths)
+                )
+            )
+        else:
+            st.error(tr("Selected video file does not exist"))
         return
 
     try:
@@ -813,47 +1015,70 @@ def render_fun_asr_transcription(tr):
         config.fun_asr["model"] = "fun-asr"
         config.save_config()
 
-        subtitle_name = f"{os.path.splitext(os.path.basename(media_path))[0]}_fun_asr.srt"
-        subtitle_path = os.path.join(utils.subtitle_dir(), subtitle_name)
-
         spinner_text = (
             tr("Transcribing with local FunASR-Pack...")
             if backend == "local"
             else tr("Transcribing with Fun-ASR...")
         )
         with st.spinner(spinner_text):
-            if backend == "local":
-                generated_path = fun_asr_subtitle.create_with_local_fun_asr(
-                    local_file=media_path,
-                    subtitle_file=subtitle_path,
-                    api_url=str(api_url).strip(),
-                    hotword=str(hotword).strip(),
-                    enable_spk=bool(enable_spk),
-                )
-            else:
-                generated_path = fun_asr_subtitle.create_with_fun_asr(
-                    local_file=media_path,
-                    subtitle_file=subtitle_path,
-                    api_key=api_key.strip(),
-                )
+            progress_bar = st.progress(0) if len(media_paths) > 1 else None
+            generated_paths = []
+            for index, media_path in enumerate(media_paths, start=1):
+                subtitle_name = f"{os.path.splitext(os.path.basename(media_path))[0]}_fun_asr.srt"
+                subtitle_path = _unique_file_path(utils.subtitle_dir(), subtitle_name)
 
-        if not generated_path or not os.path.exists(generated_path):
+                if backend == "local":
+                    generated_path = fun_asr_subtitle.create_with_local_fun_asr(
+                        local_file=media_path,
+                        subtitle_file=subtitle_path,
+                        api_url=str(api_url).strip(),
+                        hotword=str(hotword).strip(),
+                        enable_spk=bool(enable_spk),
+                    )
+                else:
+                    generated_path = fun_asr_subtitle.create_with_fun_asr(
+                        local_file=media_path,
+                        subtitle_file=subtitle_path,
+                        api_key=api_key.strip(),
+                    )
+
+                if not generated_path or not os.path.exists(generated_path):
+                    raise RuntimeError(tr("Fun-ASR failed without subtitle file"))
+
+                generated_paths.append(generated_path)
+                if progress_bar:
+                    progress_bar.progress(index / len(media_paths))
+
+            if progress_bar:
+                progress_bar.empty()
+
+        if not generated_paths:
             clear_fun_asr_subtitle_state()
             st.error(tr("Fun-ASR failed without subtitle file"))
             return
 
-        with open(generated_path, "r", encoding="utf-8") as f:
-            subtitle_content = f.read()
+        subtitle_content, subtitle_contents = _build_combined_subtitle_content(generated_paths)
+        if not subtitle_content.strip():
+            clear_fun_asr_subtitle_state()
+            st.error(tr("Fun-ASR failed without subtitle file"))
+            return
 
-        st.session_state['subtitle_path'] = generated_path
-        st.session_state['subtitle_content'] = subtitle_content
-        st.session_state['subtitle_file_processed'] = True
+        _set_subtitle_state(generated_paths)
         success_placeholder = st.empty()
-        success_placeholder.success(
-            tr("Subtitle transcription succeeded").format(file=os.path.basename(generated_path))
-        )
+        if len(generated_paths) == 1:
+            success_placeholder.success(
+                tr("Subtitle transcription succeeded").format(file=os.path.basename(generated_paths[0]))
+            )
+        else:
+            success_placeholder.success(
+                tr("Subtitle transcription succeeded for multiple files").format(
+                    count=len(generated_paths),
+                    files=_format_file_list_for_display(generated_paths),
+                )
+            )
         time.sleep(3)
         success_placeholder.empty()
+        st.rerun()
     except Exception as e:
         clear_fun_asr_subtitle_state()
         logger.error(f"Fun-ASR 字幕转写失败: {traceback.format_exc()}")
@@ -1007,6 +1232,7 @@ def get_script_params():
         'video_language': st.session_state.get('video_language', ''),
         'video_clip_json_path': st.session_state.get('video_clip_json_path', ''),
         'video_origin_path': st.session_state.get('video_origin_path', ''),
+        'video_origin_paths': _selected_video_paths(),
         'video_name': st.session_state.get('video_name', ''),
         'video_plot': st.session_state.get('video_plot', '')
     }

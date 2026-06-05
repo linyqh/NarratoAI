@@ -11,6 +11,21 @@ DEFAULT_VISION_OPENAI_MODEL_NAME = "Qwen/Qwen3.5-122B-A10B"
 DEFAULT_TEXT_LLM_PROVIDER = DEFAULT_OPENAI_COMPATIBLE_PROVIDER
 DEFAULT_TEXT_OPENAI_MODEL_NAME = "Pro/zai-org/GLM-5"
 
+DEFAULT_LLM_GENERATION_CONFIG = {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "max_tokens": 65536,
+    "thinking_level": "auto",
+}
+
+DEFAULT_LLM_THINKING_LEVELS = ["auto", "off", "low", "medium", "high"]
+
+DEFAULT_LLM_GENERATION_APP_CONFIG = {
+    f"{model_type}_openai_{param_name}": value
+    for model_type in ("vision", "text")
+    for param_name, value in DEFAULT_LLM_GENERATION_CONFIG.items()
+}
+
 DEFAULT_LLM_APP_CONFIG = {
     "vision_llm_provider": DEFAULT_VISION_LLM_PROVIDER,
     "vision_openai_model_name": DEFAULT_VISION_OPENAI_MODEL_NAME,
@@ -21,6 +36,7 @@ DEFAULT_LLM_APP_CONFIG = {
     "text_openai_api_key": "",
     "text_openai_base_url": DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
 }
+DEFAULT_LLM_APP_CONFIG.update(DEFAULT_LLM_GENERATION_APP_CONFIG)
 
 
 def build_default_app_config(app_config: dict | None = None) -> dict:

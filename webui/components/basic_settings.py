@@ -4,6 +4,8 @@ import streamlit as st
 import os
 from app.config import config
 from app.config.defaults import (
+    DEFAULT_LLM_GENERATION_CONFIG,
+    DEFAULT_LLM_THINKING_LEVELS,
     DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
     DEFAULT_OPENAI_COMPATIBLE_PROVIDER,
     DEFAULT_TEXT_LLM_PROVIDER,
@@ -87,7 +89,7 @@ def validate_openai_compatible_model_name(model_name: str, model_type: str) -> t
     
     Args:
         model_name: 模型名称，应为 provider/model 格式
-        model_type: 模型类型（如"视频分析"、"文案生成"）
+        model_type: 模型类型（如"视觉分析"、"文案生成"）
         
     Returns:
         (是否有效, 错误消息)
@@ -149,6 +151,104 @@ def update_app_config_if_changed(key: str, value) -> bool:
     return True
 
 
+def render_openai_compatible_protocol_field(tr, label_key: str, key: str) -> None:
+    """Render the fixed OpenAI-compatible protocol as a non-selectable field."""
+    st.text_input(
+        tr(label_key),
+        value=tr("OpenAI compatible protocol"),
+        help=tr("OpenAI compatible protocol help"),
+        disabled=True,
+        key=key,
+    )
+
+
+def get_generation_config_value(model_prefix: str, param_name: str):
+    """Read a per-model generation parameter with a shared default."""
+    config_key = f"{model_prefix}_openai_{param_name}"
+    if config_key in config.app:
+        return config.app.get(config_key)
+
+    if model_prefix == "text" and param_name == "temperature":
+        return st.session_state.get("temperature", DEFAULT_LLM_GENERATION_CONFIG[param_name])
+
+    return DEFAULT_LLM_GENERATION_CONFIG[param_name]
+
+
+def render_llm_generation_settings(tr, model_prefix: str) -> dict:
+    """Render generation parameters directly below a model's Base URL."""
+    st.markdown(f"**{tr('Generation Settings')}**")
+
+    row1 = st.columns(2)
+    with row1[0]:
+        temperature = st.slider(
+            tr("Sampling Temperature"),
+            min_value=0.0,
+            max_value=2.0,
+            value=float(get_generation_config_value(model_prefix, "temperature")),
+            step=0.05,
+            help=tr("Sampling Temperature Help"),
+            key=f"{model_prefix}_openai_temperature_input",
+        )
+    with row1[1]:
+        top_p = st.slider(
+            tr("Top P"),
+            min_value=0.0,
+            max_value=1.0,
+            value=float(get_generation_config_value(model_prefix, "top_p")),
+            step=0.05,
+            help=tr("Top P Help"),
+            key=f"{model_prefix}_openai_top_p_input",
+        )
+
+    row2 = st.columns(2)
+    with row2[0]:
+        max_tokens = st.number_input(
+            tr("Max Output Tokens"),
+            min_value=0,
+            max_value=200000,
+            value=int(get_generation_config_value(model_prefix, "max_tokens")),
+            step=256,
+            help=tr("Max Output Tokens Help"),
+            key=f"{model_prefix}_openai_max_tokens_input",
+        )
+    with row2[1]:
+        current_thinking_level = str(get_generation_config_value(model_prefix, "thinking_level") or "auto")
+        if current_thinking_level not in DEFAULT_LLM_THINKING_LEVELS:
+            current_thinking_level = "auto"
+
+        thinking_level = st.selectbox(
+            tr("Thinking Level"),
+            options=DEFAULT_LLM_THINKING_LEVELS,
+            index=DEFAULT_LLM_THINKING_LEVELS.index(current_thinking_level),
+            format_func=lambda level: tr(f"Thinking Level {level.title()}"),
+            help=tr("Thinking Level Help"),
+            key=f"{model_prefix}_openai_thinking_level_input",
+        )
+
+    params = {
+        "temperature": round(float(temperature), 2),
+        "top_p": round(float(top_p), 2),
+        "max_tokens": int(max_tokens),
+        "thinking_level": thinking_level,
+    }
+
+    if model_prefix == "text":
+        st.session_state["temperature"] = params["temperature"]
+
+    return params
+
+
+def save_llm_generation_settings(model_prefix: str, params: dict) -> bool:
+    """Persist per-model generation parameters in app config."""
+    changed = False
+    for param_name, value in params.items():
+        config_key = f"{model_prefix}_openai_{param_name}"
+        changed |= update_app_config_if_changed(config_key, value)
+        st.session_state[config_key] = value
+
+    return changed
+
+
 def render_basic_settings(tr):
     """渲染基础设置面板"""
     with st.expander(tr("Basic Settings"), expanded=False):
@@ -162,12 +262,10 @@ def render_basic_settings(tr):
             render_proxy_settings(tr)
 
         with middle_config_panel:
-            render_vision_llm_settings(tr)  # 视频分析模型设置
+            render_vision_llm_settings(tr)  # 视觉分析模型设置
 
         with right_config_panel:
             render_text_llm_settings(tr)  # 文案生成模型设置
-
-        render_generation_settings(tr)
 
 
 def render_generation_settings(tr):
@@ -175,7 +273,7 @@ def render_generation_settings(tr):
     st.divider()
     st.subheader(tr("Generation Settings"))
     if 'temperature' not in st.session_state:
-        st.session_state['temperature'] = 0.7
+        st.session_state['temperature'] = DEFAULT_LLM_GENERATION_CONFIG["temperature"]
     st.slider("temperature", 0.0, 2.0, key="temperature")
 
 
@@ -455,7 +553,7 @@ def test_openai_compatible_text_model(api_key: str, base_url: str, model_name: s
         return False, f"连接失败: {error_msg}"
 
 def render_vision_llm_settings(tr):
-    """渲染视频分析模型设置（OpenAI 兼容 统一配置）"""
+    """渲染视觉分析模型设置（OpenAI 兼容 统一配置）"""
     st.subheader(tr("Vision Model Settings"))
 
     # 固定使用 OpenAI 兼容 提供商
@@ -467,23 +565,20 @@ def render_vision_llm_settings(tr):
     vision_base_url = config.app.get("vision_openai_base_url", DEFAULT_OPENAI_COMPATIBLE_BASE_URL)
     
     # 固定 provider 为 openai，模型输入框保留完整模型名称
-    current_provider, current_model = get_openai_compatible_ui_values(
+    _current_provider, current_model = get_openai_compatible_ui_values(
         full_vision_model_name,
         DEFAULT_VISION_OPENAI_MODEL_NAME,
         provider=DEFAULT_VISION_LLM_PROVIDER,
     )
-
-    # 定义支持的 provider 列表
-    OPENAI_COMPATIBLE_PROVIDERS = ["openai"]
+    selected_provider = DEFAULT_VISION_LLM_PROVIDER
 
     # 渲染配置输入框
     col1, col2 = st.columns([1, 2])
     with col1:
-        selected_provider = st.selectbox(
-            tr("Vision Model Provider"),
-            options=OPENAI_COMPATIBLE_PROVIDERS,
-            index=OPENAI_COMPATIBLE_PROVIDERS.index(current_provider) if current_provider in OPENAI_COMPATIBLE_PROVIDERS else 0,
-            key="vision_provider_select"
+        render_openai_compatible_protocol_field(
+            tr,
+            "Vision Model Provider",
+            key="vision_openai_protocol_display",
         )
     
     with col2:
@@ -532,6 +627,8 @@ def render_vision_llm_settings(tr):
         info_example = vision_placeholder or "https://your-openai-compatible-endpoint/v1"
         st.info(tr("Please fill OpenAI compatible gateway").format(example=info_example))
 
+    vision_generation_params = render_llm_generation_settings(tr, "vision")
+
     # 添加测试连接按钮
     if st.button(tr("Test Connection"), key="test_vision_connection"):
         test_errors = []
@@ -559,7 +656,7 @@ def render_vision_llm_settings(tr):
                         st.error(message)
                 except Exception as e:
                     st.error(f"{tr('Connection test error')}: {str(e)}")
-                    logger.error(f"OpenAI 兼容 视频分析模型连接测试失败: {str(e)}")
+                    logger.error(f"OpenAI 兼容 视觉分析模型连接测试失败: {str(e)}")
 
     # 验证和保存配置
     validation_errors = []
@@ -568,7 +665,7 @@ def render_vision_llm_settings(tr):
     # 验证模型名称
     if st_vision_model_name:
         # 这里的验证逻辑可能需要微调，因为我们现在是自动组合的
-        is_valid, error_msg = validate_openai_compatible_model_name(st_vision_model_name, "视频分析")
+        is_valid, error_msg = validate_openai_compatible_model_name(st_vision_model_name, "视觉分析")
         if is_valid:
             config_changed |= update_app_config_if_changed(
                 "vision_openai_model_name",
@@ -580,7 +677,7 @@ def render_vision_llm_settings(tr):
 
     # 验证 API 密钥
     if st_vision_api_key:
-        is_valid, error_msg = validate_api_key(st_vision_api_key, "视频分析")
+        is_valid, error_msg = validate_api_key(st_vision_api_key, "视觉分析")
         if is_valid:
             config_changed |= update_app_config_if_changed(
                 "vision_openai_api_key",
@@ -592,7 +689,7 @@ def render_vision_llm_settings(tr):
 
     # 验证 Base URL（可选）
     if st_vision_base_url:
-        is_valid, error_msg = validate_base_url(st_vision_base_url, "视频分析")
+        is_valid, error_msg = validate_base_url(st_vision_base_url, "视觉分析")
         if is_valid:
             config_changed |= update_app_config_if_changed(
                 "vision_openai_base_url",
@@ -601,6 +698,8 @@ def render_vision_llm_settings(tr):
             st.session_state["vision_openai_base_url"] = st_vision_base_url
         else:
             validation_errors.append(error_msg)
+
+    config_changed |= save_llm_generation_settings("vision", vision_generation_params)
 
     # 显示验证错误
     show_config_validation_errors(validation_errors)
@@ -615,7 +714,7 @@ def render_vision_llm_settings(tr):
                 st.success(tr("Vision model config saved"))
         except Exception as e:
             st.error(f"{tr('Failed to save config')}: {str(e)}")
-            logger.error(f"保存视频分析配置失败: {str(e)}")
+            logger.error(f"保存视觉分析配置失败: {str(e)}")
 
 
 def test_text_model_connection(api_key, base_url, model_name, provider, tr):
@@ -734,23 +833,20 @@ def render_text_llm_settings(tr):
     text_base_url = config.app.get("text_openai_base_url", DEFAULT_OPENAI_COMPATIBLE_BASE_URL)
 
     # 固定 provider 为 openai，模型输入框保留完整模型名称
-    current_provider, current_model = get_openai_compatible_ui_values(
+    _current_provider, current_model = get_openai_compatible_ui_values(
         full_text_model_name,
         DEFAULT_TEXT_OPENAI_MODEL_NAME,
         provider=DEFAULT_TEXT_LLM_PROVIDER,
     )
-
-    # 定义支持的 provider 列表
-    OPENAI_COMPATIBLE_PROVIDERS = ["openai"]
+    selected_provider = DEFAULT_TEXT_LLM_PROVIDER
 
     # 渲染配置输入框
     col1, col2 = st.columns([1, 2])
     with col1:
-        selected_provider = st.selectbox(
-            tr("Text Model Provider"),
-            options=OPENAI_COMPATIBLE_PROVIDERS,
-            index=OPENAI_COMPATIBLE_PROVIDERS.index(current_provider) if current_provider in OPENAI_COMPATIBLE_PROVIDERS else 0,
-            key="text_provider_select"
+        render_openai_compatible_protocol_field(
+            tr,
+            "Text Model Provider",
+            key="text_openai_protocol_display",
         )
     
     with col2:
@@ -800,6 +896,8 @@ def render_text_llm_settings(tr):
     if text_base_required and not st_text_base_url:
         info_example = text_placeholder or "https://your-openai-compatible-endpoint/v1"
         st.info(tr("Please fill OpenAI compatible gateway").format(example=info_example))
+
+    text_generation_params = render_llm_generation_settings(tr, "text")
 
     # 添加测试连接按钮
     if st.button(tr("Test Connection"), key="test_text_connection"):
@@ -869,6 +967,8 @@ def render_text_llm_settings(tr):
             st.session_state["text_openai_base_url"] = st_text_base_url
         else:
             text_validation_errors.append(error_msg)
+
+    text_config_changed |= save_llm_generation_settings("text", text_generation_params)
 
     # 显示验证错误
     show_config_validation_errors(text_validation_errors)
