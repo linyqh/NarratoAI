@@ -1,11 +1,41 @@
 import streamlit as st
 import os
+import shutil
 from uuid import uuid4
 from app.config import config
 from app.services import voice
 from app.models.schema import AudioVolumeDefaults
 from app.utils import utils
 from webui.utils.cache import get_songs_cache
+
+
+INDEXTTS2_REFERENCE_AUDIO_SOURCE_DIR = "/Users/viccy/Downloads/tts-mp3-clone/mp3"
+INDEXTTS2_REFERENCE_AUDIO_COPY_SUBDIR = "indextts2_refs"
+INDEXTTS2_REFERENCE_AUDIO_MAP = [
+    ("yingshijieshuo-zh-male.mp3", "影视解说", "Film Narration"),
+    ("maikeashe-zh-male.mp3", "麦克阿瑟", "Macintosh"),
+    ("dong-yuhui-zh-male.mp3", "董宇辉", "Dong Yuhui"),
+    ("fangzhenren-ad-fake-news-zh-male.mp3", "仿真人", "Realistic Human"),
+    ("fengyin-jilupian-jieshuo-zh-male.mp3", "风吟纪录片解说", "Fengyin Documentary Narration"),
+    ("guwo-dianying-jieshuo-zh-male.mp3", "顾我电影解说", "Guwo Film Narration"),
+    ("jia-xiaojun-final-zh-male.mp3", "贾小军", "Jia Xiaojun"),
+    ("junshi-zh-male.mp3", "军事解说", "Military Narration"),
+    ("qi-tongwei-v2-zh-male.mp3", "祁同伟", "Qi Tongwei"),
+    ("saima-niang-mambo-oye-zh-female.mp3", "赛马娘曼波欧耶版", "Uma Musume Mambo Oye Version"),
+    ("shejian-shangde-zhongguo-zh-male.mp3", "舌尖上的中国", "A Bite of China"),
+    ("xiaoming-jianmo-zh-male.mp3", "小明剑魔", "Xiaoming Sword Demon"),
+    ("xin-youxi-jieshuo-zh-male.mp3", "新游戏解说", "New Game Narration"),
+    ("xinzhong-zhicheng-zh-male.mp3", "心中之城", "City in the Heart"),
+    ("alex-chikna-en-male.mp3", "亚历克斯", "Alex Chikna"),
+    ("alle-en-unknown.mp3", "艾莉", "ALLE"),
+    ("calm-normal-en-unknown.mp3", "沉稳男声", "Calm Normal"),
+    ("donald-j-trump-noise-reduction-en-male.mp3", "唐纳德·特朗普", "Donald J. Trump"),
+    ("elite-en-unknown.mp3", "精英男声", "ELITE"),
+    ("horror-en-unknown.mp3", "惊悚男声", "Horror"),
+    ("meiqu-kelong-en-unknown.mp3", "美式男声", "US Clone"),
+    ("sarah-en-female.mp3", "莎拉", "Sarah"),
+]
+INDEXTTS2_REFERENCE_AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg")
 
 
 def get_soulvoice_voices():
@@ -22,12 +52,12 @@ def get_soulvoice_voices():
 def get_tts_engine_options(tr=lambda key: key):
     """获取TTS引擎选项"""
     return {
+        "indextts2": "IndexTTS2",
         "edge_tts": "Edge TTS",
-        "azure_speech": "Azure Speech Services",
-        "tencent_tts": tr("Tencent Cloud TTS"),
         "qwen3_tts": tr("Tongyi Qwen3 TTS"),
-        "indextts2": tr("IndexTTS2 Voice Clone"),
-        "doubaotts": tr("Doubao TTS")
+        "tencent_tts": tr("Tencent Cloud TTS"),
+        "doubaotts": tr("Doubao TTS"),
+        "azure_speech": "Azure Speech Services"
     }
 
 
@@ -59,9 +89,9 @@ def get_tts_engine_descriptions(tr=lambda key: key):
             "registration": "https://dashscope.aliyuncs.com/"
         },
         "indextts2": {
-            "title": tr("IndexTTS2 Voice Clone"),
+            "title": "IndexTTS2",
             "features": tr("IndexTTS2 features"),
-            "use_case": tr("IndexTTS2 download link"),
+            "use_case": tr("IndexTTS2 use case"),
             "registration": None
         },
         "doubaotts": {
@@ -71,6 +101,143 @@ def get_tts_engine_descriptions(tr=lambda key: key):
             "registration": "https://www.volcengine.com/product/voice-tech"
         }
     }
+
+
+def infer_indextts2_reference_audio_language(filename):
+    """根据文件名推断参考音频语言"""
+    lower_filename = filename.lower()
+    if "-zh-" in lower_filename:
+        return "zh"
+    if "-en-" in lower_filename:
+        return "en"
+    return "unknown"
+
+
+def get_indextts2_reference_audio_options():
+    """获取本地 IndexTTS2 参考音频选项"""
+    options = []
+    mapped_files = set()
+
+    for filename, zh_name, en_name in INDEXTTS2_REFERENCE_AUDIO_MAP:
+        audio_path = os.path.join(INDEXTTS2_REFERENCE_AUDIO_SOURCE_DIR, filename)
+        if os.path.isfile(audio_path):
+            options.append({
+                "filename": filename,
+                "path": audio_path,
+                "zh": zh_name,
+                "en": en_name,
+                "language": infer_indextts2_reference_audio_language(filename),
+            })
+            mapped_files.add(filename)
+
+    if os.path.isdir(INDEXTTS2_REFERENCE_AUDIO_SOURCE_DIR):
+        for filename in sorted(os.listdir(INDEXTTS2_REFERENCE_AUDIO_SOURCE_DIR)):
+            if filename in mapped_files:
+                continue
+            if not filename.lower().endswith(INDEXTTS2_REFERENCE_AUDIO_EXTENSIONS):
+                continue
+            audio_path = os.path.join(INDEXTTS2_REFERENCE_AUDIO_SOURCE_DIR, filename)
+            if not os.path.isfile(audio_path):
+                continue
+            fallback_name = os.path.splitext(filename)[0]
+            options.append({
+                "filename": filename,
+                "path": audio_path,
+                "zh": fallback_name,
+                "en": fallback_name,
+                "language": infer_indextts2_reference_audio_language(filename),
+            })
+
+    return options
+
+
+def format_indextts2_reference_audio_option(option):
+    """格式化 IndexTTS2 参考音频下拉显示名"""
+    zh_name = option.get("zh", "")
+    en_name = option.get("en", "")
+    language = option.get("language", "unknown")
+    ui_language = str(st.session_state.get("ui_language", "zh-CN")).lower()
+
+    if ui_language.startswith("en"):
+        display_name = en_name or zh_name or option.get("filename", "")
+        language_labels = {
+            "zh": "Chinese",
+            "en": "English",
+        }
+    else:
+        display_name = zh_name or en_name or option.get("filename", "")
+        language_labels = {
+            "zh": "中文",
+            "en": "英文",
+        }
+
+    language_label = language_labels.get(language)
+    if not language_label:
+        return display_name
+
+    return f"{display_name} ({language_label})"
+
+
+def get_indextts2_reference_audio_index(options, saved_reference_audio):
+    """根据已保存的参考音频文件匹配下拉选项索引"""
+    if not options:
+        return 0
+
+    saved_filename = os.path.basename(saved_reference_audio or "")
+    for index, option in enumerate(options):
+        if option["filename"] == saved_filename:
+            return index
+
+    return 0
+
+
+def copy_indextts2_reference_audio(source_path):
+    """复制一份参考音频到项目存储目录，并返回复制后的路径"""
+    if not source_path or not os.path.isfile(source_path):
+        return ""
+
+    target_dir = utils.storage_dir(INDEXTTS2_REFERENCE_AUDIO_COPY_SUBDIR, create=True)
+    target_path = os.path.join(target_dir, os.path.basename(source_path))
+
+    if os.path.abspath(source_path) == os.path.abspath(target_path):
+        return target_path
+
+    should_copy = True
+    if os.path.exists(target_path):
+        should_copy = os.path.getsize(source_path) != os.path.getsize(target_path)
+
+    if should_copy:
+        shutil.copy2(source_path, target_path)
+
+    return target_path
+
+
+def get_audio_mime_type(audio_path):
+    """根据音频文件扩展名返回 MIME 类型"""
+    extension = os.path.splitext(audio_path or "")[1].lower()
+    if extension == ".wav":
+        return "audio/wav"
+    if extension == ".ogg":
+        return "audio/ogg"
+    if extension == ".m4a":
+        return "audio/mp4"
+    if extension == ".aac":
+        return "audio/aac"
+    return "audio/mp3"
+
+
+def render_reference_audio_preview_button(reference_audio, key, tr):
+    """渲染参考音频试听按钮"""
+    can_preview = bool(reference_audio and os.path.isfile(reference_audio))
+    if st.button(
+        " ",
+        key=key,
+        icon=":material/play_arrow:",
+        help=tr("Preview Reference Audio Help"),
+        disabled=not can_preview,
+        use_container_width=True,
+    ):
+        st.session_state["indextts2_reference_audio_preview_path"] = reference_audio
 
 
 def is_valid_azure_voice_name(voice_name: str) -> bool:
@@ -109,11 +276,11 @@ def render_tts_settings(tr):
     engine_descriptions = get_tts_engine_descriptions(tr)
 
     # 获取保存的TTS引擎设置
-    saved_tts_engine = config.ui.get("tts_engine", "edge_tts")
+    saved_tts_engine = config.ui.get("tts_engine", "indextts2")
 
     # 确保保存的引擎在可用选项中
     if saved_tts_engine not in engine_options:
-        saved_tts_engine = "edge_tts"
+        saved_tts_engine = "indextts2"
 
     # TTS引擎选择下拉框
     selected_engine = st.selectbox(
@@ -566,8 +733,6 @@ def render_qwen3_tts_settings(tr):
 
 def render_indextts2_tts_settings(tr):
     """渲染 IndexTTS2 TTS 设置"""
-    import os
-    
     # API 地址配置
     api_url = st.text_input(
         tr("API URL"),
@@ -575,29 +740,90 @@ def render_indextts2_tts_settings(tr):
         help=tr("IndexTTS2 API URL Help")
     )
     
-    # 参考音频文件路径
-    reference_audio = st.text_input(
-        tr("Reference Audio Path"),
-        value=config.indextts2.get("reference_audio", ""),
-        help=tr("Reference Audio Path Help")
+    saved_reference_audio = config.indextts2.get("reference_audio", "")
+    reference_audio_source_options = {
+        tr("Select from Resource Directory"): "resource",
+        tr("Upload Reference Audio"): "upload",
+    }
+    reference_audio_source_labels = list(reference_audio_source_options.keys())
+    saved_reference_audio_source = config.indextts2.get("reference_audio_source", "resource")
+    if saved_reference_audio_source not in reference_audio_source_options.values():
+        saved_reference_audio_source = "resource"
+    default_reference_audio_source_label = next(
+        label
+        for label, source_value in reference_audio_source_options.items()
+        if source_value == saved_reference_audio_source
     )
-    
-    # 文件上传功能
-    uploaded_file = st.file_uploader(
-        tr("Upload Reference Audio File"),
-        type=["wav", "mp3"],
-        help=tr("Upload Reference Audio Help")
+
+    st.markdown(f"**{tr('Reference Audio Path')}**")
+    reference_audio_source_label = st.pills(
+        tr("Reference Audio Source"),
+        options=reference_audio_source_labels,
+        selection_mode="single",
+        default=default_reference_audio_source_label,
+        key="indextts2_reference_audio_source_selection",
+        help=tr("Reference Audio Source Help"),
+        label_visibility="collapsed",
+        width="stretch",
     )
-    
-    if uploaded_file is not None:
-        # 保存上传的文件
-        import tempfile
-        temp_dir = tempfile.gettempdir()
-        audio_path = os.path.join(temp_dir, f"indextts2_ref_{uploaded_file.name}")
-        with open(audio_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        reference_audio = audio_path
-        st.success(tr("Audio uploaded").format(path=audio_path))
+    if not reference_audio_source_label:
+        reference_audio_source_label = default_reference_audio_source_label
+    reference_audio_source = reference_audio_source_options[reference_audio_source_label]
+
+    reference_audio = saved_reference_audio
+    reference_audio_options = get_indextts2_reference_audio_options()
+    if reference_audio_source == "resource" and reference_audio_options:
+        selected_audio_index = get_indextts2_reference_audio_index(reference_audio_options, saved_reference_audio)
+        select_col, preview_col = st.columns([5, 1])
+        with select_col:
+            selected_audio_option = reference_audio_options[st.selectbox(
+                tr("Reference Audio Path"),
+                options=range(len(reference_audio_options)),
+                index=selected_audio_index,
+                format_func=lambda x: format_indextts2_reference_audio_option(reference_audio_options[x]),
+                help=tr("Reference Audio Path Help"),
+                label_visibility="collapsed"
+            )]
+        reference_audio = copy_indextts2_reference_audio(selected_audio_option["path"])
+        with preview_col:
+            render_reference_audio_preview_button(
+                reference_audio,
+                "indextts2_resource_reference_audio_preview",
+                tr,
+            )
+    elif reference_audio_source == "resource":
+        st.warning(tr("No Reference Audio Resources Found"))
+
+    if reference_audio_source == "upload":
+        if saved_reference_audio_source != "upload":
+            reference_audio = ""
+        upload_col, preview_col = st.columns([5, 1])
+        with upload_col:
+            uploaded_file = st.file_uploader(
+                tr("Upload Reference Audio File"),
+                type=["wav", "mp3"],
+                help=tr("Upload Reference Audio Help"),
+                label_visibility="collapsed"
+            )
+
+        if uploaded_file is not None:
+            target_dir = utils.storage_dir(INDEXTTS2_REFERENCE_AUDIO_COPY_SUBDIR, create=True)
+            audio_path = os.path.join(target_dir, f"uploaded_{uploaded_file.name}")
+            with open(audio_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            reference_audio = audio_path
+            st.success(tr("Audio uploaded").format(path=audio_path))
+        with preview_col:
+            render_reference_audio_preview_button(
+                reference_audio,
+                "indextts2_upload_reference_audio_preview",
+                tr,
+            )
+
+    preview_audio_path = st.session_state.get("indextts2_reference_audio_preview_path", "")
+    if preview_audio_path == reference_audio and os.path.isfile(preview_audio_path):
+        with open(preview_audio_path, "rb") as audio_file:
+            st.audio(audio_file.read(), format=get_audio_mime_type(preview_audio_path))
     
     # 推理模式
     infer_mode_options = [
@@ -676,6 +902,7 @@ def render_indextts2_tts_settings(tr):
     
     # 保存配置
     config.indextts2["api_url"] = api_url
+    config.indextts2["reference_audio_source"] = reference_audio_source
     config.indextts2["reference_audio"] = reference_audio
     config.indextts2["infer_mode"] = infer_mode
     config.indextts2["temperature"] = temperature
@@ -1175,5 +1402,5 @@ def get_audio_params():
         'bgm_type': st.session_state.get('bgm_type', 'random'),
         'bgm_file': st.session_state.get('bgm_file', ''),
         'bgm_volume': st.session_state.get('bgm_volume', AudioVolumeDefaults.BGM_VOLUME),
-        'tts_engine': st.session_state.get('tts_engine', "edge_tts"),
+        'tts_engine': st.session_state.get('tts_engine', "indextts2"),
     }

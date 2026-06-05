@@ -71,7 +71,7 @@ def _normalize_indextts2_reference_audio(params: VideoClipParams) -> None:
         logger.info(f"IndexTTS2 使用配置中的参考音频: {configured_ref}")
         return
 
-    raise ValueError("IndexTTS2 参考音频不存在，请在音频设置中上传或填写有效的参考音频路径")
+    raise ValueError("IndexTTS2 参考音频不存在，请在音频设置中上传或选择有效的参考音频")
 
 
 def start_export_jianying_draft(task_id: str, params: VideoClipParams):

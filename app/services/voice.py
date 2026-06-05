@@ -2236,7 +2236,7 @@ def indextts2_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.
 
     Args:
         text: 要转换的文本
-        voice_name: 参考音频路径（格式：indextts2:path/to/audio.wav）
+        voice_name: 参考音频文件（格式：indextts2:path/to/audio.wav）
         voice_file: 输出音频文件路径
         speed: 语音速度（此引擎暂不支持速度调节）
 
@@ -2253,7 +2253,7 @@ def indextts2_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.
     num_beams = config.indextts2.get("num_beams", 3)
     repetition_penalty = config.indextts2.get("repetition_penalty", 10.0)
 
-    # 解析参考音频路径
+    # 解析参考音频文件
     reference_audio_path = parse_indextts2_voice(voice_name)
     
     if not reference_audio_path or not os.path.exists(reference_audio_path):

@@ -120,7 +120,8 @@
     # 默认 API 地址（本地部署）
     api_url = "http://127.0.0.1:8081/tts"
     
-    # 默认参考音频路径（可选）
+    # 默认参考音频（可选）
+    reference_audio_source = "resource"
     # reference_audio = "/path/to/reference_audio.wav"
     
     # 推理模式：普通推理 / 快速推理
@@ -151,8 +152,8 @@
     silence_duration = 0.125
 
 [ui]
-    # TTS引擎选择 (edge_tts, azure_speech, soulvoice, tencent_tts, tts_qwen, doubaotts)
-    tts_engine = "edge_tts"
+    # TTS引擎选择 (indextts2, edge_tts, qwen3_tts, tencent_tts, doubaotts, azure_speech)
+    tts_engine = "indextts2"
 
     # Edge TTS 配置
     edge_voice_name = "zh-CN-XiaoyiNeural-Female"
