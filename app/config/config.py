@@ -10,34 +10,51 @@ root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__fi
 config_file = f"{root_dir}/config.toml"
 version_file = f"{root_dir}/project_version"
 INDEXTTS_ENGINE = "indextts"
-INDEXTTS_LEGACY_ENGINE = "indextts2"
 INDEXTTS_DISPLAY_NAME = "IndexTTS-1.5"
+INDEXTTS2_ENGINE = "indextts2"
+INDEXTTS2_DISPLAY_NAME = "IndexTTS-2"
 INDEXTTS_VOICE_PREFIX = f"{INDEXTTS_ENGINE}:"
-INDEXTTS_LEGACY_VOICE_PREFIX = f"{INDEXTTS_LEGACY_ENGINE}:"
+INDEXTTS2_VOICE_PREFIX = f"{INDEXTTS2_ENGINE}:"
 
 
 def normalize_tts_engine_name(tts_engine: str) -> str:
-    if tts_engine == INDEXTTS_LEGACY_ENGINE:
-        return INDEXTTS_ENGINE
     return tts_engine
 
 
 def normalize_indextts_voice_prefix(voice_name: str) -> str:
-    if isinstance(voice_name, str) and voice_name.startswith(INDEXTTS_LEGACY_VOICE_PREFIX):
-        return f"{INDEXTTS_VOICE_PREFIX}{voice_name[len(INDEXTTS_LEGACY_VOICE_PREFIX):]}"
     return voice_name
 
 
+def _is_legacy_indextts2_config(indextts2_config) -> bool:
+    if not isinstance(indextts2_config, dict):
+        return False
+    api_url = str(indextts2_config.get("api_url", ""))
+    has_indextts2_fields = any(
+        key in indextts2_config
+        for key in (
+            "emotion_mode",
+            "emotion_alpha",
+            "max_text_tokens_per_segment",
+            "max_mel_tokens",
+            "vec_calm",
+        )
+    )
+    return "8081" in api_url and not has_indextts2_fields
+
+
 def migrate_indextts_config(config_data):
-    if "indextts" not in config_data and INDEXTTS_LEGACY_ENGINE in config_data:
-        config_data["indextts"] = config_data[INDEXTTS_LEGACY_ENGINE]
+    migrated_legacy_indextts2 = _is_legacy_indextts2_config(config_data.get(INDEXTTS2_ENGINE))
+    if migrated_legacy_indextts2:
+        if "indextts" not in config_data:
+            config_data["indextts"] = config_data[INDEXTTS2_ENGINE]
+        config_data.pop(INDEXTTS2_ENGINE, None)
 
     ui_config = config_data.get("ui")
     if isinstance(ui_config, dict):
-        if "tts_engine" in ui_config:
-            ui_config["tts_engine"] = normalize_tts_engine_name(ui_config.get("tts_engine", ""))
-        if "voice_name" in ui_config:
-            ui_config["voice_name"] = normalize_indextts_voice_prefix(ui_config.get("voice_name", ""))
+        if migrated_legacy_indextts2 and ui_config.get("tts_engine") == INDEXTTS2_ENGINE:
+            ui_config["tts_engine"] = INDEXTTS_ENGINE
+        if ui_config.get("voice_name", "").startswith(INDEXTTS2_VOICE_PREFIX) and ui_config.get("tts_engine") == INDEXTTS_ENGINE:
+            ui_config["voice_name"] = f"{INDEXTTS_VOICE_PREFIX}{ui_config['voice_name'][len(INDEXTTS2_VOICE_PREFIX):]}"
     return config_data
 
 
@@ -113,7 +130,7 @@ def save_config():
         _cfg["tts_qwen"] = tts_qwen
         _cfg["fun_asr"] = fun_asr
         _cfg["indextts"] = indextts
-        _cfg.pop(INDEXTTS_LEGACY_ENGINE, None)
+        _cfg["indextts2"] = indextts2
         _cfg["doubaotts"] = doubaotts
         f.write(toml.dumps(_cfg))
 
@@ -129,7 +146,8 @@ ui = _cfg.get("ui", {})
 frames = _cfg.get("frames", {})
 tts_qwen = _cfg.get("tts_qwen", {})
 fun_asr = _cfg.get("fun_asr", {})
-indextts = _cfg.get("indextts", _cfg.get(INDEXTTS_LEGACY_ENGINE, {}))
+indextts = _cfg.get("indextts", {})
+indextts2 = _cfg.get("indextts2", {})
 doubaotts = _cfg.get("doubaotts", {})
 
 hostname = socket.gethostname()

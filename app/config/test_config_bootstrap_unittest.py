@@ -64,7 +64,7 @@ hide_config = true
         self.assertEqual("Pro/zai-org/GLM-5", saved_config["app"]["text_openai_model_name"])
         self.assertTrue(saved_config["app"]["hide_config"])
 
-    def test_indextts_legacy_config_is_migrated(self):
+    def test_legacy_indextts2_config_is_migrated_to_indextts_15(self):
         migrated = cfg.migrate_indextts_config(
             {
                 "indextts2": {"api_url": "http://127.0.0.1:8081/tts"},
@@ -76,8 +76,29 @@ hide_config = true
         )
 
         self.assertEqual("http://127.0.0.1:8081/tts", migrated["indextts"]["api_url"])
+        self.assertNotIn("indextts2", migrated)
         self.assertEqual("indextts", migrated["ui"]["tts_engine"])
         self.assertEqual("indextts:/tmp/reference.wav", migrated["ui"]["voice_name"])
+
+    def test_indextts2_config_is_kept_as_separate_engine(self):
+        migrated = cfg.migrate_indextts_config(
+            {
+                "indextts": {"api_url": "http://127.0.0.1:8081/tts"},
+                "indextts2": {
+                    "api_url": "http://192.168.3.6:7863/tts",
+                    "emotion_mode": "speaker",
+                },
+                "ui": {
+                    "tts_engine": "indextts2",
+                    "voice_name": "indextts2:/tmp/reference.wav",
+                },
+            }
+        )
+
+        self.assertEqual("http://127.0.0.1:8081/tts", migrated["indextts"]["api_url"])
+        self.assertEqual("http://192.168.3.6:7863/tts", migrated["indextts2"]["api_url"])
+        self.assertEqual("indextts2", migrated["ui"]["tts_engine"])
+        self.assertEqual("indextts2:/tmp/reference.wav", migrated["ui"]["voice_name"])
 
 
 class OpenAICompatibleModelDefaultsTests(unittest.TestCase):

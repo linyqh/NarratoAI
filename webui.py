@@ -233,6 +233,11 @@ def get_voice_name_for_tts_engine(tts_engine: str) -> str:
         return f"tencent:{config.ui.get('tencent_voice_type', '101001')}"
     if tts_engine == 'qwen3_tts':
         return f"qwen3:{config.ui.get('qwen_voice_type', 'Cherry')}"
+    if tts_engine == config.INDEXTTS2_ENGINE:
+        reference_audio = config.indextts2.get('reference_audio', '')
+        if reference_audio:
+            return f"{config.INDEXTTS2_VOICE_PREFIX}{reference_audio}"
+        return config.ui.get('voice_name', '')
     if config.normalize_tts_engine_name(tts_engine) == config.INDEXTTS_ENGINE:
         reference_audio = config.indextts.get('reference_audio', '')
         if reference_audio:

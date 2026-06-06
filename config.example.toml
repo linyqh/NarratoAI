@@ -113,21 +113,21 @@
     # 使用阿里百炼在线 fun-asr 时，访问 https://bailian.console.aliyun.com/?tab=model#/api-key 获取 API Key
     api_key = ""
     model = "fun-asr"
-    
+
 [indextts]
     # IndexTTS-1.5 语音克隆配置
     # 这是一个开源的零样本语音克隆项目，需要自行部署
     # 项目地址：https://github.com/index-tts/index-tts
     # 默认 API 地址（本地部署）
     api_url = "http://127.0.0.1:8081/tts"
-    
+
     # 默认参考音频（可选）
     reference_audio_source = "resource"
     # reference_audio = "/path/to/reference_audio.wav"
-    
+
     # 推理模式：普通推理 / 快速推理
     infer_mode = "普通推理"
-    
+
     # 高级参数
     temperature = 1.0
     top_p = 0.8
@@ -135,6 +135,42 @@
     do_sample = true
     num_beams = 3
     repetition_penalty = 10.0
+
+[indextts2]
+    # IndexTTS-2 语音克隆配置
+    # 支持 IndexTTS2-Pack FastAPI 接口：POST /tts
+    api_url = "http://192.168.3.6:7863/tts"
+
+    # 默认参考音频（可选），音色列表复用 IndexTTS-1.5 的资源目录
+    reference_audio_source = "resource"
+    # reference_audio = "/path/to/reference_audio.wav"
+
+    # 情感控制：speaker / audio / vector / text
+    emotion_mode = "speaker"
+    emotion_audio = ""
+    emotion_alpha = 0.65
+    emotion_text = ""
+    use_random = false
+    max_text_tokens_per_segment = 120
+
+    # 8 维情感向量，顺序：happy, angry, sad, afraid, disgusted, melancholic, surprised, calm
+    vec_happy = 0.0
+    vec_angry = 0.0
+    vec_sad = 0.0
+    vec_afraid = 0.0
+    vec_disgusted = 0.0
+    vec_melancholic = 0.0
+    vec_surprised = 0.0
+    vec_calm = 0.8
+
+    # 高级生成参数
+    temperature = 0.8
+    top_p = 0.8
+    top_k = 30
+    num_beams = 3
+    repetition_penalty = 10.0
+    max_mel_tokens = 1500
+
 [doubaotts]
     # 豆包语音 TTS 配置
     # 申请流程：
@@ -153,7 +189,7 @@
     silence_duration = 0.125
 
 [ui]
-    # TTS引擎选择 (indextts, edge_tts, qwen3_tts, tencent_tts, doubaotts, azure_speech)
+    # TTS引擎选择 (indextts, indextts2, edge_tts, qwen3_tts, tencent_tts, doubaotts, azure_speech)
     tts_engine = "indextts"
 
     # Edge TTS 配置

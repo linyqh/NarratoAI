@@ -57,6 +57,7 @@ def get_tts_engine_options(tr=lambda key: key):
     """获取TTS引擎选项"""
     return {
         config.INDEXTTS_ENGINE: config.INDEXTTS_DISPLAY_NAME,
+        config.INDEXTTS2_ENGINE: config.INDEXTTS2_DISPLAY_NAME,
         "edge_tts": "Edge TTS",
         "qwen3_tts": tr("Tongyi Qwen3 TTS"),
         "tencent_tts": tr("Tencent Cloud TTS"),
@@ -96,6 +97,12 @@ def get_tts_engine_descriptions(tr=lambda key: key):
             "title": config.INDEXTTS_DISPLAY_NAME,
             "features": tr("IndexTTS features"),
             "use_case": tr("IndexTTS use case"),
+            "registration": None
+        },
+        config.INDEXTTS2_ENGINE: {
+            "title": config.INDEXTTS2_DISPLAY_NAME,
+            "features": tr("IndexTTS2 features"),
+            "use_case": tr("IndexTTS2 use case"),
             "registration": None
         },
         "doubaotts": {
@@ -325,7 +332,7 @@ def get_audio_mime_type(audio_path):
     return "audio/mp3"
 
 
-def render_reference_audio_preview_button(reference_audio, key, tr):
+def render_reference_audio_preview_button(reference_audio, key, tr, preview_state_key="indextts_reference_audio_preview_path"):
     """渲染参考音频试听按钮"""
     can_preview = bool(reference_audio and os.path.isfile(reference_audio))
     if st.button(
@@ -336,7 +343,102 @@ def render_reference_audio_preview_button(reference_audio, key, tr):
         disabled=not can_preview,
         use_container_width=True,
     ):
-        st.session_state["indextts_reference_audio_preview_path"] = reference_audio
+        st.session_state[preview_state_key] = reference_audio
+
+
+def render_indextts_reference_audio_selector(tr, tts_config, key_prefix):
+    """渲染 IndexTTS 系列共用的参考音频选择器。"""
+    saved_reference_audio = tts_config.get("reference_audio", "")
+    reference_audio_source_options = {
+        tr("Select from Resource Directory"): "resource",
+        tr("Upload Reference Audio"): "upload",
+    }
+    reference_audio_source_labels = list(reference_audio_source_options.keys())
+    saved_reference_audio_source = tts_config.get("reference_audio_source", "resource")
+    if saved_reference_audio_source not in reference_audio_source_options.values():
+        saved_reference_audio_source = "resource"
+    default_reference_audio_source_label = next(
+        label
+        for label, source_value in reference_audio_source_options.items()
+        if source_value == saved_reference_audio_source
+    )
+
+    st.markdown(f"**{tr('Reference Audio Path')}**")
+    reference_audio_source_label = st.pills(
+        tr("Reference Audio Source"),
+        options=reference_audio_source_labels,
+        selection_mode="single",
+        default=default_reference_audio_source_label,
+        key=f"{key_prefix}_reference_audio_source_selection",
+        help=tr("Reference Audio Source Help"),
+        label_visibility="collapsed",
+        width="stretch",
+    )
+    if not reference_audio_source_label:
+        reference_audio_source_label = default_reference_audio_source_label
+    reference_audio_source = reference_audio_source_options[reference_audio_source_label]
+
+    reference_audio = saved_reference_audio
+    preview_state_key = f"{key_prefix}_reference_audio_preview_path"
+    reference_audio_options = get_indextts_reference_audio_options()
+    if reference_audio_source == "resource" and reference_audio_options:
+        selected_audio_index = get_indextts_reference_audio_index(reference_audio_options, saved_reference_audio)
+        select_col, preview_col = st.columns([5, 1])
+        with select_col:
+            selected_audio_option = reference_audio_options[st.selectbox(
+                tr("Reference Audio Path"),
+                options=range(len(reference_audio_options)),
+                index=selected_audio_index,
+                format_func=lambda x: format_indextts_reference_audio_option(reference_audio_options[x]),
+                help=tr("Reference Audio Path Help"),
+                label_visibility="collapsed",
+                key=f"{key_prefix}_reference_audio_select",
+            )]
+        reference_audio = copy_indextts_reference_audio(selected_audio_option["path"])
+        with preview_col:
+            render_reference_audio_preview_button(
+                reference_audio,
+                f"{key_prefix}_resource_reference_audio_preview",
+                tr,
+                preview_state_key=preview_state_key,
+            )
+    elif reference_audio_source == "resource":
+        st.warning(tr("No Reference Audio Resources Found"))
+
+    if reference_audio_source == "upload":
+        if saved_reference_audio_source != "upload":
+            reference_audio = ""
+        upload_col, preview_col = st.columns([5, 1])
+        with upload_col:
+            uploaded_file = st.file_uploader(
+                tr("Upload Reference Audio File"),
+                type=["wav", "mp3"],
+                help=tr("Upload Reference Audio Help"),
+                label_visibility="collapsed",
+                key=f"{key_prefix}_reference_audio_upload",
+            )
+
+        if uploaded_file is not None:
+            target_dir = utils.storage_dir(INDEXTTS_REFERENCE_AUDIO_COPY_SUBDIR, create=True)
+            audio_path = os.path.join(target_dir, f"uploaded_{uploaded_file.name}")
+            with open(audio_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            reference_audio = audio_path
+            st.success(tr("Audio uploaded").format(path=audio_path))
+        with preview_col:
+            render_reference_audio_preview_button(
+                reference_audio,
+                f"{key_prefix}_upload_reference_audio_preview",
+                tr,
+                preview_state_key=preview_state_key,
+            )
+
+    preview_audio_path = st.session_state.get(preview_state_key, "")
+    if preview_audio_path == reference_audio and os.path.isfile(preview_audio_path):
+        with open(preview_audio_path, "rb") as audio_file:
+            st.audio(audio_file.read(), format=get_audio_mime_type(preview_audio_path))
+
+    return reference_audio_source, reference_audio
 
 
 def render_bgm_preview_button(bgm_file, key, tr):
@@ -442,6 +544,8 @@ def render_tts_settings(tr):
         render_qwen3_tts_settings(tr)
     elif selected_engine == config.INDEXTTS_ENGINE:
         render_indextts_tts_settings(tr)
+    elif selected_engine == config.INDEXTTS2_ENGINE:
+        render_indextts2_tts_settings(tr)
     elif selected_engine == "doubaotts":
         render_doubaotts_settings(tr)
 
@@ -861,90 +965,11 @@ def render_indextts_tts_settings(tr):
         help=tr("IndexTTS API URL Help")
     )
     
-    saved_reference_audio = config.indextts.get("reference_audio", "")
-    reference_audio_source_options = {
-        tr("Select from Resource Directory"): "resource",
-        tr("Upload Reference Audio"): "upload",
-    }
-    reference_audio_source_labels = list(reference_audio_source_options.keys())
-    saved_reference_audio_source = config.indextts.get("reference_audio_source", "resource")
-    if saved_reference_audio_source not in reference_audio_source_options.values():
-        saved_reference_audio_source = "resource"
-    default_reference_audio_source_label = next(
-        label
-        for label, source_value in reference_audio_source_options.items()
-        if source_value == saved_reference_audio_source
+    reference_audio_source, reference_audio = render_indextts_reference_audio_selector(
+        tr,
+        config.indextts,
+        "indextts",
     )
-
-    st.markdown(f"**{tr('Reference Audio Path')}**")
-    reference_audio_source_label = st.pills(
-        tr("Reference Audio Source"),
-        options=reference_audio_source_labels,
-        selection_mode="single",
-        default=default_reference_audio_source_label,
-        key="indextts_reference_audio_source_selection",
-        help=tr("Reference Audio Source Help"),
-        label_visibility="collapsed",
-        width="stretch",
-    )
-    if not reference_audio_source_label:
-        reference_audio_source_label = default_reference_audio_source_label
-    reference_audio_source = reference_audio_source_options[reference_audio_source_label]
-
-    reference_audio = saved_reference_audio
-    reference_audio_options = get_indextts_reference_audio_options()
-    if reference_audio_source == "resource" and reference_audio_options:
-        selected_audio_index = get_indextts_reference_audio_index(reference_audio_options, saved_reference_audio)
-        select_col, preview_col = st.columns([5, 1])
-        with select_col:
-            selected_audio_option = reference_audio_options[st.selectbox(
-                tr("Reference Audio Path"),
-                options=range(len(reference_audio_options)),
-                index=selected_audio_index,
-                format_func=lambda x: format_indextts_reference_audio_option(reference_audio_options[x]),
-                help=tr("Reference Audio Path Help"),
-                label_visibility="collapsed"
-            )]
-        reference_audio = copy_indextts_reference_audio(selected_audio_option["path"])
-        with preview_col:
-            render_reference_audio_preview_button(
-                reference_audio,
-                "indextts_resource_reference_audio_preview",
-                tr,
-            )
-    elif reference_audio_source == "resource":
-        st.warning(tr("No Reference Audio Resources Found"))
-
-    if reference_audio_source == "upload":
-        if saved_reference_audio_source != "upload":
-            reference_audio = ""
-        upload_col, preview_col = st.columns([5, 1])
-        with upload_col:
-            uploaded_file = st.file_uploader(
-                tr("Upload Reference Audio File"),
-                type=["wav", "mp3"],
-                help=tr("Upload Reference Audio Help"),
-                label_visibility="collapsed"
-            )
-
-        if uploaded_file is not None:
-            target_dir = utils.storage_dir(INDEXTTS_REFERENCE_AUDIO_COPY_SUBDIR, create=True)
-            audio_path = os.path.join(target_dir, f"uploaded_{uploaded_file.name}")
-            with open(audio_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            reference_audio = audio_path
-            st.success(tr("Audio uploaded").format(path=audio_path))
-        with preview_col:
-            render_reference_audio_preview_button(
-                reference_audio,
-                "indextts_upload_reference_audio_preview",
-                tr,
-            )
-
-    preview_audio_path = st.session_state.get("indextts_reference_audio_preview_path", "")
-    if preview_audio_path == reference_audio and os.path.isfile(preview_audio_path):
-        with open(preview_audio_path, "rb") as audio_file:
-            st.audio(audio_file.read(), format=get_audio_mime_type(preview_audio_path))
     
     # 推理模式
     infer_mode_options = [
@@ -1036,6 +1061,217 @@ def render_indextts_tts_settings(tr):
     # 保存 voice_name 用于兼容性
     if reference_audio:
         config.ui["voice_name"] = f"{config.INDEXTTS_VOICE_PREFIX}{reference_audio}"
+
+
+def render_indextts2_tts_settings(tr):
+    """渲染 IndexTTS-2 TTS 设置"""
+    api_url = st.text_input(
+        tr("API URL"),
+        value=config.indextts2.get("api_url", "http://192.168.3.6:7863/tts"),
+        help=tr("IndexTTS2 API URL Help")
+    )
+
+    reference_audio_source, reference_audio = render_indextts_reference_audio_selector(
+        tr,
+        config.indextts2,
+        "indextts2",
+    )
+
+    emotion_mode_options = [
+        ("speaker", tr("Emotion Mode Speaker")),
+        ("audio", tr("Emotion Mode Audio")),
+        ("vector", tr("Emotion Mode Vector")),
+        ("text", tr("Emotion Mode Text")),
+    ]
+    saved_emotion_mode = config.indextts2.get("emotion_mode", "speaker")
+    emotion_mode_values = [item[0] for item in emotion_mode_options]
+    if saved_emotion_mode not in emotion_mode_values:
+        saved_emotion_mode = "speaker"
+
+    with st.expander(tr("IndexTTS2 Emotion Parameters"), expanded=False):
+        emotion_mode = emotion_mode_options[st.selectbox(
+            tr("Emotion Mode"),
+            options=range(len(emotion_mode_options)),
+            index=emotion_mode_values.index(saved_emotion_mode),
+            format_func=lambda x: emotion_mode_options[x][1],
+            help=tr("Emotion Mode Help"),
+        )][0]
+
+        emotion_alpha = st.slider(
+            tr("Emotion Alpha"),
+            min_value=0.0,
+            max_value=1.0,
+            value=float(config.indextts2.get("emotion_alpha", 0.65)),
+            step=0.05,
+            help=tr("Emotion Alpha Help"),
+        )
+
+        emotion_audio = config.indextts2.get("emotion_audio", "")
+        emotion_text = config.indextts2.get("emotion_text", "")
+        if emotion_mode == "audio":
+            emotion_audio_col, emotion_preview_col = st.columns([5, 1])
+            with emotion_audio_col:
+                emotion_audio = st.text_input(
+                    tr("Emotion Reference Audio Path"),
+                    value=emotion_audio,
+                    help=tr("Emotion Reference Audio Path Help"),
+                )
+            with emotion_preview_col:
+                render_reference_audio_preview_button(
+                    emotion_audio,
+                    "indextts2_emotion_audio_preview",
+                    tr,
+                    preview_state_key="indextts2_emotion_audio_preview_path",
+                )
+            preview_audio_path = st.session_state.get("indextts2_emotion_audio_preview_path", "")
+            if preview_audio_path == emotion_audio and os.path.isfile(preview_audio_path):
+                with open(preview_audio_path, "rb") as audio_file:
+                    st.audio(audio_file.read(), format=get_audio_mime_type(preview_audio_path))
+        elif emotion_mode == "text":
+            emotion_text = st.text_input(
+                tr("Emotion Text"),
+                value=emotion_text,
+                help=tr("Emotion Text Help"),
+                placeholder=tr("Emotion Text Placeholder"),
+            )
+
+        use_random = st.checkbox(
+            tr("Use Random Emotion"),
+            value=bool(config.indextts2.get("use_random", False)),
+            help=tr("Use Random Emotion Help"),
+        )
+
+        emotion_vector_defaults = {
+            "vec_happy": 0.0,
+            "vec_angry": 0.0,
+            "vec_sad": 0.0,
+            "vec_afraid": 0.0,
+            "vec_disgusted": 0.0,
+            "vec_melancholic": 0.0,
+            "vec_surprised": 0.0,
+            "vec_calm": 0.8,
+        }
+        emotion_vector_labels = {
+            "vec_happy": tr("Emotion Happy"),
+            "vec_angry": tr("Emotion Angry"),
+            "vec_sad": tr("Emotion Sad"),
+            "vec_afraid": tr("Emotion Afraid"),
+            "vec_disgusted": tr("Emotion Disgusted"),
+            "vec_melancholic": tr("Emotion Melancholic"),
+            "vec_surprised": tr("Emotion Surprised"),
+            "vec_calm": tr("Emotion Calm"),
+        }
+        emotion_vector_values = {}
+        if emotion_mode == "vector":
+            vec_cols = st.columns(2)
+            for index, (field, default_value) in enumerate(emotion_vector_defaults.items()):
+                with vec_cols[index % 2]:
+                    emotion_vector_values[field] = st.slider(
+                        emotion_vector_labels[field],
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=float(config.indextts2.get(field, default_value)),
+                        step=0.05,
+                    )
+        else:
+            emotion_vector_values = {
+                field: float(config.indextts2.get(field, default_value))
+                for field, default_value in emotion_vector_defaults.items()
+            }
+
+    with st.expander(tr("Advanced Parameters"), expanded=False):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            temperature = st.slider(
+                tr("Sampling Temperature"),
+                min_value=0.1,
+                max_value=2.0,
+                value=float(config.indextts2.get("temperature", 0.8)),
+                step=0.1,
+                help=tr("Sampling Temperature Help")
+            )
+
+            top_p = st.slider(
+                "Top P",
+                min_value=0.0,
+                max_value=1.0,
+                value=float(config.indextts2.get("top_p", 0.8)),
+                step=0.05,
+                help=tr("Top P Help")
+            )
+
+            top_k = st.slider(
+                "Top K",
+                min_value=0,
+                max_value=100,
+                value=int(config.indextts2.get("top_k", 30)),
+                step=5,
+                help=tr("Top K Help")
+            )
+
+            max_text_tokens_per_segment = st.slider(
+                tr("Max Text Tokens Per Segment"),
+                min_value=20,
+                max_value=600,
+                value=int(config.indextts2.get("max_text_tokens_per_segment", 120)),
+                step=10,
+                help=tr("Max Text Tokens Per Segment Help")
+            )
+
+        with col2:
+            num_beams = st.slider(
+                tr("Num Beams"),
+                min_value=1,
+                max_value=10,
+                value=int(config.indextts2.get("num_beams", 3)),
+                step=1,
+                help=tr("Num Beams Help")
+            )
+
+            repetition_penalty = st.slider(
+                tr("Repetition Penalty"),
+                min_value=0.1,
+                max_value=20.0,
+                value=float(config.indextts2.get("repetition_penalty", 10.0)),
+                step=0.1,
+                help=tr("Repetition Penalty Help")
+            )
+
+            max_mel_tokens = st.slider(
+                tr("Max Mel Tokens"),
+                min_value=50,
+                max_value=1815,
+                value=int(config.indextts2.get("max_mel_tokens", 1500)),
+                step=10,
+                help=tr("Max Mel Tokens Help")
+            )
+
+    with st.expander(tr("IndexTTS2 Usage Instructions Title"), expanded=False):
+        st.markdown(tr("IndexTTS2 Usage Instructions"))
+
+    config.indextts2["api_url"] = api_url
+    config.indextts2["reference_audio_source"] = reference_audio_source
+    config.indextts2["reference_audio"] = reference_audio
+    config.indextts2["emotion_mode"] = emotion_mode
+    config.indextts2["emotion_audio"] = emotion_audio
+    config.indextts2["emotion_alpha"] = emotion_alpha
+    config.indextts2["emotion_text"] = emotion_text
+    config.indextts2["use_random"] = use_random
+    config.indextts2["max_text_tokens_per_segment"] = max_text_tokens_per_segment
+    for field, value in emotion_vector_values.items():
+        config.indextts2[field] = value
+    config.indextts2["temperature"] = temperature
+    config.indextts2["top_p"] = top_p
+    config.indextts2["top_k"] = top_k
+    config.indextts2["num_beams"] = num_beams
+    config.indextts2["repetition_penalty"] = repetition_penalty
+    config.indextts2["max_mel_tokens"] = max_mel_tokens
+
+    if reference_audio:
+        config.ui["voice_name"] = f"{config.INDEXTTS2_VOICE_PREFIX}{reference_audio}"
+    st.session_state['voice_rate'] = 1.0
+    st.session_state['voice_pitch'] = 1.0
 
 
 def render_doubaotts_settings(tr):
@@ -1325,6 +1561,12 @@ def render_voice_preview_new(tr, selected_engine):
                 voice_name = f"{config.INDEXTTS_VOICE_PREFIX}{reference_audio}"
             voice_rate = 1.0  # IndexTTS-1.5 不支持速度调节
             voice_pitch = 1.0  # IndexTTS-1.5 不支持音调调节
+        elif selected_engine == config.INDEXTTS2_ENGINE:
+            reference_audio = config.indextts2.get("reference_audio", "")
+            if reference_audio:
+                voice_name = f"{config.INDEXTTS2_VOICE_PREFIX}{reference_audio}"
+            voice_rate = 1.0  # IndexTTS-2 使用自身生成参数
+            voice_pitch = 1.0
         elif selected_engine == "doubaotts":
             voice_type = config.ui.get("doubaotts_voice_type", "BV700_streaming")
             voice_name = voice_type
@@ -1337,7 +1579,9 @@ def render_voice_preview_new(tr, selected_engine):
 
         with st.spinner(tr("Synthesizing Voice")):
             temp_dir = utils.storage_dir("temp", create=True)
-            audio_file = os.path.join(temp_dir, f"tmp-voice-{str(uuid4())}.mp3")
+            audio_format = "audio/wav" if selected_engine in (config.INDEXTTS_ENGINE, config.INDEXTTS2_ENGINE) else "audio/mp3"
+            audio_extension = ".wav" if audio_format == "audio/wav" else ".mp3"
+            audio_file = os.path.join(temp_dir, f"tmp-voice-{str(uuid4())}{audio_extension}")
 
             sub_maker = voice.tts(
                 text=play_content,
@@ -1354,7 +1598,7 @@ def render_voice_preview_new(tr, selected_engine):
                 # 播放音频
                 with open(audio_file, 'rb') as audio_file_obj:
                     audio_bytes = audio_file_obj.read()
-                    st.audio(audio_bytes, format='audio/mp3')
+                    st.audio(audio_bytes, format=audio_format)
 
                 # 清理临时文件
                 try:
