@@ -224,6 +224,14 @@ def apply_subtitle_mask(video_clip, options):
     return video_clip.transform(mask_frame)
 
 
+def _resolve_orientation_subtitle_y_percent(video_width, video_height, options):
+    orientation = "portrait" if video_height > video_width else "landscape"
+    key = f"subtitle_position_{orientation}_y_percent"
+    if key not in options:
+        return None
+    return _clamp(_get_numeric_option(options, key, 85 if orientation == "landscape" else 82), 0, 99)
+
+
 def is_valid_subtitle_file(subtitle_path: str) -> bool:
     """
     检查字幕文件是否有效
@@ -476,6 +484,7 @@ def merge_materials(
     
     # 处理视频尺寸
     video_width, video_height = video_clip.size
+    orientation_subtitle_y_percent = _resolve_orientation_subtitle_y_percent(video_width, video_height, options)
 
     if subtitle_enabled and subtitle_mask_enabled:
         video_clip = apply_subtitle_mask(video_clip, options)
@@ -525,7 +534,14 @@ def merge_materials(
         _clip = _clip.with_duration(duration)
         
         # 设置字幕位置
-        if subtitle_position == "bottom":
+        if orientation_subtitle_y_percent is not None:
+            margin = 10
+            max_y = video_height - _clip.h - margin
+            min_y = margin
+            custom_y = (video_height - _clip.h) * (orientation_subtitle_y_percent / 100)
+            custom_y = max(min_y, min(custom_y, max_y))
+            _clip = _clip.with_position(("center", custom_y))
+        elif subtitle_position == "bottom":
             _clip = _clip.with_position(("center", video_height * 0.95 - _clip.h))
         elif subtitle_position == "top":
             _clip = _clip.with_position(("center", video_height * 0.05))

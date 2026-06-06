@@ -25,6 +25,15 @@ SUBTITLE_MASK_DEFAULTS = {
     },
 }
 
+SUBTITLE_POSITION_DEFAULTS = {
+    "landscape": {
+        "y_percent": 85,
+    },
+    "portrait": {
+        "y_percent": 82,
+    },
+}
+
 
 VIDEO_PREVIEW_UPLOAD_TYPES = ["mp4", "mov", "avi", "flv", "mkv", "mpeg4"]
 
@@ -67,6 +76,21 @@ def _get_subtitle_mask_value(orientation, field):
 
 def _set_subtitle_mask_value(orientation, field, value):
     key = _subtitle_mask_key(orientation, field)
+    config.ui[key] = value
+    st.session_state[key] = value
+
+
+def _subtitle_position_key(orientation, field):
+    return f"subtitle_position_{orientation}_{field}"
+
+
+def _get_orientation_subtitle_position_value(orientation, field):
+    key = _subtitle_position_key(orientation, field)
+    return config.ui.get(key, SUBTITLE_POSITION_DEFAULTS[orientation][field])
+
+
+def _set_orientation_subtitle_position_value(orientation, field, value):
+    key = _subtitle_position_key(orientation, field)
     config.ui[key] = value
     st.session_state[key] = value
 
@@ -162,6 +186,10 @@ def _build_subtitle_mask_preview_options():
     for orientation in ("landscape", "portrait"):
         for field in ("x_percent", "y_percent", "width_percent", "height_percent", "blur_radius", "opacity_percent"):
             options[_subtitle_mask_key(orientation, field)] = _get_subtitle_mask_value(orientation, field)
+        options[_subtitle_position_key(orientation, "y_percent")] = _get_orientation_subtitle_position_value(
+            orientation,
+            "y_percent",
+        )
     return options
 
 
@@ -186,6 +214,14 @@ def _draw_subtitle_mask_preview(frame):
         fill=(0, 0, 0, 96),
         outline=(255, 75, 85, 235),
         width=max(2, round(min(image.width, image.height) * 0.004)),
+    )
+    subtitle_y_percent = _get_orientation_subtitle_position_value(region["orientation"], "y_percent")
+    subtitle_y = round((image.height - 1) * subtitle_y_percent / 100)
+    line_width = max(2, round(min(image.width, image.height) * 0.004))
+    draw.line(
+        (0, subtitle_y, image.width, subtitle_y),
+        fill=(59, 130, 246, 220),
+        width=line_width,
     )
     image.alpha_composite(overlay)
     return image.convert("RGB"), region
@@ -341,6 +377,18 @@ def _render_subtitle_mask_region_controls(tr, orientation):
     _set_subtitle_mask_value(orientation, "opacity_percent", opacity_percent)
 
 
+def _render_subtitle_position_controls(tr, orientation):
+    y_percent = st.slider(
+        tr("Subtitle Burn Position"),
+        min_value=0,
+        max_value=99,
+        value=int(_get_orientation_subtitle_position_value(orientation, "y_percent")),
+        help=tr("Subtitle Burn Position Help"),
+        key=f"{orientation}_subtitle_burn_y_percent",
+    )
+    _set_orientation_subtitle_position_value(orientation, "y_percent", y_percent)
+
+
 def _render_subtitle_mask_dialog(tr):
     @st.dialog(tr("Subtitle Mask Settings"), width="large")
     def subtitle_mask_dialog():
@@ -349,14 +397,20 @@ def _render_subtitle_mask_dialog(tr):
         with settings_col:
             st.caption(tr("Subtitle Mask Settings Caption"))
             st.caption(tr("Subtitle Mask Preview Caption"))
-            landscape_tab, portrait_tab = st.tabs([
+            landscape_mask_tab, portrait_mask_tab, landscape_position_tab, portrait_position_tab = st.tabs([
                 tr("Landscape Subtitle Mask"),
                 tr("Portrait Subtitle Mask"),
+                tr("Landscape Subtitle Position"),
+                tr("Portrait Subtitle Position"),
             ])
-            with landscape_tab:
+            with landscape_mask_tab:
                 _render_subtitle_mask_region_controls(tr, "landscape")
-            with portrait_tab:
+            with portrait_mask_tab:
                 _render_subtitle_mask_region_controls(tr, "portrait")
+            with landscape_position_tab:
+                _render_subtitle_position_controls(tr, "landscape")
+            with portrait_position_tab:
+                _render_subtitle_position_controls(tr, "portrait")
 
         with preview_col:
             _render_subtitle_mask_preview(tr)
@@ -627,6 +681,8 @@ def get_subtitle_params():
         'subtitle_mask_portrait_height_percent': _get_subtitle_mask_value("portrait", "height_percent"),
         'subtitle_mask_portrait_blur_radius': _get_subtitle_mask_value("portrait", "blur_radius"),
         'subtitle_mask_portrait_opacity_percent': _get_subtitle_mask_value("portrait", "opacity_percent"),
+        'subtitle_position_landscape_y_percent': _get_orientation_subtitle_position_value("landscape", "y_percent"),
+        'subtitle_position_portrait_y_percent': _get_orientation_subtitle_position_value("portrait", "y_percent"),
         'subtitle_auto_transcribe_enabled': st.session_state.get('subtitle_auto_transcribe_enabled', False),
         'subtitle_auto_transcribe_backend': st.session_state.get(
             'subtitle_auto_transcribe_backend',

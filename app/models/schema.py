@@ -196,6 +196,8 @@ class VideoClipParams(BaseModel):
     subtitle_mask_portrait_height_percent: float = 16.0
     subtitle_mask_portrait_blur_radius: int = 26
     subtitle_mask_portrait_opacity_percent: int = 84
+    subtitle_position_landscape_y_percent: float = 85.0
+    subtitle_position_portrait_y_percent: float = 82.0
     subtitle_auto_transcribe_enabled: bool = False
     subtitle_auto_transcribe_backend: str = "local"
     subtitle_auto_transcribe_api_url: str = ""

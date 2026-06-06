@@ -49,6 +49,8 @@ def _build_subtitle_mask_options(params: VideoClipParams, enabled=None) -> dict:
         'subtitle_mask_portrait_height_percent': getattr(params, "subtitle_mask_portrait_height_percent", 16.0),
         'subtitle_mask_portrait_blur_radius': getattr(params, "subtitle_mask_portrait_blur_radius", 26),
         'subtitle_mask_portrait_opacity_percent': getattr(params, "subtitle_mask_portrait_opacity_percent", 84),
+        'subtitle_position_landscape_y_percent': getattr(params, "subtitle_position_landscape_y_percent", 85.0),
+        'subtitle_position_portrait_y_percent': getattr(params, "subtitle_position_portrait_y_percent", 82.0),
     }
 
 

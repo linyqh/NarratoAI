@@ -3,25 +3,27 @@ import os
 import subprocess
 import time
 from os import path
+from typing import Dict
 from loguru import logger
 
 from app.config import config
 from app.models import const
 from app.models.schema import VideoClipParams
 from app.services import voice, clip_video, update_script
+from app.services.jianying_draft_builder import write_plaintext_jianying_draft
 from app.services import state as sm
 from app.utils import utils
 
 
-def get_audio_duration_ffprobe(audio_file: str) -> float:
+def get_media_duration_ffprobe(media_file: str) -> float:
     """
-    使用ffprobe获取音频文件的精确时长（秒）
+    使用ffprobe获取媒体文件的精确时长（秒）
     
     Args:
-        audio_file: 音频文件路径
+        media_file: 媒体文件路径
         
     Returns:
-        float: 音频时长（秒），精确到微秒
+        float: 媒体时长（秒），精确到微秒
     """
     try:
         cmd = [
@@ -29,18 +31,22 @@ def get_audio_duration_ffprobe(audio_file: str) -> float:
             '-v', 'error',
             '-show_entries', 'format=duration',
             '-of', 'csv=p=0',
-            audio_file
+            media_file
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         duration = float(result.stdout.strip())
-        logger.debug(f"使用ffprobe获取音频时长: {duration:.6f}秒")
+        logger.debug(f"使用ffprobe获取媒体时长: {duration:.6f}秒, 文件: {media_file}")
         return duration
     except subprocess.CalledProcessError as e:
         logger.error(f"ffprobe执行失败: {e.stderr}")
         raise
     except Exception as e:
-        logger.error(f"获取音频时长失败: {str(e)}")
+        logger.error(f"获取媒体时长失败: {str(e)}")
         raise
+
+
+def get_audio_duration_ffprobe(audio_file: str) -> float:
+    return get_media_duration_ffprobe(audio_file)
 
 
 def _strip_indextts2_prefix(voice_name: str) -> str:
@@ -52,6 +58,45 @@ def _strip_indextts2_prefix(voice_name: str) -> str:
 
 def _floor_duration_to_milliseconds(duration: float) -> float:
     return int(duration * 1000) / 1000.0
+
+
+def _format_seconds_for_trange(seconds: float) -> str:
+    return f"{seconds:.3f}s"
+
+
+def _get_cached_media_duration(media_file: str, duration_cache: Dict[str, float]) -> float:
+    if media_file not in duration_cache:
+        duration_cache[media_file] = _floor_duration_to_milliseconds(
+            get_media_duration_ffprobe(media_file)
+        )
+    return duration_cache[media_file]
+
+
+def _clamp_duration_to_media(
+    requested_duration: float,
+    media_file: str,
+    duration_cache: Dict[str, float],
+    media_label: str,
+    source_start_time: float = 0.0,
+) -> float:
+    requested_duration = _floor_duration_to_milliseconds(max(requested_duration, 0.0))
+    actual_duration = _get_cached_media_duration(media_file, duration_cache)
+    available_duration = _floor_duration_to_milliseconds(
+        max(actual_duration - max(source_start_time, 0.0), 0.0)
+    )
+    safe_duration = min(requested_duration, available_duration)
+
+    logger.info(
+        f"{media_label}实际时长: {actual_duration:.6f}秒, "
+        f"可用时长: {available_duration:.6f}秒, 请求时长: {requested_duration:.3f}秒"
+    )
+    if safe_duration < requested_duration:
+        logger.warning(
+            f"{media_label}短于脚本时长，已将剪映片段时长从 "
+            f"{requested_duration:.3f}秒 调整为 {safe_duration:.3f}秒"
+        )
+
+    return safe_duration
 
 
 def _normalize_indextts2_reference_audio(params: VideoClipParams) -> None:
@@ -158,14 +203,9 @@ def start_export_jianying_draft(task_id: str, params: VideoClipParams):
     logger.info("\n\n## 4. 导出到剪映草稿")
     
     try:
-        import pyJianYingDraft
-        from pyJianYingDraft import DraftFolder, VideoSegment, AudioSegment, trange, TrackType
         jianying_draft_path = config.ui.get("jianying_draft_path", "")
         if not jianying_draft_path:
             raise ValueError("剪映草稿路径未配置")
-        
-        # 创建DraftFolder实例
-        draft_folder = DraftFolder(jianying_draft_path)
         
         # 使用从参数中获取的草稿名称，如果为空则使用默认名称
         draft_name = getattr(params, 'draft_name', "")
@@ -173,88 +213,16 @@ def start_export_jianying_draft(task_id: str, params: VideoClipParams):
         if not draft_name:
             draft_name = f"NarratoAI_{int(time.time())}"
             logger.debug(f"使用默认草稿名称: '{draft_name}'")
-        
-        # 创建新草稿
-        script = draft_folder.create_draft(draft_name, 1920, 1080)
-        
-        # 添加视频轨道和音频轨道
-        script.add_track(TrackType.video, '视频轨道')
-        script.add_track(TrackType.audio, '音频轨道')
-        
-        # 处理脚本数据
-        current_time = 0
+
         output_dir = utils.task_dir(task_id)
-        
-        for item in new_script_list:
-            # 获取时间信息
-            start_time = float(item.get('start_time', 0.0))
-            duration = float(item.get('duration', 0.0))
-            timestamp = item.get('timestamp', '')
-            
-            logger.info(f"处理片段: OST={item['OST']}, start_time={start_time}, duration={duration}, timestamp={timestamp}")
-            
-            # 生成音频文件路径
-            audio_file = ""
-            if timestamp:
-                timestamp_formatted = timestamp.replace(':', '_')
-                audio_file = os.path.join(
-                    output_dir,
-                    f"audio_{timestamp_formatted}.mp3"
-                )
-            
-            # 检查是否有裁剪后的视频文件
-            video_file = item.get('video', '')
-            if video_file and not os.path.exists(video_file):
-                video_file = ""
-            
-            # 添加视频片段
-            if video_file:
-                # 使用裁剪后的视频文件
-                # 对于裁剪后的视频，target_timerange的第二个参数是持续时间
-                video_segment = VideoSegment(
-                    video_file,
-                    trange(f"{current_time}s", f"{duration}s")
-                )
-            else:
-                # 使用原始视频文件
-                # source_timerange是从原始视频中截取的部分
-                # target_timerange是片段在时间轴上的位置
-                video_segment = VideoSegment(
-                    params.video_origin_path,
-                    trange(f"{current_time}s", f"{duration}s"),
-                    source_timerange=trange(f"{start_time}s", f"{duration}s")
-                )
-            script.add_segment(video_segment, '视频轨道')
-            
-            # 处理音频
-            if item['OST'] in [0, 2]:  # 需要TTS的片段
-                if os.path.exists(audio_file):
-                    # 使用ffprobe获取精确的音频时长，避免因TTS引擎差异导致时长不匹配
-                    actual_audio_duration = get_audio_duration_ffprobe(audio_file)
-                    actual_audio_duration = _floor_duration_to_milliseconds(actual_audio_duration)
-                    logger.info(f"音频文件实际时长: {actual_audio_duration:.6f}秒, 脚本时长(视频): {duration:.3f}秒")
-                    
-                    # 使用音频实际时长和视频时长中的较小值，确保不超过素材时长
-                    # 当TTS语速调整时，音频可能比视频长或短，取较小值可以避免超出素材
-                    safe_duration = min(actual_audio_duration, duration)
-                    logger.info(f"使用时长: {safe_duration:.6f}秒 (取音频和视频时长的较小值)")
-                    
-                    audio_segment = AudioSegment(
-                        audio_file,
-                        trange(f"{current_time}s", f"{safe_duration}s")
-                    )
-                    script.add_segment(audio_segment, '音频轨道')
-                else:
-                    logger.warning(f"音频文件不存在: {audio_file}")
-            # OST=1的片段保留原声，不需要添加额外音频
-            
-            # 更新当前时间
-            current_time += duration
-        
-        # 保存草稿
-        script.save()
-        
-        draft_path = os.path.join(jianying_draft_path, draft_name)
+
+        draft_path, draft_name = write_plaintext_jianying_draft(
+            jianying_draft_path=jianying_draft_path,
+            draft_name=draft_name,
+            new_script_list=new_script_list,
+            params=params,
+            output_dir=output_dir,
+        )
         
         logger.success(f"成功导出到剪映草稿: {draft_name}")
         logger.info(f"草稿已保存到: {draft_path}")
@@ -263,10 +231,6 @@ def start_export_jianying_draft(task_id: str, params: VideoClipParams):
         sm.state.update_task(task_id, state=const.TASK_STATE_COMPLETE, progress=100, draft_path=draft_path, draft_name=draft_name)
         
         return {"draft_path": draft_path, "draft_name": draft_name}
-        
-    except ImportError as e:
-        logger.error(f"导入pyJianYingDraft失败: {e}")
-        raise ImportError(f"pyJianYingDraft库导入失败: {e}\n请确保已正确安装该库")
     except Exception as e:
         logger.error(f"导出到剪映草稿失败: {e}")
         import traceback
