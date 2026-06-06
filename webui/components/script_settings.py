@@ -17,7 +17,7 @@ from webui.tools.generate_script_short import generate_script_short
 from webui.tools.generate_short_summary import analyze_short_drama_plot, generate_script_short_sunmmary
 
 
-SCRIPT_TABLE_BASE_COLUMNS = ["_id", "timestamp", "picture", "narration", "OST"]
+SCRIPT_TABLE_BASE_COLUMNS = ["_id", "video_id", "video_name", "timestamp", "picture", "narration", "OST"]
 VIDEO_UPLOAD_TYPES = ["mp4", "mov", "avi", "flv", "mkv", "mpeg4"]
 VIDEO_GLOB_PATTERNS = [f"*.{suffix}" for suffix in VIDEO_UPLOAD_TYPES]
 
@@ -99,15 +99,24 @@ def _read_subtitle_file(path):
             return f.read()
 
 
-def _build_combined_subtitle_content(subtitle_paths):
+def _build_combined_subtitle_content(subtitle_paths, video_paths=None):
     sections = []
     subtitle_contents = {}
-    for subtitle_path in subtitle_paths:
+    video_paths = _normalize_video_paths(video_paths)
+    for index, subtitle_path in enumerate(subtitle_paths, start=1):
         if not subtitle_path or not os.path.exists(subtitle_path):
             continue
         content = _read_subtitle_file(subtitle_path)
         subtitle_contents[subtitle_path] = content
-        sections.append(f"# {os.path.basename(subtitle_path)}\n{content}".strip())
+        video_path = video_paths[index - 1] if index <= len(video_paths) else ""
+        if video_path:
+            header = (
+                f"# 视频 {index}: {os.path.basename(video_path)}\n"
+                f"字幕文件: {os.path.basename(subtitle_path)}"
+            )
+        else:
+            header = f"# 视频 {index}\n字幕文件: {os.path.basename(subtitle_path)}"
+        sections.append(f"{header}\n{content}".strip())
     return "\n\n".join(sections), subtitle_contents
 
 
@@ -120,12 +129,29 @@ def _selected_subtitle_paths():
 
 def _set_subtitle_state(subtitle_paths):
     subtitle_paths = _normalize_video_paths(subtitle_paths)
-    subtitle_content, subtitle_contents = _build_combined_subtitle_content(subtitle_paths)
+    subtitle_content, subtitle_contents = _build_combined_subtitle_content(
+        subtitle_paths,
+        _selected_video_paths(),
+    )
     st.session_state['subtitle_path'] = subtitle_paths[0] if subtitle_paths else None
     st.session_state['subtitle_paths'] = subtitle_paths
     st.session_state['subtitle_content'] = subtitle_content if subtitle_content else None
     st.session_state['subtitle_contents'] = subtitle_contents
     st.session_state['subtitle_file_processed'] = bool(subtitle_paths)
+
+
+def _short_drama_plot_analysis_signature(subtitle_paths, video_theme, web_search_enabled, video_paths=None):
+    theme = str(video_theme or "").strip() if web_search_enabled else ""
+    return json.dumps(
+        {
+            "subtitle_paths": _normalize_video_paths(subtitle_paths),
+            "video_paths": _normalize_video_paths(video_paths),
+            "video_theme": theme,
+            "web_search_enabled": bool(web_search_enabled),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
 
 
 def render_script_panel(tr):
@@ -525,16 +551,71 @@ def short_drama_summary(tr):
     render_fun_asr_transcription(tr)
     render_subtitle_preview(tr)
 
-    current_subtitle_path = st.session_state.get('subtitle_path', '')
-    plot_analysis_source = st.session_state.get('short_drama_plot_analysis_subtitle_path')
-    if plot_analysis_source and plot_analysis_source != current_subtitle_path:
-        st.session_state['short_drama_plot_analysis'] = ""
-        st.session_state['short_drama_plot_analysis_subtitle_path'] = ""
+    current_subtitle_paths = _selected_subtitle_paths()
+    current_subtitle_path = current_subtitle_paths[0] if current_subtitle_paths else ''
 
-    name_cols = st.columns([4, 1.2], vertical_alignment="bottom")
+    st.markdown(
+        """
+        <style>
+        .st-key-short_drama_web_search_enabled [data-testid="stMarkdownContainer"] {
+            display: none;
+        }
+        .st-key-short_drama_web_search_enabled [data-testid="stWidgetLabel"] {
+            min-width: 0;
+            transform: translateX(-1.2rem);
+        }
+        .st-key-short_drama_web_search_enabled label {
+            align-items: center;
+            gap: 0.45rem;
+        }
+        .st-key-short_drama_web_search_enabled label > div:first-child {
+            width: 3rem !important;
+            min-width: 3rem !important;
+            height: 1.55rem !important;
+            border-radius: 999px !important;
+            border: 1px solid #d1d5db !important;
+            background: #e5e7eb !important;
+            box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08) !important;
+            transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease !important;
+        }
+        .st-key-short_drama_web_search_enabled label:hover > div:first-child {
+            background: #dbe3ef !important;
+            border-color: #b8c2d3 !important;
+        }
+        .st-key-short_drama_web_search_enabled label:has(input[aria-checked="true"]) > div:first-child {
+            border-color: transparent !important;
+            background: linear-gradient(135deg, #2563eb, #14b8a6) !important;
+            box-shadow: 0 6px 14px rgba(37, 99, 235, 0.22) !important;
+        }
+        .st-key-short_drama_web_search_enabled label > div:first-child > div {
+            width: 1.05rem !important;
+            height: 1.05rem !important;
+            border-radius: 999px !important;
+            background: #ffffff !important;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.24) !important;
+        }
+        .st-key-short_drama_web_search_enabled button[aria-label^="Help for"] {
+            color: #6b7280 !important;
+        }
+        .st-key-short_drama_web_search_enabled button[aria-label^="Help for"]:hover {
+            color: #2563eb !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    name_cols = st.columns([3.4, 1.1, 2], vertical_alignment="bottom")
     with name_cols[0]:
         video_theme = st.text_input(tr("短剧名称"))
     with name_cols[1]:
+        web_search_enabled = st.toggle(
+            tr("联网搜索"),
+            key="short_drama_web_search_enabled",
+            help=tr("Enable Web Search Help"),
+            disabled=not current_subtitle_path,
+        )
+    with name_cols[2]:
         analyze_plot_clicked = st.button(
             tr("剧情理解"),
             key="short_drama_plot_analysis_button",
@@ -543,17 +624,37 @@ def short_drama_summary(tr):
         )
     st.session_state['video_theme'] = video_theme
 
+    current_signature = _short_drama_plot_analysis_signature(
+        current_subtitle_paths,
+        video_theme,
+        web_search_enabled,
+        _selected_video_paths(),
+    )
+    saved_signature = st.session_state.get('short_drama_plot_analysis_signature')
+    legacy_source = st.session_state.get('short_drama_plot_analysis_subtitle_path')
+    if (
+        (saved_signature and saved_signature != current_signature)
+        or (legacy_source and legacy_source != current_subtitle_path)
+    ):
+        st.session_state['short_drama_plot_analysis'] = ""
+        st.session_state['short_drama_plot_analysis_subtitle_path'] = ""
+        st.session_state['short_drama_plot_analysis_signature'] = ""
+
     if analyze_plot_clicked:
         with st.spinner(tr("Analyzing plot...")):
             plot_analysis = analyze_short_drama_plot(
-                current_subtitle_path,
+                current_subtitle_paths,
                 st.session_state.get('temperature', 0.7),
                 tr,
                 subtitle_content=st.session_state.get('subtitle_content', ''),
+                short_name=video_theme,
+                enable_web_search=web_search_enabled,
+                video_paths=_selected_video_paths(),
             )
         if plot_analysis:
             st.session_state['short_drama_plot_analysis'] = plot_analysis
             st.session_state['short_drama_plot_analysis_subtitle_path'] = current_subtitle_path
+            st.session_state['short_drama_plot_analysis_signature'] = current_signature
             st.success(tr("Plot analysis completed"))
 
     if st.session_state.get('short_drama_plot_analysis'):
@@ -575,7 +676,10 @@ def render_subtitle_preview(tr):
         subtitle_contents = {}
 
     if subtitle_paths and (not subtitle_content or not subtitle_contents):
-        subtitle_content, subtitle_contents = _build_combined_subtitle_content(subtitle_paths)
+        subtitle_content, subtitle_contents = _build_combined_subtitle_content(
+            subtitle_paths,
+            _selected_video_paths(),
+        )
         st.session_state['subtitle_content'] = subtitle_content
         st.session_state['subtitle_contents'] = subtitle_contents
 
@@ -724,7 +828,7 @@ def _normalize_script_table_value(column, value):
     if _is_blank_table_value(value):
         return ""
 
-    if column in {"_id", "OST"}:
+    if column in {"_id", "video_id", "OST"}:
         try:
             return int(value)
         except (TypeError, ValueError):
@@ -783,6 +887,14 @@ def render_video_script_editor(tr):
             column_order=column_order,
             column_config={
                 "_id": st.column_config.NumberColumn(tr("Script Column ID"), step=1, format="%d", width=52),
+                "video_id": st.column_config.NumberColumn(
+                    tr("Script Column Video ID"),
+                    min_value=1,
+                    step=1,
+                    format="%d",
+                    width=80,
+                ),
+                "video_name": st.column_config.TextColumn(tr("Script Column Video Name"), width=180),
                 "timestamp": st.column_config.TextColumn(tr("Script Column Timestamp"), width=200),
                 "picture": st.column_config.TextColumn(tr("Script Column Picture"), width=320),
                 "narration": st.column_config.TextColumn(tr("Script Column Narration"), width=480),
@@ -1057,7 +1169,10 @@ def render_fun_asr_transcription(tr):
             st.error(tr("Fun-ASR failed without subtitle file"))
             return
 
-        subtitle_content, subtitle_contents = _build_combined_subtitle_content(generated_paths)
+        subtitle_content, subtitle_contents = _build_combined_subtitle_content(
+            generated_paths,
+            media_paths,
+        )
         if not subtitle_content.strip():
             clear_fun_asr_subtitle_state()
             st.error(tr("Fun-ASR failed without subtitle file"))
@@ -1112,20 +1227,35 @@ def render_script_buttons(tr, params):
             generate_script_short(tr, params, custom_clips)
         elif script_path == "summary":
             # 执行 短剧解说 脚本生成
-            subtitle_path = st.session_state.get('subtitle_path')
+            subtitle_paths = _selected_subtitle_paths()
+            subtitle_path = subtitle_paths[0] if subtitle_paths else None
             video_theme = st.session_state.get('video_theme')
             temperature = st.session_state.get('temperature')
+            web_search_enabled = bool(st.session_state.get('short_drama_web_search_enabled', False))
+            current_signature = _short_drama_plot_analysis_signature(
+                subtitle_paths,
+                video_theme,
+                web_search_enabled,
+                _selected_video_paths(),
+            )
             plot_analysis = ""
-            if st.session_state.get('short_drama_plot_analysis_subtitle_path') == subtitle_path:
+            if st.session_state.get('short_drama_plot_analysis_signature') == current_signature:
+                plot_analysis = st.session_state.get('short_drama_plot_analysis', '')
+            elif (
+                not web_search_enabled
+                and st.session_state.get('short_drama_plot_analysis_subtitle_path') == subtitle_path
+            ):
                 plot_analysis = st.session_state.get('short_drama_plot_analysis', '')
             generate_script_short_sunmmary(
                 params,
-                subtitle_path,
+                subtitle_paths,
                 video_theme,
                 temperature,
                 tr,
                 plot_analysis=plot_analysis,
                 subtitle_content=st.session_state.get('subtitle_content', ''),
+                enable_web_search=web_search_enabled,
+                video_paths=_selected_video_paths(),
             )
         else:
             load_script(tr, script_path)
@@ -1172,6 +1302,8 @@ def save_script_with_validation(tr, video_clip_json_details):
                 example_script = [
                     {
                         "_id": 1,
+                        "video_id": 1,
+                        "video_name": "1.mp4",
                         "timestamp": "00:00:00,600-00:00:07,559",
                         "picture": "工地上，蔡晓艳奋力救人，场面混乱",
                         "narration": "灾后重建，工地上险象环生！泼辣女工蔡晓艳挺身而出，救人第一！",
@@ -1179,6 +1311,8 @@ def save_script_with_validation(tr, video_clip_json_details):
                     },
                     {
                         "_id": 2,
+                        "video_id": 2,
+                        "video_name": "2.mp4",
                         "timestamp": "00:00:08,240-00:00:12,359",
                         "picture": "领导视察，蔡晓艳不屑一顾",
                         "narration": "播放原片4",

@@ -17,10 +17,99 @@ from loguru import logger
 from app.config import config
 from app.services.SDE.short_drama_explanation import analyze_subtitle, generate_narration_script
 from app.services.subtitle_text import read_subtitle_text
+from app.services.tavily_search import TavilySearchError, format_search_context, search_short_drama
 # 导入新的LLM服务模块 - 确保提供商被注册
 import app.services.llm  # 这会触发提供商注册
 from app.services.llm.migration_adapter import SubtitleAnalyzerAdapter
 import re
+
+
+def _normalize_paths(paths):
+    if isinstance(paths, str):
+        paths = [paths]
+    if not paths:
+        return []
+
+    normalized_paths = []
+    seen = set()
+    for path in paths:
+        if not isinstance(path, str):
+            continue
+        path = path.strip()
+        if not path or path in seen:
+            continue
+        normalized_paths.append(path)
+        seen.add(path)
+    return normalized_paths
+
+
+def _build_combined_subtitle_content(subtitle_paths, video_paths=None):
+    sections = []
+    video_paths = _normalize_paths(video_paths)
+    for index, subtitle_path in enumerate(_normalize_paths(subtitle_paths), start=1):
+        if not os.path.exists(subtitle_path):
+            continue
+
+        video_path = video_paths[index - 1] if index <= len(video_paths) else ""
+        if video_path:
+            header = (
+                f"# 视频 {index}: {os.path.basename(video_path)}\n"
+                f"字幕文件: {os.path.basename(subtitle_path)}"
+            )
+        else:
+            header = f"# 视频 {index}\n字幕文件: {os.path.basename(subtitle_path)}"
+        sections.append(f"{header}\n{read_subtitle_text(subtitle_path).text}".strip())
+
+    return "\n\n".join(sections)
+
+
+def _coerce_video_id(value):
+    try:
+        video_id = int(value)
+    except (TypeError, ValueError):
+        return None
+    return video_id if video_id > 0 else None
+
+
+def _match_video_id_by_name(video_name, video_paths):
+    video_name = str(video_name or "").strip()
+    if not video_name:
+        return None
+
+    for index, video_path in enumerate(video_paths, start=1):
+        if os.path.basename(video_path) == os.path.basename(video_name):
+            return index
+    return None
+
+
+def _normalize_narration_items_video_sources(items, video_paths):
+    video_paths = _normalize_paths(video_paths)
+    if not video_paths:
+        return items
+
+    normalized_items = []
+    for item in items:
+        if not isinstance(item, dict):
+            normalized_items.append(item)
+            continue
+
+        item_copy = item.copy()
+        video_id = _coerce_video_id(item_copy.get("video_id") or item_copy.get("video_index"))
+        matched_video_id = _match_video_id_by_name(
+            item_copy.get("video_name") or item_copy.get("source_video"),
+            video_paths,
+        )
+        if matched_video_id:
+            video_id = matched_video_id
+        if video_id is None or video_id > len(video_paths):
+            logger.warning(f"片段 {item_copy.get('_id')} 未提供有效 video_id，默认使用视频 1")
+            video_id = 1
+
+        item_copy["video_id"] = video_id
+        item_copy["video_name"] = os.path.basename(video_paths[video_id - 1])
+        normalized_items.append(item_copy)
+
+    return normalized_items
 
 
 def parse_and_fix_json(json_string):
@@ -135,12 +224,83 @@ def parse_and_fix_json(json_string):
         return None
 
 
-def analyze_short_drama_plot(subtitle_path, temperature, tr=lambda key: key, subtitle_content=None):
+def _get_tavily_api_key() -> str:
+    return (
+        st.session_state.get("tavily_api_key")
+        or config.app.get("tavily_api_key")
+        or ""
+    ).strip()
+
+
+def _build_tavily_context(short_name: str, tr=lambda key: key) -> str | None:
+    short_name = str(short_name or "").strip()
+    if not short_name:
+        st.error(tr("Please enter short drama name before web search"))
+        return None
+
+    api_key = _get_tavily_api_key()
+    if not api_key:
+        st.error(tr("Please configure Tavily API Key in Basic Settings"))
+        return None
+
+    try:
+        search_data = search_short_drama(
+            short_name,
+            api_key,
+            search_depth=config.app.get("tavily_search_depth", "basic"),
+            max_results=config.app.get("tavily_max_results", 5),
+        )
+        return format_search_context(search_data)
+    except TavilySearchError as e:
+        logger.error(f"Tavily 短剧检索失败: {str(e)}")
+        st.error(f"{tr('Tavily search failed')}: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f"Tavily 短剧检索异常: {traceback.format_exc()}")
+        st.error(f"{tr('Tavily search failed')}: {str(e)}")
+        return None
+
+
+def _build_plot_analysis_input(
+    subtitle_content: str,
+    short_name: str = "",
+    enable_web_search: bool = False,
+    tr=lambda key: key,
+) -> str | None:
+    subtitle_content = str(subtitle_content or "").strip()
+    if not enable_web_search:
+        return subtitle_content
+
+    tavily_context = _build_tavily_context(short_name, tr)
+    if tavily_context is None:
+        return None
+
+    return f"""# 分析补充说明
+请先参考 Tavily 联网检索结果理解短剧名称、人物关系、剧情背景和公开剧情梗概，再结合原始字幕完成剧情理解。
+如果联网检索结果与字幕内容冲突，请以字幕内容为准；时间戳必须只从字幕内容中提取。
+
+{tavily_context}
+
+# 原始字幕
+{subtitle_content}"""
+
+
+def analyze_short_drama_plot(
+    subtitle_path,
+    temperature,
+    tr=lambda key: key,
+    subtitle_content=None,
+    short_name: str = "",
+    enable_web_search: bool = False,
+    video_paths=None,
+):
     """仅执行短剧字幕剧情理解，返回可编辑的剧情分析文本。"""
-    if not subtitle_path:
+    subtitle_paths = _normalize_paths(subtitle_path)
+    if not subtitle_paths:
         st.error(tr("Please generate or upload subtitles first"))
         return None
-    if not os.path.exists(subtitle_path):
+    missing_subtitle_paths = [path for path in subtitle_paths if not os.path.exists(path)]
+    if missing_subtitle_paths:
         st.error(tr("Subtitle file does not exist"))
         return None
 
@@ -149,19 +309,31 @@ def analyze_short_drama_plot(subtitle_path, temperature, tr=lambda key: key, sub
     text_model = config.app.get(f'text_{text_provider}_model_name')
     text_base_url = config.app.get(f'text_{text_provider}_base_url')
 
-    subtitle_content = str(subtitle_content or "").strip() or read_subtitle_text(subtitle_path).text
+    subtitle_content = str(subtitle_content or "").strip() or _build_combined_subtitle_content(
+        subtitle_paths,
+        video_paths,
+    )
     if not subtitle_content:
         st.error(tr("Subtitle file is empty or unreadable"))
+        return None
+
+    plot_analysis_input = _build_plot_analysis_input(
+        subtitle_content,
+        short_name=short_name,
+        enable_web_search=enable_web_search,
+        tr=tr,
+    )
+    if plot_analysis_input is None:
         return None
 
     try:
         logger.info("使用新的LLM服务架构进行字幕分析")
         analyzer = SubtitleAnalyzerAdapter(text_api_key, text_model, text_base_url, text_provider)
-        analysis_result = analyzer.analyze_subtitle(subtitle_content)
+        analysis_result = analyzer.analyze_subtitle(plot_analysis_input)
     except Exception as e:
         logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
         analysis_result = analyze_subtitle(
-            subtitle_content=subtitle_content,
+            subtitle_content=plot_analysis_input,
             api_key=text_api_key,
             model=text_model,
             base_url=text_base_url,
@@ -186,6 +358,8 @@ def generate_script_short_sunmmary(
     tr=lambda key: key,
     plot_analysis=None,
     subtitle_content=None,
+    enable_web_search: bool = False,
+    video_paths=None,
 ):
     """
     生成 短剧解说 视频脚本
@@ -204,7 +378,12 @@ def generate_script_short_sunmmary(
 
     try:
         with st.spinner(tr("Generating script...")):
-            if not params.video_origin_path:
+            selected_video_paths = _normalize_paths(
+                video_paths
+                or getattr(params, "video_origin_paths", [])
+                or getattr(params, "video_origin_path", "")
+            )
+            if not selected_video_paths:
                 st.error(tr("Please select video file first"))
                 return
             """
@@ -212,7 +391,9 @@ def generate_script_short_sunmmary(
             """
             update_progress(30, tr("Parsing subtitles..."))
             # 判断字幕文件是否存在
-            if not os.path.exists(subtitle_path):
+            subtitle_paths = _normalize_paths(subtitle_path)
+            missing_subtitle_paths = [path for path in subtitle_paths if not os.path.exists(path)]
+            if not subtitle_paths or missing_subtitle_paths:
                 st.error(tr("Subtitle file does not exist"))
                 return
 
@@ -225,7 +406,10 @@ def generate_script_short_sunmmary(
             text_base_url = config.app.get(f'text_{text_provider}_base_url')
 
             # 读取字幕文件内容（无论使用哪种实现都需要）
-            subtitle_content = str(subtitle_content or "").strip() or read_subtitle_text(subtitle_path).text
+            subtitle_content = str(subtitle_content or "").strip() or _build_combined_subtitle_content(
+                subtitle_paths,
+                selected_video_paths,
+            )
             if not subtitle_content:
                 st.error(tr("Subtitle file is empty or unreadable"))
                 return
@@ -238,16 +422,27 @@ def generate_script_short_sunmmary(
                     "analysis": str(plot_analysis).strip(),
                 }
             else:
+                plot_analysis_input = subtitle_content
+                if enable_web_search:
+                    update_progress(40, tr("Searching short drama with Tavily..."))
+                    plot_analysis_input = _build_plot_analysis_input(
+                        subtitle_content,
+                        short_name=video_theme,
+                        enable_web_search=True,
+                        tr=tr,
+                    )
+                    if plot_analysis_input is None:
+                        return
                 try:
                     # 优先使用新的LLM服务架构
                     logger.info("使用新的LLM服务架构进行字幕分析")
-                    analysis_result = analyzer.analyze_subtitle(subtitle_content)
+                    analysis_result = analyzer.analyze_subtitle(plot_analysis_input)
 
                 except Exception as e:
                     logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
                     # 回退到旧的实现
                     analysis_result = analyze_subtitle(
-                        subtitle_content=subtitle_content,
+                        subtitle_content=plot_analysis_input,
                         api_key=text_api_key,
                         model=text_model,
                         base_url=text_base_url,
@@ -320,7 +515,11 @@ def generate_script_short_sunmmary(
                 logger.error(f"JSON结构错误，缺少items字段: {narration_dict}")
                 st.stop()
 
-            script = json.dumps(narration_dict['items'], ensure_ascii=False, indent=2)
+            narration_items = _normalize_narration_items_video_sources(
+                narration_dict['items'],
+                selected_video_paths,
+            )
+            script = json.dumps(narration_items, ensure_ascii=False, indent=2)
 
             if script is None:
                 st.error(tr("Script generation failed check logs"))

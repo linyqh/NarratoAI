@@ -604,7 +604,7 @@ def render_font_settings(tr):
 
 def is_disabled_subtitle_settings(tts_engine:str)->bool:
     """是否禁用字幕设置"""
-    return tts_engine=="soulvoice" or tts_engine=="qwen3_tts"
+    return tts_engine=="soulvoice" or tts_engine=="qwen3_tts" or tts_engine==config.OMNIVOICE_ENGINE
 
 def render_position_settings(tr):
     """渲染位置设置"""

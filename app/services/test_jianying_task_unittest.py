@@ -51,6 +51,23 @@ class JianyingTaskTests(unittest.TestCase):
 
             self.assertEqual(f"indextts2:{ref_path}", params.voice_name)
 
+    def test_normalize_omnivoice_clone_uses_valid_param_reference(self):
+        with tempfile.NamedTemporaryFile(suffix=".wav") as ref:
+            params = VideoClipParams(tts_engine="omnivoice", voice_name=f"omnivoice:{ref.name}")
+
+            with patch.dict(jianying_task.config.omnivoice, {"mode": "voice_clone"}, clear=False):
+                jianying_task._normalize_indextts_reference_audio(params)
+
+            self.assertEqual(f"omnivoice:{ref.name}", params.voice_name)
+
+    def test_normalize_omnivoice_auto_does_not_require_reference(self):
+        params = VideoClipParams(tts_engine="omnivoice", voice_name="omnivoice:auto")
+
+        with patch.dict(jianying_task.config.omnivoice, {"mode": "auto", "reference_audio": ""}, clear=False):
+            jianying_task._normalize_indextts_reference_audio(params)
+
+        self.assertEqual("omnivoice:auto", params.voice_name)
+
     def test_normalize_indextts_requires_existing_reference_audio(self):
         params = VideoClipParams(tts_engine="indextts", voice_name="zh-CN-YunjianNeural")
 

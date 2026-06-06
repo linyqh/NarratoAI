@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import re
 import json
@@ -1298,6 +1300,10 @@ def tts(
     if tts_engine == config.INDEXTTS2_ENGINE:
         logger.info("分发到 IndexTTS-2")
         return indextts2_tts(text, voice_name, voice_file)
+
+    if tts_engine == config.OMNIVOICE_ENGINE:
+        logger.info("分发到 OmniVoice")
+        return omnivoice_tts(text, voice_name, voice_file, speed=voice_rate)
     
     if tts_engine == "doubaotts":
         logger.info("分发到豆包语音 TTS")
@@ -1783,7 +1789,11 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
     voice_name = config.normalize_indextts_voice_prefix(parse_voice_name(voice_name))
     output_dir = utils.task_dir(task_id)
     tts_results = []
-    audio_extension = ".wav" if tts_engine in (config.INDEXTTS_ENGINE, config.INDEXTTS2_ENGINE) else ".mp3"
+    audio_extension = ".wav" if tts_engine in (
+        config.INDEXTTS_ENGINE,
+        config.INDEXTTS2_ENGINE,
+        config.OMNIVOICE_ENGINE,
+    ) else ".mp3"
 
     for item in list_script:
         if item['OST'] != 1:
@@ -1809,11 +1819,11 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                              f"或者使用其他 tts 引擎")
                 continue
             else:
-                # SoulVoice、Qwen3、IndexTTS、豆包语音 引擎不生成精确字幕文件
+                # SoulVoice、Qwen3、IndexTTS、OmniVoice、豆包语音 引擎不生成精确字幕文件
                 if (
                     is_soulvoice_voice(voice_name)
                     or is_qwen_engine(tts_engine)
-                    or tts_engine in (config.INDEXTTS_ENGINE, config.INDEXTTS2_ENGINE)
+                    or tts_engine in (config.INDEXTTS_ENGINE, config.INDEXTTS2_ENGINE, config.OMNIVOICE_ENGINE)
                     or tts_engine == "doubaotts"
                 ):
                     # 获取实际音频文件的时长
@@ -2256,6 +2266,17 @@ def parse_indextts2_voice(voice_name: str) -> str:
     return voice_name
 
 
+def parse_omnivoice_voice(voice_name: str) -> str:
+    """
+    解析 OmniVoice 语音名称
+    支持格式：omnivoice:reference_audio_path
+    返回参考音频文件路径或模式名
+    """
+    if isinstance(voice_name, str) and voice_name.startswith(config.OMNIVOICE_VOICE_PREFIX):
+        return voice_name[len(config.OMNIVOICE_VOICE_PREFIX):]
+    return voice_name
+
+
 def indextts_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.0) -> Union[SubMaker, None]:
     """
     使用 IndexTTS-1.5 API 进行零样本语音克隆
@@ -2492,4 +2513,142 @@ def indextts2_tts(text: str, voice_name: str, voice_file: str) -> Union[SubMaker
             time.sleep(2)
 
     logger.error("IndexTTS-2 TTS 生成失败，已达到最大重试次数")
+    return None
+
+
+def _normalize_omnivoice_api_url(api_url: str) -> str:
+    api_url = (api_url or "http://127.0.0.1:7866/tts").strip()
+    if api_url.endswith("/tts"):
+        return api_url
+    if api_url.endswith("/tts/json"):
+        return f"{api_url[:-len('/tts/json')]}/tts"
+    return f"{api_url.rstrip('/')}/tts"
+
+
+def _download_omnivoice_audio(response: requests.Response, api_url: str, voice_file: str, proxies: dict) -> bool:
+    content_type = response.headers.get("content-type", "").lower()
+    if "application/json" not in content_type:
+        with open(voice_file, "wb") as f:
+            f.write(response.content)
+        return os.path.getsize(voice_file) > 0
+
+    result = response.json()
+    audio_url = result.get("audio_url") if isinstance(result, dict) else ""
+    if not audio_url:
+        logger.error(f"OmniVoice API 响应中没有音频下载地址: {result}")
+        return False
+
+    audio_response = requests.get(urljoin(api_url, audio_url), proxies=proxies, timeout=180)
+    if audio_response.status_code != 200:
+        logger.error(f"OmniVoice 音频下载失败: {audio_response.status_code} - {audio_response.text}")
+        return False
+
+    with open(voice_file, "wb") as f:
+        f.write(audio_response.content)
+    return os.path.getsize(voice_file) > 0
+
+
+def _optional_omnivoice_generation_data(voice_speed: float) -> dict:
+    omnivoice_config = getattr(config, "omnivoice", {}) or {}
+    data = {
+        "speed": voice_speed or omnivoice_config.get("speed", 1.0),
+    }
+
+    optional_fields = {
+        "num_step": omnivoice_config.get("num_step"),
+        "guidance_scale": omnivoice_config.get("guidance_scale"),
+        "duration": omnivoice_config.get("duration"),
+    }
+    for key, value in optional_fields.items():
+        if value not in (None, ""):
+            data[key] = value
+
+    for key in ("denoise", "postprocess_output", "preprocess_prompt"):
+        if key in omnivoice_config:
+            data[key] = str(bool(omnivoice_config.get(key))).lower()
+
+    return data
+
+
+def omnivoice_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.0) -> Union[SubMaker, None]:
+    """
+    使用 OmniVoice-Pack FastAPI 服务进行语音合成。
+    支持自动音色、指令音色和参考音频克隆三种模式。
+    """
+    omnivoice_config = getattr(config, "omnivoice", {}) or {}
+    api_url = _normalize_omnivoice_api_url(omnivoice_config.get("api_url", "http://127.0.0.1:7866/tts"))
+    mode = omnivoice_config.get("mode", "auto")
+    language = (omnivoice_config.get("language", "zh") or "").strip()
+    instruct = (omnivoice_config.get("instruct", "") or "").strip()
+    ref_text = (omnivoice_config.get("ref_text", "") or "").strip()
+    parsed_voice = parse_omnivoice_voice(voice_name)
+    if mode != "voice_clone" and parsed_voice and os.path.isfile(parsed_voice):
+        mode = "voice_clone"
+
+    reference_audio_path = ""
+    if mode == "voice_clone":
+        candidate = parsed_voice
+        if candidate and os.path.isfile(candidate):
+            reference_audio_path = candidate
+        else:
+            reference_audio_path = parse_omnivoice_voice(omnivoice_config.get("reference_audio", "") or "")
+
+        if not reference_audio_path or not os.path.exists(reference_audio_path):
+            logger.error(f"OmniVoice 参考音频文件不存在: {reference_audio_path}")
+            return None
+    elif mode != "voice_design":
+        instruct = ""
+
+    data = {
+        "text": text.strip(),
+        "language": language,
+        **_optional_omnivoice_generation_data(speed),
+    }
+    if mode == "voice_design" and instruct:
+        data["instruct"] = instruct
+    if mode == "voice_clone" and ref_text:
+        data["ref_text"] = ref_text
+
+    proxies = _get_configured_proxies()
+    for attempt in range(3):
+        files = {}
+        try:
+            if reference_audio_path:
+                files["ref_audio"] = open(reference_audio_path, "rb")
+
+            logger.info(f"第 {attempt + 1} 次调用 OmniVoice API: {api_url}, mode={mode}")
+            response = requests.post(
+                api_url,
+                files=files or None,
+                data=data,
+                proxies=proxies,
+                timeout=240,
+            )
+
+            if response.status_code == 200 and _download_omnivoice_audio(response, api_url, voice_file, proxies):
+                logger.info(f"OmniVoice 成功生成音频: {voice_file}, 大小: {os.path.getsize(voice_file)} 字节")
+                sub_maker = new_sub_maker()
+                duration = get_audio_duration_from_file(voice_file)
+                duration_ms = int(duration * 1000) if duration > 0 else max(1000, int(len(text) * 200))
+                add_subtitle_event(sub_maker, 0, duration_ms * 10000, text)
+                return sub_maker
+
+            logger.error(f"OmniVoice API 调用失败: {response.status_code} - {response.text}")
+        except requests.exceptions.Timeout:
+            logger.error(f"OmniVoice API 调用超时 (尝试 {attempt + 1}/3)")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"OmniVoice API 网络错误: {str(e)} (尝试 {attempt + 1}/3)")
+        except Exception as e:
+            logger.error(f"OmniVoice TTS 处理错误: {str(e)} (尝试 {attempt + 1}/3)")
+        finally:
+            for file_obj in files.values():
+                try:
+                    file_obj.close()
+                except Exception:
+                    pass
+
+        if attempt < 2:
+            time.sleep(2)
+
+    logger.error("OmniVoice TTS 生成失败，已达到最大重试次数")
     return None

@@ -107,7 +107,7 @@ def _clamp_duration_to_media(
 
 
 def _normalize_indextts_reference_audio(params: VideoClipParams) -> None:
-    """Ensure IndexTTS engines use the configured reference audio instead of a stale UI voice."""
+    """Ensure local clone TTS engines use configured reference audio instead of a stale UI voice."""
     params.tts_engine = config.normalize_tts_engine_name(params.tts_engine)
     if params.tts_engine == config.INDEXTTS_ENGINE:
         tts_config = config.indextts
@@ -117,6 +117,12 @@ def _normalize_indextts_reference_audio(params: VideoClipParams) -> None:
         tts_config = config.indextts2
         voice_prefix = config.INDEXTTS2_VOICE_PREFIX
         display_name = "IndexTTS-2"
+    elif params.tts_engine == config.OMNIVOICE_ENGINE:
+        tts_config = config.omnivoice
+        if tts_config.get("mode", "auto") != "voice_clone":
+            return
+        voice_prefix = config.OMNIVOICE_VOICE_PREFIX
+        display_name = "OmniVoice"
     else:
         return
 
@@ -199,6 +205,7 @@ def start_export_jianying_draft(task_id: str, params: VideoClipParams):
     logger.info("\n\n## 3. 统一视频裁剪（基于OST类型）")
     video_clip_result = clip_video.clip_video_unified(
         video_origin_path=params.video_origin_path,
+        video_origin_paths=getattr(params, "video_origin_paths", []),
         script_list=list_script,
         tts_results=tts_results
     )

@@ -243,6 +243,12 @@ def get_voice_name_for_tts_engine(tts_engine: str) -> str:
         if reference_audio:
             return f"{config.INDEXTTS_VOICE_PREFIX}{reference_audio}"
         return config.ui.get('voice_name', '')
+    if tts_engine == config.OMNIVOICE_ENGINE:
+        mode = config.omnivoice.get('mode', 'auto')
+        reference_audio = config.omnivoice.get('reference_audio', '')
+        if mode == 'voice_clone' and reference_audio:
+            return f"{config.OMNIVOICE_VOICE_PREFIX}{reference_audio}"
+        return f"{config.OMNIVOICE_VOICE_PREFIX}{mode}"
     if tts_engine == 'doubaotts':
         return config.ui.get('doubaotts_voice_type', 'BV700_streaming')
     if tts_engine == 'soulvoice':
@@ -263,6 +269,7 @@ def get_jianying_export_params(draft_name=None) -> VideoClipParams:
     return VideoClipParams(
         video_clip_json_path=st.session_state['video_clip_json_path'],
         video_origin_path=st.session_state['video_origin_path'],
+        video_origin_paths=st.session_state.get('video_origin_paths', []),
         tts_engine=tts_engine,
         voice_name=voice_name,
         voice_rate=voice_rate,

@@ -13,8 +13,11 @@ INDEXTTS_ENGINE = "indextts"
 INDEXTTS_DISPLAY_NAME = "IndexTTS-1.5"
 INDEXTTS2_ENGINE = "indextts2"
 INDEXTTS2_DISPLAY_NAME = "IndexTTS-2"
+OMNIVOICE_ENGINE = "omnivoice"
+OMNIVOICE_DISPLAY_NAME = "OmniVoice"
 INDEXTTS_VOICE_PREFIX = f"{INDEXTTS_ENGINE}:"
 INDEXTTS2_VOICE_PREFIX = f"{INDEXTTS2_ENGINE}:"
+OMNIVOICE_VOICE_PREFIX = f"{OMNIVOICE_ENGINE}:"
 
 
 def normalize_tts_engine_name(tts_engine: str) -> str:
@@ -131,6 +134,7 @@ def save_config():
         _cfg["fun_asr"] = fun_asr
         _cfg["indextts"] = indextts
         _cfg["indextts2"] = indextts2
+        _cfg["omnivoice"] = omnivoice
         _cfg["doubaotts"] = doubaotts
         f.write(toml.dumps(_cfg))
 
@@ -148,6 +152,7 @@ tts_qwen = _cfg.get("tts_qwen", {})
 fun_asr = _cfg.get("fun_asr", {})
 indextts = _cfg.get("indextts", {})
 indextts2 = _cfg.get("indextts2", {})
+omnivoice = _cfg.get("omnivoice", {})
 doubaotts = _cfg.get("doubaotts", {})
 
 hostname = socket.gethostname()

@@ -225,6 +225,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     # 使用新的统一裁剪策略
     video_clip_result = clip_video.clip_video_unified(
         video_origin_path=params.video_origin_path,
+        video_origin_paths=getattr(params, "video_origin_paths", []),
         script_list=list_script,
         tts_results=tts_results
     )
@@ -477,6 +478,7 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
     # 使用新的统一裁剪策略
     video_clip_result = clip_video.clip_video_unified(
         video_origin_path=params.video_origin_path,
+        video_origin_paths=getattr(params, "video_origin_paths", []),
         script_list=list_script,
         tts_results=tts_results
     )

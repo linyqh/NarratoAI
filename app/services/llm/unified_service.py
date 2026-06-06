@@ -12,6 +12,7 @@ from loguru import logger
 from .manager import LLMServiceManager
 from .validators import OutputValidator
 from .exceptions import LLMServiceError
+from app.services.prompts import PromptManager
 
 # 提供商注册由 webui.py:main() 显式调用（见 LLM 提供商注册机制重构）
 # 这样更可靠，错误也更容易调试
@@ -181,12 +182,20 @@ class UnifiedLLMService:
             LLMServiceError: 服务调用失败时抛出
         """
         try:
-            # 构建分析提示词
-            system_prompt = "你是一位专业的剧本分析师和剧情概括助手。请仔细分析字幕内容，提取关键剧情信息。"
+            prompt = PromptManager.get_prompt(
+                category="short_drama_narration",
+                name="plot_analysis",
+                parameters={"subtitle_content": subtitle_content},
+            )
+            prompt_object = PromptManager.get_prompt_object(
+                category="short_drama_narration",
+                name="plot_analysis",
+            )
+            system_prompt = prompt_object.get_system_prompt()
             
             # 生成分析结果
             result = await UnifiedLLMService.generate_text(
-                prompt=subtitle_content,
+                prompt=prompt,
                 system_prompt=system_prompt,
                 provider=provider,
                 temperature=temperature,

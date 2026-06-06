@@ -32,6 +32,82 @@ def parse_timestamp(timestamp: str) -> tuple:
     return start_time, end_time
 
 
+def _normalize_video_origin_paths(
+    video_origin_path: str,
+    video_origin_paths: Optional[List[str]] = None,
+) -> List[str]:
+    paths = []
+    if video_origin_paths:
+        paths.extend(video_origin_paths)
+    if video_origin_path:
+        paths.insert(0, video_origin_path)
+
+    normalized_paths = []
+    seen = set()
+    for item in paths:
+        if not isinstance(item, str):
+            continue
+        item = item.strip()
+        if not item or item in seen:
+            continue
+        normalized_paths.append(item)
+        seen.add(item)
+    return normalized_paths
+
+
+def _coerce_video_id(value) -> Optional[int]:
+    try:
+        video_id = int(value)
+    except (TypeError, ValueError):
+        return None
+    return video_id if video_id > 0 else None
+
+
+def _match_video_id_by_name(video_name: str, video_origin_paths: List[str]) -> Optional[int]:
+    video_name = str(video_name or "").strip()
+    if not video_name:
+        return None
+
+    expected_name = os.path.basename(video_name)
+    for index, video_path in enumerate(video_origin_paths, start=1):
+        if os.path.basename(video_path) == expected_name:
+            return index
+    return None
+
+
+def _resolve_script_video_path(script_item: Dict, video_origin_paths: List[str]) -> str:
+    explicit_path = (
+        script_item.get("source_video_path")
+        or script_item.get("video_origin_path")
+        or script_item.get("origin_video_path")
+    )
+    if explicit_path and os.path.exists(explicit_path):
+        return explicit_path
+
+    video_id = _coerce_video_id(script_item.get("video_id") or script_item.get("video_index"))
+    matched_video_id = _match_video_id_by_name(
+        script_item.get("video_name") or script_item.get("source_video"),
+        video_origin_paths,
+    )
+    if matched_video_id:
+        video_id = matched_video_id
+
+    if video_id is not None:
+        if video_id <= len(video_origin_paths):
+            return video_origin_paths[video_id - 1]
+        logger.warning(
+            f"片段 {script_item.get('_id')} 的 video_id={video_id} 超出视频数量 "
+            f"{len(video_origin_paths)}，默认使用第一个视频"
+        )
+
+    return video_origin_paths[0]
+
+
+def _safe_output_id(value) -> str:
+    safe_value = str(value if value is not None else "unknown")
+    return "".join(char if char.isalnum() or char in ("-", "_") else "_" for char in safe_value)
+
+
 def calculate_end_time(start_time: str, duration: float, extra_seconds: float = 1.0) -> str:
     """
     根据开始时间和持续时间计算结束时间
@@ -579,7 +655,7 @@ def _process_narration_only_segment(
     # 生成输出文件名
     safe_start_time = start_time.replace(':', '-').replace(',', '-')
     safe_end_time = calculated_end_time.replace(':', '-').replace(',', '-')
-    output_filename = f"ost0_vid_{safe_start_time}@{safe_end_time}.mp4"
+    output_filename = f"ost0_{_safe_output_id(_id)}_vid_{safe_start_time}@{safe_end_time}.mp4"
     output_path = os.path.join(output_dir, output_filename)
 
     # 构建FFmpeg命令 - 移除音频
@@ -622,7 +698,7 @@ def _process_original_audio_segment(
     # 生成输出文件名
     safe_start_time = start_time.replace(':', '-').replace(',', '-')
     safe_end_time = end_time.replace(':', '-').replace(',', '-')
-    output_filename = f"ost1_vid_{safe_start_time}@{safe_end_time}.mp4"
+    output_filename = f"ost1_{_safe_output_id(_id)}_vid_{safe_start_time}@{safe_end_time}.mp4"
     output_path = os.path.join(output_dir, output_filename)
 
     # 构建FFmpeg命令 - 保持原声
@@ -674,7 +750,7 @@ def _process_mixed_segment(
     # 生成输出文件名
     safe_start_time = start_time.replace(':', '-').replace(',', '-')
     safe_end_time = calculated_end_time.replace(':', '-').replace(',', '-')
-    output_filename = f"ost2_vid_{safe_start_time}@{safe_end_time}.mp4"
+    output_filename = f"ost2_{_safe_output_id(_id)}_vid_{safe_start_time}@{safe_end_time}.mp4"
     output_path = os.path.join(output_dir, output_filename)
 
     # 构建FFmpeg命令 - 保持原声
@@ -782,28 +858,34 @@ def clip_video_unified(
         script_list: List[Dict],
         tts_results: List[Dict],
         output_dir: Optional[str] = None,
-        task_id: Optional[str] = None
+        task_id: Optional[str] = None,
+        video_origin_paths: Optional[List[str]] = None
 ) -> Dict[str, str]:
     """
     基于OST类型的统一视频裁剪策略 - 消除双重裁剪问题
 
     Args:
-        video_origin_path: 原始视频的路径
+        video_origin_path: 原始视频的路径；旧脚本或无 video_id 片段默认使用该视频
         script_list: 完整的脚本列表，包含所有片段信息
         tts_results: TTS结果列表，仅包含OST=0和OST=2的片段
         output_dir: 输出目录路径，默认为None时会自动生成
         task_id: 任务ID，用于生成唯一的输出目录，默认为None时会自动生成
+        video_origin_paths: 多个原始视频路径，脚本片段可用 video_id/video_name 指定来源
 
     Returns:
         Dict[str, str]: 片段ID到裁剪后视频路径的映射
     """
-    # 检查视频文件是否存在
-    if not os.path.exists(video_origin_path):
-        raise FileNotFoundError(f"视频文件不存在: {video_origin_path}")
+    video_source_paths = _normalize_video_origin_paths(video_origin_path, video_origin_paths)
+    if not video_source_paths:
+        raise FileNotFoundError("视频文件不存在: 未提供原始视频路径")
+
+    missing_video_paths = [item for item in video_source_paths if not os.path.exists(item)]
+    if missing_video_paths:
+        raise FileNotFoundError(f"视频文件不存在: {', '.join(missing_video_paths)}")
 
     # 如果未提供task_id，则根据输入生成一个唯一ID
     if task_id is None:
-        content_for_hash = f"{video_origin_path}_{json.dumps(script_list)}"
+        content_for_hash = f"{json.dumps(video_source_paths, ensure_ascii=False)}_{json.dumps(script_list, ensure_ascii=False)}"
         task_id = hashlib.md5(content_for_hash.encode()).hexdigest()
 
     # 设置输出目录
@@ -840,29 +922,33 @@ def clip_video_unified(
     failed_clips = []
     success_count = 0
 
-    logger.info(f"📹 开始统一视频裁剪，总共{total_clips}个片段")
+    logger.info(f"📹 开始统一视频裁剪，总共{total_clips}个片段，源视频{len(video_source_paths)}个")
 
     for i, script_item in enumerate(script_list, 1):
         _id = script_item.get("_id")
         ost = script_item.get("OST", 0)
         timestamp = script_item["timestamp"]
+        source_video_path = _resolve_script_video_path(script_item, video_source_paths)
 
-        logger.info(f"📹 [{i}/{total_clips}] 处理片段 ID:{_id}, OST:{ost}, 时间戳:{timestamp}")
+        logger.info(
+            f"📹 [{i}/{total_clips}] 处理片段 ID:{_id}, OST:{ost}, "
+            f"视频:{os.path.basename(source_video_path)}, 时间戳:{timestamp}"
+        )
 
         try:
             if ost == 0:  # 纯解说片段
                 output_path = _process_narration_only_segment(
-                    video_origin_path, script_item, tts_map, output_dir,
+                    source_video_path, script_item, tts_map, output_dir,
                     encoder_config, hwaccel_args
                 )
             elif ost == 1:  # 纯原声片段
                 output_path = _process_original_audio_segment(
-                    video_origin_path, script_item, output_dir,
+                    source_video_path, script_item, output_dir,
                     encoder_config, hwaccel_args
                 )
             elif ost == 2:  # 解说+原声混合片段
                 output_path = _process_mixed_segment(
-                    video_origin_path, script_item, tts_map, output_dir,
+                    source_video_path, script_item, tts_map, output_dir,
                     encoder_config, hwaccel_args
                 )
             else:

@@ -49,6 +49,12 @@
     text_openai_max_tokens = 65536
     text_openai_thinking_level = "auto"  # auto/off/low/medium/high
 
+    # ===== Tavily 联网搜索配置 =====
+    # 用于短剧剧情理解前，按短剧名称检索公开剧情/人物/分集信息
+    tavily_api_key = ""  # 获取地址：https://app.tavily.com
+    tavily_search_depth = "basic"  # basic / advanced / fast / ultra-fast
+    tavily_max_results = 5
+
     # ===== API Keys 参考 =====
     # 主流 LLM Providers API Key 获取地址：
     #
@@ -171,6 +177,30 @@
     repetition_penalty = 10.0
     max_mel_tokens = 1500
 
+[omnivoice]
+    # OmniVoice-Pack 语音合成配置
+    # 支持 OmniVoice-Pack FastAPI 接口：POST /tts
+    api_url = "http://127.0.0.1:7866/tts"
+    language = "zh"
+
+    # 生成模式：auto / voice_design / voice_clone
+    mode = "auto"
+    instruct = ""
+
+    # voice_clone 模式下使用，音色列表复用 IndexTTS-1.5 的资源目录
+    reference_audio_source = "resource"
+    reference_audio = ""
+    ref_text = ""
+
+    # 高级生成参数
+    num_step = 32
+    guidance_scale = 2.0
+    speed = 1.0
+    duration = ""
+    denoise = true
+    postprocess_output = true
+    preprocess_prompt = true
+
 [doubaotts]
     # 豆包语音 TTS 配置
     # 申请流程：
@@ -189,7 +219,7 @@
     silence_duration = 0.125
 
 [ui]
-    # TTS引擎选择 (indextts, indextts2, edge_tts, qwen3_tts, tencent_tts, doubaotts, azure_speech)
+    # TTS引擎选择 (indextts, indextts2, omnivoice, edge_tts, qwen3_tts, tencent_tts, doubaotts, azure_speech)
     tts_engine = "indextts"
 
     # Edge TTS 配置

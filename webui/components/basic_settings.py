@@ -260,6 +260,7 @@ def render_basic_settings(tr):
         with left_config_panel:
             render_language_settings(tr)
             render_proxy_settings(tr)
+            render_tavily_search_settings(tr)
 
         with middle_config_panel:
             render_vision_llm_settings(tr)  # 视觉分析模型设置
@@ -343,6 +344,32 @@ def render_proxy_settings(tr):
         help=tr("Jianying Draft Folder Path Help")
     )
     config.ui["jianying_draft_path"] = jianying_draft_path
+
+
+def render_tavily_search_settings(tr):
+    """Render Tavily API key settings used by short drama web search."""
+    st.subheader(tr("Tavily Search Settings"))
+    st.markdown(
+        f"{tr('API Key URL')}: "
+        "[https://app.tavily.com](https://app.tavily.com)"
+    )
+
+    tavily_api_key = st.text_input(
+        tr("Tavily API Key"),
+        value=config.app.get("tavily_api_key", ""),
+        type="password",
+        help=tr("Tavily API Key Help"),
+        key="tavily_api_key_input",
+    )
+
+    if update_app_config_if_changed("tavily_api_key", str(tavily_api_key or "").strip()):
+        try:
+            config.save_config()
+            st.session_state["tavily_api_key"] = str(tavily_api_key or "").strip()
+            st.success(tr("Tavily config saved"))
+        except Exception as e:
+            st.error(f"{tr('Failed to save config')}: {str(e)}")
+            logger.error(f"保存 Tavily 配置失败: {str(e)}")
 
 
 def test_vision_model_connection(api_key, base_url, model_name, provider, tr):

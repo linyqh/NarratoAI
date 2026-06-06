@@ -57,6 +57,23 @@ def check_format(script_content: str) -> Dict[str, Any]:
                     'details': f'当前值: {clip["_id"]} (类型: {type(clip["_id"]).__name__})'
                 }
 
+            # 验证可选视频来源字段。旧脚本可以不包含，新脚本用于多视频定位。
+            if 'video_id' in clip and clip['video_id'] not in ("", None):
+                if not isinstance(clip['video_id'], int) or clip['video_id'] <= 0:
+                    return {
+                        'success': False,
+                        'message': f'第{i+1}个片段的video_id必须是正整数',
+                        'details': f'当前值: {clip["video_id"]} (类型: {type(clip["video_id"]).__name__})'
+                    }
+
+            if 'video_name' in clip and clip['video_name'] not in ("", None):
+                if not isinstance(clip['video_name'], str):
+                    return {
+                        'success': False,
+                        'message': f'第{i+1}个片段的video_name必须是字符串',
+                        'details': f'当前值: {clip["video_name"]} (类型: {type(clip["video_name"]).__name__})'
+                    }
+
             # 验证 timestamp 字段格式
             timestamp_pattern = r'^\d{2}:\d{2}:\d{2},\d{3}-\d{2}:\d{2}:\d{2},\d{3}$'
             if not isinstance(clip['timestamp'], str) or not re.match(timestamp_pattern, clip['timestamp']):

@@ -40,6 +40,11 @@ BGM_RESOURCE_DIR = "/Users/viccy/Downloads/tts-mp3-clone/bgms-safe"
 BGM_TRACKS_JSON = os.path.join(BGM_RESOURCE_DIR, "tracks.json")
 BGM_UPLOAD_SUBDIR = "uploaded_bgms"
 BGM_AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg")
+LOCAL_TTS_ENGINES = {
+    config.INDEXTTS_ENGINE,
+    config.INDEXTTS2_ENGINE,
+    config.OMNIVOICE_ENGINE,
+}
 
 
 def get_soulvoice_voices():
@@ -55,15 +60,35 @@ def get_soulvoice_voices():
 
 def get_tts_engine_options(tr=lambda key: key):
     """获取TTS引擎选项"""
-    return {
+    engine_options = {
         config.INDEXTTS_ENGINE: config.INDEXTTS_DISPLAY_NAME,
         config.INDEXTTS2_ENGINE: config.INDEXTTS2_DISPLAY_NAME,
+        config.OMNIVOICE_ENGINE: config.OMNIVOICE_DISPLAY_NAME,
         "edge_tts": "Edge TTS",
         "qwen3_tts": tr("Tongyi Qwen3 TTS"),
         "tencent_tts": tr("Tencent Cloud TTS"),
         "doubaotts": tr("Doubao TTS"),
         "azure_speech": "Azure Speech Services"
     }
+
+    return {
+        engine: format_tts_engine_option(engine, display_name, tr)
+        for engine, display_name in engine_options.items()
+    }
+
+
+def get_tts_engine_deployment_label(tts_engine, tr=lambda key: key):
+    """获取TTS引擎部署类型标签"""
+    if tts_engine in LOCAL_TTS_ENGINES:
+        return tr("Local Deployment")
+
+    return tr("Cloud Service")
+
+
+def format_tts_engine_option(tts_engine, display_name, tr=lambda key: key):
+    """格式化TTS引擎下拉显示名"""
+    deployment_label = get_tts_engine_deployment_label(tts_engine, tr)
+    return f"{display_name} [{deployment_label}]"
 
 
 def get_tts_engine_descriptions(tr=lambda key: key):
@@ -103,6 +128,12 @@ def get_tts_engine_descriptions(tr=lambda key: key):
             "title": config.INDEXTTS2_DISPLAY_NAME,
             "features": tr("IndexTTS2 features"),
             "use_case": tr("IndexTTS2 use case"),
+            "registration": None
+        },
+        config.OMNIVOICE_ENGINE: {
+            "title": config.OMNIVOICE_DISPLAY_NAME,
+            "features": tr("OmniVoice features"),
+            "use_case": tr("OmniVoice use case"),
             "registration": None
         },
         "doubaotts": {
@@ -546,6 +577,8 @@ def render_tts_settings(tr):
         render_indextts_tts_settings(tr)
     elif selected_engine == config.INDEXTTS2_ENGINE:
         render_indextts2_tts_settings(tr)
+    elif selected_engine == config.OMNIVOICE_ENGINE:
+        render_omnivoice_tts_settings(tr)
     elif selected_engine == "doubaotts":
         render_doubaotts_settings(tr)
 
@@ -1274,6 +1307,148 @@ def render_indextts2_tts_settings(tr):
     st.session_state['voice_pitch'] = 1.0
 
 
+def render_omnivoice_tts_settings(tr):
+    """渲染 OmniVoice TTS 设置"""
+    omnivoice_config = config.omnivoice
+
+    api_url = st.text_input(
+        tr("API URL"),
+        value=omnivoice_config.get("api_url", "http://127.0.0.1:7866/tts"),
+        help=tr("OmniVoice API URL Help"),
+    )
+
+    language = st.text_input(
+        tr("OmniVoice Language Code"),
+        value=omnivoice_config.get("language", "zh"),
+        help=tr("OmniVoice Language Code Help"),
+        placeholder="zh",
+    )
+
+    mode_options = [
+        ("auto", tr("OmniVoice Mode Auto")),
+        ("voice_design", tr("OmniVoice Mode Voice Design")),
+        ("voice_clone", tr("OmniVoice Mode Voice Clone")),
+    ]
+    mode_values = [item[0] for item in mode_options]
+    saved_mode = omnivoice_config.get("mode", "auto")
+    if saved_mode not in mode_values:
+        saved_mode = "auto"
+
+    mode = mode_options[st.selectbox(
+        tr("OmniVoice Generation Mode"),
+        options=range(len(mode_options)),
+        index=mode_values.index(saved_mode),
+        format_func=lambda x: mode_options[x][1],
+        help=tr("OmniVoice Generation Mode Help"),
+    )][0]
+
+    instruct = omnivoice_config.get("instruct", "")
+    reference_audio_source = omnivoice_config.get("reference_audio_source", "resource")
+    reference_audio = omnivoice_config.get("reference_audio", "")
+    ref_text = omnivoice_config.get("ref_text", "")
+
+    if mode == "voice_design":
+        instruct = st.text_area(
+            tr("OmniVoice Instruct"),
+            value=instruct,
+            help=tr("OmniVoice Instruct Help"),
+            placeholder=tr("OmniVoice Instruct Placeholder"),
+            height=80,
+        )
+    elif mode == "voice_clone":
+        reference_audio_source, reference_audio = render_indextts_reference_audio_selector(
+            tr,
+            omnivoice_config,
+            "omnivoice",
+        )
+        ref_text = st.text_area(
+            tr("OmniVoice Reference Text"),
+            value=ref_text,
+            help=tr("OmniVoice Reference Text Help"),
+            placeholder=tr("OmniVoice Reference Text Placeholder"),
+            height=90,
+        )
+
+    with st.expander(tr("Advanced Parameters"), expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            num_step = st.slider(
+                "Num Step",
+                min_value=4,
+                max_value=64,
+                value=int(omnivoice_config.get("num_step", 32)),
+                step=1,
+                help=tr("OmniVoice Num Step Help"),
+            )
+            guidance_scale = st.slider(
+                "Guidance Scale",
+                min_value=0.1,
+                max_value=10.0,
+                value=float(omnivoice_config.get("guidance_scale", 2.0)),
+                step=0.1,
+                help=tr("OmniVoice Guidance Scale Help"),
+            )
+            voice_rate = st.slider(
+                tr("Voice Rate"),
+                min_value=0.5,
+                max_value=2.0,
+                value=float(omnivoice_config.get("speed", 1.0)),
+                step=0.1,
+                help=tr("Voice Rate Help 0.5-2.0"),
+            )
+        with col2:
+            saved_duration = omnivoice_config.get("duration", "")
+            duration_value = float(saved_duration) if saved_duration not in (None, "") else 0.0
+            duration = st.number_input(
+                tr("OmniVoice Duration"),
+                min_value=0.0,
+                max_value=120.0,
+                value=duration_value,
+                step=0.5,
+                help=tr("OmniVoice Duration Help"),
+            )
+            denoise = st.checkbox(
+                tr("OmniVoice Denoise"),
+                value=bool(omnivoice_config.get("denoise", True)),
+                help=tr("OmniVoice Denoise Help"),
+            )
+            postprocess_output = st.checkbox(
+                tr("OmniVoice Postprocess Output"),
+                value=bool(omnivoice_config.get("postprocess_output", True)),
+                help=tr("OmniVoice Postprocess Output Help"),
+            )
+            preprocess_prompt = st.checkbox(
+                tr("OmniVoice Preprocess Prompt"),
+                value=bool(omnivoice_config.get("preprocess_prompt", True)),
+                help=tr("OmniVoice Preprocess Prompt Help"),
+            )
+
+    with st.expander(tr("OmniVoice Usage Instructions Title"), expanded=False):
+        st.markdown(tr("OmniVoice Usage Instructions"))
+
+    config.omnivoice["api_url"] = api_url
+    config.omnivoice["language"] = language
+    config.omnivoice["mode"] = mode
+    config.omnivoice["instruct"] = instruct
+    config.omnivoice["reference_audio_source"] = reference_audio_source
+    config.omnivoice["reference_audio"] = reference_audio
+    config.omnivoice["ref_text"] = ref_text
+    config.omnivoice["num_step"] = num_step
+    config.omnivoice["guidance_scale"] = guidance_scale
+    config.omnivoice["speed"] = voice_rate
+    config.omnivoice["duration"] = duration if duration > 0 else ""
+    config.omnivoice["denoise"] = denoise
+    config.omnivoice["postprocess_output"] = postprocess_output
+    config.omnivoice["preprocess_prompt"] = preprocess_prompt
+
+    if mode == "voice_clone" and reference_audio:
+        config.ui["voice_name"] = f"{config.OMNIVOICE_VOICE_PREFIX}{reference_audio}"
+    else:
+        config.ui["voice_name"] = f"{config.OMNIVOICE_VOICE_PREFIX}{mode}"
+    st.session_state["voice_rate"] = voice_rate
+    st.session_state["voice_pitch"] = 1.0
+
+
 def render_doubaotts_settings(tr):
     """渲染豆包语音 TTS 设置"""
     # AK 输入
@@ -1567,6 +1742,15 @@ def render_voice_preview_new(tr, selected_engine):
                 voice_name = f"{config.INDEXTTS2_VOICE_PREFIX}{reference_audio}"
             voice_rate = 1.0  # IndexTTS-2 使用自身生成参数
             voice_pitch = 1.0
+        elif selected_engine == config.OMNIVOICE_ENGINE:
+            mode = config.omnivoice.get("mode", "auto")
+            reference_audio = config.omnivoice.get("reference_audio", "")
+            if mode == "voice_clone" and reference_audio:
+                voice_name = f"{config.OMNIVOICE_VOICE_PREFIX}{reference_audio}"
+            else:
+                voice_name = f"{config.OMNIVOICE_VOICE_PREFIX}{mode}"
+            voice_rate = config.omnivoice.get("speed", 1.0)
+            voice_pitch = 1.0
         elif selected_engine == "doubaotts":
             voice_type = config.ui.get("doubaotts_voice_type", "BV700_streaming")
             voice_name = voice_type
@@ -1579,7 +1763,11 @@ def render_voice_preview_new(tr, selected_engine):
 
         with st.spinner(tr("Synthesizing Voice")):
             temp_dir = utils.storage_dir("temp", create=True)
-            audio_format = "audio/wav" if selected_engine in (config.INDEXTTS_ENGINE, config.INDEXTTS2_ENGINE) else "audio/mp3"
+            audio_format = "audio/wav" if selected_engine in (
+                config.INDEXTTS_ENGINE,
+                config.INDEXTTS2_ENGINE,
+                config.OMNIVOICE_ENGINE,
+            ) else "audio/mp3"
             audio_extension = ".wav" if audio_format == "audio/wav" else ".mp3"
             audio_file = os.path.join(temp_dir, f"tmp-voice-{str(uuid4())}{audio_extension}")
 
