@@ -49,8 +49,9 @@ def get_audio_duration_ffprobe(audio_file: str) -> float:
     return get_media_duration_ffprobe(audio_file)
 
 
-def _strip_indextts2_prefix(voice_name: str) -> str:
-    prefix = "indextts2:"
+def _strip_indextts_prefix(voice_name: str) -> str:
+    voice_name = config.normalize_indextts_voice_prefix(voice_name or "")
+    prefix = config.INDEXTTS_VOICE_PREFIX
     if voice_name.startswith(prefix):
         return voice_name[len(prefix):]
     return voice_name
@@ -99,24 +100,25 @@ def _clamp_duration_to_media(
     return safe_duration
 
 
-def _normalize_indextts2_reference_audio(params: VideoClipParams) -> None:
-    """Ensure IndexTTS2 uses the configured reference audio instead of a stale UI voice."""
-    if params.tts_engine != "indextts2":
+def _normalize_indextts_reference_audio(params: VideoClipParams) -> None:
+    """Ensure IndexTTS-1.5 uses the configured reference audio instead of a stale UI voice."""
+    params.tts_engine = config.normalize_tts_engine_name(params.tts_engine)
+    if params.tts_engine != config.INDEXTTS_ENGINE:
         return
 
-    candidate = _strip_indextts2_prefix(getattr(params, "voice_name", "") or "")
+    candidate = _strip_indextts_prefix(getattr(params, "voice_name", "") or "")
     if candidate and os.path.isfile(candidate):
-        params.voice_name = f"indextts2:{candidate}"
-        logger.info(f"IndexTTS2 使用参考音频: {candidate}")
+        params.voice_name = f"{config.INDEXTTS_VOICE_PREFIX}{candidate}"
+        logger.info(f"IndexTTS-1.5 使用参考音频: {candidate}")
         return
 
-    configured_ref = _strip_indextts2_prefix(config.indextts2.get("reference_audio", "") or "")
+    configured_ref = _strip_indextts_prefix(config.indextts.get("reference_audio", "") or "")
     if configured_ref and os.path.isfile(configured_ref):
-        params.voice_name = f"indextts2:{configured_ref}"
-        logger.info(f"IndexTTS2 使用配置中的参考音频: {configured_ref}")
+        params.voice_name = f"{config.INDEXTTS_VOICE_PREFIX}{configured_ref}"
+        logger.info(f"IndexTTS-1.5 使用配置中的参考音频: {configured_ref}")
         return
 
-    raise ValueError("IndexTTS2 参考音频不存在，请在音频设置中上传或选择有效的参考音频")
+    raise ValueError("IndexTTS-1.5 参考音频不存在，请在音频设置中上传或选择有效的参考音频")
 
 
 def start_export_jianying_draft(task_id: str, params: VideoClipParams):
@@ -159,7 +161,7 @@ def start_export_jianying_draft(task_id: str, params: VideoClipParams):
     2. 使用 TTS 生成音频素材
     """
     logger.info("\n\n## 2. 根据OST设置生成音频列表")
-    _normalize_indextts2_reference_audio(params)
+    _normalize_indextts_reference_audio(params)
     tts_segments = [
         segment for segment in list_script 
         if segment['OST'] in [0, 2]

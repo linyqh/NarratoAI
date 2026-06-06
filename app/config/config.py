@@ -9,6 +9,36 @@ from app.config.defaults import build_default_app_config, merge_missing_app_defa
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 config_file = f"{root_dir}/config.toml"
 version_file = f"{root_dir}/project_version"
+INDEXTTS_ENGINE = "indextts"
+INDEXTTS_LEGACY_ENGINE = "indextts2"
+INDEXTTS_DISPLAY_NAME = "IndexTTS-1.5"
+INDEXTTS_VOICE_PREFIX = f"{INDEXTTS_ENGINE}:"
+INDEXTTS_LEGACY_VOICE_PREFIX = f"{INDEXTTS_LEGACY_ENGINE}:"
+
+
+def normalize_tts_engine_name(tts_engine: str) -> str:
+    if tts_engine == INDEXTTS_LEGACY_ENGINE:
+        return INDEXTTS_ENGINE
+    return tts_engine
+
+
+def normalize_indextts_voice_prefix(voice_name: str) -> str:
+    if isinstance(voice_name, str) and voice_name.startswith(INDEXTTS_LEGACY_VOICE_PREFIX):
+        return f"{INDEXTTS_VOICE_PREFIX}{voice_name[len(INDEXTTS_LEGACY_VOICE_PREFIX):]}"
+    return voice_name
+
+
+def migrate_indextts_config(config_data):
+    if "indextts" not in config_data and INDEXTTS_LEGACY_ENGINE in config_data:
+        config_data["indextts"] = config_data[INDEXTTS_LEGACY_ENGINE]
+
+    ui_config = config_data.get("ui")
+    if isinstance(ui_config, dict):
+        if "tts_engine" in ui_config:
+            ui_config["tts_engine"] = normalize_tts_engine_name(ui_config.get("tts_engine", ""))
+        if "voice_name" in ui_config:
+            ui_config["voice_name"] = normalize_indextts_voice_prefix(ui_config.get("voice_name", ""))
+    return config_data
 
 
 def get_version_from_file():
@@ -32,13 +62,13 @@ def load_config():
         _config_ = build_default_config()
         write_config_file(_config_)
         logger.info("create config.toml with shared defaults")
-        return _config_
+        return migrate_indextts_config(_config_)
 
     logger.info(f"load config from file: {config_file}")
 
     _config_ = load_toml_file(config_file)
     _config_["app"] = merge_missing_app_defaults(_config_.get("app", {}))
-    return _config_
+    return migrate_indextts_config(_config_)
 
 
 def load_toml_file(file_path):
@@ -60,7 +90,7 @@ def build_default_config():
         config_data = load_toml_file(example_file)
 
     config_data["app"] = build_default_app_config(config_data.get("app", {}))
-    return config_data
+    return migrate_indextts_config(config_data)
 
 
 def write_config_file(config_data):
@@ -82,7 +112,8 @@ def save_config():
         _cfg["ui"] = ui
         _cfg["tts_qwen"] = tts_qwen
         _cfg["fun_asr"] = fun_asr
-        _cfg["indextts2"] = indextts2
+        _cfg["indextts"] = indextts
+        _cfg.pop(INDEXTTS_LEGACY_ENGINE, None)
         _cfg["doubaotts"] = doubaotts
         f.write(toml.dumps(_cfg))
 
@@ -98,7 +129,7 @@ ui = _cfg.get("ui", {})
 frames = _cfg.get("frames", {})
 tts_qwen = _cfg.get("tts_qwen", {})
 fun_asr = _cfg.get("fun_asr", {})
-indextts2 = _cfg.get("indextts2", {})
+indextts = _cfg.get("indextts", _cfg.get(INDEXTTS_LEGACY_ENGINE, {}))
 doubaotts = _cfg.get("doubaotts", {})
 
 hostname = socket.gethostname()

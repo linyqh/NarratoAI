@@ -114,8 +114,8 @@
     api_key = ""
     model = "fun-asr"
     
-[indextts2]
-    # IndexTTS2 语音克隆配置
+[indextts]
+    # IndexTTS-1.5 语音克隆配置
     # 这是一个开源的零样本语音克隆项目，需要自行部署
     # 项目地址：https://github.com/index-tts/index-tts
     # 默认 API 地址（本地部署）
@@ -153,8 +153,8 @@
     silence_duration = 0.125
 
 [ui]
-    # TTS引擎选择 (indextts2, edge_tts, qwen3_tts, tencent_tts, doubaotts, azure_speech)
-    tts_engine = "indextts2"
+    # TTS引擎选择 (indextts, edge_tts, qwen3_tts, tencent_tts, doubaotts, azure_speech)
+    tts_engine = "indextts"
 
     # Edge TTS 配置
     edge_voice_name = "zh-CN-XiaoyiNeural-Female"

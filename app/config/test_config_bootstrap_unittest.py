@@ -64,6 +64,21 @@ hide_config = true
         self.assertEqual("Pro/zai-org/GLM-5", saved_config["app"]["text_openai_model_name"])
         self.assertTrue(saved_config["app"]["hide_config"])
 
+    def test_indextts_legacy_config_is_migrated(self):
+        migrated = cfg.migrate_indextts_config(
+            {
+                "indextts2": {"api_url": "http://127.0.0.1:8081/tts"},
+                "ui": {
+                    "tts_engine": "indextts2",
+                    "voice_name": "indextts2:/tmp/reference.wav",
+                },
+            }
+        )
+
+        self.assertEqual("http://127.0.0.1:8081/tts", migrated["indextts"]["api_url"])
+        self.assertEqual("indextts", migrated["ui"]["tts_engine"])
+        self.assertEqual("indextts:/tmp/reference.wav", migrated["ui"]["voice_name"])
+
 
 class OpenAICompatibleModelDefaultsTests(unittest.TestCase):
     def test_ui_keeps_full_model_name_and_openai_provider(self):

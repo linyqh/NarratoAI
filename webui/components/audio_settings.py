@@ -9,9 +9,9 @@ from app.models.schema import AudioVolumeDefaults
 from app.utils import utils
 
 
-INDEXTTS2_REFERENCE_AUDIO_SOURCE_DIR = "/Users/viccy/Downloads/tts-mp3-clone/mp3"
-INDEXTTS2_REFERENCE_AUDIO_COPY_SUBDIR = "indextts2_refs"
-INDEXTTS2_REFERENCE_AUDIO_MAP = [
+INDEXTTS_REFERENCE_AUDIO_SOURCE_DIR = "/Users/viccy/Downloads/tts-mp3-clone/mp3"
+INDEXTTS_REFERENCE_AUDIO_COPY_SUBDIR = "indextts_refs"
+INDEXTTS_REFERENCE_AUDIO_MAP = [
     ("yingshijieshuo-zh-male.mp3", "影视解说", "Film Narration"),
     ("maikeashe-zh-male.mp3", "麦克阿瑟", "Macintosh"),
     ("dong-yuhui-zh-male.mp3", "董宇辉", "Dong Yuhui"),
@@ -35,7 +35,7 @@ INDEXTTS2_REFERENCE_AUDIO_MAP = [
     ("meiqu-kelong-en-unknown.mp3", "美式男声", "US Clone"),
     ("sarah-en-female.mp3", "莎拉", "Sarah"),
 ]
-INDEXTTS2_REFERENCE_AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg")
+INDEXTTS_REFERENCE_AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg")
 BGM_RESOURCE_DIR = "/Users/viccy/Downloads/tts-mp3-clone/bgms-safe"
 BGM_TRACKS_JSON = os.path.join(BGM_RESOURCE_DIR, "tracks.json")
 BGM_UPLOAD_SUBDIR = "uploaded_bgms"
@@ -56,7 +56,7 @@ def get_soulvoice_voices():
 def get_tts_engine_options(tr=lambda key: key):
     """获取TTS引擎选项"""
     return {
-        "indextts2": "IndexTTS2",
+        config.INDEXTTS_ENGINE: config.INDEXTTS_DISPLAY_NAME,
         "edge_tts": "Edge TTS",
         "qwen3_tts": tr("Tongyi Qwen3 TTS"),
         "tencent_tts": tr("Tencent Cloud TTS"),
@@ -92,10 +92,10 @@ def get_tts_engine_descriptions(tr=lambda key: key):
             "use_case": tr("High-quality Chinese speech synthesis use case"),
             "registration": "https://dashscope.aliyuncs.com/"
         },
-        "indextts2": {
-            "title": "IndexTTS2",
-            "features": tr("IndexTTS2 features"),
-            "use_case": tr("IndexTTS2 use case"),
+        config.INDEXTTS_ENGINE: {
+            "title": config.INDEXTTS_DISPLAY_NAME,
+            "features": tr("IndexTTS features"),
+            "use_case": tr("IndexTTS use case"),
             "registration": None
         },
         "doubaotts": {
@@ -107,7 +107,7 @@ def get_tts_engine_descriptions(tr=lambda key: key):
     }
 
 
-def infer_indextts2_reference_audio_language(filename):
+def infer_indextts_reference_audio_language(filename):
     """根据文件名推断参考音频语言"""
     lower_filename = filename.lower()
     if "-zh-" in lower_filename:
@@ -117,30 +117,30 @@ def infer_indextts2_reference_audio_language(filename):
     return "unknown"
 
 
-def get_indextts2_reference_audio_options():
-    """获取本地 IndexTTS2 参考音频选项"""
+def get_indextts_reference_audio_options():
+    """获取本地 IndexTTS-1.5 参考音频选项"""
     options = []
     mapped_files = set()
 
-    for filename, zh_name, en_name in INDEXTTS2_REFERENCE_AUDIO_MAP:
-        audio_path = os.path.join(INDEXTTS2_REFERENCE_AUDIO_SOURCE_DIR, filename)
+    for filename, zh_name, en_name in INDEXTTS_REFERENCE_AUDIO_MAP:
+        audio_path = os.path.join(INDEXTTS_REFERENCE_AUDIO_SOURCE_DIR, filename)
         if os.path.isfile(audio_path):
             options.append({
                 "filename": filename,
                 "path": audio_path,
                 "zh": zh_name,
                 "en": en_name,
-                "language": infer_indextts2_reference_audio_language(filename),
+                "language": infer_indextts_reference_audio_language(filename),
             })
             mapped_files.add(filename)
 
-    if os.path.isdir(INDEXTTS2_REFERENCE_AUDIO_SOURCE_DIR):
-        for filename in sorted(os.listdir(INDEXTTS2_REFERENCE_AUDIO_SOURCE_DIR)):
+    if os.path.isdir(INDEXTTS_REFERENCE_AUDIO_SOURCE_DIR):
+        for filename in sorted(os.listdir(INDEXTTS_REFERENCE_AUDIO_SOURCE_DIR)):
             if filename in mapped_files:
                 continue
-            if not filename.lower().endswith(INDEXTTS2_REFERENCE_AUDIO_EXTENSIONS):
+            if not filename.lower().endswith(INDEXTTS_REFERENCE_AUDIO_EXTENSIONS):
                 continue
-            audio_path = os.path.join(INDEXTTS2_REFERENCE_AUDIO_SOURCE_DIR, filename)
+            audio_path = os.path.join(INDEXTTS_REFERENCE_AUDIO_SOURCE_DIR, filename)
             if not os.path.isfile(audio_path):
                 continue
             fallback_name = os.path.splitext(filename)[0]
@@ -149,14 +149,14 @@ def get_indextts2_reference_audio_options():
                 "path": audio_path,
                 "zh": fallback_name,
                 "en": fallback_name,
-                "language": infer_indextts2_reference_audio_language(filename),
+                "language": infer_indextts_reference_audio_language(filename),
             })
 
     return options
 
 
-def format_indextts2_reference_audio_option(option):
-    """格式化 IndexTTS2 参考音频下拉显示名"""
+def format_indextts_reference_audio_option(option):
+    """格式化 IndexTTS-1.5 参考音频下拉显示名"""
     zh_name = option.get("zh", "")
     en_name = option.get("en", "")
     language = option.get("language", "unknown")
@@ -182,7 +182,7 @@ def format_indextts2_reference_audio_option(option):
     return f"{display_name} ({language_label})"
 
 
-def get_indextts2_reference_audio_index(options, saved_reference_audio):
+def get_indextts_reference_audio_index(options, saved_reference_audio):
     """根据已保存的参考音频文件匹配下拉选项索引"""
     if not options:
         return 0
@@ -195,12 +195,12 @@ def get_indextts2_reference_audio_index(options, saved_reference_audio):
     return 0
 
 
-def copy_indextts2_reference_audio(source_path):
+def copy_indextts_reference_audio(source_path):
     """复制一份参考音频到项目存储目录，并返回复制后的路径"""
     if not source_path or not os.path.isfile(source_path):
         return ""
 
-    target_dir = utils.storage_dir(INDEXTTS2_REFERENCE_AUDIO_COPY_SUBDIR, create=True)
+    target_dir = utils.storage_dir(INDEXTTS_REFERENCE_AUDIO_COPY_SUBDIR, create=True)
     target_path = os.path.join(target_dir, os.path.basename(source_path))
 
     if os.path.abspath(source_path) == os.path.abspath(target_path):
@@ -336,7 +336,7 @@ def render_reference_audio_preview_button(reference_audio, key, tr):
         disabled=not can_preview,
         use_container_width=True,
     ):
-        st.session_state["indextts2_reference_audio_preview_path"] = reference_audio
+        st.session_state["indextts_reference_audio_preview_path"] = reference_audio
 
 
 def render_bgm_preview_button(bgm_file, key, tr):
@@ -395,11 +395,13 @@ def render_tts_settings(tr):
     engine_descriptions = get_tts_engine_descriptions(tr)
 
     # 获取保存的TTS引擎设置
-    saved_tts_engine = config.ui.get("tts_engine", "indextts2")
+    saved_tts_engine = config.normalize_tts_engine_name(
+        config.ui.get("tts_engine", config.INDEXTTS_ENGINE)
+    )
 
     # 确保保存的引擎在可用选项中
     if saved_tts_engine not in engine_options:
-        saved_tts_engine = "indextts2"
+        saved_tts_engine = config.INDEXTTS_ENGINE
 
     # TTS引擎选择下拉框
     selected_engine = st.selectbox(
@@ -438,8 +440,8 @@ def render_tts_settings(tr):
         render_tencent_tts_settings(tr)
     elif selected_engine == "qwen3_tts":
         render_qwen3_tts_settings(tr)
-    elif selected_engine == "indextts2":
-        render_indextts2_tts_settings(tr)
+    elif selected_engine == config.INDEXTTS_ENGINE:
+        render_indextts_tts_settings(tr)
     elif selected_engine == "doubaotts":
         render_doubaotts_settings(tr)
 
@@ -850,22 +852,22 @@ def render_qwen3_tts_settings(tr):
     config.ui["voice_name"] = voice_type #兼容性
 
 
-def render_indextts2_tts_settings(tr):
-    """渲染 IndexTTS2 TTS 设置"""
+def render_indextts_tts_settings(tr):
+    """渲染 IndexTTS-1.5 TTS 设置"""
     # API 地址配置
     api_url = st.text_input(
         tr("API URL"),
-        value=config.indextts2.get("api_url", "http://127.0.0.1:8081/tts"),
-        help=tr("IndexTTS2 API URL Help")
+        value=config.indextts.get("api_url", "http://127.0.0.1:8081/tts"),
+        help=tr("IndexTTS API URL Help")
     )
     
-    saved_reference_audio = config.indextts2.get("reference_audio", "")
+    saved_reference_audio = config.indextts.get("reference_audio", "")
     reference_audio_source_options = {
         tr("Select from Resource Directory"): "resource",
         tr("Upload Reference Audio"): "upload",
     }
     reference_audio_source_labels = list(reference_audio_source_options.keys())
-    saved_reference_audio_source = config.indextts2.get("reference_audio_source", "resource")
+    saved_reference_audio_source = config.indextts.get("reference_audio_source", "resource")
     if saved_reference_audio_source not in reference_audio_source_options.values():
         saved_reference_audio_source = "resource"
     default_reference_audio_source_label = next(
@@ -880,7 +882,7 @@ def render_indextts2_tts_settings(tr):
         options=reference_audio_source_labels,
         selection_mode="single",
         default=default_reference_audio_source_label,
-        key="indextts2_reference_audio_source_selection",
+        key="indextts_reference_audio_source_selection",
         help=tr("Reference Audio Source Help"),
         label_visibility="collapsed",
         width="stretch",
@@ -890,24 +892,24 @@ def render_indextts2_tts_settings(tr):
     reference_audio_source = reference_audio_source_options[reference_audio_source_label]
 
     reference_audio = saved_reference_audio
-    reference_audio_options = get_indextts2_reference_audio_options()
+    reference_audio_options = get_indextts_reference_audio_options()
     if reference_audio_source == "resource" and reference_audio_options:
-        selected_audio_index = get_indextts2_reference_audio_index(reference_audio_options, saved_reference_audio)
+        selected_audio_index = get_indextts_reference_audio_index(reference_audio_options, saved_reference_audio)
         select_col, preview_col = st.columns([5, 1])
         with select_col:
             selected_audio_option = reference_audio_options[st.selectbox(
                 tr("Reference Audio Path"),
                 options=range(len(reference_audio_options)),
                 index=selected_audio_index,
-                format_func=lambda x: format_indextts2_reference_audio_option(reference_audio_options[x]),
+                format_func=lambda x: format_indextts_reference_audio_option(reference_audio_options[x]),
                 help=tr("Reference Audio Path Help"),
                 label_visibility="collapsed"
             )]
-        reference_audio = copy_indextts2_reference_audio(selected_audio_option["path"])
+        reference_audio = copy_indextts_reference_audio(selected_audio_option["path"])
         with preview_col:
             render_reference_audio_preview_button(
                 reference_audio,
-                "indextts2_resource_reference_audio_preview",
+                "indextts_resource_reference_audio_preview",
                 tr,
             )
     elif reference_audio_source == "resource":
@@ -926,7 +928,7 @@ def render_indextts2_tts_settings(tr):
             )
 
         if uploaded_file is not None:
-            target_dir = utils.storage_dir(INDEXTTS2_REFERENCE_AUDIO_COPY_SUBDIR, create=True)
+            target_dir = utils.storage_dir(INDEXTTS_REFERENCE_AUDIO_COPY_SUBDIR, create=True)
             audio_path = os.path.join(target_dir, f"uploaded_{uploaded_file.name}")
             with open(audio_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
@@ -935,11 +937,11 @@ def render_indextts2_tts_settings(tr):
         with preview_col:
             render_reference_audio_preview_button(
                 reference_audio,
-                "indextts2_upload_reference_audio_preview",
+                "indextts_upload_reference_audio_preview",
                 tr,
             )
 
-    preview_audio_path = st.session_state.get("indextts2_reference_audio_preview_path", "")
+    preview_audio_path = st.session_state.get("indextts_reference_audio_preview_path", "")
     if preview_audio_path == reference_audio and os.path.isfile(preview_audio_path):
         with open(preview_audio_path, "rb") as audio_file:
             st.audio(audio_file.read(), format=get_audio_mime_type(preview_audio_path))
@@ -949,7 +951,7 @@ def render_indextts2_tts_settings(tr):
         ("普通推理", tr("Standard Inference")),
         ("快速推理", tr("Fast Inference")),
     ]
-    infer_mode_index = 0 if config.indextts2.get("infer_mode", "普通推理") == "普通推理" else 1
+    infer_mode_index = 0 if config.indextts.get("infer_mode", "普通推理") == "普通推理" else 1
     infer_mode = infer_mode_options[st.selectbox(
         tr("Inference Mode"),
         options=range(len(infer_mode_options)),
@@ -967,7 +969,7 @@ def render_indextts2_tts_settings(tr):
                 tr("Sampling Temperature"),
                 min_value=0.1,
                 max_value=2.0,
-                value=float(config.indextts2.get("temperature", 1.0)),
+                value=float(config.indextts.get("temperature", 1.0)),
                 step=0.1,
                 help=tr("Sampling Temperature Help")
             )
@@ -976,7 +978,7 @@ def render_indextts2_tts_settings(tr):
                 "Top P",
                 min_value=0.0,
                 max_value=1.0,
-                value=float(config.indextts2.get("top_p", 0.8)),
+                value=float(config.indextts.get("top_p", 0.8)),
                 step=0.05,
                 help=tr("Top P Help")
             )
@@ -985,7 +987,7 @@ def render_indextts2_tts_settings(tr):
                 "Top K",
                 min_value=0,
                 max_value=100,
-                value=int(config.indextts2.get("top_k", 30)),
+                value=int(config.indextts.get("top_k", 30)),
                 step=5,
                 help=tr("Top K Help")
             )
@@ -995,7 +997,7 @@ def render_indextts2_tts_settings(tr):
                 tr("Num Beams"),
                 min_value=1,
                 max_value=10,
-                value=int(config.indextts2.get("num_beams", 3)),
+                value=int(config.indextts.get("num_beams", 3)),
                 step=1,
                 help=tr("Num Beams Help")
             )
@@ -1004,36 +1006,36 @@ def render_indextts2_tts_settings(tr):
                 tr("Repetition Penalty"),
                 min_value=1.0,
                 max_value=20.0,
-                value=float(config.indextts2.get("repetition_penalty", 10.0)),
+                value=float(config.indextts.get("repetition_penalty", 10.0)),
                 step=0.5,
                 help=tr("Repetition Penalty Help")
             )
             
             do_sample = st.checkbox(
                 tr("Enable Sampling"),
-                value=config.indextts2.get("do_sample", True),
+                value=config.indextts.get("do_sample", True),
                 help=tr("Enable Sampling Help")
             )
     
     # 显示使用说明
-    with st.expander(tr("IndexTTS2 Usage Instructions Title"), expanded=False):
-        st.markdown(tr("IndexTTS2 Usage Instructions"))
+    with st.expander(tr("IndexTTS Usage Instructions Title"), expanded=False):
+        st.markdown(tr("IndexTTS Usage Instructions"))
     
     # 保存配置
-    config.indextts2["api_url"] = api_url
-    config.indextts2["reference_audio_source"] = reference_audio_source
-    config.indextts2["reference_audio"] = reference_audio
-    config.indextts2["infer_mode"] = infer_mode
-    config.indextts2["temperature"] = temperature
-    config.indextts2["top_p"] = top_p
-    config.indextts2["top_k"] = top_k
-    config.indextts2["num_beams"] = num_beams
-    config.indextts2["repetition_penalty"] = repetition_penalty
-    config.indextts2["do_sample"] = do_sample
+    config.indextts["api_url"] = api_url
+    config.indextts["reference_audio_source"] = reference_audio_source
+    config.indextts["reference_audio"] = reference_audio
+    config.indextts["infer_mode"] = infer_mode
+    config.indextts["temperature"] = temperature
+    config.indextts["top_p"] = top_p
+    config.indextts["top_k"] = top_k
+    config.indextts["num_beams"] = num_beams
+    config.indextts["repetition_penalty"] = repetition_penalty
+    config.indextts["do_sample"] = do_sample
     
     # 保存 voice_name 用于兼容性
     if reference_audio:
-        config.ui["voice_name"] = f"indextts2:{reference_audio}"
+        config.ui["voice_name"] = f"{config.INDEXTTS_VOICE_PREFIX}{reference_audio}"
 
 
 def render_doubaotts_settings(tr):
@@ -1317,12 +1319,12 @@ def render_voice_preview_new(tr, selected_engine):
             voice_name = f"qwen3:{vt}"
             voice_rate = config.ui.get("qwen3_rate", 1.0)
             voice_pitch = 1.0  # Qwen3 TTS 不支持音调调节
-        elif selected_engine == "indextts2":
-            reference_audio = config.indextts2.get("reference_audio", "")
+        elif selected_engine == config.INDEXTTS_ENGINE:
+            reference_audio = config.indextts.get("reference_audio", "")
             if reference_audio:
-                voice_name = f"indextts2:{reference_audio}"
-            voice_rate = 1.0  # IndexTTS2 不支持速度调节
-            voice_pitch = 1.0  # IndexTTS2 不支持音调调节
+                voice_name = f"{config.INDEXTTS_VOICE_PREFIX}{reference_audio}"
+            voice_rate = 1.0  # IndexTTS-1.5 不支持速度调节
+            voice_pitch = 1.0  # IndexTTS-1.5 不支持音调调节
         elif selected_engine == "doubaotts":
             voice_type = config.ui.get("doubaotts_voice_type", "BV700_streaming")
             voice_name = voice_type
@@ -1599,5 +1601,5 @@ def get_audio_params():
         'bgm_type': st.session_state.get('bgm_type', 'random'),
         'bgm_file': st.session_state.get('bgm_file', ''),
         'bgm_volume': st.session_state.get('bgm_volume', AudioVolumeDefaults.BGM_VOLUME),
-        'tts_engine': st.session_state.get('tts_engine', "indextts2"),
+        'tts_engine': st.session_state.get('tts_engine', config.INDEXTTS_ENGINE),
     }

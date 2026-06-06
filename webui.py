@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import sys
 import time
+from html import escape
 from loguru import logger
 from app.config import config
 from webui.components import basic_settings, video_settings, audio_settings, subtitle_settings, script_settings, \
@@ -232,10 +233,10 @@ def get_voice_name_for_tts_engine(tts_engine: str) -> str:
         return f"tencent:{config.ui.get('tencent_voice_type', '101001')}"
     if tts_engine == 'qwen3_tts':
         return f"qwen3:{config.ui.get('qwen_voice_type', 'Cherry')}"
-    if tts_engine == 'indextts2':
-        reference_audio = config.indextts2.get('reference_audio', '')
+    if config.normalize_tts_engine_name(tts_engine) == config.INDEXTTS_ENGINE:
+        reference_audio = config.indextts.get('reference_audio', '')
         if reference_audio:
-            return f"indextts2:{reference_audio}"
+            return f"{config.INDEXTTS_VOICE_PREFIX}{reference_audio}"
         return config.ui.get('voice_name', '')
     if tts_engine == 'doubaotts':
         return config.ui.get('doubaotts_voice_type', 'BV700_streaming')
@@ -247,7 +248,7 @@ def get_voice_name_for_tts_engine(tts_engine: str) -> str:
     return config.ui.get('voice_name', config.ui.get('edge_voice_name', 'zh-CN-XiaoxiaoNeural-Female'))
 
 
-def get_jianying_export_params() -> VideoClipParams:
+def get_jianying_export_params(draft_name=None) -> VideoClipParams:
     """获取导出到剪映草稿的参数"""
     tts_engine = st.session_state.get('tts_engine', config.ui.get('tts_engine', 'edge_tts'))
     voice_name = get_voice_name_for_tts_engine(tts_engine)
@@ -272,20 +273,178 @@ def get_jianying_export_params() -> VideoClipParams:
         tts_volume=st.session_state.get('tts_volume', 1.0),
         original_volume=st.session_state.get('original_volume', 0.7),
         bgm_volume=st.session_state.get('bgm_volume', 0.3),
-        draft_name=st.session_state.get('draft_name_input', f"NarratoAI_{int(time.time())}")
+        draft_name=(
+            draft_name
+            if draft_name is not None
+            else st.session_state.get('draft_name_input', f"NarratoAI_{int(time.time())}")
+        )
     )
+
+
+def _render_jianying_export_status():
+    """渲染剪映导出的结果提示。"""
+    result = st.session_state.get('jianying_export_result')
+    error = st.session_state.get('jianying_export_error')
+
+    if result:
+        st.success(tr("Jianying draft exported successfully").format(name=result['draft_name']))
+        st.info(tr("Draft saved to").format(path=result['draft_path']))
+    elif error:
+        st.error(f"{tr('Failed to export Jianying draft')}: {error}")
+
+
+def _render_jianying_export_dialog():
+    """使用弹窗确认剪映草稿名称。"""
+    import uuid
+    from loguru import logger
+
+    @st.dialog(tr("Export to Jianying Draft"), width="small")
+    def jianying_export_dialog():
+        jianying_draft_path = config.ui.get("jianying_draft_path", "")
+        dialog_title = escape(tr("Jianying export dialog title"))
+        dialog_description = escape(tr("Jianying export dialog description"))
+        destination_label = escape(tr("Jianying export destination"))
+        destination_path = escape(jianying_draft_path or "-")
+
+        st.markdown(
+            f"""
+            <style>
+                .jianying-export-panel {{
+                    display: flex;
+                    gap: 12px;
+                    align-items: flex-start;
+                    padding: 14px;
+                    margin: 2px 0 18px;
+                    border: 1px solid rgba(255, 75, 75, 0.24);
+                    border-radius: 8px;
+                    background: linear-gradient(135deg, rgba(255, 75, 75, 0.10), rgba(255, 255, 255, 0.96));
+                }}
+                .jianying-export-icon {{
+                    width: 38px;
+                    height: 38px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex: 0 0 auto;
+                    border-radius: 8px;
+                    color: #ffffff;
+                    background: #ff4b4b;
+                    font-size: 20px;
+                    line-height: 1;
+                }}
+                .jianying-export-title {{
+                    color: #202534;
+                    font-size: 17px;
+                    font-weight: 700;
+                    line-height: 1.35;
+                    margin-bottom: 4px;
+                }}
+                .jianying-export-description {{
+                    color: #5f6575;
+                    font-size: 13px;
+                    line-height: 1.55;
+                }}
+                .jianying-export-path {{
+                    padding: 10px 12px;
+                    margin: 2px 0 16px;
+                    border: 1px solid #e4e7ef;
+                    border-radius: 8px;
+                    background: #f8f9fc;
+                    color: #323846;
+                    font-size: 13px;
+                    line-height: 1.45;
+                    word-break: break-all;
+                }}
+                .jianying-export-path-label {{
+                    display: block;
+                    color: #7a8192;
+                    font-size: 12px;
+                    margin-bottom: 4px;
+                }}
+            </style>
+            <div class="jianying-export-panel">
+                <div class="jianying-export-icon">📤</div>
+                <div>
+                    <div class="jianying-export-title">{dialog_title}</div>
+                    <div class="jianying-export-description">{dialog_description}</div>
+                </div>
+            </div>
+            <div class="jianying-export-path">
+                <span class="jianying-export-path-label">{destination_label}</span>
+                {destination_path}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        draft_name = st.text_input(
+            tr("Jianying draft name"),
+            key="draft_name_input",
+            placeholder="NarratoAI_",
+        )
+
+        error = st.session_state.get('jianying_export_error')
+        if error:
+            st.error(f"{tr('Failed to export Jianying draft')}: {error}")
+
+        cancel_col, confirm_col = st.columns(2)
+        with cancel_col:
+            if st.button(tr("Cancel"), key="cancel_export", use_container_width=True):
+                st.session_state['jianying_export_error'] = None
+                st.rerun()
+
+        with confirm_col:
+            if st.button(tr("Confirm Export"), key="confirm_export", type="primary", use_container_width=True):
+                draft_name = (draft_name or "").strip()
+                if not draft_name:
+                    st.error(tr("Please enter draft name"))
+                    return
+
+                # 创建任务ID
+                task_id = str(uuid.uuid4())
+                st.session_state['task_id'] = task_id
+
+                # 构建参数
+                try:
+                    params = get_jianying_export_params(draft_name)
+                except Exception as e:
+                    logger.error(f"构建参数失败: {e}")
+                    st.session_state['jianying_export_error'] = f"{tr('Failed to build parameters')}: {e}"
+                    st.error(st.session_state['jianying_export_error'])
+                    return
+
+                with st.spinner(tr("Exporting to Jianying draft...")):
+                    try:
+                        from app.services import jianying_task
+
+                        # 调用导出到剪映草稿的任务
+                        result = jianying_task.start_export_jianying_draft(task_id, params)
+
+                        # 记录日志
+                        logger.info(f"成功导出到剪映草稿: {result['draft_name']}")
+                        logger.info(f"草稿已保存到: {result['draft_path']}")
+
+                        # 保存结果到session state
+                        st.session_state['jianying_export_result'] = result
+                        st.session_state['jianying_export_error'] = None
+                        st.rerun()
+                    except Exception as e:
+                        logger.error(f"导出到剪映草稿失败: {e}")
+                        import traceback
+                        logger.error(f"错误详情: {traceback.format_exc()}")
+                        st.session_state['jianying_export_error'] = str(e)
+                        st.session_state['jianying_export_result'] = None
+                        st.error(f"{tr('Failed to export Jianying draft')}: {e}")
+
+    jianying_export_dialog()
 
 
 def render_export_jianying_button():
     """渲染导出到剪映草稿按钮和处理逻辑"""
     import os
     import time
-    import uuid
-    from loguru import logger
     
     # 初始化session state
-    if 'show_jianying_export_form' not in st.session_state:
-        st.session_state['show_jianying_export_form'] = False
     if 'jianying_export_result' not in st.session_state:
         st.session_state['jianying_export_result'] = None
     if 'jianying_export_error' not in st.session_state:
@@ -310,70 +469,12 @@ def render_export_jianying_button():
             st.error(tr("Jianying draft folder does not exist").format(path=jianying_draft_path))
             return
         
-        # 显示导出表单
-        st.session_state['show_jianying_export_form'] = True
         st.session_state['jianying_export_result'] = None
         st.session_state['jianying_export_error'] = None
+        st.session_state['draft_name_input'] = f"NarratoAI_{int(time.time())}"
+        _render_jianying_export_dialog()
     
-    # 显示导出表单
-    if st.session_state['show_jianying_export_form']:
-        st.markdown("---")
-        st.subheader(tr("Export to Jianying Draft"))
-        
-        draft_name = st.text_input(
-            tr("Please enter Jianying draft name"),
-            value=f"NarratoAI_{int(time.time())}",
-            key="draft_name_input"
-        )
-        
-        if st.button(tr("Confirm Export"), key="confirm_export"):
-            if not draft_name:
-                st.error(tr("Please enter draft name"))
-                return
-            
-            # 创建任务ID
-            task_id = str(uuid.uuid4())
-            st.session_state['task_id'] = task_id
-            
-            # 构建参数
-            try:
-                params = get_jianying_export_params()
-            except Exception as e:
-                logger.error(f"构建参数失败: {e}")
-                st.error(f"{tr('Failed to build parameters')}: {e}")
-                return
-            
-            with st.spinner(tr("Exporting to Jianying draft...")):
-                try:
-                    from app.services import jianying_task
-                    
-                    # 调用导出到剪映草稿的任务
-                    result = jianying_task.start_export_jianying_draft(task_id, params)
-                    
-                    # 记录日志
-                    logger.info(f"成功导出到剪映草稿: {result['draft_name']}")
-                    logger.info(f"草稿已保存到: {result['draft_path']}")
-                    
-                    # 保存结果到session state
-                    st.session_state['jianying_export_result'] = result
-                    st.session_state['jianying_export_error'] = None
-                    st.session_state['show_jianying_export_form'] = False
-                    
-                    st.success(tr("Jianying draft exported successfully").format(name=result['draft_name']))
-                    st.info(tr("Draft saved to").format(path=result['draft_path']))
-                except Exception as e:
-                    logger.error(f"导出到剪映草稿失败: {e}")
-                    import traceback
-                    logger.error(f"错误详情: {traceback.format_exc()}")
-                    st.session_state['jianying_export_error'] = str(e)
-                    st.session_state['jianying_export_result'] = None
-                    st.error(f"{tr('Failed to export Jianying draft')}: {e}")
-        
-        if st.button(tr("Cancel"), key="cancel_export"):
-            st.session_state['show_jianying_export_form'] = False
-            st.session_state['jianying_export_result'] = None
-            st.session_state['jianying_export_error'] = None
-            st.rerun()
+    _render_jianying_export_status()
 
 
 
