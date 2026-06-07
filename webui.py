@@ -181,6 +181,11 @@ def render_generate_button():
                     div[data-testid="stDialog"] div[data-testid="stProgress"] {
                         margin-bottom: 0.75rem;
                     }
+                    div[data-testid="stDialog"] video {
+                        max-height: 62vh;
+                        object-fit: contain;
+                        background: #000;
+                    }
                 </style>
                 """,
                 unsafe_allow_html=True,
@@ -246,8 +251,16 @@ def render_generate_button():
                         video_files = task.get("videos", [])
                         try:
                             if video_files:
+                                aspect = getattr(params, "video_aspect", "")
+                                aspect = getattr(aspect, "value", aspect)
+                                preview_width = 320 if aspect in {
+                                    VideoAspect.portrait.value,
+                                    VideoAspect.portrait_2.value,
+                                } else 600
                                 for url in video_files:
-                                    st.video(url)
+                                    _, preview_col, _ = st.columns([1, 2, 1])
+                                    with preview_col:
+                                        st.video(url, width=preview_width)
                         except Exception as e:
                             logger.error(f"播放视频失败: {e}")
 

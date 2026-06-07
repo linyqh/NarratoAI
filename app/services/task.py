@@ -10,7 +10,16 @@ from app.config import config
 from app.config.audio_config import AudioConfig, get_recommended_volumes_for_content
 from app.models import const
 from app.models.schema import VideoClipParams
-from app.services import (voice, audio_merger, subtitle_merger, clip_video, merger_video, update_script, generate_video)
+from app.services import (
+    voice,
+    audio_merger,
+    subtitle_merger,
+    clip_video,
+    merger_video,
+    update_script,
+    generate_video,
+    script_subtitle,
+)
 from app.services import state as sm
 from app.utils import utils
 
@@ -561,8 +570,20 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
             )
             logger.info(f"音频文件合并成功->{merged_audio_path}")
 
-            # 合并字幕文件
-            merged_subtitle_path = subtitle_merger.merge_subtitle_files(new_script_list)
+            # 优先基于脚本文案和成片时间线生成字幕，失败时回退到TTS字幕合并
+            merged_subtitle_path = ""
+            if getattr(params, "subtitle_enabled", True):
+                try:
+                    merged_subtitle_path = script_subtitle.create_script_subtitle_file(
+                        task_id=task_id,
+                        list_script=new_script_list,
+                    )
+                except Exception as e:
+                    logger.warning(f"程序化字幕生成失败，将尝试合并TTS字幕: {e}")
+
+            if not merged_subtitle_path and getattr(params, "subtitle_enabled", True):
+                merged_subtitle_path = subtitle_merger.merge_subtitle_files(new_script_list)
+
             if merged_subtitle_path:
                 logger.info(f"字幕文件合并成功->{merged_subtitle_path}")
             else:
@@ -630,7 +651,9 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
     6. 合并字幕/BGM/配音/视频
     """
     output_video_path = path.join(utils.task_dir(task_id), f"combined.mp4")
-    auto_transcription_enabled = _is_auto_transcription_enabled(params)
+    auto_transcription_enabled = _is_auto_transcription_enabled(params) and not bool(merged_subtitle_path)
+    if _is_auto_transcription_enabled(params) and merged_subtitle_path:
+        logger.info("已生成字幕文件，跳过最终视频自动转录")
     merge_output_video_path = (
         path.join(utils.task_dir(task_id), "combined_without_auto_subtitles.mp4")
         if auto_transcription_enabled
