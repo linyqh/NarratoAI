@@ -4,6 +4,7 @@ from unittest import mock
 
 from app.services.llm.migration_adapter import SubtitleAnalyzerAdapter
 from app.services.llm.unified_service import UnifiedLLMService
+from app.services.prompts import PromptManager
 
 
 class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
@@ -29,6 +30,31 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
         self.assertIn("反击", result["narration_copy"])
         self.assertIn("家庭伦理", call.call_args.kwargs["prompt"])
         self.assertNotIn("response_format", call.call_args.kwargs)
+
+    def test_generate_narration_copy_can_use_film_tv_prompt_category(self):
+        self.assertTrue(PromptManager.exists("film_tv_narration", "narration_copy"))
+        adapter = SubtitleAnalyzerAdapter(
+            api_key="sk-test",
+            model="test-model",
+            base_url="https://example.test/v1",
+            provider="openai",
+            prompt_category="film_tv_narration",
+        )
+
+        with mock.patch.object(adapter, "_run_async_safely", return_value="他发现证据不对，真正的凶手另有其人。") as call:
+            result = adapter.generate_narration_copy(
+                short_name="测试电影",
+                plot_analysis="主角发现证据疑点。",
+                subtitle_content="# 视频 1: 1.mp4\n00:00:01,000 --> 00:00:04,000\n证据不对。",
+                temperature=0.7,
+                narration_language="简体中文（中国）",
+                drama_genre="悬疑/犯罪",
+            )
+
+        self.assertEqual("success", result["status"])
+        self.assertIn("影视解说正文创作任务", call.call_args.kwargs["prompt"])
+        self.assertIn("用户选择的影视类型", call.call_args.kwargs["prompt"])
+        self.assertNotIn("短剧解说正文创作任务", call.call_args.kwargs["prompt"])
 
     def test_match_narration_copy_to_script_uses_json_prompt_with_selected_type(self):
         adapter = SubtitleAnalyzerAdapter(

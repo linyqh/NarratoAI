@@ -198,11 +198,19 @@ class VisionAnalyzerAdapter:
 class SubtitleAnalyzerAdapter:
     """字幕分析器适配器"""
 
-    def __init__(self, api_key: str, model: str, base_url: str, provider: str = None):
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        base_url: str,
+        provider: str = None,
+        prompt_category: str = "short_drama_narration",
+    ):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url
         self.provider = provider or "openai"
+        self.prompt_category = prompt_category or "short_drama_narration"
 
     def _run_async_safely(self, coro_func, *args, **kwargs):
         """安全地运行异步协程"""
@@ -228,12 +236,12 @@ class SubtitleAnalyzerAdapter:
 
     def _render_prompt(self, name: str, parameters: Dict[str, Any]) -> tuple[str, Optional[str]]:
         prompt = PromptManager.get_prompt(
-            category="short_drama_narration",
+            category=self.prompt_category,
             name=name,
             parameters=parameters,
         )
         prompt_object = PromptManager.get_prompt_object(
-            category="short_drama_narration",
+            category=self.prompt_category,
             name=name,
         )
         return prompt, prompt_object.get_system_prompt()
@@ -466,6 +474,7 @@ class SubtitleAnalyzerAdapter:
                 subtitle_content=subtitle_content,
                 provider=self.provider,
                 temperature=1.0,
+                prompt_category=self.prompt_category,
                 api_key=self.api_key,
                 api_base=self.base_url
             )

@@ -129,6 +129,11 @@ def tr(key):
     return loc.get("Translation", {}).get(key, key)
 
 
+def get_help_text():
+    """返回带当前项目版本号的帮助文案"""
+    return tr("Get Help").replace("🎉🎉🎉", f" v{config.project_version}")
+
+
 def render_generate_button():
     """渲染生成按钮和处理逻辑"""
     if st.button(tr("Generate Video"), use_container_width=True, type="primary"):
@@ -588,7 +593,7 @@ def main():
         logger.warning(f"资源初始化时出现警告: {e}")
 
     st.title(f"Narrato:blue[AI]:sunglasses: 📽️")
-    st.write(tr("Get Help"))
+    st.write(get_help_text())
 
     # 首先渲染不依赖PyTorch的UI部分
     # 渲染基础设置面板

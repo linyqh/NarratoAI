@@ -25,7 +25,7 @@ from app.services.subtitle_text import read_subtitle_text
 from app.services.short_drama_narration_validation import (
     normalize_script_video_sources,
 )
-from app.services.tavily_search import TavilySearchError, format_search_context, search_short_drama
+from app.services.tavily_search import TavilySearchError, format_search_context, search_story_context
 # 导入新的LLM服务模块 - 确保提供商被注册
 import app.services.llm  # 这会触发提供商注册
 from app.services.llm.migration_adapter import SubtitleAnalyzerAdapter
@@ -33,6 +33,10 @@ import re
 
 
 PUBLIC_SCRIPT_FIELDS = ["_id", "video_id", "video_name", "timestamp", "picture", "narration", "OST"]
+SHORT_DRAMA_PROMPT_CATEGORY = "short_drama_narration"
+FILM_TV_PROMPT_CATEGORY = "film_tv_narration"
+SHORT_DRAMA_SEARCH_KEYWORDS = "短剧 剧情 介绍 人物 结局"
+FILM_TV_SEARCH_KEYWORDS = "影视 剧情 介绍 人物 结局 电影 电视剧"
 
 
 def _normalize_paths(paths):
@@ -197,10 +201,15 @@ def _get_tavily_api_key() -> str:
     ).strip()
 
 
-def _build_tavily_context(short_name: str, tr=lambda key: key) -> str | None:
-    short_name = str(short_name or "").strip()
-    if not short_name:
-        st.error(tr("Please enter short drama name before web search"))
+def _build_tavily_context(
+    title: str,
+    tr=lambda key: key,
+    search_keywords: str = SHORT_DRAMA_SEARCH_KEYWORDS,
+    empty_title_message_key: str = "Please enter short drama name before web search",
+) -> str | None:
+    title = str(title or "").strip()
+    if not title:
+        st.error(tr(empty_title_message_key))
         return None
 
     api_key = _get_tavily_api_key()
@@ -209,9 +218,11 @@ def _build_tavily_context(short_name: str, tr=lambda key: key) -> str | None:
         return None
 
     try:
-        search_data = search_short_drama(
-            short_name,
+        search_data = search_story_context(
+            title,
             api_key,
+            search_keywords=search_keywords,
+            empty_name_message=tr(empty_title_message_key),
             search_depth=config.app.get("tavily_search_depth", "basic"),
             max_results=config.app.get("tavily_max_results", 5),
         )
@@ -231,17 +242,25 @@ def _build_plot_analysis_input(
     short_name: str = "",
     enable_web_search: bool = False,
     tr=lambda key: key,
+    search_keywords: str = SHORT_DRAMA_SEARCH_KEYWORDS,
+    empty_title_message_key: str = "Please enter short drama name before web search",
+    web_search_context_description: str = "短剧名称、人物关系、剧情背景和公开剧情梗概",
 ) -> str | None:
     subtitle_content = str(subtitle_content or "").strip()
     if not enable_web_search:
         return subtitle_content
 
-    tavily_context = _build_tavily_context(short_name, tr)
+    tavily_context = _build_tavily_context(
+        short_name,
+        tr,
+        search_keywords=search_keywords,
+        empty_title_message_key=empty_title_message_key,
+    )
     if tavily_context is None:
         return None
 
     return f"""# 分析补充说明
-请先参考 Tavily 联网检索结果理解短剧名称、人物关系、剧情背景和公开剧情梗概，再结合原始字幕完成剧情理解。
+请先参考 Tavily 联网检索结果理解{web_search_context_description}，再结合原始字幕完成剧情理解。
 如果联网检索结果与字幕内容冲突，请以字幕内容为准；时间戳必须只从字幕内容中提取。
 
 {tavily_context}
@@ -258,6 +277,10 @@ def analyze_short_drama_plot(
     short_name: str = "",
     enable_web_search: bool = False,
     video_paths=None,
+    prompt_category: str = SHORT_DRAMA_PROMPT_CATEGORY,
+    search_keywords: str = SHORT_DRAMA_SEARCH_KEYWORDS,
+    empty_title_message_key: str = "Please enter short drama name before web search",
+    web_search_context_description: str = "短剧名称、人物关系、剧情背景和公开剧情梗概",
 ):
     """仅执行短剧字幕剧情理解，返回可编辑的剧情分析文本。"""
     subtitle_paths = _normalize_paths(subtitle_path)
@@ -287,13 +310,22 @@ def analyze_short_drama_plot(
         short_name=short_name,
         enable_web_search=enable_web_search,
         tr=tr,
+        search_keywords=search_keywords,
+        empty_title_message_key=empty_title_message_key,
+        web_search_context_description=web_search_context_description,
     )
     if plot_analysis_input is None:
         return None
 
     try:
         logger.info("使用新的LLM服务架构进行字幕分析")
-        analyzer = SubtitleAnalyzerAdapter(text_api_key, text_model, text_base_url, text_provider)
+        analyzer = SubtitleAnalyzerAdapter(
+            text_api_key,
+            text_model,
+            text_base_url,
+            text_provider,
+            prompt_category=prompt_category,
+        )
         analysis_result = analyzer.analyze_subtitle(plot_analysis_input)
     except Exception as e:
         logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
@@ -304,7 +336,8 @@ def analyze_short_drama_plot(
             base_url=text_base_url,
             save_result=True,
             temperature=temperature,
-            provider=text_provider
+            provider=text_provider,
+            prompt_category=prompt_category,
         )
 
     if analysis_result["status"] != "success":
@@ -326,6 +359,10 @@ def generate_short_drama_narration_copy(
     video_paths=None,
     narration_language: str = "简体中文（中国）",
     drama_genre: str = "逆袭/复仇",
+    prompt_category: str = SHORT_DRAMA_PROMPT_CATEGORY,
+    search_keywords: str = SHORT_DRAMA_SEARCH_KEYWORDS,
+    empty_title_message_key: str = "Please enter short drama name before web search",
+    web_search_context_description: str = "短剧名称、人物关系、剧情背景和公开剧情梗概",
 ):
     """生成可由用户审核修改的短剧解说正文，不绑定时间戳。"""
     subtitle_paths = _normalize_paths(subtitle_path)
@@ -356,6 +393,10 @@ def generate_short_drama_narration_copy(
             short_name=video_theme,
             enable_web_search=enable_web_search,
             video_paths=selected_video_paths,
+            prompt_category=prompt_category,
+            search_keywords=search_keywords,
+            empty_title_message_key=empty_title_message_key,
+            web_search_context_description=web_search_context_description,
         )
         if not analysis_text:
             return None
@@ -367,7 +408,13 @@ def generate_short_drama_narration_copy(
 
     try:
         logger.info("使用新的LLM服务架构生成可审核解说文案")
-        analyzer = SubtitleAnalyzerAdapter(text_api_key, text_model, text_base_url, text_provider)
+        analyzer = SubtitleAnalyzerAdapter(
+            text_api_key,
+            text_model,
+            text_base_url,
+            text_provider,
+            prompt_category=prompt_category,
+        )
         narration_result = analyzer.generate_narration_copy(
             short_name=video_theme,
             plot_analysis=analysis_text,
@@ -389,6 +436,7 @@ def generate_short_drama_narration_copy(
             provider=text_provider,
             narration_language=narration_language,
             drama_genre=drama_genre,
+            prompt_category=prompt_category,
         )
 
     if narration_result.get("status") != "success":
@@ -423,6 +471,10 @@ def generate_script_short_sunmmary(
     narration_copy: str = "",
     drama_genre: str = "逆袭/复仇",
     original_sound_ratio: int = 30,
+    prompt_category: str = SHORT_DRAMA_PROMPT_CATEGORY,
+    search_keywords: str = SHORT_DRAMA_SEARCH_KEYWORDS,
+    empty_title_message_key: str = "Please enter short drama name before web search",
+    web_search_context_description: str = "短剧名称、人物关系、剧情背景和公开剧情梗概",
 ):
     """
     生成 短剧解说 视频脚本
@@ -536,7 +588,13 @@ def generate_script_short_sunmmary(
                 st.error(tr("Please generate and review narration copy first"))
                 return
 
-            analyzer = SubtitleAnalyzerAdapter(text_api_key, text_model, text_base_url, text_provider)
+            analyzer = SubtitleAnalyzerAdapter(
+                text_api_key,
+                text_model,
+                text_base_url,
+                text_provider,
+                prompt_category=prompt_category,
+            )
             if plot_analysis and str(plot_analysis).strip():
                 logger.info("使用用户编辑后的剧情理解结果匹配剪辑脚本")
                 analysis_result = {
@@ -552,6 +610,9 @@ def generate_script_short_sunmmary(
                         short_name=video_theme,
                         enable_web_search=True,
                         tr=tr,
+                        search_keywords=search_keywords,
+                        empty_title_message_key=empty_title_message_key,
+                        web_search_context_description=web_search_context_description,
                     )
                     if plot_analysis_input is None:
                         return
@@ -572,7 +633,8 @@ def generate_script_short_sunmmary(
                         base_url=text_base_url,
                         save_result=True,
                         temperature=temperature,
-                        provider=text_provider
+                        provider=text_provider,
+                        prompt_category=prompt_category,
                     )
             """
             3. 根据用户审核后的文案匹配画面与时间戳
@@ -612,6 +674,7 @@ def generate_script_short_sunmmary(
                         narration_language=narration_language,
                         drama_genre=drama_genre,
                         original_sound_ratio=original_sound_ratio,
+                        prompt_category=prompt_category,
                     )
 
                 if narration_result["status"] == "success":

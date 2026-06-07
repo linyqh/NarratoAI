@@ -56,11 +56,13 @@ __all__ = [
 def initialize_prompts():
     """初始化提示词模块，注册所有提示词"""
     from . import documentary
+    from . import film_tv_narration
     from . import short_drama_editing  
     from . import short_drama_narration
     
     # 注册各模块的提示词
     documentary.register_prompts()
+    film_tv_narration.register_prompts()
     short_drama_editing.register_prompts()
     short_drama_narration.register_prompts()
 

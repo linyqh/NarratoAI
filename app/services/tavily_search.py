@@ -35,15 +35,37 @@ def search_short_drama(
     timeout: int = DEFAULT_TIMEOUT,
 ) -> dict[str, Any]:
     """Search web context for a short drama name with Tavily."""
-    short_name = str(short_name or "").strip()
-    if not short_name:
-        raise TavilySearchError("短剧名称不能为空")
+    return search_story_context(
+        short_name,
+        api_key,
+        search_keywords="短剧 剧情 介绍 人物 结局",
+        empty_name_message="短剧名称不能为空",
+        search_depth=search_depth,
+        max_results=max_results,
+        timeout=timeout,
+    )
+
+
+def search_story_context(
+    title: str,
+    api_key: str | None = None,
+    *,
+    search_keywords: str = "剧情 介绍 人物 结局",
+    empty_name_message: str = "作品名称不能为空",
+    search_depth: str = DEFAULT_SEARCH_DEPTH,
+    max_results: int = DEFAULT_MAX_RESULTS,
+    timeout: int = DEFAULT_TIMEOUT,
+) -> dict[str, Any]:
+    """Search web context for a story title with Tavily."""
+    title = str(title or "").strip()
+    if not title:
+        raise TavilySearchError(empty_name_message)
 
     api_key = (api_key or os.getenv("TAVILY_API_KEY") or "").strip()
     if not api_key:
         raise TavilySearchError("Tavily API Key 未配置")
 
-    query = f"{short_name} 短剧 剧情 介绍 人物 结局"
+    query = f"{title} {search_keywords}".strip()
     payload = {
         "query": query,
         "search_depth": search_depth or DEFAULT_SEARCH_DEPTH,
@@ -77,12 +99,11 @@ def search_short_drama(
         raise TavilySearchError("Tavily 返回内容不是有效 JSON") from exc
 
     logger.info(
-        "Tavily 短剧检索完成: query={}, results={}",
+        "Tavily 剧情检索完成: query={}, results={}",
         query,
         len(data.get("results") or []),
     )
     return data
-
 
 def format_search_context(search_data: dict[str, Any], *, max_chars: int = 6000) -> str:
     """Format Tavily response into compact LLM context."""

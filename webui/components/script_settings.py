@@ -15,6 +15,10 @@ from app.utils import utils, check_script
 from webui.tools.generate_script_docu import generate_script_docu
 from webui.tools.generate_script_short import generate_script_short
 from webui.tools.generate_short_summary import (
+    FILM_TV_PROMPT_CATEGORY,
+    FILM_TV_SEARCH_KEYWORDS,
+    SHORT_DRAMA_PROMPT_CATEGORY,
+    SHORT_DRAMA_SEARCH_KEYWORDS,
     analyze_short_drama_plot,
     generate_script_short_sunmmary,
     generate_short_drama_narration_copy,
@@ -22,6 +26,12 @@ from webui.tools.generate_short_summary import (
 
 
 SCRIPT_TABLE_BASE_COLUMNS = ["_id", "video_id", "video_name", "timestamp", "picture", "narration", "OST"]
+MODE_FILE = "file_selection"
+MODE_AUTO = "auto"
+MODE_SHORT = "short"
+MODE_SHORT_SUMMARY = "summary"
+MODE_FILM_SUMMARY = "film_summary"
+SUMMARY_SCRIPT_MODES = {MODE_SHORT_SUMMARY, MODE_FILM_SUMMARY}
 VIDEO_UPLOAD_TYPES = ["mp4", "mov", "avi", "flv", "mkv", "mpeg4"]
 VIDEO_GLOB_PATTERNS = [f"*.{suffix}" for suffix in VIDEO_UPLOAD_TYPES]
 SHORT_DRAMA_NARRATION_LANGUAGE_OPTIONS = [
@@ -66,7 +76,64 @@ SHORT_DRAMA_TYPE_VALUES = {
     "urban_emotion": "都市情感",
     "period_rural": "年代/乡村",
 }
+FILM_TV_TYPE_OPTIONS = [
+    ("drama_emotion", "剧情/情感"),
+    ("suspense_crime", "悬疑/犯罪"),
+    ("action_adventure", "动作/冒险"),
+    ("comedy_light", "喜剧/轻松"),
+    ("sci_fi_fantasy", "科幻/奇幻"),
+    ("history_war", "历史/战争"),
+    ("horror_thriller", "恐怖/惊悚"),
+    ("custom", "自定义"),
+]
+FILM_TV_TYPE_VALUES = {
+    "drama_emotion": "剧情/情感",
+    "suspense_crime": "悬疑/犯罪",
+    "action_adventure": "动作/冒险",
+    "comedy_light": "喜剧/轻松",
+    "sci_fi_fantasy": "科幻/奇幻",
+    "history_war": "历史/战争",
+    "horror_thriller": "恐怖/惊悚",
+}
 SHORT_DRAMA_ORIGINAL_SOUND_RATIO_OPTIONS = list(range(0, 100, 10))
+SUMMARY_MODE_CONFIGS = {
+    MODE_FILM_SUMMARY: {
+        "mode_label_key": "Film TV Narration",
+        "session_prefix": "film_tv",
+        "prompt_category": FILM_TV_PROMPT_CATEGORY,
+        "search_keywords": FILM_TV_SEARCH_KEYWORDS,
+        "web_search_context_description": "影视作品名称、人物关系、剧情背景和公开剧情梗概",
+        "empty_title_message_key": "Please enter film/tv title before web search",
+        "title_label_key": "影视名称",
+        "type_label_key": "影视类型",
+        "custom_type_label_key": "自定义影视类型",
+        "custom_type_placeholder_key": "例如：悬疑犯罪",
+        "custom_type_empty_key": "请输入自定义影视类型",
+        "narration_copy_label_key": "影视解说文案",
+        "type_options": FILM_TV_TYPE_OPTIONS,
+        "type_values": FILM_TV_TYPE_VALUES,
+        "default_type": "drama_emotion",
+        "default_type_value": "剧情/情感",
+    },
+    MODE_SHORT_SUMMARY: {
+        "mode_label_key": "Short Drama Summary",
+        "session_prefix": "short_drama",
+        "prompt_category": SHORT_DRAMA_PROMPT_CATEGORY,
+        "search_keywords": SHORT_DRAMA_SEARCH_KEYWORDS,
+        "web_search_context_description": "短剧名称、人物关系、剧情背景和公开剧情梗概",
+        "empty_title_message_key": "Please enter short drama name before web search",
+        "title_label_key": "短剧名称",
+        "type_label_key": "短剧类型",
+        "custom_type_label_key": "自定义短剧类型",
+        "custom_type_placeholder_key": "例如：豪门虐恋",
+        "custom_type_empty_key": "请输入自定义短剧类型",
+        "narration_copy_label_key": "短剧解说文案",
+        "type_options": SHORT_DRAMA_TYPE_OPTIONS,
+        "type_values": SHORT_DRAMA_TYPE_VALUES,
+        "default_type": "counterattack",
+        "default_type_value": "逆袭/复仇",
+    },
+}
 
 
 def _normalize_video_paths(paths):
@@ -201,20 +268,47 @@ def _short_drama_plot_analysis_signature(subtitle_paths, video_theme, web_search
     )
 
 
-def _resolve_short_drama_narration_language():
-    selected_language = st.session_state.get('short_drama_narration_language_option', 'zh-CN')
-    custom_language = str(st.session_state.get('short_drama_custom_narration_language', '') or '').strip()
+def _summary_mode_config(script_path=None):
+    script_path = script_path or st.session_state.get('video_clip_json_path', MODE_FILM_SUMMARY)
+    return SUMMARY_MODE_CONFIGS.get(script_path, SUMMARY_MODE_CONFIGS[MODE_SHORT_SUMMARY])
+
+
+def _summary_state_key(summary_config, suffix):
+    return f"{summary_config['session_prefix']}_{suffix}"
+
+
+def _resolve_summary_narration_language(summary_config):
+    selected_language = st.session_state.get(
+        _summary_state_key(summary_config, "narration_language_option"),
+        "zh-CN",
+    )
+    custom_language = str(
+        st.session_state.get(_summary_state_key(summary_config, "custom_narration_language"), "") or ""
+    ).strip()
     if selected_language == "custom" and custom_language:
         return custom_language
     return SHORT_DRAMA_NARRATION_LANGUAGE_VALUES.get(selected_language, "简体中文（中国）")
 
 
-def _resolve_short_drama_type():
-    selected_type = st.session_state.get('short_drama_type_option', 'counterattack')
-    custom_type = str(st.session_state.get('short_drama_custom_type', '') or '').strip()
+def _resolve_summary_type(summary_config):
+    selected_type = st.session_state.get(
+        _summary_state_key(summary_config, "type_option"),
+        summary_config["default_type"],
+    )
+    custom_type = str(
+        st.session_state.get(_summary_state_key(summary_config, "custom_type"), "") or ""
+    ).strip()
     if selected_type == "custom" and custom_type:
         return custom_type
-    return SHORT_DRAMA_TYPE_VALUES.get(selected_type, "逆袭/复仇")
+    return summary_config["type_values"].get(selected_type, summary_config["default_type_value"])
+
+
+def _resolve_short_drama_narration_language():
+    return _resolve_summary_narration_language(SUMMARY_MODE_CONFIGS[MODE_SHORT_SUMMARY])
+
+
+def _resolve_short_drama_type():
+    return _resolve_summary_type(SUMMARY_MODE_CONFIGS[MODE_SHORT_SUMMARY])
 
 
 def render_script_panel(tr):
@@ -239,9 +333,9 @@ def render_script_panel(tr):
         elif script_path == "short":
             # 短剧混剪
             render_short_generate_options(tr)
-        elif script_path == "summary":
-            # 短剧解说
-            short_drama_summary(tr)
+        elif script_path in SUMMARY_SCRIPT_MODES:
+            # 影视解说 / 短剧解说
+            summary_narration_panel(tr, _summary_mode_config(script_path))
         else:
             # 默认为空
             pass
@@ -252,15 +346,10 @@ def render_script_panel(tr):
 
 def render_script_file(tr, params):
     """渲染脚本文件选择"""
-    # 定义功能模式
-    MODE_FILE = "file_selection"
-    MODE_AUTO = "auto"
-    MODE_SHORT = "short"
-    MODE_SUMMARY = "summary"
-
     # 模式选项映射，按工作流优先级展示
     mode_options = {
-        tr("Short Drama Summary"): MODE_SUMMARY,
+        tr("Film TV Narration"): MODE_FILM_SUMMARY,
+        tr("Short Drama Summary"): MODE_SHORT_SUMMARY,
         tr("Auto Generate"): MODE_AUTO,
         tr("Short Generate"): MODE_SHORT,
         tr("Select/Upload Script"): MODE_FILE,
@@ -279,6 +368,8 @@ def render_script_file(tr, params):
         default_index = mode_keys.index(tr("Short Generate"))
     elif current_path == "summary":
         default_index = mode_keys.index(tr("Short Drama Summary"))
+    elif current_path == "film_summary":
+        default_index = mode_keys.index(tr("Film TV Narration"))
     elif current_path:
         default_index = mode_keys.index(tr("Select/Upload Script"))
     else:
@@ -354,8 +445,12 @@ def render_script_file(tr, params):
             script_list.append((display_name, file['file']))
 
         # 找到保存的脚本文件在列表中的索引
-        # 如果当前path是特殊值(auto/short/summary)，则重置为空
-        saved_script_path = current_path if current_path not in [MODE_AUTO, MODE_SHORT, MODE_SUMMARY] else ""
+        # 如果当前path是特殊值(auto/short/summary/film_summary)，则重置为空
+        saved_script_path = (
+            current_path
+            if current_path not in [MODE_AUTO, MODE_SHORT, MODE_SHORT_SUMMARY, MODE_FILM_SUMMARY]
+            else ""
+        )
         
         selected_index = 0
         for i, (_, path) in enumerate(script_list):
@@ -558,7 +653,7 @@ def render_short_generate_options(tr):
     渲染Short Generate模式下的特殊选项
     在Short Generate模式下，替换原有的输入框为自定义片段选项
     """
-    short_drama_summary(tr)
+    summary_narration_panel(tr, SUMMARY_MODE_CONFIGS[MODE_SHORT_SUMMARY])
     # 显示自定义片段数量选择器
     custom_clips = st.number_input(
         tr("自定义片段"),
@@ -605,8 +700,8 @@ def render_video_details(tr):
     return video_theme, custom_prompt
 
 
-def short_drama_summary(tr):
-    """短剧解说 渲染视频主题和提示词"""
+def summary_narration_panel(tr, summary_config):
+    """影视/短剧解说 渲染视频主题和提示词"""
     # 检查是否已经处理过字幕文件
     if 'subtitle_file_processed' not in st.session_state:
         st.session_state['subtitle_file_processed'] = False
@@ -616,22 +711,27 @@ def short_drama_summary(tr):
 
     current_subtitle_paths = _selected_subtitle_paths()
     current_subtitle_path = current_subtitle_paths[0] if current_subtitle_paths else ''
+    web_search_key = _summary_state_key(summary_config, "web_search_enabled")
+    plot_button_key = _summary_state_key(summary_config, "plot_analysis_button")
+    plot_analysis_key = _summary_state_key(summary_config, "plot_analysis")
+    plot_source_key = _summary_state_key(summary_config, "plot_analysis_subtitle_path")
+    plot_signature_key = _summary_state_key(summary_config, "plot_analysis_signature")
 
     st.markdown(
-        """
+        f"""
         <style>
-        .st-key-short_drama_web_search_enabled [data-testid="stMarkdownContainer"] {
+        .st-key-{web_search_key} [data-testid="stMarkdownContainer"] {{
             display: none;
-        }
-        .st-key-short_drama_web_search_enabled [data-testid="stWidgetLabel"] {
+        }}
+        .st-key-{web_search_key} [data-testid="stWidgetLabel"] {{
             min-width: 0;
             transform: translateX(-1.2rem);
-        }
-        .st-key-short_drama_web_search_enabled label {
+        }}
+        .st-key-{web_search_key} label {{
             align-items: center;
             gap: 0.45rem;
-        }
-        .st-key-short_drama_web_search_enabled label > div:first-child {
+        }}
+        .st-key-{web_search_key} label > div:first-child {{
             width: 3rem !important;
             min-width: 3rem !important;
             height: 1.55rem !important;
@@ -640,29 +740,29 @@ def short_drama_summary(tr):
             background: #e5e7eb !important;
             box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08) !important;
             transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease !important;
-        }
-        .st-key-short_drama_web_search_enabled label:hover > div:first-child {
+        }}
+        .st-key-{web_search_key} label:hover > div:first-child {{
             background: #dbe3ef !important;
             border-color: #b8c2d3 !important;
-        }
-        .st-key-short_drama_web_search_enabled label:has(input[aria-checked="true"]) > div:first-child {
+        }}
+        .st-key-{web_search_key} label:has(input[aria-checked="true"]) > div:first-child {{
             border-color: transparent !important;
             background: linear-gradient(135deg, #2563eb, #14b8a6) !important;
             box-shadow: 0 6px 14px rgba(37, 99, 235, 0.22) !important;
-        }
-        .st-key-short_drama_web_search_enabled label > div:first-child > div {
+        }}
+        .st-key-{web_search_key} label > div:first-child > div {{
             width: 1.05rem !important;
             height: 1.05rem !important;
             border-radius: 999px !important;
             background: #ffffff !important;
             box-shadow: 0 2px 6px rgba(15, 23, 42, 0.24) !important;
-        }
-        .st-key-short_drama_web_search_enabled button[aria-label^="Help for"] {
+        }}
+        .st-key-{web_search_key} button[aria-label^="Help for"] {{
             color: #6b7280 !important;
-        }
-        .st-key-short_drama_web_search_enabled button[aria-label^="Help for"]:hover {
+        }}
+        .st-key-{web_search_key} button[aria-label^="Help for"]:hover {{
             color: #2563eb !important;
-        }
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -670,18 +770,18 @@ def short_drama_summary(tr):
 
     name_cols = st.columns([3.4, 1.1, 2], vertical_alignment="bottom")
     with name_cols[0]:
-        video_theme = st.text_input(tr("短剧名称"))
+        video_theme = st.text_input(tr(summary_config["title_label_key"]))
     with name_cols[1]:
         web_search_enabled = st.toggle(
             tr("联网搜索"),
-            key="short_drama_web_search_enabled",
+            key=web_search_key,
             help=tr("Enable Web Search Help"),
             disabled=not current_subtitle_path,
         )
     with name_cols[2]:
         analyze_plot_clicked = st.button(
             tr("剧情理解"),
-            key="short_drama_plot_analysis_button",
+            key=plot_button_key,
             disabled=not current_subtitle_path,
             use_container_width=True,
         )
@@ -693,15 +793,15 @@ def short_drama_summary(tr):
         web_search_enabled,
         _selected_video_paths(),
     )
-    saved_signature = st.session_state.get('short_drama_plot_analysis_signature')
-    legacy_source = st.session_state.get('short_drama_plot_analysis_subtitle_path')
+    saved_signature = st.session_state.get(plot_signature_key)
+    legacy_source = st.session_state.get(plot_source_key)
     if (
         (saved_signature and saved_signature != current_signature)
         or (legacy_source and legacy_source != current_subtitle_path)
     ):
-        st.session_state['short_drama_plot_analysis'] = ""
-        st.session_state['short_drama_plot_analysis_subtitle_path'] = ""
-        st.session_state['short_drama_plot_analysis_signature'] = ""
+        st.session_state[plot_analysis_key] = ""
+        st.session_state[plot_source_key] = ""
+        st.session_state[plot_signature_key] = ""
 
     if analyze_plot_clicked:
         with st.spinner(tr("Analyzing plot...")):
@@ -713,21 +813,30 @@ def short_drama_summary(tr):
                 short_name=video_theme,
                 enable_web_search=web_search_enabled,
                 video_paths=_selected_video_paths(),
+                prompt_category=summary_config["prompt_category"],
+                search_keywords=summary_config["search_keywords"],
+                empty_title_message_key=summary_config["empty_title_message_key"],
+                web_search_context_description=summary_config["web_search_context_description"],
             )
         if plot_analysis:
-            st.session_state['short_drama_plot_analysis'] = plot_analysis
-            st.session_state['short_drama_plot_analysis_subtitle_path'] = current_subtitle_path
-            st.session_state['short_drama_plot_analysis_signature'] = current_signature
+            st.session_state[plot_analysis_key] = plot_analysis
+            st.session_state[plot_source_key] = current_subtitle_path
+            st.session_state[plot_signature_key] = current_signature
             st.success(tr("Plot analysis completed"))
 
-    if st.session_state.get('short_drama_plot_analysis'):
+    if st.session_state.get(plot_analysis_key):
         st.text_area(
             tr("剧情理解结果"),
-            key="short_drama_plot_analysis",
+            key=plot_analysis_key,
             height=240,
         )
 
     return video_theme
+
+
+def short_drama_summary(tr):
+    """短剧解说 渲染视频主题和提示词"""
+    return summary_narration_panel(tr, SUMMARY_MODE_CONFIGS[MODE_SHORT_SUMMARY])
 
 
 def render_subtitle_preview(tr):
@@ -1295,63 +1404,88 @@ def render_script_buttons(tr, params):
         button_name = tr("Generate Video Script")
     elif script_path == "short":
         button_name = tr("Generate Short Video Script")
-    elif script_path == "summary":
+    elif script_path in SUMMARY_SCRIPT_MODES:
         button_name = tr("生成剪辑脚本")
     elif script_path.endswith("json"):
         button_name = tr("Load Video Script")
     else:
         button_name = tr("Please Select Script File")
 
-    if script_path == "summary":
-        config_cols = st.columns([1.15, 1.15, 0.9, 1.15, 1.15], vertical_alignment="bottom")
-        with config_cols[0]:
+    if script_path in SUMMARY_SCRIPT_MODES:
+        summary_config = _summary_mode_config(script_path)
+        type_option_key = _summary_state_key(summary_config, "type_option")
+        custom_type_key = _summary_state_key(summary_config, "custom_type")
+        original_sound_ratio_key = _summary_state_key(summary_config, "original_sound_ratio")
+        language_option_key = _summary_state_key(summary_config, "narration_language_option")
+        custom_language_key = _summary_state_key(summary_config, "custom_narration_language")
+        narration_copy_key = _summary_state_key(summary_config, "narration_copy")
+
+        type_options = [code for code, _ in summary_config["type_options"]]
+        if st.session_state.get(type_option_key) not in type_options:
+            st.session_state[type_option_key] = summary_config["default_type"]
+        language_options = [code for code, _ in SHORT_DRAMA_NARRATION_LANGUAGE_OPTIONS]
+        if st.session_state.get(language_option_key) not in language_options:
+            st.session_state[language_option_key] = "zh-CN"
+
+        show_custom_type = st.session_state.get(type_option_key, summary_config["default_type"]) == "custom"
+        show_custom_language = (
+            st.session_state.get(language_option_key, 'zh-CN') == "custom"
+        )
+        config_col_widths = [1.15]
+        if show_custom_type:
+            config_col_widths.append(1.15)
+        config_col_widths.extend([0.9, 1.15])
+        if show_custom_language:
+            config_col_widths.append(1.15)
+
+        config_cols = st.columns(config_col_widths, vertical_alignment="bottom")
+        config_col_index = 0
+        with config_cols[config_col_index]:
             st.selectbox(
-                tr("短剧类型"),
-                options=[code for code, _ in SHORT_DRAMA_TYPE_OPTIONS],
-                format_func=lambda code: tr(dict(SHORT_DRAMA_TYPE_OPTIONS).get(code, code)),
-                key="short_drama_type_option",
+                tr(summary_config["type_label_key"]),
+                options=type_options,
+                format_func=lambda code: tr(dict(summary_config["type_options"]).get(code, code)),
+                key=type_option_key,
             )
-        with config_cols[1]:
-            custom_type_disabled = (
-                st.session_state.get('short_drama_type_option', 'counterattack') != "custom"
-            )
-            st.text_input(
-                tr("自定义短剧类型"),
-                key="short_drama_custom_type",
-                placeholder=tr("例如：豪门虐恋"),
-                disabled=custom_type_disabled,
-            )
-        with config_cols[2]:
+        config_col_index += 1
+        if show_custom_type:
+            with config_cols[config_col_index]:
+                st.text_input(
+                    tr(summary_config["custom_type_label_key"]),
+                    key=custom_type_key,
+                    placeholder=tr(summary_config["custom_type_placeholder_key"]),
+                )
+            config_col_index += 1
+        with config_cols[config_col_index]:
             st.selectbox(
                 tr("原片占比"),
                 options=SHORT_DRAMA_ORIGINAL_SOUND_RATIO_OPTIONS,
                 format_func=lambda ratio: f"{ratio}%",
                 index=SHORT_DRAMA_ORIGINAL_SOUND_RATIO_OPTIONS.index(30),
-                key="short_drama_original_sound_ratio",
+                key=original_sound_ratio_key,
             )
-        with config_cols[3]:
+        config_col_index += 1
+        with config_cols[config_col_index]:
             st.selectbox(
                 tr("解说语言"),
                 options=[code for code, _ in SHORT_DRAMA_NARRATION_LANGUAGE_OPTIONS],
                 format_func=lambda code: tr(dict(SHORT_DRAMA_NARRATION_LANGUAGE_OPTIONS).get(code, code)),
-                key="short_drama_narration_language_option",
+                key=language_option_key,
             )
-        with config_cols[4]:
-            custom_language_disabled = (
-                st.session_state.get('short_drama_narration_language_option', 'zh-CN') != "custom"
-            )
-            st.text_input(
-                tr("自定义解说语言"),
-                key="short_drama_custom_narration_language",
-                placeholder=tr("例如：意大利语（意大利）"),
-                disabled=custom_language_disabled,
-            )
+        config_col_index += 1
+        if show_custom_language:
+            with config_cols[config_col_index]:
+                st.text_input(
+                    tr("自定义解说语言"),
+                    key=custom_language_key,
+                    placeholder=tr("例如：意大利语（意大利）"),
+                )
 
         action_cols = st.columns([1, 1], vertical_alignment="bottom")
         with action_cols[0]:
             narration_copy_clicked = st.button(
                 tr("生成解说文案"),
-                key="short_drama_narration_copy_action",
+                key=_summary_state_key(summary_config, "narration_copy_action"),
                 disabled=not script_path,
                 use_container_width=True,
             )
@@ -1366,19 +1500,31 @@ def render_script_buttons(tr, params):
         narration_copy_clicked = False
         action_clicked = st.button(button_name, key="script_action", disabled=not script_path)
 
-    if script_path == "summary" and (narration_copy_clicked or action_clicked):
-        narration_language = _resolve_short_drama_narration_language()
-        drama_genre = _resolve_short_drama_type()
-        original_sound_ratio = int(st.session_state.get('short_drama_original_sound_ratio', 30))
+    if script_path in SUMMARY_SCRIPT_MODES and (narration_copy_clicked or action_clicked):
+        summary_config = _summary_mode_config(script_path)
+        type_option_key = _summary_state_key(summary_config, "type_option")
+        custom_type_key = _summary_state_key(summary_config, "custom_type")
+        original_sound_ratio_key = _summary_state_key(summary_config, "original_sound_ratio")
+        language_option_key = _summary_state_key(summary_config, "narration_language_option")
+        custom_language_key = _summary_state_key(summary_config, "custom_narration_language")
+        narration_copy_key = _summary_state_key(summary_config, "narration_copy")
+        plot_analysis_key = _summary_state_key(summary_config, "plot_analysis")
+        plot_source_key = _summary_state_key(summary_config, "plot_analysis_subtitle_path")
+        plot_signature_key = _summary_state_key(summary_config, "plot_analysis_signature")
+        web_search_key = _summary_state_key(summary_config, "web_search_enabled")
+
+        narration_language = _resolve_summary_narration_language(summary_config)
+        drama_genre = _resolve_summary_type(summary_config)
+        original_sound_ratio = int(st.session_state.get(original_sound_ratio_key, 30))
         if (
-            st.session_state.get('short_drama_type_option') == "custom"
-            and not str(st.session_state.get('short_drama_custom_type', '') or '').strip()
+            st.session_state.get(type_option_key) == "custom"
+            and not str(st.session_state.get(custom_type_key, '') or '').strip()
         ):
-            st.error(tr("请输入自定义短剧类型"))
+            st.error(tr(summary_config["custom_type_empty_key"]))
             st.stop()
         if (
-            st.session_state.get('short_drama_narration_language_option') == "custom"
-            and not str(st.session_state.get('short_drama_custom_narration_language', '') or '').strip()
+            st.session_state.get(language_option_key) == "custom"
+            and not str(st.session_state.get(custom_language_key, '') or '').strip()
         ):
             st.error(tr("请输入自定义解说语言"))
             st.stop()
@@ -1387,7 +1533,7 @@ def render_script_buttons(tr, params):
         subtitle_path = subtitle_paths[0] if subtitle_paths else None
         video_theme = st.session_state.get('video_theme')
         temperature = st.session_state.get('temperature')
-        web_search_enabled = bool(st.session_state.get('short_drama_web_search_enabled', False))
+        web_search_enabled = bool(st.session_state.get(web_search_key, False))
         current_signature = _short_drama_plot_analysis_signature(
             subtitle_paths,
             video_theme,
@@ -1395,13 +1541,13 @@ def render_script_buttons(tr, params):
             _selected_video_paths(),
         )
         plot_analysis = ""
-        if st.session_state.get('short_drama_plot_analysis_signature') == current_signature:
-            plot_analysis = st.session_state.get('short_drama_plot_analysis', '')
+        if st.session_state.get(plot_signature_key) == current_signature:
+            plot_analysis = st.session_state.get(plot_analysis_key, '')
         elif (
             not web_search_enabled
-            and st.session_state.get('short_drama_plot_analysis_subtitle_path') == subtitle_path
+            and st.session_state.get(plot_source_key) == subtitle_path
         ):
-            plot_analysis = st.session_state.get('short_drama_plot_analysis', '')
+            plot_analysis = st.session_state.get(plot_analysis_key, '')
 
         if narration_copy_clicked:
             with st.spinner(tr("Generating narration copy...")):
@@ -1416,13 +1562,17 @@ def render_script_buttons(tr, params):
                     video_paths=_selected_video_paths(),
                     narration_language=narration_language,
                     drama_genre=drama_genre,
+                    prompt_category=summary_config["prompt_category"],
+                    search_keywords=summary_config["search_keywords"],
+                    empty_title_message_key=summary_config["empty_title_message_key"],
+                    web_search_context_description=summary_config["web_search_context_description"],
             )
             if copy_result:
-                st.session_state['short_drama_narration_copy'] = copy_result["narration_copy"]
+                st.session_state[narration_copy_key] = copy_result["narration_copy"]
                 if not plot_analysis:
-                    st.session_state['short_drama_plot_analysis'] = copy_result["plot_analysis"]
-                st.session_state['short_drama_plot_analysis_subtitle_path'] = subtitle_path
-                st.session_state['short_drama_plot_analysis_signature'] = current_signature
+                    st.session_state[plot_analysis_key] = copy_result["plot_analysis"]
+                st.session_state[plot_source_key] = subtitle_path
+                st.session_state[plot_signature_key] = current_signature
                 st.success(tr("Narration copy generated successfully"))
 
         if action_clicked:
@@ -1437,20 +1587,25 @@ def render_script_buttons(tr, params):
                 enable_web_search=web_search_enabled,
                 video_paths=_selected_video_paths(),
                 narration_language=narration_language,
-                narration_copy=st.session_state.get('short_drama_narration_copy', ''),
+                narration_copy=st.session_state.get(narration_copy_key, ''),
                 drama_genre=drama_genre,
                 original_sound_ratio=original_sound_ratio,
+                prompt_category=summary_config["prompt_category"],
+                search_keywords=summary_config["search_keywords"],
+                empty_title_message_key=summary_config["empty_title_message_key"],
+                web_search_context_description=summary_config["web_search_context_description"],
             )
 
-    if script_path == "summary":
+    if script_path in SUMMARY_SCRIPT_MODES:
+        summary_config = _summary_mode_config(script_path)
         st.text_area(
-            tr("短剧解说文案"),
-            key="short_drama_narration_copy",
+            tr(summary_config["narration_copy_label_key"]),
+            key=_summary_state_key(summary_config, "narration_copy"),
             height=220,
             help=tr("Narration Copy Help"),
         )
 
-    if action_clicked and script_path != "summary":
+    if action_clicked and script_path not in SUMMARY_SCRIPT_MODES:
         if script_path == "auto":
             # 执行纪录片视频脚本生成（视频无字幕无配音）
             generate_script_docu(params, tr)

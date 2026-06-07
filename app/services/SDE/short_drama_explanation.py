@@ -31,6 +31,7 @@ class SubtitleAnalyzer:
         custom_prompt: Optional[str] = None,
         temperature: Optional[float] = 1.0,
         provider: Optional[str] = None,
+        prompt_category: str = "short_drama_narration",
     ):
         """
         初始化字幕分析器
@@ -49,6 +50,7 @@ class SubtitleAnalyzer:
         self.base_url = base_url
         self.temperature = temperature
         self.provider = provider or self._detect_provider()
+        self.prompt_category = prompt_category or "short_drama_narration"
 
         # 设置自定义提示词（如果提供）
         self.custom_prompt = custom_prompt
@@ -94,7 +96,7 @@ class SubtitleAnalyzer:
             else:
                 # 使用新的提示词管理系统，正确传入参数
                 prompt = PromptManager.get_prompt(
-                    category="short_drama_narration",
+                    category=self.prompt_category,
                     name="plot_analysis",
                     parameters={"subtitle_content": subtitle_content}
                 )
@@ -365,12 +367,12 @@ class SubtitleAnalyzer:
 
     def _render_prompt(self, name: str, parameters: Dict[str, Any]) -> Tuple[str, Optional[str]]:
         prompt = PromptManager.get_prompt(
-            category="short_drama_narration",
+            category=self.prompt_category,
             name=name,
             parameters=parameters,
         )
         prompt_object = PromptManager.get_prompt_object(
-            category="short_drama_narration",
+            category=self.prompt_category,
             name=name,
         )
         return prompt, prompt_object.get_system_prompt()
@@ -838,7 +840,8 @@ def analyze_subtitle(
         temperature: float = 1.0,
         save_result: bool = False,
         output_path: Optional[str] = None,
-        provider: Optional[str] = None
+        provider: Optional[str] = None,
+        prompt_category: str = "short_drama_narration",
 ) -> Dict[str, Any]:
     """
     分析字幕内容的便捷函数
@@ -865,7 +868,8 @@ def analyze_subtitle(
         model=model,
         base_url=base_url,
         custom_prompt=custom_prompt,
-        provider=provider
+        provider=provider,
+        prompt_category=prompt_category,
     )
     logger.debug(f"使用模型: {analyzer.model} 开始分析, 温度: {analyzer.temperature}")
     # 分析字幕
@@ -900,6 +904,7 @@ def generate_narration_script(
     provider: Optional[str] = None,
     narration_language: str = "简体中文（中国）",
     drama_genre: str = "逆袭/复仇",
+    prompt_category: str = "short_drama_narration",
 ) -> Dict[str, Any]:
     """
     根据剧情分析生成解说文案的便捷函数
@@ -926,7 +931,8 @@ def generate_narration_script(
         api_key=api_key,
         model=model,
         base_url=base_url,
-        provider=provider
+        provider=provider,
+        prompt_category=prompt_category,
     )
     
     # 生成解说文案
@@ -957,6 +963,7 @@ def generate_narration_copy(
     provider: Optional[str] = None,
     narration_language: str = "简体中文（中国）",
     drama_genre: str = "逆袭/复仇",
+    prompt_category: str = "short_drama_narration",
 ) -> Dict[str, Any]:
     """生成可供用户审核修改的解说正文。"""
     analyzer = SubtitleAnalyzer(
@@ -965,6 +972,7 @@ def generate_narration_copy(
         model=model,
         base_url=base_url,
         provider=provider,
+        prompt_category=prompt_category,
     )
 
     return analyzer.generate_narration_copy(
@@ -990,6 +998,7 @@ def match_narration_copy_to_script(
     narration_language: str = "简体中文（中国）",
     drama_genre: str = "逆袭/复仇",
     original_sound_ratio: int = 30,
+    prompt_category: str = "short_drama_narration",
 ) -> Dict[str, Any]:
     """将用户审核后的解说正文匹配到字幕时间戳。"""
     analyzer = SubtitleAnalyzer(
@@ -998,6 +1007,7 @@ def match_narration_copy_to_script(
         model=model,
         base_url=base_url,
         provider=provider,
+        prompt_category=prompt_category,
     )
 
     return analyzer.match_narration_copy_to_script(
@@ -1025,6 +1035,7 @@ def repair_narration_script(
     provider: Optional[str] = None,
     narration_language: str = "简体中文（中国）",
     drama_genre: str = "逆袭/复仇",
+    prompt_category: str = "short_drama_narration",
 ) -> Dict[str, Any]:
     """根据校验错误修复解说文案的便捷函数。"""
     analyzer = SubtitleAnalyzer(
@@ -1033,6 +1044,7 @@ def repair_narration_script(
         model=model,
         base_url=base_url,
         provider=provider,
+        prompt_category=prompt_category,
     )
 
     return analyzer.repair_narration_script(

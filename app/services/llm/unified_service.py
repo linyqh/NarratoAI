@@ -194,6 +194,7 @@ class UnifiedLLMService:
     async def analyze_subtitle(subtitle_content: str,
                              provider: Optional[str] = None,
                              temperature: float = 1.0,
+                             prompt_category: str = "short_drama_narration",
                              validate_output: bool = True,
                              **kwargs) -> str:
         """
@@ -214,12 +215,12 @@ class UnifiedLLMService:
         """
         try:
             prompt = PromptManager.get_prompt(
-                category="short_drama_narration",
+                category=prompt_category,
                 name="plot_analysis",
                 parameters={"subtitle_content": subtitle_content},
             )
             prompt_object = PromptManager.get_prompt_object(
-                category="short_drama_narration",
+                category=prompt_category,
                 name="plot_analysis",
             )
             system_prompt = prompt_object.get_system_prompt()
