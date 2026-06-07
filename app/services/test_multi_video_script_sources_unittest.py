@@ -9,6 +9,23 @@ from app.utils import check_script
 
 
 class TestMultiVideoScriptSources(unittest.TestCase):
+    def test_clip_command_uses_input_fast_seek(self):
+        encoder_config = clip_video.get_safe_encoder_config(None)
+
+        cmd = clip_video._build_ffmpeg_command_with_audio_control(
+            input_path="/tmp/input.mp4",
+            output_path="/tmp/output.mp4",
+            start_time="00:27:32.240",
+            end_time="00:27:38.240",
+            encoder_config=encoder_config,
+            hwaccel_args=[],
+            remove_audio=False,
+        )
+
+        self.assertLess(cmd.index("-ss"), cmd.index("-i"))
+        self.assertEqual("6", cmd[cmd.index("-t") + 1])
+        self.assertNotIn("-to", cmd)
+
     def test_check_format_accepts_optional_video_source_fields(self):
         script = [
             {

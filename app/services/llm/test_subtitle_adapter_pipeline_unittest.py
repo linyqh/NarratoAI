@@ -56,6 +56,44 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
         self.assertIn("用户选择的影视类型", call.call_args.kwargs["prompt"])
         self.assertNotIn("短剧解说正文创作任务", call.call_args.kwargs["prompt"])
 
+    def test_film_tv_script_prompts_exclude_intro_outro_and_ads(self):
+        base_parameters = {
+            "drama_name": "测试电影",
+            "drama_genre": "悬疑/犯罪",
+            "plot_analysis": "主角发现证据疑点。",
+            "subtitle_content": "# 视频 1: 1.mp4\n00:00:01,000 --> 00:00:04,000\n证据不对。",
+            "narration_language": "简体中文（中国）",
+        }
+        prompt_parameters = {
+            "segment_planning": base_parameters,
+            "script_matching": {
+                **base_parameters,
+                "narration_copy": "他发现证据不对，真正的凶手另有其人。",
+                "original_sound_ratio": 30,
+            },
+            "script_generation": {
+                **base_parameters,
+                "segment_plan": '{"segments": []}',
+            },
+            "script_repair": {
+                **base_parameters,
+                "invalid_script": '{"items": []}',
+                "validation_errors": "片段包含广告",
+            },
+        }
+
+        for prompt_name, parameters in prompt_parameters.items():
+            with self.subTest(prompt_name=prompt_name):
+                prompt = PromptManager.get_prompt(
+                    category="film_tv_narration",
+                    name=prompt_name,
+                    parameters=parameters,
+                )
+                self.assertIn("片头", prompt)
+                self.assertIn("片尾", prompt)
+                self.assertIn("广告", prompt)
+                self.assertIn("绝对不能", prompt)
+
     def test_match_narration_copy_to_script_uses_json_prompt_with_selected_type(self):
         adapter = SubtitleAnalyzerAdapter(
             api_key="sk-test",

@@ -32,6 +32,32 @@ def parse_timestamp(timestamp: str) -> tuple:
     return start_time, end_time
 
 
+def _ffmpeg_time_to_seconds(time_value: str) -> float:
+    normalized_time = str(time_value).strip().replace(",", ".")
+    parts = normalized_time.split(":")
+
+    if len(parts) == 3:
+        hours, minutes, seconds = parts
+        return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    if len(parts) == 2:
+        minutes, seconds = parts
+        return int(minutes) * 60 + float(seconds)
+    return float(normalized_time)
+
+
+def _calculate_ffmpeg_duration(start_time: str, end_time: str) -> str:
+    duration = _ffmpeg_time_to_seconds(end_time) - _ffmpeg_time_to_seconds(start_time)
+    if duration <= 0:
+        raise ValueError(f"无效的视频裁剪时间范围: {start_time} -> {end_time}")
+
+    return f"{duration:.3f}".rstrip("0").rstrip(".")
+
+
+def _append_fast_seek_input(cmd: List[str], input_path: str, start_time: str, end_time: str) -> None:
+    duration = _calculate_ffmpeg_duration(start_time, end_time)
+    cmd.extend(["-ss", start_time, "-i", input_path, "-t", duration])
+
+
 def _normalize_video_origin_paths(
     video_origin_path: str,
     video_origin_paths: Optional[List[str]] = None,
@@ -253,11 +279,8 @@ def build_ffmpeg_command(
         # 对于其他编码器，可以使用硬件解码参数
         cmd.extend(hwaccel_args)
     
-    # 输入文件
-    cmd.extend(["-i", input_path])
-    
-    # 时间范围
-    cmd.extend(["-ss", start_time, "-to", end_time])
+    # 快速定位输入文件，避免长视频从头解码到目标片段
+    _append_fast_seek_input(cmd, input_path, start_time, end_time)
     
     # 编码器设置
     cmd.extend(["-c:v", encoder_config["video_codec"]])
@@ -439,11 +462,12 @@ def try_compatibility_fallback(
         bool: 是否成功
     """
     # 兼容性模式：避免所有可能的滤镜链问题
+    duration = _calculate_ffmpeg_duration(start_time, end_time)
     fallback_cmd = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-        "-i", input_path,
         "-ss", start_time,
-        "-to", end_time,
+        "-i", input_path,
+        "-t", duration,
         "-c:v", "libx264",
         "-c:a", "aac",
         "-pix_fmt", "yuv420p",  # 明确指定像素格式
@@ -480,11 +504,12 @@ def try_software_fallback(
         bool: 是否成功
     """
     # 纯软件编码
+    duration = _calculate_ffmpeg_duration(start_time, end_time)
     fallback_cmd = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-        "-i", input_path,
         "-ss", start_time,
-        "-to", end_time,
+        "-i", input_path,
+        "-t", duration,
         "-c:v", "libx264",
         "-c:a", "aac",
         "-pix_fmt", "yuv420p",
@@ -520,11 +545,12 @@ def try_basic_fallback(
         bool: 是否成功
     """
     # 最基本的编码参数
+    duration = _calculate_ffmpeg_duration(start_time, end_time)
     fallback_cmd = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-        "-i", input_path,
         "-ss", start_time,
-        "-to", end_time,
+        "-i", input_path,
+        "-t", duration,
         "-c:v", "libx264",
         "-c:a", "aac",
         "-pix_fmt", "yuv420p",
@@ -603,11 +629,12 @@ def try_fallback_encoding(
         bool: 是否成功
     """
     # 最简单的软件编码命令
+    duration = _calculate_ffmpeg_duration(start_time, end_time)
     fallback_cmd = [
         "ffmpeg", "-y",
-        "-i", input_path,
         "-ss", start_time,
-        "-to", end_time,
+        "-i", input_path,
+        "-t", duration,
         "-c:v", "libx264",
         "-c:a", "aac",
         "-pix_fmt", "yuv420p",
@@ -801,11 +828,8 @@ def _build_ffmpeg_command_with_audio_control(
     elif hwaccel_args:
         cmd.extend(hwaccel_args)
 
-    # 输入文件
-    cmd.extend(["-i", input_path])
-
-    # 时间范围
-    cmd.extend(["-ss", start_time, "-to", end_time])
+    # 快速定位输入文件，避免长视频从头解码到目标片段
+    _append_fast_seek_input(cmd, input_path, start_time, end_time)
 
     # 视频编码器设置
     cmd.extend(["-c:v", encoder_config["video_codec"]])
