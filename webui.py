@@ -170,57 +170,102 @@ def render_generate_button():
         # 生成一个新的task_id用于本次处理
         task_id = str(uuid.uuid4())
 
-        # 创建进度条
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        @st.dialog(tr("Generating Video"), width="large")
+        def generate_video_dialog():
+            st.markdown(
+                """
+                <style>
+                    div[data-testid="stDialog"] div[data-testid="stStatusWidget"] {
+                        margin-top: 0.25rem;
+                    }
+                    div[data-testid="stDialog"] div[data-testid="stProgress"] {
+                        margin-bottom: 0.75rem;
+                    }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
 
-        def run_task():
-            try:
-                tm.start_subclip_unified(
-                    task_id=task_id,
-                    params=params
-                )
-            except Exception as e:
-                logger.error(f"任务执行失败: {e}")
-                sm.state.update_task(task_id, state=const.TASK_STATE_FAILED, message=str(e))
+            progress_bar = st.progress(0)
+            status_panel = st.status(tr("Generating Video"), expanded=True)
+            status_panel.write(tr("Generating Video"))
 
-        # 在新线程中启动任务
-        thread = threading.Thread(target=run_task)
-        thread.start()
+            def run_task():
+                try:
+                    tm.start_subclip_unified(
+                        task_id=task_id,
+                        params=params
+                    )
+                except Exception as e:
+                    logger.error(f"任务执行失败: {e}")
+                    current_task = sm.state.get_task(task_id) or {}
+                    sm.state.update_task(
+                        task_id,
+                        state=const.TASK_STATE_FAILED,
+                        progress=current_task.get("progress", 0),
+                        message=str(e),
+                    )
 
-        # 轮询任务状态
-        while True:
-            task = sm.state.get_task(task_id)
-            if task:
-                progress = task.get("progress", 0)
-                state = task.get("state")
-                
-                # 更新进度条
-                progress_bar.progress(progress / 100)
-                status_text.text(f"Processing... {progress}%")
+            # 在新线程中启动任务
+            thread = threading.Thread(target=run_task)
+            thread.start()
 
-                if state == const.TASK_STATE_COMPLETE:
-                    status_text.text(tr("Video Generation Completed"))
-                    progress_bar.progress(1.0)
-                    
-                    # 显示结果
-                    video_files = task.get("videos", [])
+            last_status_key = None
+
+            # 轮询任务状态
+            while True:
+                task = sm.state.get_task(task_id)
+                if task:
+                    progress = task.get("progress", 0)
+                    state = task.get("state")
+
                     try:
-                        if video_files:
-                            player_cols = st.columns(len(video_files) * 2 + 1)
-                            for i, url in enumerate(video_files):
-                                player_cols[i * 2 + 1].video(url)
-                    except Exception as e:
-                        logger.error(f"播放视频失败: {e}")
-                    
-                    st.success(tr("Video Generation Completed"))
-                    break
-                
-                elif state == const.TASK_STATE_FAILED:
-                    st.error(f"{tr('Task failed')}: {task.get('message', 'Unknown error')}")
-                    break
-            
-            time.sleep(0.5)
+                        progress = int(progress)
+                    except (TypeError, ValueError):
+                        progress = 0
+                    progress = max(0, min(progress, 100))
+
+                    # 更新进度条和阶段状态
+                    progress_bar.progress(progress / 100)
+                    current_message = task.get("message") or f"Processing... {progress}%"
+                    status_label = f"{current_message} ({progress}%)"
+                    status_key = (state, progress, current_message)
+                    if status_key != last_status_key:
+                        status_panel.write(status_label)
+                        last_status_key = status_key
+
+                    if state == const.TASK_STATE_COMPLETE:
+                        status_panel.update(
+                            label=tr("Video Generation Completed"),
+                            state="complete",
+                            expanded=False,
+                        )
+                        progress_bar.progress(1.0)
+
+                        # 显示结果
+                        video_files = task.get("videos", [])
+                        try:
+                            if video_files:
+                                for url in video_files:
+                                    st.video(url)
+                        except Exception as e:
+                            logger.error(f"播放视频失败: {e}")
+
+                        st.success(tr("Video Generation Completed"))
+                        break
+
+                    if state == const.TASK_STATE_FAILED:
+                        status_panel.update(
+                            label=f"{tr('Task failed')}: {task.get('message', 'Unknown error')}",
+                            state="error",
+                            expanded=True,
+                        )
+                        st.error(f"{tr('Task failed')}: {task.get('message', 'Unknown error')}")
+                        break
+
+                time.sleep(0.5)
+
+        generate_video_dialog()
 
 
 def get_voice_name_for_tts_engine(tts_engine: str) -> str:

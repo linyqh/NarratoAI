@@ -522,7 +522,7 @@ def render_tts_settings(tr):
     """渲染TTS(文本转语音)设置"""
 
     # 1. TTS引擎选择器
-    # st.subheader("🎤 TTS引擎选择")
+    # st.subheader("TTS引擎选择")
 
     engine_options = get_tts_engine_options(tr)
     engine_descriptions = get_tts_engine_descriptions(tr)
@@ -553,7 +553,7 @@ def render_tts_settings(tr):
     if selected_engine in engine_descriptions:
         desc = engine_descriptions[selected_engine]
 
-        with st.expander(tr("TTS Engine Details").format(engine=desc['title']), expanded=True):
+        with st.expander(tr("TTS Engine Details").format(engine=desc['title']), expanded=False):
             st.markdown(f"**{tr('Features')}:** {desc['features']}")
             st.markdown(f"**{tr('Use Case')}:** {desc['use_case']}")
 
@@ -561,7 +561,7 @@ def render_tts_settings(tr):
                 st.markdown(f"**{tr('Registration URL')}:** [{desc['registration']}]({desc['registration']})")
 
     # 3. 根据选择的引擎渲染对应的配置界面
-    # st.subheader("⚙️ 引擎配置")
+    # st.subheader("引擎配置")
 
     if selected_engine == "edge_tts":
         render_edge_tts_settings(tr)
