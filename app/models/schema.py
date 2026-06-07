@@ -201,6 +201,7 @@ class VideoClipParams(BaseModel):
     subtitle_auto_transcribe_enabled: bool = False
     subtitle_auto_transcribe_backend: str = "local"
     subtitle_auto_transcribe_api_url: str = ""
+    subtitle_auto_transcribe_firered_api_url: str = ""
     subtitle_auto_transcribe_api_key: str = ""
     subtitle_auto_transcribe_hotword: str = ""
     subtitle_auto_transcribe_enable_spk: bool = False

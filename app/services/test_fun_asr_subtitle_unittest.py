@@ -481,6 +481,91 @@ class LocalFunAsrServiceTests(unittest.TestCase):
         self.assertIn("世界。", srt)
 
 
+class LocalFireRedAsrServiceTests(unittest.TestCase):
+    def test_request_local_firered_asr_posts_file_and_options(self):
+        class LocalSession:
+            def __init__(self):
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append(("POST", url, kwargs))
+                return FakeResponse({"text": "你好", "srt_url": "/outputs/out.srt"})
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_file = Path(tmp_dir) / "audio.wav"
+            local_file.write_bytes(b"audio")
+            session = LocalSession()
+
+            result = fasr.request_local_firered_asr(
+                str(local_file),
+                api_url="127.0.0.1:7867",
+                enable_vad=True,
+                enable_lid=False,
+                enable_punc=True,
+                return_timestamp=True,
+                timeout=456,
+                session=session,
+            )
+
+        self.assertEqual("你好", result["text"])
+        self.assertEqual("POST", session.calls[0][0])
+        self.assertEqual("http://127.0.0.1:7867/asr", session.calls[0][1])
+        self.assertEqual(
+            {
+                "enable_vad": "true",
+                "enable_lid": "false",
+                "enable_punc": "true",
+                "return_timestamp": "true",
+            },
+            session.calls[0][2]["data"],
+        )
+        self.assertEqual(456, session.calls[0][2]["timeout"])
+        self.assertIn("file", session.calls[0][2]["files"])
+
+    def test_create_with_local_firered_asr_downloads_srt_url(self):
+        class LocalSession:
+            def __init__(self):
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append(("POST", url, kwargs))
+                return FakeResponse({"text": "你好", "srt_url": "/outputs/result.srt"})
+
+            def get(self, url, **kwargs):
+                self.calls.append(("GET", url, kwargs))
+                return FakeResponse(text="1\n00:00:00,000 --> 00:00:01,000\n你好\n")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_file = Path(tmp_dir) / "audio.wav"
+            local_file.write_bytes(b"audio")
+            subtitle_file = Path(tmp_dir) / "out.srt"
+            session = LocalSession()
+
+            result_path = fasr.create_with_local_firered_asr(
+                str(local_file),
+                subtitle_file=str(subtitle_file),
+                api_url="http://127.0.0.1:7867",
+                session=session,
+            )
+
+            self.assertEqual(str(subtitle_file), result_path)
+            self.assertEqual("http://127.0.0.1:7867/outputs/result.srt", session.calls[1][1])
+            self.assertIn("你好", subtitle_file.read_text(encoding="utf-8"))
+
+    def test_firered_asr_result_to_srt_uses_sentence_timestamps(self):
+        result = {
+            "sentences": [
+                {"text": "你好。", "start_ms": 40, "end_ms": 900},
+                {"text": "欢迎观看。", "start_ms": 900, "end_ms": 2100},
+            ]
+        }
+
+        srt = fasr.firered_asr_result_to_srt(result)
+
+        self.assertIn("1\n00:00:00,040 --> 00:00:00,900\n你好。", srt)
+        self.assertIn("2\n00:00:00,900 --> 00:00:02,100\n欢迎观看。", srt)
+
+
 class FunAsrConfigTests(unittest.TestCase):
     def test_save_config_persists_fun_asr_section(self):
         original_config_file = cfg.config_file
@@ -503,6 +588,7 @@ class FunAsrConfigTests(unittest.TestCase):
         config_data = tomllib.loads(Path("config.example.toml").read_text(encoding="utf-8"))
         self.assertEqual("local", config_data["fun_asr"]["backend"])
         self.assertEqual("http://127.0.0.1:7860", config_data["fun_asr"]["api_url"])
+        self.assertEqual("http://127.0.0.1:7867", config_data["fun_asr"]["firered_api_url"])
         self.assertEqual("fun-asr", config_data["fun_asr"]["model"])
         self.assertIn("api_key", config_data["fun_asr"])
 

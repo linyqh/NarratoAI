@@ -110,10 +110,11 @@
 
 [fun_asr]
     # Fun-ASR 字幕转录配置
-    # backend = "local" 使用本地 FunASR-Pack API；backend = "bailian" 使用阿里百炼在线 fun-asr
+    # backend = "local" 使用本地 FunASR-Pack API；backend = "firered" 使用本地 FireRedASR2-AED-Pack API；backend = "bailian" 使用阿里百炼在线 fun-asr
     auto_transcribe_enabled = false
     backend = "local"
     api_url = "http://127.0.0.1:7860"
+    firered_api_url = "http://127.0.0.1:7867"
     hotword = ""
     enable_spk = false
     # 使用阿里百炼在线 fun-asr 时，访问 https://bailian.console.aliyun.com/?tab=model#/api-key 获取 API Key

@@ -996,11 +996,12 @@ def render_fun_asr_transcription(tr):
 
     backend_options = {
         tr("Local FunASR-Pack API"): "local",
+        tr("Local FireRedASR API"): "firered",
         tr("Ali Bailian Online Fun-ASR"): "bailian",
         tr("上传字幕文件"): "upload",
     }
     saved_backend = str(config.fun_asr.get("backend", "")).strip().lower()
-    if saved_backend not in {"local", "bailian", "upload"}:
+    if saved_backend not in {"local", "firered", "bailian", "upload"}:
         saved_backend = (
             "bailian"
             if config.fun_asr.get("api_key") and not config.fun_asr.get("api_url")
@@ -1012,6 +1013,7 @@ def render_fun_asr_transcription(tr):
     backend = saved_backend
     api_key = ""
     api_url = config.fun_asr.get("api_url", fun_asr_subtitle.LOCAL_FUN_ASR_API_URL)
+    firered_api_url = config.fun_asr.get("firered_api_url", fun_asr_subtitle.LOCAL_FIRERED_ASR_API_URL)
     hotword = config.fun_asr.get("hotword", "")
     enable_spk = bool(config.fun_asr.get("enable_spk", False))
     media_paths = _selected_video_paths()
@@ -1020,11 +1022,10 @@ def render_fun_asr_transcription(tr):
 
     with subtitle_cols[0]:
         with st.expander(tr("Ali Bailian Fun-ASR Subtitle Transcription"), expanded=False):
-            backend_label = st.radio(
+            backend_label = st.selectbox(
                 tr("Subtitle Processing Method"),
                 options=backend_labels,
                 index=backend_values.index(saved_backend),
-                horizontal=True,
                 key="fun_asr_backend",
             )
             backend = backend_options[backend_label]
@@ -1050,6 +1051,14 @@ def render_fun_asr_transcription(tr):
                     value=enable_spk,
                     help=tr("Enable speaker diarization Help"),
                     key="fun_asr_enable_spk",
+                )
+            elif backend == "firered":
+                st.caption(tr("Local FireRed-ASR upload caption"))
+                firered_api_url = st.text_input(
+                    tr("Local FireRedASR API URL"),
+                    value=firered_api_url,
+                    help=tr("Local FireRedASR API URL Help"),
+                    key="fun_asr_firered_api_url",
                 )
             else:
                 st.caption(tr("Fun-ASR upload caption"))
@@ -1166,6 +1175,10 @@ def render_fun_asr_transcription(tr):
         clear_fun_asr_subtitle_state()
         st.error(tr("Please enter local FunASR-Pack API URL"))
         return
+    if backend == "firered" and not str(firered_api_url).strip():
+        clear_fun_asr_subtitle_state()
+        st.error(tr("Please enter local FireRedASR API URL"))
+        return
     missing_paths = [path for path in media_paths if not os.path.exists(path)]
     if not media_paths or missing_paths:
         clear_fun_asr_subtitle_state()
@@ -1184,22 +1197,25 @@ def render_fun_asr_transcription(tr):
 
         config.fun_asr["backend"] = backend
         config.fun_asr["api_url"] = str(api_url).strip()
+        config.fun_asr["firered_api_url"] = str(firered_api_url).strip()
         config.fun_asr["api_key"] = api_key.strip()
         config.fun_asr["hotword"] = str(hotword).strip()
         config.fun_asr["enable_spk"] = bool(enable_spk)
         config.fun_asr["model"] = "fun-asr"
         config.save_config()
 
-        spinner_text = (
-            tr("Transcribing with local FunASR-Pack...")
-            if backend == "local"
-            else tr("Transcribing with Fun-ASR...")
-        )
+        if backend == "local":
+            spinner_text = tr("Transcribing with local FunASR-Pack...")
+        elif backend == "firered":
+            spinner_text = tr("Transcribing with local FireRedASR...")
+        else:
+            spinner_text = tr("Transcribing with Fun-ASR...")
         with st.spinner(spinner_text):
             progress_bar = st.progress(0) if len(media_paths) > 1 else None
             generated_paths = []
             for index, media_path in enumerate(media_paths, start=1):
-                subtitle_name = f"{os.path.splitext(os.path.basename(media_path))[0]}_fun_asr.srt"
+                subtitle_suffix = "firered_asr" if backend == "firered" else "fun_asr"
+                subtitle_name = f"{os.path.splitext(os.path.basename(media_path))[0]}_{subtitle_suffix}.srt"
                 subtitle_path = _unique_file_path(utils.subtitle_dir(), subtitle_name)
 
                 if backend == "local":
@@ -1209,6 +1225,12 @@ def render_fun_asr_transcription(tr):
                         api_url=str(api_url).strip(),
                         hotword=str(hotword).strip(),
                         enable_spk=bool(enable_spk),
+                    )
+                elif backend == "firered":
+                    generated_path = fun_asr_subtitle.create_with_local_firered_asr(
+                        local_file=media_path,
+                        subtitle_file=subtitle_path,
+                        api_url=str(firered_api_url).strip(),
                     )
                 else:
                     generated_path = fun_asr_subtitle.create_with_fun_asr(

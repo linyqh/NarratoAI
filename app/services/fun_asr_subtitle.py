@@ -24,6 +24,7 @@ TRANSCRIPTION_URL = f"{DASHSCOPE_BASE_URL}/api/v1/services/audio/asr/transcripti
 TASK_URL_TEMPLATE = f"{DASHSCOPE_BASE_URL}/api/v1/tasks/{{task_id}}"
 MODEL_NAME = "fun-asr"
 LOCAL_FUN_ASR_API_URL = "http://127.0.0.1:7860"
+LOCAL_FIRERED_ASR_API_URL = "http://127.0.0.1:7867"
 TERMINAL_FAILED_STATUSES = {"FAILED", "CANCELED", "UNKNOWN"}
 PUNCTUATION_BREAKS = set("，。！？；,.!?;")
 
@@ -131,7 +132,11 @@ def _absolute_local_download_url(api_url: str, download_url: str) -> str:
     return urljoin(f"{_local_base_url(api_url)}/", download_url)
 
 
-def _raise_for_local_http(response: requests.Response, action: str) -> None:
+def _raise_for_local_http(
+    response: requests.Response,
+    action: str,
+    service_name: str = "本地 FunASR-Pack 服务",
+) -> None:
     status_code = getattr(response, "status_code", 200)
     if status_code and status_code >= 400:
         detail = ""
@@ -142,16 +147,20 @@ def _raise_for_local_http(response: requests.Response, action: str) -> None:
         except Exception:
             detail = ""
         suffix = f": {detail}" if detail else ""
-        raise FunAsrError(f"{action}失败{suffix}，请确认本地 FunASR-Pack 服务可用")
+        raise FunAsrError(f"{action}失败{suffix}，请确认{service_name}可用")
 
     try:
         response.raise_for_status()
     except Exception as exc:
-        raise FunAsrError(f"{action}失败，请确认本地 FunASR-Pack 服务可用") from exc
+        raise FunAsrError(f"{action}失败，请确认{service_name}可用") from exc
 
 
-def _local_json(response: requests.Response, action: str) -> dict[str, Any]:
-    _raise_for_local_http(response, action)
+def _local_json(
+    response: requests.Response,
+    action: str,
+    service_name: str = "本地 FunASR-Pack 服务",
+) -> dict[str, Any]:
+    _raise_for_local_http(response, action, service_name=service_name)
     try:
         data = response.json()
     except Exception as exc:
@@ -520,6 +529,19 @@ def request_local_fun_asr_health(api_url: str = LOCAL_FUN_ASR_API_URL, session=r
     return _local_json(response, "检查本地 FunASR-Pack 服务")
 
 
+def request_local_firered_asr_health(
+    api_url: str = LOCAL_FIRERED_ASR_API_URL,
+    session=requests,
+) -> dict[str, Any]:
+    """Fetch FireRedASR2-AED-Pack health metadata from the local service."""
+    response = _session_get(session, f"{_local_base_url(api_url)}/health", timeout=10)
+    return _local_json(
+        response,
+        "检查本地 FireRedASR2-AED-Pack 服务",
+        service_name="本地 FireRedASR2-AED-Pack 服务",
+    )
+
+
 def request_local_fun_asr(
     local_file: str,
     api_url: str = LOCAL_FUN_ASR_API_URL,
@@ -548,21 +570,61 @@ def request_local_fun_asr(
     return _local_json(response, "调用本地 FunASR-Pack ASR API")
 
 
+def request_local_firered_asr(
+    local_file: str,
+    api_url: str = LOCAL_FIRERED_ASR_API_URL,
+    enable_vad: Optional[bool] = True,
+    enable_lid: Optional[bool] = True,
+    enable_punc: Optional[bool] = True,
+    return_timestamp: Optional[bool] = True,
+    timeout: float = 600.0,
+    session=requests,
+) -> dict[str, Any]:
+    """Call the local FireRedASR2-AED-Pack `/asr` API and return its JSON result."""
+    _require_local_file(local_file)
+    data: dict[str, str] = {}
+    options = {
+        "enable_vad": enable_vad,
+        "enable_lid": enable_lid,
+        "enable_punc": enable_punc,
+        "return_timestamp": return_timestamp,
+    }
+    for key, value in options.items():
+        if value is not None:
+            data[key] = "true" if value else "false"
+
+    with open(local_file, "rb") as file_obj:
+        files = {"file": (_safe_upload_name(local_file), file_obj)}
+        response = _session_post(
+            session,
+            _local_asr_url(api_url),
+            data=data,
+            files=files,
+            timeout=timeout,
+        )
+    return _local_json(
+        response,
+        "调用本地 FireRedASR2-AED-Pack ASR API",
+        service_name="本地 FireRedASR2-AED-Pack 服务",
+    )
+
+
 def download_local_srt(
     download_url: str,
     api_url: str = LOCAL_FUN_ASR_API_URL,
     subtitle_file: str = "",
     session=requests,
+    service_name: str = "本地 FunASR-Pack 服务",
 ) -> str:
     """Download an SRT exposed by FunASR-Pack and save it as a NarratoAI subtitle."""
     absolute_url = _absolute_local_download_url(api_url, download_url)
     if not absolute_url:
         raise FunAsrError("本地 FunASR-Pack 结果缺少 SRT 下载地址")
     response = _session_get(session, absolute_url, timeout=60)
-    _raise_for_local_http(response, "下载本地 FunASR-Pack SRT")
+    _raise_for_local_http(response, "下载本地 SRT", service_name=service_name)
     srt_content = _response_text(response)
     if not srt_content.strip():
-        raise FunAsrError("本地 FunASR-Pack 返回了空 SRT")
+        raise FunAsrError(f"{service_name}返回了空 SRT")
     return write_srt_file(srt_content, subtitle_file)
 
 
@@ -665,6 +727,45 @@ def local_fun_asr_result_to_srt(
     return "\n".join(lines).rstrip() + "\n"
 
 
+def firered_asr_result_to_srt(result_json: dict[str, Any]) -> str:
+    """Convert a FireRedASR2-AED-Pack JSON response into SRT when no SRT URL is returned."""
+    blocks: list[dict[str, Any]] = []
+    sentences = result_json.get("sentences")
+    if isinstance(sentences, list):
+        for sentence in sentences:
+            if not isinstance(sentence, dict):
+                continue
+            text = str(sentence.get("text") or "").strip()
+            if not text:
+                continue
+            start = sentence.get("start_ms", sentence.get("begin_time", sentence.get("start_time", 0)))
+            end = sentence.get("end_ms", sentence.get("end_time"))
+            start_ms = _timestamp_ms(start, "firered.sentence.start_ms")
+            end_ms = _timestamp_ms(end, "firered.sentence.end_ms") if end is not None else start_ms + 500
+            blocks.append({"start": start_ms, "end": end_ms, "text": text})
+
+    if not blocks:
+        return local_fun_asr_result_to_srt(result_json)
+
+    lines = []
+    for index, block in enumerate(blocks, start=1):
+        lines.append(_srt_block(index, block["start"], block["end"], block["text"]))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _get_local_srt_download_url(result_json: dict[str, Any]) -> str:
+    downloads = result_json.get("downloads") or {}
+    if isinstance(downloads, dict):
+        download_url = downloads.get("srt")
+        if download_url:
+            return str(download_url)
+    for key in ("srt_url", "srt_download_url", "download_url"):
+        download_url = result_json.get(key)
+        if download_url:
+            return str(download_url)
+    return ""
+
+
 def create_with_local_fun_asr(
     local_file: str,
     subtitle_file: str = "",
@@ -689,8 +790,7 @@ def create_with_local_fun_asr(
         if isinstance(srt_file, str) and srt_file and os.path.isfile(srt_file):
             output_file = copy_srt_file(srt_file, subtitle_file)
         else:
-            downloads = result_json.get("downloads") or {}
-            download_url = downloads.get("srt") if isinstance(downloads, dict) else ""
+            download_url = _get_local_srt_download_url(result_json)
             if download_url:
                 output_file = download_local_srt(
                     download_url,
@@ -708,6 +808,56 @@ def create_with_local_fun_asr(
         raise
     except Exception as exc:
         raise FunAsrError("本地 FunASR-Pack 字幕转写失败，请检查服务地址、文件或模型状态") from exc
+
+
+def create_with_local_firered_asr(
+    local_file: str,
+    subtitle_file: str = "",
+    api_url: str = LOCAL_FIRERED_ASR_API_URL,
+    enable_vad: Optional[bool] = True,
+    enable_lid: Optional[bool] = True,
+    enable_punc: Optional[bool] = True,
+    return_timestamp: Optional[bool] = True,
+    timeout: float = 600.0,
+    session=requests,
+) -> Optional[str]:
+    """Create an SRT file through a locally running FireRedASR2-AED-Pack API."""
+    service_name = "本地 FireRedASR2-AED-Pack 服务"
+    try:
+        result_json = request_local_firered_asr(
+            local_file=local_file,
+            api_url=api_url,
+            enable_vad=enable_vad,
+            enable_lid=enable_lid,
+            enable_punc=enable_punc,
+            return_timestamp=return_timestamp,
+            timeout=timeout,
+            session=session,
+        )
+
+        srt_file = result_json.get("srt_file")
+        if isinstance(srt_file, str) and srt_file and os.path.isfile(srt_file):
+            output_file = copy_srt_file(srt_file, subtitle_file)
+        else:
+            download_url = _get_local_srt_download_url(result_json)
+            if download_url:
+                output_file = download_local_srt(
+                    download_url,
+                    api_url=api_url,
+                    subtitle_file=subtitle_file,
+                    session=session,
+                    service_name=service_name,
+                )
+            else:
+                srt_content = firered_asr_result_to_srt(result_json)
+                output_file = write_srt_file(srt_content, subtitle_file)
+
+        logger.info(f"本地 FireRedASR2-AED-Pack 字幕文件已生成: {output_file}")
+        return output_file
+    except FunAsrError:
+        raise
+    except Exception as exc:
+        raise FunAsrError("本地ASR字幕转写失败，请检查 FireRedASR2-AED-Pack 服务地址、文件或模型状态") from exc
 
 
 def create_with_fun_asr(

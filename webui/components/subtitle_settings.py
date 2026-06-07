@@ -457,7 +457,7 @@ def render_subtitle_mask_settings(tr):
 
 def _get_saved_auto_transcribe_backend():
     saved_backend = str(config.fun_asr.get("backend", "")).strip().lower()
-    if saved_backend not in {"local", "bailian"}:
+    if saved_backend not in {"local", "firered", "bailian"}:
         saved_backend = (
             "bailian"
             if config.fun_asr.get("api_key") and not config.fun_asr.get("api_url")
@@ -481,6 +481,7 @@ def render_auto_transcription_settings(tr):
 
     backend = _get_saved_auto_transcribe_backend()
     api_url = config.fun_asr.get("api_url", fun_asr_subtitle.LOCAL_FUN_ASR_API_URL)
+    firered_api_url = config.fun_asr.get("firered_api_url", fun_asr_subtitle.LOCAL_FIRERED_ASR_API_URL)
     hotword = config.fun_asr.get("hotword", "")
     enable_spk = bool(config.fun_asr.get("enable_spk", False))
     api_key = config.fun_asr.get("api_key", "")
@@ -488,6 +489,7 @@ def render_auto_transcription_settings(tr):
     if not auto_transcribe_enabled:
         st.session_state['subtitle_auto_transcribe_backend'] = backend
         st.session_state['subtitle_auto_transcribe_api_url'] = api_url
+        st.session_state['subtitle_auto_transcribe_firered_api_url'] = firered_api_url
         st.session_state['subtitle_auto_transcribe_hotword'] = hotword
         st.session_state['subtitle_auto_transcribe_enable_spk'] = enable_spk
         st.session_state['subtitle_auto_transcribe_api_key'] = api_key
@@ -495,17 +497,17 @@ def render_auto_transcription_settings(tr):
 
     backend_options = {
         tr("Local FunASR-Pack API"): "local",
+        tr("Local FireRedASR API"): "firered",
         tr("Ali Bailian Online Fun-ASR"): "bailian",
     }
     backend_values = list(backend_options.values())
     backend_labels = list(backend_options.keys())
 
-    backend_label = st.radio(
+    backend_label = st.selectbox(
         tr("Subtitle Processing Method"),
         options=backend_labels,
         index=backend_values.index(backend),
-        horizontal=True,
-        key="subtitle_auto_transcribe_backend_radio",
+        key="subtitle_auto_transcribe_backend_select",
     )
     backend = backend_options[backend_label]
 
@@ -529,6 +531,14 @@ def render_auto_transcription_settings(tr):
             help=tr("Enable speaker diarization Help"),
             key="subtitle_auto_transcribe_enable_spk_checkbox",
         )
+    elif backend == "firered":
+        st.caption(tr("Auto Transcription FireRed Caption"))
+        firered_api_url = st.text_input(
+            tr("Local FireRedASR API URL"),
+            value=firered_api_url,
+            help=tr("Local FireRedASR API URL Help"),
+            key="subtitle_auto_transcribe_firered_api_url_input",
+        )
     else:
         st.caption(tr("Auto Transcription Online Caption"))
         st.markdown(
@@ -546,6 +556,7 @@ def render_auto_transcription_settings(tr):
 
     config.fun_asr["backend"] = backend
     config.fun_asr["api_url"] = str(api_url).strip()
+    config.fun_asr["firered_api_url"] = str(firered_api_url).strip()
     config.fun_asr["api_key"] = str(api_key).strip()
     config.fun_asr["hotword"] = str(hotword).strip()
     config.fun_asr["enable_spk"] = bool(enable_spk)
@@ -553,6 +564,7 @@ def render_auto_transcription_settings(tr):
 
     st.session_state['subtitle_auto_transcribe_backend'] = backend
     st.session_state['subtitle_auto_transcribe_api_url'] = str(api_url).strip()
+    st.session_state['subtitle_auto_transcribe_firered_api_url'] = str(firered_api_url).strip()
     st.session_state['subtitle_auto_transcribe_api_key'] = str(api_key).strip()
     st.session_state['subtitle_auto_transcribe_hotword'] = str(hotword).strip()
     st.session_state['subtitle_auto_transcribe_enable_spk'] = bool(enable_spk)
@@ -691,6 +703,10 @@ def get_subtitle_params():
         'subtitle_auto_transcribe_api_url': st.session_state.get(
             'subtitle_auto_transcribe_api_url',
             config.fun_asr.get("api_url", "")
+        ),
+        'subtitle_auto_transcribe_firered_api_url': st.session_state.get(
+            'subtitle_auto_transcribe_firered_api_url',
+            config.fun_asr.get("firered_api_url", "")
         ),
         'subtitle_auto_transcribe_api_key': st.session_state.get(
             'subtitle_auto_transcribe_api_key',

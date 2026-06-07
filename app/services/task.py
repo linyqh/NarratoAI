@@ -24,7 +24,7 @@ def _is_auto_transcription_enabled(params: VideoClipParams) -> bool:
 
 def _get_auto_transcription_backend(params: VideoClipParams) -> str:
     backend = str(getattr(params, "subtitle_auto_transcribe_backend", "") or "").strip().lower()
-    if backend not in {"local", "bailian"}:
+    if backend not in {"local", "firered", "bailian"}:
         backend = "local"
     return backend
 
@@ -79,6 +79,19 @@ def _transcribe_final_video(task_id: str, video_path: str, params: VideoClipPara
             api_url=api_url,
             hotword=str(getattr(params, "subtitle_auto_transcribe_hotword", "") or "").strip(),
             enable_spk=bool(getattr(params, "subtitle_auto_transcribe_enable_spk", False)),
+        )
+    elif backend == "firered":
+        api_url = str(
+            getattr(params, "subtitle_auto_transcribe_firered_api_url", "")
+            or config.fun_asr.get("firered_api_url", fun_asr_subtitle.LOCAL_FIRERED_ASR_API_URL)
+        ).strip()
+        if not api_url:
+            raise ValueError("请先输入本地ASR API 地址")
+
+        generated_path = fun_asr_subtitle.create_with_local_firered_asr(
+            local_file=video_path,
+            subtitle_file=subtitle_file,
+            api_url=api_url,
         )
     else:
         api_key = str(
