@@ -233,25 +233,17 @@ class OpenAICompatibleVisionProvider(_OpenAICompatibleBase, VisionModelProvider)
 class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
     """OpenAI 兼容文本模型提供商。"""
 
-    async def generate_text(
+    def _build_text_completion_kwargs(
         self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-        temperature: float = 1.0,
-        max_tokens: Optional[int] = None,
-        response_format: Optional[str] = None,
-        **kwargs,
-    ) -> str:
-        messages = self._build_messages(prompt, system_prompt)
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: Optional[int],
+        response_format: Optional[str],
+        kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
         model_name = _normalize_model_name(self.model_name)
-
-        client = self._build_client(
-            api_key_override=kwargs.get("api_key"),
-            base_url_override=kwargs.get("api_base"),
-            timeout_override=config.app.get("llm_text_timeout", 180),
-        )
-
-        temperature_override = kwargs.pop("temperature", None)
+        generation_kwargs = dict(kwargs)
+        temperature_override = generation_kwargs.pop("temperature", None)
         if temperature_override is None and temperature != 1.0:
             temperature_override = temperature
 
@@ -263,12 +255,63 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
             self._build_chat_completion_options(
                 "text",
                 temperature=temperature_override,
-                max_tokens=kwargs.pop("max_tokens", max_tokens),
-                **kwargs,
+                max_tokens=generation_kwargs.pop("max_tokens", max_tokens),
+                **generation_kwargs,
             )
         )
         if response_format == "json":
             completion_kwargs["response_format"] = {"type": "json_object"}
+        return completion_kwargs
+
+    @staticmethod
+    def _emit_stream_chunk(on_chunk, chunk_type: str, text: str):
+        if not on_chunk or not text:
+            return
+        try:
+            on_chunk({"type": chunk_type, "text": text})
+        except Exception as exc:
+            logger.debug(f"流式回调更新失败: {exc}")
+
+    @staticmethod
+    def _extract_reasoning_delta(delta: Any) -> str:
+        if delta is None:
+            return ""
+        if hasattr(delta, "reasoning_content"):
+            value = getattr(delta, "reasoning_content")
+            if value:
+                return str(value)
+        if hasattr(delta, "model_dump"):
+            data = delta.model_dump(exclude_none=True)
+            for key in ("reasoning_content", "reasoning", "thinking"):
+                value = data.get(key)
+                if value:
+                    return str(value)
+        return ""
+
+    async def generate_text(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 1.0,
+        max_tokens: Optional[int] = None,
+        response_format: Optional[str] = None,
+        **kwargs,
+    ) -> str:
+        messages = self._build_messages(prompt, system_prompt)
+
+        client = self._build_client(
+            api_key_override=kwargs.get("api_key"),
+            base_url_override=kwargs.get("api_base"),
+            timeout_override=config.app.get("llm_text_timeout", 180),
+        )
+
+        completion_kwargs = self._build_text_completion_kwargs(
+            messages,
+            temperature,
+            max_tokens,
+            response_format,
+            kwargs,
+        )
 
         try:
             response = await client.chat.completions.create(**completion_kwargs)
@@ -305,6 +348,82 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
         except Exception as exc:
             logger.error(f"OpenAI 兼容接口调用失败: {exc}")
             raise APICallError(f"调用失败: {exc}")
+
+    async def generate_text_stream(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 1.0,
+        max_tokens: Optional[int] = None,
+        response_format: Optional[str] = None,
+        on_chunk=None,
+        **kwargs,
+    ) -> str:
+        messages = self._build_messages(prompt, system_prompt)
+        client = self._build_client(
+            api_key_override=kwargs.get("api_key"),
+            base_url_override=kwargs.get("api_base"),
+            timeout_override=config.app.get("llm_text_timeout", 180),
+        )
+        completion_kwargs = self._build_text_completion_kwargs(
+            messages,
+            temperature,
+            max_tokens,
+            response_format,
+            kwargs,
+        )
+        completion_kwargs["stream"] = True
+
+        async def collect_stream() -> str:
+            content_parts: List[str] = []
+            stream = await client.chat.completions.create(**completion_kwargs)
+            async for chunk in stream:
+                if not getattr(chunk, "choices", None):
+                    continue
+                delta = chunk.choices[0].delta
+                reasoning_delta = self._extract_reasoning_delta(delta)
+                if reasoning_delta:
+                    self._emit_stream_chunk(on_chunk, "reasoning", reasoning_delta)
+
+                content_delta = getattr(delta, "content", None) if delta is not None else None
+                if content_delta:
+                    content_parts.append(content_delta)
+                    self._emit_stream_chunk(on_chunk, "content", content_delta)
+
+            result = "".join(content_parts).strip()
+            if result:
+                self._emit_stream_chunk(on_chunk, "done", "")
+                return result
+            raise APICallError("OpenAI 兼容接口返回空响应")
+
+        try:
+            return await collect_stream()
+
+        except OpenAIBadRequestError as exc:
+            error_msg = str(exc)
+            if response_format == "json" and _is_response_format_error(error_msg):
+                logger.warning("目标网关不支持流式 response_format，回退为提示词约束 JSON 输出")
+                completion_kwargs.pop("response_format", None)
+                messages[-1]["content"] += "\n\n请确保输出严格的JSON格式，不要包含任何其他文字或标记。"
+                result = await collect_stream()
+                return _clean_json_output(result)
+
+            if _is_content_filter_error(error_msg):
+                raise ContentFilterError(f"内容被安全过滤器阻止: {error_msg}")
+            raise APICallError(f"请求错误: {error_msg}")
+
+        except OpenAIAuthError as exc:
+            logger.error(f"OpenAI 兼容接口认证失败: {exc}")
+            raise AuthenticationError(str(exc))
+        except OpenAIRateLimitError as exc:
+            logger.error(f"OpenAI 兼容接口速率限制: {exc}")
+            raise RateLimitError(str(exc))
+        except OpenAIAPIError as exc:
+            logger.error(f"OpenAI 兼容接口 API 错误: {exc}")
+            raise APICallError(f"API 错误: {exc}")
+        except Exception as exc:
+            logger.error(f"OpenAI 兼容接口流式调用失败: {exc}")
+            raise APICallError(f"流式调用失败: {exc}")
 
     async def _make_api_call(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return payload

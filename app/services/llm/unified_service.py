@@ -108,6 +108,37 @@ class UnifiedLLMService:
         except Exception as e:
             logger.error(f"文本生成失败: {str(e)}")
             raise LLMServiceError(f"文本生成失败: {str(e)}")
+
+    @staticmethod
+    async def generate_text_stream(prompt: str,
+                                 system_prompt: Optional[str] = None,
+                                 provider: Optional[str] = None,
+                                 temperature: float = 1.0,
+                                 max_tokens: Optional[int] = None,
+                                 response_format: Optional[str] = None,
+                                 on_chunk=None,
+                                 **kwargs) -> str:
+        """
+        流式生成文本内容；不支持流式的 provider 会退化为一次性返回。
+        """
+        try:
+            text_provider = LLMServiceManager.get_text_provider(provider)
+            result = await text_provider.generate_text_stream(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+                on_chunk=on_chunk,
+                **kwargs
+            )
+
+            logger.info(f"流式文本生成完成，生成内容长度: {len(result)} 字符")
+            return result
+
+        except Exception as e:
+            logger.error(f"流式文本生成失败: {str(e)}")
+            raise LLMServiceError(f"流式文本生成失败: {str(e)}")
     
     @staticmethod
     async def generate_narration_script(prompt: str,

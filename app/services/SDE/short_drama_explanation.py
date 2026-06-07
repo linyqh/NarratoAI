@@ -11,7 +11,7 @@
 import os
 import json
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from loguru import logger
 from app.config import config
 from app.utils.utils import get_uuid, storage_dir
@@ -363,7 +363,179 @@ class SubtitleAnalyzer:
             logger.error(f"保存分析结果时发生错误: {str(e)}")
             return ""
 
-    def generate_narration_script(self, short_name: str, plot_analysis: str, subtitle_content: str = "", temperature: float = 0.7) -> Dict[str, Any]:
+    def _render_prompt(self, name: str, parameters: Dict[str, Any]) -> Tuple[str, Optional[str]]:
+        prompt = PromptManager.get_prompt(
+            category="short_drama_narration",
+            name=name,
+            parameters=parameters,
+        )
+        prompt_object = PromptManager.get_prompt_object(
+            category="short_drama_narration",
+            name=name,
+        )
+        return prompt, prompt_object.get_system_prompt()
+
+    def _generate_json_text(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        temperature: float,
+    ) -> Dict[str, Any]:
+        if self.is_native_gemini:
+            return self._generate_narration_with_native_gemini(prompt, temperature, system_prompt, json_output=True)
+        return self._generate_narration_with_openai_compatible(prompt, temperature, system_prompt, json_output=True)
+
+    def _generate_plain_text(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        temperature: float,
+    ) -> Dict[str, Any]:
+        if self.is_native_gemini:
+            result = self._generate_narration_with_native_gemini(prompt, temperature, system_prompt, json_output=False)
+        else:
+            result = self._generate_narration_with_openai_compatible(prompt, temperature, system_prompt, json_output=False)
+        if result.get("status") == "success":
+            result["narration_copy"] = str(result.get("narration_script", "")).strip()
+        return result
+
+    def generate_narration_copy(
+        self,
+        short_name: str,
+        plot_analysis: str,
+        subtitle_content: str = "",
+        temperature: float = 0.7,
+        narration_language: str = "简体中文（中国）",
+        drama_genre: str = "逆袭/复仇",
+    ) -> Dict[str, Any]:
+        """生成供用户审核修改的解说正文。"""
+        try:
+            prompt, system_prompt = self._render_prompt(
+                "narration_copy",
+                {
+                    "drama_name": short_name,
+                    "drama_genre": drama_genre,
+                    "plot_analysis": plot_analysis,
+                    "subtitle_content": subtitle_content,
+                    "narration_language": narration_language,
+                },
+            )
+            return self._generate_plain_text(prompt, system_prompt, temperature)
+        except Exception as e:
+            logger.error(f"解说文案正文生成过程中发生错误: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "temperature": temperature,
+            }
+
+    def match_narration_copy_to_script(
+        self,
+        short_name: str,
+        plot_analysis: str,
+        subtitle_content: str,
+        narration_copy: str,
+        temperature: float = 0.3,
+        narration_language: str = "简体中文（中国）",
+        drama_genre: str = "逆袭/复仇",
+        original_sound_ratio: int = 30,
+    ) -> Dict[str, Any]:
+        """将用户审核后的解说正文匹配到字幕时间戳。"""
+        try:
+            prompt, system_prompt = self._render_prompt(
+                "script_matching",
+                {
+                    "drama_name": short_name,
+                    "drama_genre": drama_genre,
+                    "plot_analysis": plot_analysis,
+                    "subtitle_content": subtitle_content,
+                    "narration_copy": narration_copy,
+                    "narration_language": narration_language,
+                    "original_sound_ratio": int(original_sound_ratio),
+                },
+            )
+            return self._generate_json_text(prompt, system_prompt, min(float(temperature), 0.3))
+        except Exception as e:
+            logger.error(f"解说文案画面匹配过程中发生错误: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "temperature": temperature,
+            }
+
+    def plan_narration_segments(
+        self,
+        short_name: str,
+        plot_analysis: str,
+        subtitle_content: str = "",
+        temperature: float = 0.3,
+        narration_language: str = "简体中文（中国）",
+        drama_genre: str = "逆袭/复仇",
+    ) -> Dict[str, Any]:
+        """规划短剧解说片段，只输出片段来源和意图。"""
+        try:
+            prompt, system_prompt = self._render_prompt(
+                "segment_planning",
+                {
+                    "drama_name": short_name,
+                    "drama_genre": drama_genre,
+                    "plot_analysis": plot_analysis,
+                    "subtitle_content": subtitle_content,
+                    "narration_language": narration_language,
+                },
+            )
+            return self._generate_json_text(prompt, system_prompt, min(float(temperature), 0.3))
+        except Exception as e:
+            logger.error(f"片段规划过程中发生错误: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "temperature": temperature,
+            }
+
+    def repair_narration_script(
+        self,
+        short_name: str,
+        plot_analysis: str,
+        subtitle_content: str,
+        invalid_script: str,
+        validation_errors: str,
+        temperature: float = 0.3,
+        narration_language: str = "简体中文（中国）",
+        drama_genre: str = "逆袭/复仇",
+    ) -> Dict[str, Any]:
+        """根据确定性校验错误修复解说脚本。"""
+        try:
+            prompt, system_prompt = self._render_prompt(
+                "script_repair",
+                {
+                    "drama_name": short_name,
+                    "drama_genre": drama_genre,
+                    "plot_analysis": plot_analysis,
+                    "subtitle_content": subtitle_content,
+                    "invalid_script": invalid_script,
+                    "validation_errors": validation_errors,
+                    "narration_language": narration_language,
+                },
+            )
+            return self._generate_json_text(prompt, system_prompt, min(float(temperature), 0.3))
+        except Exception as e:
+            logger.error(f"解说文案修复过程中发生错误: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "temperature": temperature,
+            }
+
+    def generate_narration_script(
+        self,
+        short_name: str,
+        plot_analysis: str,
+        subtitle_content: str = "",
+        temperature: float = 0.7,
+        narration_language: str = "简体中文（中国）",
+        drama_genre: str = "逆袭/复仇",
+    ) -> Dict[str, Any]:
         """
         根据剧情分析生成解说文案
 
@@ -372,28 +544,36 @@ class SubtitleAnalyzer:
             plot_analysis: 剧情分析内容
             subtitle_content: 原始字幕内容，用于提供准确的时间戳信息
             temperature: 生成温度，控制创造性，默认0.7
+            narration_language: 解说台词目标语言
 
         Returns:
             Dict[str, Any]: 包含生成结果的字典
         """
         try:
-            # 使用新的提示词管理系统构建提示词
-            prompt = PromptManager.get_prompt(
-                category="short_drama_narration",
-                name="script_generation",
-                parameters={
+            segment_plan_result = self.plan_narration_segments(
+                short_name=short_name,
+                plot_analysis=plot_analysis,
+                subtitle_content=subtitle_content,
+                temperature=temperature,
+                narration_language=narration_language,
+                drama_genre=drama_genre,
+            )
+            if segment_plan_result["status"] != "success":
+                return segment_plan_result
+
+            prompt, system_prompt = self._render_prompt(
+                "script_generation",
+                {
                     "drama_name": short_name,
+                    "drama_genre": drama_genre,
                     "plot_analysis": plot_analysis,
-                    "subtitle_content": subtitle_content
-                }
+                    "subtitle_content": subtitle_content,
+                    "segment_plan": segment_plan_result["narration_script"],
+                    "narration_language": narration_language,
+                },
             )
 
-            if self.is_native_gemini:
-                # 使用原生Gemini API格式
-                return self._generate_narration_with_native_gemini(prompt, temperature)
-            else:
-                # 使用OpenAI兼容格式
-                return self._generate_narration_with_openai_compatible(prompt, temperature)
+            return self._generate_json_text(prompt, system_prompt, temperature)
 
         except Exception as e:
             logger.error(f"解说文案生成过程中发生错误: {str(e)}")
@@ -403,16 +583,35 @@ class SubtitleAnalyzer:
                 "temperature": self.temperature
             }
 
-    def _generate_narration_with_native_gemini(self, prompt: str, temperature: float) -> Dict[str, Any]:
+    def _generate_narration_with_native_gemini(
+        self,
+        prompt: str,
+        temperature: float,
+        system_prompt: Optional[str] = None,
+        json_output: bool = True,
+    ) -> Dict[str, Any]:
         """使用原生Gemini API生成解说文案"""
         try:
             # 构建原生Gemini API请求数据
             # 为了确保JSON输出，在提示词中添加更强的约束
-            enhanced_prompt = f"{prompt}\n\n请确保输出严格的JSON格式，不要包含任何其他文字或标记。"
+            enhanced_prompt = (
+                f"{prompt}\n\n请确保输出严格的JSON格式，不要包含任何其他文字或标记。"
+                if json_output
+                else prompt
+            )
 
             payload = {
                 "systemInstruction": {
-                    "parts": [{"text": "你是一位专业的短视频解说脚本撰写专家。你必须严格按照JSON格式输出，不能包含任何其他文字、说明或代码块标记。"}]
+                    "parts": [
+                        {
+                            "text": system_prompt
+                            or (
+                                "你必须严格按照JSON格式输出，不能包含任何其他文字、说明或代码块标记。"
+                                if json_output
+                                else "你是一位专业的短剧解说文案助手。"
+                            )
+                        }
+                    ]
                 },
                 "contents": [{
                     "parts": [{"text": enhanced_prompt}]
@@ -423,7 +622,6 @@ class SubtitleAnalyzer:
                     "topP": 0.95,
                     "maxOutputTokens": 64000,
                     "candidateCount": 1,
-                    "stopSequences": ["```", "注意", "说明"]
                 },
                 "safetySettings": [
                     {
@@ -444,6 +642,8 @@ class SubtitleAnalyzer:
                     }
                 ]
             }
+            if json_output:
+                payload["generationConfig"]["stopSequences"] = ["```", "注意", "说明"]
 
             # 构建请求URL
             url = f"{self.base_url}/models/{self.model}:generateContent"
@@ -523,21 +723,27 @@ class SubtitleAnalyzer:
                 "temperature": temperature
             }
 
-    def _generate_narration_with_openai_compatible(self, prompt: str, temperature: float) -> Dict[str, Any]:
+    def _generate_narration_with_openai_compatible(
+        self,
+        prompt: str,
+        temperature: float,
+        system_prompt: Optional[str] = None,
+        json_output: bool = True,
+    ) -> Dict[str, Any]:
         """使用OpenAI兼容API生成解说文案"""
         try:
             # 构建OpenAI格式的请求数据
             payload = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": "你是一位专业的短视频解说脚本撰写专家。"},
+                    {"role": "system", "content": system_prompt or ("你必须严格按照JSON格式输出。" if json_output else "你是一位专业的短剧解说文案助手。")},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": temperature
             }
 
             # 对特定模型添加响应格式设置
-            if self.model not in ["deepseek-reasoner"]:
+            if json_output and self.model not in ["deepseek-reasoner"]:
                 payload["response_format"] = {"type": "json_object"}
 
             # 构建请求地址
@@ -691,7 +897,9 @@ def generate_narration_script(
     temperature: float = 1.0,
     save_result: bool = False,
     output_path: Optional[str] = None,
-    provider: Optional[str] = None
+    provider: Optional[str] = None,
+    narration_language: str = "简体中文（中国）",
+    drama_genre: str = "逆袭/复仇",
 ) -> Dict[str, Any]:
     """
     根据剧情分析生成解说文案的便捷函数
@@ -707,6 +915,7 @@ def generate_narration_script(
         save_result: 是否保存结果到文件
         output_path: 输出文件路径
         provider: 提供商类型
+        narration_language: 解说台词目标语言
 
     Returns:
         Dict[str, Any]: 包含生成结果的字典
@@ -721,13 +930,121 @@ def generate_narration_script(
     )
     
     # 生成解说文案
-    result = analyzer.generate_narration_script(short_name, plot_analysis, subtitle_content or "", temperature)
+    result = analyzer.generate_narration_script(
+        short_name,
+        plot_analysis,
+        subtitle_content or "",
+        temperature,
+        narration_language,
+        drama_genre,
+    )
     
     # 保存结果
     if save_result and result["status"] == "success":
         result["output_path"] = analyzer.save_narration_script(result, output_path)
     
     return result
+
+
+def generate_narration_copy(
+    short_name: str = None,
+    plot_analysis: str = None,
+    subtitle_content: str = None,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
+    temperature: float = 0.7,
+    provider: Optional[str] = None,
+    narration_language: str = "简体中文（中国）",
+    drama_genre: str = "逆袭/复仇",
+) -> Dict[str, Any]:
+    """生成可供用户审核修改的解说正文。"""
+    analyzer = SubtitleAnalyzer(
+        temperature=temperature,
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        provider=provider,
+    )
+
+    return analyzer.generate_narration_copy(
+        short_name=short_name,
+        plot_analysis=plot_analysis or "",
+        subtitle_content=subtitle_content or "",
+        temperature=temperature,
+        narration_language=narration_language,
+        drama_genre=drama_genre,
+    )
+
+
+def match_narration_copy_to_script(
+    short_name: str = None,
+    plot_analysis: str = None,
+    subtitle_content: str = None,
+    narration_copy: str = None,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
+    temperature: float = 0.3,
+    provider: Optional[str] = None,
+    narration_language: str = "简体中文（中国）",
+    drama_genre: str = "逆袭/复仇",
+    original_sound_ratio: int = 30,
+) -> Dict[str, Any]:
+    """将用户审核后的解说正文匹配到字幕时间戳。"""
+    analyzer = SubtitleAnalyzer(
+        temperature=temperature,
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        provider=provider,
+    )
+
+    return analyzer.match_narration_copy_to_script(
+        short_name=short_name,
+        plot_analysis=plot_analysis or "",
+        subtitle_content=subtitle_content or "",
+        narration_copy=narration_copy or "",
+        temperature=temperature,
+        narration_language=narration_language,
+        drama_genre=drama_genre,
+        original_sound_ratio=original_sound_ratio,
+    )
+
+
+def repair_narration_script(
+    short_name: str = None,
+    plot_analysis: str = None,
+    subtitle_content: str = None,
+    invalid_script: str = None,
+    validation_errors: str = None,
+    api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
+    temperature: float = 0.3,
+    provider: Optional[str] = None,
+    narration_language: str = "简体中文（中国）",
+    drama_genre: str = "逆袭/复仇",
+) -> Dict[str, Any]:
+    """根据校验错误修复解说文案的便捷函数。"""
+    analyzer = SubtitleAnalyzer(
+        temperature=temperature,
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        provider=provider,
+    )
+
+    return analyzer.repair_narration_script(
+        short_name=short_name,
+        plot_analysis=plot_analysis or "",
+        subtitle_content=subtitle_content or "",
+        invalid_script=invalid_script or "",
+        validation_errors=validation_errors or "",
+        temperature=temperature,
+        narration_language=narration_language,
+        drama_genre=drama_genre,
+    )
 
 
 if __name__ == '__main__':

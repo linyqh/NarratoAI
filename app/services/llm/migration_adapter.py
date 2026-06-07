@@ -225,6 +225,229 @@ class SubtitleAnalyzerAdapter:
         output = output.strip()
 
         return output
+
+    def _render_prompt(self, name: str, parameters: Dict[str, Any]) -> tuple[str, Optional[str]]:
+        prompt = PromptManager.get_prompt(
+            category="short_drama_narration",
+            name=name,
+            parameters=parameters,
+        )
+        prompt_object = PromptManager.get_prompt_object(
+            category="short_drama_narration",
+            name=name,
+        )
+        return prompt, prompt_object.get_system_prompt()
+
+    def _generate_json_text(
+        self,
+        prompt: str,
+        system_prompt: Optional[str],
+        temperature: float,
+        stream_callback=None,
+    ) -> str:
+        generate_func = (
+            UnifiedLLMService.generate_text_stream
+            if stream_callback
+            else UnifiedLLMService.generate_text
+        )
+        kwargs = {
+            "prompt": prompt,
+            "system_prompt": system_prompt,
+            "provider": self.provider,
+            "temperature": temperature,
+            "response_format": "json",
+            "api_key": self.api_key,
+            "api_base": self.base_url,
+        }
+        if stream_callback:
+            kwargs["on_chunk"] = stream_callback
+        result = self._run_async_safely(generate_func, **kwargs)
+        return self._clean_json_output(result)
+
+    def _generate_plain_text(self, prompt: str, system_prompt: Optional[str], temperature: float) -> str:
+        result = self._run_async_safely(
+            UnifiedLLMService.generate_text,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            provider=self.provider,
+            temperature=temperature,
+            api_key=self.api_key,
+            api_base=self.base_url,
+        )
+        return str(result or "").strip()
+
+    def generate_narration_copy(
+        self,
+        short_name: str,
+        plot_analysis: str,
+        subtitle_content: str = "",
+        temperature: float = 0.7,
+        narration_language: str = "简体中文（中国）",
+        drama_genre: str = "逆袭/复仇",
+    ) -> Dict[str, Any]:
+        """Generate editable narration copy before timeline matching."""
+        try:
+            prompt, system_prompt = self._render_prompt(
+                "narration_copy",
+                {
+                    "drama_name": short_name,
+                    "drama_genre": drama_genre,
+                    "plot_analysis": plot_analysis,
+                    "subtitle_content": subtitle_content,
+                    "narration_language": narration_language,
+                },
+            )
+            narration_copy = self._generate_plain_text(prompt, system_prompt, temperature)
+            return {
+                "status": "success",
+                "narration_copy": narration_copy,
+                "model": self.model,
+                "temperature": temperature,
+            }
+        except Exception as e:
+            logger.error(f"解说文案正文生成失败: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "temperature": temperature,
+            }
+
+    def match_narration_copy_to_script(
+        self,
+        short_name: str,
+        plot_analysis: str,
+        subtitle_content: str,
+        narration_copy: str,
+        temperature: float = 0.3,
+        narration_language: str = "简体中文（中国）",
+        drama_genre: str = "逆袭/复仇",
+        original_sound_ratio: int = 30,
+        stream_callback=None,
+    ) -> Dict[str, Any]:
+        """Match reviewed narration copy to source footage and return JSON script."""
+        try:
+            prompt, system_prompt = self._render_prompt(
+                "script_matching",
+                {
+                    "drama_name": short_name,
+                    "drama_genre": drama_genre,
+                    "plot_analysis": plot_analysis,
+                    "subtitle_content": subtitle_content,
+                    "narration_copy": narration_copy,
+                    "narration_language": narration_language,
+                    "original_sound_ratio": int(original_sound_ratio),
+                },
+            )
+            narration_script = self._generate_json_text(
+                prompt,
+                system_prompt,
+                min(float(temperature), 0.3),
+                stream_callback=stream_callback,
+            )
+            return {
+                "status": "success",
+                "narration_script": narration_script,
+                "model": self.model,
+                "temperature": temperature,
+            }
+        except Exception as e:
+            logger.error(f"解说文案画面匹配失败: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "temperature": temperature,
+            }
+
+    def plan_narration_segments(
+        self,
+        short_name: str,
+        plot_analysis: str,
+        subtitle_content: str = "",
+        temperature: float = 0.3,
+        narration_language: str = "简体中文（中国）",
+        drama_genre: str = "逆袭/复仇",
+    ) -> str:
+        """Plan source segments before generating final copy."""
+        prompt, system_prompt = self._render_prompt(
+            "segment_planning",
+            {
+                "drama_name": short_name,
+                "drama_genre": drama_genre,
+                "plot_analysis": plot_analysis,
+                "subtitle_content": subtitle_content,
+                "narration_language": narration_language,
+            },
+        )
+        return self._generate_json_text(prompt, system_prompt, min(float(temperature), 0.3))
+
+    def generate_narration_script_from_plan(
+        self,
+        short_name: str,
+        plot_analysis: str,
+        subtitle_content: str,
+        segment_plan: str,
+        temperature: float = 0.7,
+        narration_language: str = "简体中文（中国）",
+        drama_genre: str = "逆袭/复仇",
+    ) -> str:
+        prompt, system_prompt = self._render_prompt(
+            "script_generation",
+            {
+                "drama_name": short_name,
+                "drama_genre": drama_genre,
+                "plot_analysis": plot_analysis,
+                "subtitle_content": subtitle_content,
+                "segment_plan": segment_plan,
+                "narration_language": narration_language,
+            },
+        )
+        return self._generate_json_text(prompt, system_prompt, temperature)
+
+    def repair_narration_script(
+        self,
+        short_name: str,
+        plot_analysis: str,
+        subtitle_content: str,
+        invalid_script: str,
+        validation_errors: str,
+        temperature: float = 0.3,
+        narration_language: str = "简体中文（中国）",
+        drama_genre: str = "逆袭/复仇",
+        stream_callback=None,
+    ) -> Dict[str, Any]:
+        """Repair a generated script once after deterministic validation fails."""
+        try:
+            prompt, system_prompt = self._render_prompt(
+                "script_repair",
+                {
+                    "drama_name": short_name,
+                    "drama_genre": drama_genre,
+                    "plot_analysis": plot_analysis,
+                    "subtitle_content": subtitle_content,
+                    "invalid_script": invalid_script,
+                    "validation_errors": validation_errors,
+                    "narration_language": narration_language,
+                },
+            )
+            repaired_script = self._generate_json_text(
+                prompt,
+                system_prompt,
+                min(float(temperature), 0.3),
+                stream_callback=stream_callback,
+            )
+            return {
+                "status": "success",
+                "narration_script": repaired_script,
+                "model": self.model,
+                "temperature": temperature,
+            }
+        except Exception as e:
+            logger.error(f"解说文案修复失败: {str(e)}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "temperature": temperature,
+            }
     
     def analyze_subtitle(self, subtitle_content: str) -> Dict[str, Any]:
         """
@@ -262,7 +485,15 @@ class SubtitleAnalyzerAdapter:
                 "temperature": 1.0
             }
     
-    def generate_narration_script(self, short_name: str, plot_analysis: str, subtitle_content: str = "", temperature: float = 0.7) -> Dict[str, Any]:
+    def generate_narration_script(
+        self,
+        short_name: str,
+        plot_analysis: str,
+        subtitle_content: str = "",
+        temperature: float = 0.7,
+        narration_language: str = "简体中文（中国）",
+        drama_genre: str = "逆袭/复仇",
+    ) -> Dict[str, Any]:
         """
         生成解说文案 - 兼容原有接口
 
@@ -271,36 +502,30 @@ class SubtitleAnalyzerAdapter:
             plot_analysis: 剧情分析内容
             subtitle_content: 原始字幕内容，用于提供准确的时间戳信息
             temperature: 生成温度
+            narration_language: 解说台词目标语言
 
         Returns:
             生成结果字典
         """
         try:
-            # 使用新的提示词管理系统构建提示词
-            prompt = PromptManager.get_prompt(
-                category="short_drama_narration",
-                name="script_generation",
-                parameters={
-                    "drama_name": short_name,
-                    "plot_analysis": plot_analysis,
-                    "subtitle_content": subtitle_content
-                }
-            )
-            
-            # 使用统一服务生成文案
-            result = self._run_async_safely(
-                UnifiedLLMService.generate_text,
-                prompt=prompt,
-                system_prompt="你是一位专业的短视频解说脚本撰写专家。",
-                provider=self.provider,
+            segment_plan = self.plan_narration_segments(
+                short_name=short_name,
+                plot_analysis=plot_analysis,
+                subtitle_content=subtitle_content,
                 temperature=temperature,
-                response_format="json",
-                api_key=self.api_key,
-                api_base=self.base_url
+                narration_language=narration_language,
+                drama_genre=drama_genre,
             )
-            
-            # 清理JSON输出
-            cleaned_result = self._clean_json_output(result)
+
+            cleaned_result = self.generate_narration_script_from_plan(
+                short_name=short_name,
+                plot_analysis=plot_analysis,
+                subtitle_content=subtitle_content,
+                segment_plan=segment_plan,
+                temperature=temperature,
+                narration_language=narration_language,
+                drama_genre=drama_genre,
+            )
 
             # 新的提示词系统返回的是包含items数组的JSON格式
             # 为了保持向后兼容，我们需要直接返回这个JSON字符串

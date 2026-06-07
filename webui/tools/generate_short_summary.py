@@ -11,17 +11,28 @@ import os
 import json
 import time
 import traceback
+import html
 import streamlit as st
 from loguru import logger
 
 from app.config import config
-from app.services.SDE.short_drama_explanation import analyze_subtitle, generate_narration_script
+from app.services.SDE.short_drama_explanation import (
+    analyze_subtitle,
+    generate_narration_copy as generate_narration_copy_legacy,
+    match_narration_copy_to_script as match_narration_copy_to_script_legacy,
+)
 from app.services.subtitle_text import read_subtitle_text
+from app.services.short_drama_narration_validation import (
+    normalize_script_video_sources,
+)
 from app.services.tavily_search import TavilySearchError, format_search_context, search_short_drama
 # 导入新的LLM服务模块 - 确保提供商被注册
 import app.services.llm  # 这会触发提供商注册
 from app.services.llm.migration_adapter import SubtitleAnalyzerAdapter
 import re
+
+
+PUBLIC_SCRIPT_FIELDS = ["_id", "video_id", "video_name", "timestamp", "picture", "narration", "OST"]
 
 
 def _normalize_paths(paths):
@@ -63,53 +74,23 @@ def _build_combined_subtitle_content(subtitle_paths, video_paths=None):
     return "\n\n".join(sections)
 
 
-def _coerce_video_id(value):
-    try:
-        video_id = int(value)
-    except (TypeError, ValueError):
-        return None
-    return video_id if video_id > 0 else None
-
-
-def _match_video_id_by_name(video_name, video_paths):
-    video_name = str(video_name or "").strip()
-    if not video_name:
-        return None
-
-    for index, video_path in enumerate(video_paths, start=1):
-        if os.path.basename(video_path) == os.path.basename(video_name):
-            return index
-    return None
-
-
 def _normalize_narration_items_video_sources(items, video_paths):
-    video_paths = _normalize_paths(video_paths)
-    if not video_paths:
-        return items
+    return normalize_script_video_sources(items, _normalize_paths(video_paths))
 
-    normalized_items = []
-    for item in items:
-        if not isinstance(item, dict):
-            normalized_items.append(item)
-            continue
 
-        item_copy = item.copy()
-        video_id = _coerce_video_id(item_copy.get("video_id") or item_copy.get("video_index"))
-        matched_video_id = _match_video_id_by_name(
-            item_copy.get("video_name") or item_copy.get("source_video"),
-            video_paths,
-        )
-        if matched_video_id:
-            video_id = matched_video_id
-        if video_id is None or video_id > len(video_paths):
-            logger.warning(f"片段 {item_copy.get('_id')} 未提供有效 video_id，默认使用视频 1")
-            video_id = 1
+def _strip_planner_only_fields(items):
+    return [
+        {field: item[field] for field in PUBLIC_SCRIPT_FIELDS if field in item}
+        for item in items
+        if isinstance(item, dict)
+    ]
 
-        item_copy["video_id"] = video_id
-        item_copy["video_name"] = os.path.basename(video_paths[video_id - 1])
-        normalized_items.append(item_copy)
 
-    return normalized_items
+def _format_progress_status(progress, message: str = "", tr=lambda key: key):
+    message = str(message or "").strip()
+    if message:
+        return message
+    return f"{tr('Progress')}: {progress}%"
 
 
 def parse_and_fix_json(json_string):
@@ -203,25 +184,9 @@ def parse_and_fix_json(json_string):
         logger.debug(f"综合修复失败: {e}")
         pass
 
-    # 如果所有方法都失败，尝试创建一个基本的结构
+    # 如果所有方法都失败，直接返回 None，避免生成不可剪辑的默认假脚本
     logger.error(f"所有JSON解析方法都失败，原始内容: {json_string[:200]}...")
-
-    # 尝试从文本中提取关键信息创建基本结构
-    try:
-        # 这是一个简单的回退方案
-        return {
-            "items": [
-                {
-                    "_id": 1,
-                    "timestamp": "00:00:00,000-00:00:10,000",
-                    "picture": "解析失败，使用默认内容",
-                    "narration": json_string[:100] + "..." if len(json_string) > 100 else json_string,
-                    "OST": 0
-                }
-            ]
-        }
-    except Exception:
-        return None
+    return None
 
 
 def _get_tavily_api_key() -> str:
@@ -350,6 +315,100 @@ def analyze_short_drama_plot(
     return analysis_result["analysis"]
 
 
+def generate_short_drama_narration_copy(
+    subtitle_path,
+    video_theme,
+    temperature,
+    tr=lambda key: key,
+    plot_analysis=None,
+    subtitle_content=None,
+    enable_web_search: bool = False,
+    video_paths=None,
+    narration_language: str = "简体中文（中国）",
+    drama_genre: str = "逆袭/复仇",
+):
+    """生成可由用户审核修改的短剧解说正文，不绑定时间戳。"""
+    subtitle_paths = _normalize_paths(subtitle_path)
+    if not subtitle_paths:
+        st.error(tr("Please generate or upload subtitles first"))
+        return None
+    missing_subtitle_paths = [path for path in subtitle_paths if not os.path.exists(path)]
+    if missing_subtitle_paths:
+        st.error(tr("Subtitle file does not exist"))
+        return None
+
+    selected_video_paths = _normalize_paths(video_paths)
+    subtitle_content = str(subtitle_content or "").strip() or _build_combined_subtitle_content(
+        subtitle_paths,
+        selected_video_paths,
+    )
+    if not subtitle_content:
+        st.error(tr("Subtitle file is empty or unreadable"))
+        return None
+
+    analysis_text = str(plot_analysis or "").strip()
+    if not analysis_text:
+        analysis_text = analyze_short_drama_plot(
+            subtitle_paths,
+            temperature,
+            tr,
+            subtitle_content=subtitle_content,
+            short_name=video_theme,
+            enable_web_search=enable_web_search,
+            video_paths=selected_video_paths,
+        )
+        if not analysis_text:
+            return None
+
+    text_provider = config.app.get('text_llm_provider', 'gemini').lower()
+    text_api_key = config.app.get(f'text_{text_provider}_api_key')
+    text_model = config.app.get(f'text_{text_provider}_model_name')
+    text_base_url = config.app.get(f'text_{text_provider}_base_url')
+
+    try:
+        logger.info("使用新的LLM服务架构生成可审核解说文案")
+        analyzer = SubtitleAnalyzerAdapter(text_api_key, text_model, text_base_url, text_provider)
+        narration_result = analyzer.generate_narration_copy(
+            short_name=video_theme,
+            plot_analysis=analysis_text,
+            subtitle_content=subtitle_content,
+            temperature=temperature,
+            narration_language=narration_language,
+            drama_genre=drama_genre,
+        )
+    except Exception as e:
+        logger.warning(f"使用新LLM服务生成文案失败，回退到旧实现: {str(e)}")
+        narration_result = generate_narration_copy_legacy(
+            short_name=video_theme,
+            plot_analysis=analysis_text,
+            subtitle_content=subtitle_content,
+            api_key=text_api_key,
+            model=text_model,
+            base_url=text_base_url,
+            temperature=temperature,
+            provider=text_provider,
+            narration_language=narration_language,
+            drama_genre=drama_genre,
+        )
+
+    if narration_result.get("status") != "success":
+        logger.error(f"解说文案正文生成失败: {narration_result.get('message')}")
+        st.error(tr("Script generation failed check logs"))
+        return None
+
+    narration_copy = str(narration_result.get("narration_copy", "")).strip()
+    if not narration_copy:
+        logger.error("模型返回空解说文案正文")
+        st.error(tr("Generated narration copy is empty"))
+        return None
+
+    return {
+        "narration_copy": narration_copy,
+        "plot_analysis": analysis_text,
+        "subtitle_content": subtitle_content,
+    }
+
+
 def generate_script_short_sunmmary(
     params,
     subtitle_path,
@@ -360,21 +419,79 @@ def generate_script_short_sunmmary(
     subtitle_content=None,
     enable_web_search: bool = False,
     video_paths=None,
+    narration_language: str = "简体中文（中国）",
+    narration_copy: str = "",
+    drama_genre: str = "逆袭/复仇",
+    original_sound_ratio: int = 30,
 ):
     """
     生成 短剧解说 视频脚本
     要求: 提供高质量短剧字幕
     适合场景: 短剧
     """
-    progress_bar = st.progress(0)
+    progress_bar = st.empty()
     status_text = st.empty()
+    stream_text = st.empty()
+    stream_state = {
+        "reasoning": "",
+        "content": "",
+        "last_update": 0.0,
+    }
 
     def update_progress(progress: float, message: str = ""):
         progress_bar.progress(progress)
+        status_text.text(_format_progress_status(progress, message, tr))
+
+    def update_waiting(message: str = ""):
+        progress_bar.empty()
         if message:
-            status_text.text(f"{progress}% - {message}")
+            status_text.text(message)
         else:
-            status_text.text(f"{tr('Progress')}: {progress}%")
+            status_text.empty()
+
+    def update_stream_window(event):
+        event = event or {}
+        chunk_type = str(event.get("type") or "content")
+        chunk_text = str(event.get("text") or "")
+        if chunk_type == "done" or not chunk_text:
+            return
+
+        bucket = "reasoning" if chunk_type == "reasoning" else "content"
+        stream_state[bucket] += chunk_text
+
+        now = time.time()
+        if now - stream_state["last_update"] < 0.12:
+            return
+        stream_state["last_update"] = now
+
+        blocks = []
+        if stream_state["reasoning"].strip():
+            blocks.append(
+                f"{tr('Model reasoning stream')}\n"
+                f"{stream_state['reasoning'][-900:]}"
+            )
+        if stream_state["content"].strip():
+            blocks.append(
+                f"{tr('Model output preview')}\n"
+                f"{stream_state['content'][-900:]}"
+            )
+
+        preview = "\n\n".join(blocks)[-1800:]
+        escaped_preview = html.escape(preview)
+        stream_text.markdown(
+            f"""
+            <div style="height:150px; overflow:hidden; border:1px solid #e5e7eb;
+                        border-radius:8px; padding:10px 12px; background:#f8fafc;
+                        color:#334155;">
+              <div style="font-size:12px; font-weight:600; color:#64748b; margin-bottom:6px;">
+                {html.escape(tr('LLM stream window title'))}
+              </div>
+              <pre style="white-space:pre-wrap; margin:0; font-size:12px; line-height:1.45;
+                          font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">{escaped_preview}</pre>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     try:
         with st.spinner(tr("Generating script...")):
@@ -414,9 +531,14 @@ def generate_script_short_sunmmary(
                 st.error(tr("Subtitle file is empty or unreadable"))
                 return
 
+            narration_copy = str(narration_copy or "").strip()
+            if not narration_copy:
+                st.error(tr("Please generate and review narration copy first"))
+                return
+
             analyzer = SubtitleAnalyzerAdapter(text_api_key, text_model, text_base_url, text_provider)
             if plot_analysis and str(plot_analysis).strip():
-                logger.info("使用用户编辑后的剧情理解结果生成解说文案")
+                logger.info("使用用户编辑后的剧情理解结果匹配剪辑脚本")
                 analysis_result = {
                     "status": "success",
                     "analysis": str(plot_analysis).strip(),
@@ -424,7 +546,7 @@ def generate_script_short_sunmmary(
             else:
                 plot_analysis_input = subtitle_content
                 if enable_web_search:
-                    update_progress(40, tr("Searching short drama with Tavily..."))
+                    update_waiting(tr("Searching short drama with Tavily..."))
                     plot_analysis_input = _build_plot_analysis_input(
                         subtitle_content,
                         short_name=video_theme,
@@ -436,11 +558,13 @@ def generate_script_short_sunmmary(
                 try:
                     # 优先使用新的LLM服务架构
                     logger.info("使用新的LLM服务架构进行字幕分析")
+                    update_waiting(tr("Analyzing subtitles with model..."))
                     analysis_result = analyzer.analyze_subtitle(plot_analysis_input)
 
                 except Exception as e:
                     logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
                     # 回退到旧的实现
+                    update_waiting(tr("Analyzing subtitles with model..."))
                     analysis_result = analyze_subtitle(
                         subtitle_content=plot_analysis_input,
                         api_key=text_api_key,
@@ -451,42 +575,50 @@ def generate_script_short_sunmmary(
                         provider=text_provider
                     )
             """
-            3. 根据剧情生成解说文案
+            3. 根据用户审核后的文案匹配画面与时间戳
             """
             if analysis_result["status"] == "success":
                 logger.info("字幕分析成功！")
-                update_progress(60, tr("Generating narration copy..."))
+                update_waiting()
 
-                # 根据剧情生成解说文案 - 使用新的LLM服务架构
                 try:
-                    # 优先使用新的LLM服务架构
-                    logger.info("使用新的LLM服务架构生成解说文案")
-                    narration_result = analyzer.generate_narration_script(
+                    logger.info("使用新的LLM服务架构将审核文案匹配到字幕画面")
+                    update_waiting(tr("Matching narration copy to footage..."))
+                    stream_text.info(tr("Waiting for model stream..."))
+                    narration_result = analyzer.match_narration_copy_to_script(
                         short_name=video_theme,
                         plot_analysis=analysis_result["analysis"],
-                        subtitle_content=subtitle_content,  # 传递原始字幕内容
-                        temperature=temperature
+                        subtitle_content=subtitle_content,
+                        narration_copy=narration_copy,
+                        temperature=temperature,
+                        narration_language=narration_language,
+                        drama_genre=drama_genre,
+                        original_sound_ratio=original_sound_ratio,
+                        stream_callback=update_stream_window,
                     )
                 except Exception as e:
-                    logger.warning(f"使用新LLM服务失败，回退到旧实现: {str(e)}")
-                    # 回退到旧的实现
-                    narration_result = generate_narration_script(
+                    logger.warning(f"使用新LLM服务匹配画面失败，回退到旧实现: {str(e)}")
+                    stream_text.info(tr("Streaming unavailable fallback waiting..."))
+                    narration_result = match_narration_copy_to_script_legacy(
                         short_name=video_theme,
                         plot_analysis=analysis_result["analysis"],
-                        subtitle_content=subtitle_content,  # 传递原始字幕内容
+                        subtitle_content=subtitle_content,
+                        narration_copy=narration_copy,
                         api_key=text_api_key,
                         model=text_model,
                         base_url=text_base_url,
-                        save_result=True,
                         temperature=temperature,
-                        provider=text_provider
+                        provider=text_provider,
+                        narration_language=narration_language,
+                        drama_genre=drama_genre,
+                        original_sound_ratio=original_sound_ratio,
                     )
 
                 if narration_result["status"] == "success":
-                    logger.info("\n解说文案生成成功！")
+                    logger.info("\n剪辑脚本匹配成功！")
                     logger.info(narration_result["narration_script"])
                 else:
-                    logger.info(f"\n解说文案生成失败: {narration_result['message']}")
+                    logger.info(f"\n剪辑脚本匹配失败: {narration_result['message']}")
                     st.error(tr("Script generation failed check logs"))
                     st.stop()
             else:
@@ -519,6 +651,7 @@ def generate_script_short_sunmmary(
                 narration_dict['items'],
                 selected_video_paths,
             )
+            narration_items = _strip_planner_only_fields(narration_items)
             script = json.dumps(narration_items, ensure_ascii=False, indent=2)
 
             if script is None:
@@ -543,3 +676,4 @@ def generate_script_short_sunmmary(
         time.sleep(2)
         progress_bar.empty()
         status_text.empty()
+        stream_text.empty()
