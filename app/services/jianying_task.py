@@ -9,7 +9,7 @@ from loguru import logger
 from app.config import config
 from app.models import const
 from app.models.schema import VideoClipParams
-from app.services import voice, clip_video, update_script
+from app.services import voice, clip_video, script_subtitle
 from app.services.jianying_draft_builder import write_plaintext_jianying_draft
 from app.services import state as sm
 from app.utils import utils
@@ -141,6 +141,141 @@ def _normalize_indextts_reference_audio(params: VideoClipParams) -> None:
     raise ValueError(f"{display_name} 参考音频不存在，请在音频设置中上传或选择有效的参考音频")
 
 
+def _index_tts_results(tts_results: list[Dict]) -> Dict:
+    indexed = {}
+    for tts_result in tts_results or []:
+        item_id = tts_result.get("_id")
+        timestamp = tts_result.get("timestamp")
+        if item_id is not None:
+            indexed[item_id] = tts_result
+        if timestamp:
+            indexed[timestamp] = tts_result
+    return indexed
+
+
+def _get_video_source_paths(params: VideoClipParams) -> list[str]:
+    return clip_video._normalize_video_origin_paths(
+        getattr(params, "video_origin_path", ""),
+        getattr(params, "video_origin_paths", []),
+    )
+
+
+def _resolve_script_video_path(item: Dict, video_source_paths: list[str]) -> str:
+    if not video_source_paths:
+        return ""
+    return clip_video._resolve_script_video_path(item, video_source_paths)
+
+
+def _resolve_tts_result(item: Dict, tts_map: Dict) -> Dict:
+    item_id = item.get("_id")
+    timestamp = item.get("timestamp")
+    if item_id is not None and item_id in tts_map:
+        return tts_map[item_id]
+    if timestamp in tts_map:
+        return tts_map[timestamp]
+    return {}
+
+
+def _build_jianying_draft_script(
+    list_script: list[Dict],
+    params: VideoClipParams,
+    tts_results: list[Dict],
+) -> list[Dict]:
+    video_source_paths = _get_video_source_paths(params)
+    if not video_source_paths:
+        raise ValueError("视频文件不能为空")
+
+    tts_map = _index_tts_results(tts_results)
+    draft_script = []
+    accumulated_duration = 0.0
+
+    for item in list_script:
+        item_copy = dict(item)
+        timestamp = item_copy.get("timestamp", "")
+        try:
+            source_start, source_end = script_subtitle.parse_time_range(timestamp)
+        except ValueError as e:
+            logger.warning(f"解析剪映片段时间戳失败，跳过片段 {item_copy.get('_id')}: {e}")
+            continue
+
+        timestamp_duration = _floor_duration_to_milliseconds(source_end - source_start)
+        if timestamp_duration <= 0:
+            logger.warning(f"剪映片段时长无效，跳过片段 {item_copy.get('_id')}: {timestamp}")
+            continue
+
+        ost = int(item_copy.get("OST", 0) or 0)
+        tts_result = _resolve_tts_result(item_copy, tts_map) if ost in [0, 2] else {}
+        item_duration = timestamp_duration
+        if tts_result.get("duration"):
+            item_duration = _floor_duration_to_milliseconds(float(tts_result.get("duration") or 0.0))
+        if item_duration <= 0:
+            item_duration = timestamp_duration
+
+        item_copy.update({
+            "video": _resolve_script_video_path(item_copy, video_source_paths),
+            "audio": tts_result.get("audio_file", ""),
+            "subtitle": tts_result.get("subtitle_file", ""),
+            "sourceTimeRange": timestamp,
+            "start_time": source_start,
+            "source_start_time": source_start,
+            "duration": item_duration,
+            "use_source_timerange": True,
+            "editedTimeRange": (
+                f"{script_subtitle.format_srt_time(accumulated_duration)}-"
+                f"{script_subtitle.format_srt_time(accumulated_duration + item_duration)}"
+            ),
+        })
+        accumulated_duration += item_duration
+        draft_script.append(item_copy)
+
+    if not draft_script:
+        raise ValueError("没有可写入剪映草稿的视频片段")
+
+    return draft_script
+
+
+def _get_original_subtitle_paths(params: VideoClipParams) -> list[str]:
+    subtitle_paths = getattr(params, "original_subtitle_paths", []) or []
+    if isinstance(subtitle_paths, str):
+        subtitle_paths = [subtitle_paths]
+
+    normalized_paths = []
+    seen = set()
+    for subtitle_path in subtitle_paths:
+        if not isinstance(subtitle_path, str):
+            continue
+        subtitle_path = subtitle_path.strip()
+        if subtitle_path and subtitle_path not in seen:
+            normalized_paths.append(subtitle_path)
+            seen.add(subtitle_path)
+
+    single_subtitle_path = str(getattr(params, "original_subtitle_path", "") or "").strip()
+    if single_subtitle_path and single_subtitle_path not in seen:
+        normalized_paths.insert(0, single_subtitle_path)
+
+    return normalized_paths
+
+
+def _create_jianying_subtitle_file(
+    task_id: str,
+    draft_script: list[Dict],
+    params: VideoClipParams,
+) -> str:
+    if not getattr(params, "subtitle_enabled", True):
+        return ""
+
+    try:
+        return script_subtitle.create_script_subtitle_file(
+            task_id=task_id,
+            list_script=draft_script,
+            original_subtitle_paths=_get_original_subtitle_paths(params),
+            video_origin_paths=_get_video_source_paths(params),
+        )
+    except Exception as e:
+        logger.warning(f"剪映草稿字幕生成失败，将导出无字幕草稿: {e}")
+        return ""
+
+
 def start_export_jianying_draft(task_id: str, params: VideoClipParams):
     """
     导出到剪映草稿的后台任务
@@ -200,23 +335,15 @@ def start_export_jianying_draft(task_id: str, params: VideoClipParams):
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=20)
 
     """
-    3. 统一视频裁剪 - 基于OST类型的差异化裁剪策略
+    3. 准备剪映草稿时间线 - 直接引用原视频素材和源时间戳
     """
-    logger.info("\n\n## 3. 统一视频裁剪（基于OST类型）")
-    video_clip_result = clip_video.clip_video_unified(
-        video_origin_path=params.video_origin_path,
-        video_origin_paths=getattr(params, "video_origin_paths", []),
-        script_list=list_script,
-        tts_results=tts_results
-    )
+    logger.info("\n\n## 3. 准备剪映草稿时间线（不裁剪视频）")
+    new_script_list = _build_jianying_draft_script(list_script, params, tts_results)
+    subtitle_path = _create_jianying_subtitle_file(task_id, new_script_list, params)
 
-    tts_clip_result = {tts_result['_id']: tts_result['audio_file'] for tts_result in tts_results}
-    subclip_clip_result = {
-        tts_result['_id']: tts_result['subtitle_file'] for tts_result in tts_results
-    }
-    new_script_list = update_script.update_script_timestamps(list_script, video_clip_result, tts_clip_result, subclip_clip_result)
-
-    logger.info(f"统一裁剪完成，处理了 {len(video_clip_result)} 个视频片段")
+    logger.info(f"剪映草稿时间线准备完成，处理了 {len(new_script_list)} 个视频片段")
+    if subtitle_path:
+        logger.info(f"剪映草稿字幕文件: {subtitle_path}")
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=60)
 
@@ -245,15 +372,19 @@ def start_export_jianying_draft(task_id: str, params: VideoClipParams):
             new_script_list=new_script_list,
             params=params,
             output_dir=output_dir,
+            subtitle_path=subtitle_path,
         )
         
         logger.success(f"成功导出到剪映草稿: {draft_name}")
         logger.info(f"草稿已保存到: {draft_path}")
         
         # 更新任务状态
-        sm.state.update_task(task_id, state=const.TASK_STATE_COMPLETE, progress=100, draft_path=draft_path, draft_name=draft_name)
+        task_kwargs = {"draft_path": draft_path, "draft_name": draft_name}
+        if subtitle_path:
+            task_kwargs["subtitles"] = [subtitle_path]
+        sm.state.update_task(task_id, state=const.TASK_STATE_COMPLETE, progress=100, **task_kwargs)
         
-        return {"draft_path": draft_path, "draft_name": draft_name}
+        return task_kwargs
     except Exception as e:
         logger.error(f"导出到剪映草稿失败: {e}")
         import traceback

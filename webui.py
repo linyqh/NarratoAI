@@ -10,6 +10,7 @@ from webui.components import basic_settings, video_settings, audio_settings, sub
 # from webui.utils import cache, file_utils
 from app.utils import utils
 from app.utils import ffmpeg_utils
+from app.models import const
 from app.models.schema import VideoClipParams, VideoAspect
 
 
@@ -129,6 +130,77 @@ def tr(key):
     return loc.get("Translation", {}).get(key, key)
 
 
+VIDEO_GENERATION_STEP_LABELS = [
+    "正在加载剪辑脚本",
+    "正在生成 TTS 配音",
+    "正在按脚本裁剪视频片段",
+    "正在合并配音和字幕",
+    "正在合并视频片段",
+    "正在合成最终视频",
+]
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _format_optional_percent(value):
+    try:
+        percent = max(0.0, min(100.0, float(value)))
+    except (TypeError, ValueError):
+        return None
+    if percent.is_integer():
+        return str(int(percent))
+    return f"{percent:.1f}"
+
+
+def _render_generation_status(task: dict | None) -> str:
+    task = task or {}
+    state = task.get("state")
+    current_step = _safe_int(task.get("step_current"), 0)
+    step_total = _safe_int(task.get("step_total"), len(VIDEO_GENERATION_STEP_LABELS))
+    message = str(task.get("message") or "")
+    ffmpeg_percent = _format_optional_percent(task.get("ffmpeg_progress"))
+
+    if current_step <= 0:
+        return f"<div style='font-weight:650;color:#262730;'>{escape(message or '正在生成视频，请稍候...')}</div>"
+
+    lines = []
+    for index, default_label in enumerate(VIDEO_GENERATION_STEP_LABELS, start=1):
+        is_current = index == current_step
+        is_complete = state == const.TASK_STATE_COMPLETE
+        is_done = is_complete or index < current_step
+        label = message if is_current and message else default_label
+
+        suffix = f"{index}/{step_total}"
+        if (
+            is_current
+            and index == step_total
+            and ffmpeg_percent is not None
+            and not is_complete
+        ):
+            suffix = f"{suffix}，ffmpeg {ffmpeg_percent}%"
+
+        color = "#262730" if is_current else "#8b9099" if is_done else "#b9bec7"
+        weight = "650" if is_current else "500"
+        lines.append(
+            "<div style='"
+            "font-size:1.02rem;"
+            "line-height:1.85;"
+            "margin:0.28rem 0;"
+            f"color:{color};"
+            f"font-weight:{weight};"
+            "'>"
+            f"{escape(label)} <span style='white-space:nowrap;'>({escape(suffix)})</span>"
+            "</div>"
+        )
+
+    return "".join(lines)
+
+
 def get_help_text():
     """返回带当前项目版本号的帮助文案"""
     return tr("Get Help").replace("🎉🎉🎉", f" v{config.project_version}")
@@ -198,7 +270,12 @@ def render_generate_button():
 
             progress_bar = st.progress(0)
             status_panel = st.status(tr("Generating Video"), expanded=True)
-            status_panel.write(tr("Generating Video"))
+            with status_panel:
+                status_placeholder = st.empty()
+                status_placeholder.markdown(
+                    _render_generation_status(None),
+                    unsafe_allow_html=True,
+                )
 
             def run_task():
                 try:
@@ -238,10 +315,19 @@ def render_generate_button():
                     # 更新进度条和阶段状态
                     progress_bar.progress(progress / 100)
                     current_message = task.get("message") or f"Processing... {progress}%"
-                    status_label = f"{current_message} ({progress}%)"
-                    status_key = (state, progress, current_message)
+                    status_key = (
+                        state,
+                        progress,
+                        current_message,
+                        task.get("step_current"),
+                        task.get("step_total"),
+                        task.get("ffmpeg_progress"),
+                    )
                     if status_key != last_status_key:
-                        status_panel.write(status_label)
+                        status_placeholder.markdown(
+                            _render_generation_status(task),
+                            unsafe_allow_html=True,
+                        )
                         last_status_key = status_key
 
                     if state == const.TASK_STATE_COMPLETE:

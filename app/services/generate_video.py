@@ -15,7 +15,7 @@ import subprocess
 import time
 import traceback
 import tempfile
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 from loguru import logger
 import numpy as np
 from moviepy import (
@@ -471,7 +471,23 @@ def _parse_ffmpeg_progress_time(progress: Dict[str, str]) -> float:
     return 0.0
 
 
-def _run_ffmpeg_with_progress(cmd: list[str], duration: float) -> tuple[int, str]:
+def _emit_ffmpeg_progress(
+    progress_callback: Optional[Callable[[float], None]],
+    percent: float,
+) -> None:
+    if not progress_callback:
+        return
+    try:
+        progress_callback(max(0.0, min(100.0, float(percent))))
+    except Exception as e:
+        logger.debug(f"ffmpeg 进度回调失败: {e}")
+
+
+def _run_ffmpeg_with_progress(
+    cmd: list[str],
+    duration: float,
+    progress_callback: Optional[Callable[[float], None]] = None,
+) -> tuple[int, str]:
     progress_keys = {
         "frame",
         "fps",
@@ -497,6 +513,7 @@ def _run_ffmpeg_with_progress(cmd: list[str], duration: float) -> tuple[int, str
     output_tail: list[str] = []
     last_log_time = 0.0
     last_logged_percent = -1.0
+    _emit_ffmpeg_progress(progress_callback, 0)
 
     assert process.stdout is not None
     for raw_line in process.stdout:
@@ -537,11 +554,14 @@ def _run_ffmpeg_with_progress(cmd: list[str], duration: float) -> tuple[int, str
                 f"({_format_duration(current)}/{_format_duration(duration)}), "
                 f"speed={speed}"
             )
+            _emit_ffmpeg_progress(progress_callback, percent)
             last_log_time = now
             last_logged_percent = percent
         progress = {}
 
     return_code = process.wait()
+    if return_code == 0:
+        _emit_ffmpeg_progress(progress_callback, 100)
     return return_code, "\n".join(output_tail[-80:])
 
 
@@ -1264,6 +1284,7 @@ def _merge_materials_with_ffmpeg(
     subtitle_path: Optional[str] = None,
     bgm_path: Optional[str] = None,
     options: Optional[Dict[str, Any]] = None,
+    progress_callback: Optional[Callable[[float], None]] = None,
 ) -> bool:
     ffmpeg_binary = _get_ffmpeg_binary()
     if not _check_ffmpeg_binary(ffmpeg_binary):
@@ -1285,7 +1306,11 @@ def _merge_materials_with_ffmpeg(
             f"video={video_path}, audio={audio_path}, output={output_path}, "
             f"duration={_format_duration(duration)}"
         )
-        return_code, ffmpeg_output = _run_ffmpeg_with_progress(cmd, duration)
+        return_code, ffmpeg_output = _run_ffmpeg_with_progress(
+            cmd,
+            duration,
+            progress_callback=progress_callback,
+        )
         if return_code != 0:
             logger.warning(f"ffmpeg 快速合并失败，将回退 MoviePy: {ffmpeg_output[-3000:]}")
             if os.path.exists(output_path):
@@ -1315,7 +1340,8 @@ def merge_materials(
     output_path: str,
     subtitle_path: Optional[str] = None,
     bgm_path: Optional[str] = None,
-    options: Optional[Dict[str, Any]] = None
+    options: Optional[Dict[str, Any]] = None,
+    progress_callback: Optional[Callable[[float], None]] = None,
 ) -> str:
     """
     合并视频、音频、BGM和字幕素材生成最终视频
@@ -1342,6 +1368,7 @@ def merge_materials(
             - threads: 处理线程数，默认2
             - fps: 输出帧率，默认30
             - subtitle_enabled: 是否启用字幕，默认True
+        progress_callback: ffmpeg 快速合并进度回调，参数为 0-100 的百分比
             
     返回:
         输出视频的路径
@@ -1439,6 +1466,7 @@ def merge_materials(
             subtitle_path=subtitle_path,
             bgm_path=bgm_path,
             options=ffmpeg_options,
+            progress_callback=progress_callback,
         ):
             return output_path
         logger.warning("ffmpeg 快速合并失败，继续使用 MoviePy 兼容路径")

@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from loguru import logger
 
 from app.models.schema import VideoClipParams
+from app.services import script_subtitle
 
 
 MICROSECONDS = 1_000_000
@@ -565,6 +566,213 @@ def _create_audio_segment(
         "uniform_scale": None,
         "common_keyframes": [],
     }
+
+
+def _normalize_hex_color(color: Optional[str], default: str = "#FFFFFF") -> str:
+    color = str(color or default).strip()
+    if not color.startswith("#"):
+        color = f"#{color}"
+    if re.fullmatch(r"#[0-9a-fA-F]{3}", color):
+        color = "#" + "".join(char * 2 for char in color[1:])
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+        color = default
+    return color.upper()
+
+
+def _hex_color_to_rgb_float(color: Optional[str], default: str = "#FFFFFF") -> Tuple[float, float, float]:
+    normalized = _normalize_hex_color(color, default)
+    return (
+        int(normalized[1:3], 16) / 255,
+        int(normalized[3:5], 16) / 255,
+        int(normalized[5:7], 16) / 255,
+    )
+
+
+def _resolve_subtitle_text_size(params: VideoClipParams) -> float:
+    raw_size = getattr(params, "font_size", 60) or 60
+    try:
+        font_size = float(raw_size)
+    except (TypeError, ValueError):
+        font_size = 60.0
+    return max(4.0, min(10.0, font_size / 12.0))
+
+
+def _resolve_subtitle_transform_y(params: VideoClipParams) -> float:
+    subtitle_position = str(getattr(params, "subtitle_position", "bottom") or "bottom").lower()
+    if subtitle_position == "top":
+        return 0.82
+    if subtitle_position == "center":
+        return 0.0
+    if subtitle_position == "custom":
+        try:
+            y_percent = float(getattr(params, "custom_position", 85.0))
+        except (TypeError, ValueError):
+            y_percent = 85.0
+        y_percent = max(0.0, min(100.0, y_percent))
+        return max(-0.92, min(0.92, 1.0 - 2.0 * (y_percent / 100.0)))
+    return -0.8
+
+
+def _create_text_material(text: str, params: VideoClipParams) -> Dict[str, Any]:
+    material_id = uuid.uuid4().hex
+    text = str(text or "")
+    text_color = _hex_color_to_rgb_float(getattr(params, "text_fore_color", "#FFFFFF"), "#FFFFFF")
+    stroke_color = _hex_color_to_rgb_float(getattr(params, "stroke_color", "#000000"), "#000000")
+    try:
+        stroke_width = float(getattr(params, "stroke_width", 1.5) or 0)
+    except (TypeError, ValueError):
+        stroke_width = 1.5
+
+    text_style = {
+        "fill": {
+            "alpha": 1.0,
+            "content": {
+                "render_type": "solid",
+                "solid": {
+                    "alpha": 1.0,
+                    "color": list(text_color),
+                },
+            },
+        },
+        "range": [0, len(text)],
+        "size": _resolve_subtitle_text_size(params),
+        "bold": False,
+        "italic": False,
+        "underline": False,
+        "strokes": [],
+    }
+    check_flag = 7
+    if stroke_width > 0:
+        text_style["strokes"] = [
+            {
+                "content": {
+                    "solid": {
+                        "alpha": 1.0,
+                        "color": list(stroke_color),
+                    }
+                },
+                "width": max(0.0, min(0.2, stroke_width / 100.0 * 0.2)),
+            }
+        ]
+        check_flag |= 8
+
+    return {
+        "id": material_id,
+        "content": json.dumps(
+            {
+                "styles": [text_style],
+                "text": text,
+            },
+            ensure_ascii=False,
+        ),
+        "typesetting": 0,
+        "alignment": 1,
+        "letter_spacing": 0.0,
+        "line_spacing": 0.02,
+        "line_feed": 1,
+        "line_max_width": 0.82,
+        "force_apply_line_max_width": False,
+        "check_flag": check_flag,
+        "type": "subtitle",
+        "global_alpha": 1.0,
+    }
+
+
+def _create_text_segment(
+    material_id: str,
+    start_us: int,
+    duration_us: int,
+    params: VideoClipParams,
+) -> Dict[str, Any]:
+    return {
+        "id": uuid.uuid4().hex,
+        "material_id": material_id,
+        "target_timerange": {"start": start_us, "duration": duration_us},
+        "source_timerange": None,
+        "speed": 1.0,
+        "volume": 1.0,
+        "extra_material_refs": [],
+        "is_tone_modify": False,
+        "clip": {
+            "alpha": 1.0,
+            "flip": {"horizontal": False, "vertical": False},
+            "rotation": 0.0,
+            "scale": {"x": 1.0, "y": 1.0},
+            "transform": {"x": 0.0, "y": _resolve_subtitle_transform_y(params)},
+        },
+        "uniform_scale": {"on": True, "value": 1.0},
+        "render_index": 15000,
+        "common_keyframes": [],
+    }
+
+
+def _parse_srt_entries(subtitle_path: str) -> List[Tuple[float, float, str]]:
+    if not subtitle_path or not os.path.exists(subtitle_path):
+        return []
+
+    with open(subtitle_path, "r", encoding="utf-8-sig") as f:
+        content = f.read().strip()
+    if not content:
+        return []
+
+    entries: List[Tuple[float, float, str]] = []
+    for block in re.split(r"\n\s*\n", content):
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        time_line_index = next(
+            (index for index, line in enumerate(lines) if "-->" in line),
+            None,
+        )
+        if time_line_index is None or time_line_index + 1 >= len(lines):
+            continue
+
+        try:
+            start_text, end_text = lines[time_line_index].split("-->", 1)
+            start = script_subtitle.parse_srt_like_time(start_text)
+            end = script_subtitle.parse_srt_like_time(end_text)
+        except Exception as e:
+            logger.warning(f"解析剪映字幕时间失败，跳过字幕块: {e}")
+            continue
+
+        text = "\n".join(lines[time_line_index + 1:]).strip()
+        if end <= start or not text:
+            continue
+        entries.append((start, end, text))
+
+    return entries
+
+
+def _add_subtitle_track_from_srt(
+    draft: Dict[str, Any],
+    subtitle_path: str,
+    params: VideoClipParams,
+) -> int:
+    entries = _parse_srt_entries(subtitle_path)
+    if not entries:
+        return 0
+
+    text_track = _create_track("text", "字幕轨道")
+    text_track["is_default_name"] = False
+    max_end_us = 0
+    for start, end, text in entries:
+        start_us = _seconds_to_microseconds(start)
+        duration_us = _seconds_to_microseconds(end - start)
+        if duration_us <= 0:
+            continue
+
+        text_material = _create_text_material(text, params)
+        draft["materials"]["texts"].append(text_material)
+        text_track["segments"].append(_create_text_segment(
+            text_material["id"],
+            start_us,
+            duration_us,
+            params,
+        ))
+        max_end_us = max(max_end_us, start_us + duration_us)
+
+    if text_track["segments"]:
+        draft["tracks"].append(text_track)
+        logger.info(f"已写入剪映字幕轨: {len(text_track['segments'])} 条, {subtitle_path}")
+    return max_end_us
 
 
 def _normalize_video_material(material: Dict[str, Any]) -> Dict[str, Any]:
@@ -1313,6 +1521,7 @@ def write_plaintext_jianying_draft(
     new_script_list: List[Dict[str, Any]],
     params: VideoClipParams,
     output_dir: str,
+    subtitle_path: str = "",
 ) -> Tuple[str, str]:
     os.makedirs(jianying_draft_path, exist_ok=True)
 
@@ -1332,13 +1541,16 @@ def write_plaintext_jianying_draft(
     metadata_cache: Dict[str, Tuple[int, int, int]] = {}
     used_asset_paths: Set[str] = set()
     asset_path_cache: Dict[str, str] = {}
+    video_material_cache: Dict[str, Dict[str, Any]] = {}
     current_time_us = 0
 
     for item in new_script_list:
         start_time = float(item.get("start_time", 0.0) or 0.0)
+        source_start_time = float(item.get("source_start_time", start_time) or 0.0)
         requested_duration = float(item.get("duration", 0.0) or 0.0)
         timestamp = item.get("timestamp", "")
         ost = int(item.get("OST", 0) or 0)
+        use_source_timerange = bool(item.get("use_source_timerange", False))
 
         logger.info(
             f"处理片段: OST={ost}, start_time={start_time}, "
@@ -1346,15 +1558,15 @@ def write_plaintext_jianying_draft(
         )
 
         video_file = item.get("video", "")
-        use_clipped_video = bool(video_file and os.path.exists(video_file))
-        if not use_clipped_video:
+        use_clipped_video = bool(video_file and os.path.exists(video_file) and not use_source_timerange)
+        if not use_clipped_video and not video_file:
             video_file = params.video_origin_path
 
         if not video_file or not os.path.exists(video_file):
             logger.warning(f"视频素材不存在，跳过片段: {video_file or timestamp}")
             continue
 
-        source_start_time = 0.0 if use_clipped_video else start_time
+        source_start_time = 0.0 if use_clipped_video else source_start_time
         video_duration = _clamp_duration_to_media(
             requested_duration,
             video_file,
@@ -1381,23 +1593,32 @@ def write_plaintext_jianying_draft(
             continue
 
         segment_duration_us = _seconds_to_microseconds(segment_duration)
-        video_material_duration_us, width, height = _get_video_metadata_ffprobe(video_file, metadata_cache)
-        video_relative_path = _register_asset(
-            video_file,
-            draft_path,
-            "assets/video",
-            f"video_{len(video_track['segments']) + 1}.mp4",
-            used_asset_paths,
-            asset_path_cache,
+        video_material_key = os.path.abspath(video_file)
+        video_material = video_material_cache.get(video_material_key)
+        if video_material is None:
+            video_material_duration_us, width, height = _get_video_metadata_ffprobe(video_file, metadata_cache)
+            video_relative_path = _register_asset(
+                video_file,
+                draft_path,
+                "assets/video",
+                f"video_{len(video_material_cache) + 1}.mp4",
+                used_asset_paths,
+                asset_path_cache,
+            )
+            video_material = _create_video_material(video_relative_path, video_material_duration_us, width, height)
+            draft["materials"]["videos"].append(video_material)
+            video_material_cache[video_material_key] = video_material
+        video_volume = (
+            0.0
+            if ost == 0
+            else float(getattr(params, "original_volume", 1.0) or 1.0)
         )
-        video_material = _create_video_material(video_relative_path, video_material_duration_us, width, height)
-        draft["materials"]["videos"].append(video_material)
         video_track["segments"].append(_create_video_segment(
             video_material["id"],
             _seconds_to_microseconds(_floor_duration_to_milliseconds(source_start_time)),
             segment_duration_us,
             current_time_us,
-            float(getattr(params, "original_volume", 1.0) or 1.0),
+            video_volume,
         ))
 
         if ost in [0, 2] and audio_file and os.path.exists(audio_file):
@@ -1428,10 +1649,14 @@ def write_plaintext_jianying_draft(
     if not video_track["segments"]:
         raise ValueError("没有可写入剪映草稿的视频片段")
 
+    subtitle_end_us = 0
+    if getattr(params, "subtitle_enabled", True) and subtitle_path:
+        subtitle_end_us = _add_subtitle_track_from_srt(draft, subtitle_path, params)
+
     first_video = draft["materials"]["videos"][0]
     draft["canvas_config"]["width"] = int(first_video.get("width", 1920) or 1920)
     draft["canvas_config"]["height"] = int(first_video.get("height", 1080) or 1080)
-    draft["duration"] = current_time_us
+    draft["duration"] = max(current_time_us, subtitle_end_us)
     draft["update_time"] = int(time.time() * MICROSECONDS)
 
     asset_size = sum(

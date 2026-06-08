@@ -24,6 +24,38 @@ from app.services import state as sm
 from app.utils import utils
 
 
+VIDEO_GENERATION_TOTAL_STEPS = 6
+
+
+def _update_video_generation_task(
+    task_id: str,
+    progress: int,
+    message: str,
+    step_current: int = 0,
+    ffmpeg_progress: float | None = None,
+    state: int = const.TASK_STATE_PROCESSING,
+    **kwargs,
+) -> None:
+    task_fields = {
+        "message": message,
+        "step_current": step_current,
+        "step_total": VIDEO_GENERATION_TOTAL_STEPS,
+        **kwargs,
+    }
+    if ffmpeg_progress is not None:
+        task_fields["ffmpeg_progress"] = round(
+            max(0.0, min(100.0, float(ffmpeg_progress))),
+            1,
+        )
+
+    sm.state.update_task(
+        task_id,
+        state=state,
+        progress=progress,
+        **task_fields,
+    )
+
+
 def _is_auto_transcription_enabled(params: VideoClipParams) -> bool:
     return bool(
         getattr(params, "subtitle_enabled", True)
@@ -583,22 +615,22 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
     global merged_audio_path, merged_subtitle_path
 
     logger.info(f"\n\n## 开始统一视频处理任务: {task_id}")
-    sm.state.update_task(
+    _update_video_generation_task(
         task_id,
-        state=const.TASK_STATE_PROCESSING,
         progress=0,
         message="正在初始化视频生成任务",
+        step_current=0,
     )
 
     """
     1. 加载剪辑脚本
     """
     logger.info("\n\n## 1. 加载视频脚本")
-    sm.state.update_task(
+    _update_video_generation_task(
         task_id,
-        state=const.TASK_STATE_PROCESSING,
         progress=5,
         message="正在加载剪辑脚本",
+        step_current=1,
     )
     video_script_path = path.join(params.video_clip_json_path)
 
@@ -625,11 +657,11 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
     2. 使用 TTS 生成音频素材
     """
     logger.info("\n\n## 2. 根据OST设置生成音频列表")
-    sm.state.update_task(
+    _update_video_generation_task(
         task_id,
-        state=const.TASK_STATE_PROCESSING,
         progress=10,
         message="正在生成 TTS 配音",
+        step_current=2,
     )
     # 只为OST=0 or 2的判断生成音频， OST=0 仅保留解说 OST=2 保留解说和原声
     tts_segments = [
@@ -647,22 +679,22 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
         voice_pitch=params.voice_pitch,
     )
 
-    sm.state.update_task(
+    _update_video_generation_task(
         task_id,
-        state=const.TASK_STATE_PROCESSING,
         progress=20,
         message="TTS 配音生成完成",
+        step_current=2,
     )
 
     """
     3. 统一视频裁剪 - 基于OST类型的差异化裁剪策略
     """
     logger.info("\n\n## 3. 统一视频裁剪（基于OST类型）")
-    sm.state.update_task(
+    _update_video_generation_task(
         task_id,
-        state=const.TASK_STATE_PROCESSING,
         progress=30,
         message="正在按脚本裁剪视频片段",
+        step_current=3,
     )
 
     # 使用新的统一裁剪策略
@@ -682,22 +714,22 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
 
     logger.info(f"统一裁剪完成，处理了 {len(video_clip_result)} 个视频片段")
 
-    sm.state.update_task(
+    _update_video_generation_task(
         task_id,
-        state=const.TASK_STATE_PROCESSING,
         progress=60,
         message="视频片段裁剪完成",
+        step_current=3,
     )
 
     """
     4. 合并音频和字幕
     """
     logger.info("\n\n## 4. 合并音频和字幕")
-    sm.state.update_task(
+    _update_video_generation_task(
         task_id,
-        state=const.TASK_STATE_PROCESSING,
         progress=65,
         message="正在合并配音和字幕",
+        step_current=4,
     )
     total_duration = sum([script["duration"] for script in new_script_list])
     if tts_segments:
@@ -750,11 +782,11 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
                 )
             except Exception as e:
                 logger.warning(f"程序化字幕生成失败: {e}")
-    sm.state.update_task(
+    _update_video_generation_task(
         task_id,
-        state=const.TASK_STATE_PROCESSING,
         progress=70,
         message="配音和字幕合并完成",
+        step_current=4,
     )
 
     """
@@ -765,11 +797,11 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
 
     combined_video_path = path.join(utils.task_dir(task_id), f"merger.mp4")
     logger.info(f"\n\n## 5. 合并视频: => {combined_video_path}")
-    sm.state.update_task(
+    _update_video_generation_task(
         task_id,
-        state=const.TASK_STATE_PROCESSING,
         progress=75,
         message="正在合并视频片段",
+        step_current=5,
     )
 
     # 使用统一裁剪后的视频片段
@@ -790,11 +822,11 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
         video_aspect=params.video_aspect,
         threads=params.n_threads
     )
-    sm.state.update_task(
+    _update_video_generation_task(
         task_id,
-        state=const.TASK_STATE_PROCESSING,
         progress=80,
         message="视频片段合并完成",
+        step_current=5,
     )
 
     """
@@ -810,11 +842,12 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
         else output_video_path
     )
     logger.info(f"\n\n## 6. 最后一步: 合并字幕/BGM/配音/视频 -> {merge_output_video_path}")
-    sm.state.update_task(
+    _update_video_generation_task(
         task_id,
-        state=const.TASK_STATE_PROCESSING,
         progress=85,
         message="正在合成最终视频",
+        step_current=6,
+        ffmpeg_progress=0,
     )
 
     bgm_path = utils.get_bgm_file(
@@ -858,30 +891,47 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
         'threads': params.n_threads,
         **_build_subtitle_mask_options(params, enabled=not auto_transcription_enabled),
     }
+    final_merge_progress_start = 85
+    final_merge_progress_end = 89 if auto_transcription_enabled else 99
+
+    def update_final_merge_progress(ffmpeg_progress: float):
+        progress_span = final_merge_progress_end - final_merge_progress_start
+        overall_progress = final_merge_progress_start + int(
+            round((max(0.0, min(100.0, float(ffmpeg_progress))) / 100) * progress_span)
+        )
+        _update_video_generation_task(
+            task_id,
+            progress=overall_progress,
+            message="正在合成最终视频",
+            step_current=6,
+            ffmpeg_progress=ffmpeg_progress,
+        )
+
     generate_video.merge_materials(
         video_path=combined_video_path,
         audio_path=merged_audio_path,
         subtitle_path=merged_subtitle_path,
         bgm_path=bgm_path,
         output_path=merge_output_video_path,
-        options=options
+        options=options,
+        progress_callback=update_final_merge_progress,
     )
 
     auto_subtitle_path = ""
     if auto_transcription_enabled:
-        sm.state.update_task(
+        _update_video_generation_task(
             task_id,
-            state=const.TASK_STATE_PROCESSING,
             progress=90,
             message="正在自动转录最终视频",
+            step_current=6,
         )
         logger.info("\n\n## 7. 自动转录最终视频字幕")
         auto_subtitle_path = _transcribe_final_video(task_id, merge_output_video_path, params)
-        sm.state.update_task(
+        _update_video_generation_task(
             task_id,
-            state=const.TASK_STATE_PROCESSING,
             progress=95,
             message="正在压入自动转录字幕",
+            step_current=6,
         )
         logger.info(f"\n\n## 8. 压入自动转录字幕 -> {output_video_path}")
         _merge_auto_transcribed_subtitles(
@@ -902,11 +952,12 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
     }
     if auto_subtitle_path:
         kwargs["subtitles"] = [auto_subtitle_path]
-    sm.state.update_task(
+    _update_video_generation_task(
         task_id,
-        state=const.TASK_STATE_COMPLETE,
         progress=100,
         message="视频生成完成",
+        step_current=VIDEO_GENERATION_TOTAL_STEPS,
+        state=const.TASK_STATE_COMPLETE,
         **kwargs
     )
     return kwargs

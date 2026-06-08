@@ -193,6 +193,177 @@ class JianyingTaskTests(unittest.TestCase):
             self.assertEqual("NarratoAI_test", root_meta["all_draft_store"][0]["draft_name"])
             self.assertEqual(str(draft_dir / "draft_info.json"), root_meta["all_draft_store"][0]["draft_json_file"])
 
+    def test_write_plaintext_jianying_draft_uses_source_timerange_and_writes_subtitles(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root_path = Path(temp_dir) / "drafts"
+            output_dir = Path(temp_dir) / "task"
+            root_path.mkdir()
+            output_dir.mkdir()
+            video_path = output_dir / "source.mp4"
+            audio_path = output_dir / "audio_00_00_02,000-00_00_04,000.mp3"
+            subtitle_path = output_dir / "script_subtitles.srt"
+            video_path.write_bytes(b"fake source video")
+            audio_path.write_bytes(b"fake audio")
+            subtitle_path.write_text(
+                "1\n00:00:00,000 --> 00:00:01,500\n测试字幕\n",
+                encoding="utf-8",
+            )
+
+            params = VideoClipParams(
+                video_origin_path=str(video_path),
+                original_volume=0.4,
+                tts_volume=0.9,
+                subtitle_enabled=True,
+                font_size=60,
+                text_fore_color="#FFFFFF",
+            )
+            script = [
+                {
+                    "OST": 0,
+                    "start_time": 2.0,
+                    "source_start_time": 2.0,
+                    "duration": 3.0,
+                    "timestamp": "00:00:02,000-00:00:05,000",
+                    "video": str(video_path),
+                    "audio": str(audio_path),
+                    "use_source_timerange": True,
+                }
+            ]
+
+            def fake_duration(file_path):
+                return 10.0 if file_path == str(video_path) else 3.0
+
+            with (
+                patch.object(jianying_draft_builder, "_get_media_duration_ffprobe", side_effect=fake_duration),
+                patch.object(
+                    jianying_draft_builder,
+                    "_get_video_metadata_ffprobe",
+                    return_value=(10_000_000, 1920, 1080),
+                ),
+            ):
+                draft_path, _ = jianying_draft_builder.write_plaintext_jianying_draft(
+                    str(root_path),
+                    "NarratoAI_source",
+                    script,
+                    params,
+                    str(output_dir),
+                    subtitle_path=str(subtitle_path),
+                )
+
+            draft_info = json.loads((Path(draft_path) / "draft_info.json").read_text(encoding="utf-8"))
+            self.assertEqual(1, len(draft_info["materials"]["videos"]))
+            self.assertEqual(1, len(draft_info["materials"]["texts"]))
+            self.assertIn("测试字幕", draft_info["materials"]["texts"][0]["content"])
+
+            video_segment = draft_info["tracks"][0]["segments"][0]
+            self.assertEqual(2_000_000, video_segment["source_timerange"]["start"])
+            self.assertEqual(3_000_000, video_segment["source_timerange"]["duration"])
+            self.assertEqual(0.0, video_segment["volume"])
+
+            text_tracks = [track for track in draft_info["tracks"] if track["type"] == "text"]
+            self.assertEqual(1, len(text_tracks))
+            self.assertEqual(1, len(text_tracks[0]["segments"]))
+            self.assertEqual(1_500_000, text_tracks[0]["segments"][0]["target_timerange"]["duration"])
+
+    def test_build_jianying_draft_script_references_original_video(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video_one = Path(temp_dir) / "one.mp4"
+            video_two = Path(temp_dir) / "two.mp4"
+            audio_path = Path(temp_dir) / "audio.mp3"
+            video_one.write_bytes(b"one")
+            video_two.write_bytes(b"two")
+            audio_path.write_bytes(b"audio")
+
+            params = VideoClipParams(
+                video_origin_path=str(video_one),
+                video_origin_paths=[str(video_one), str(video_two)],
+            )
+            script = [
+                {
+                    "_id": 9,
+                    "video_id": 2,
+                    "timestamp": "00:00:05,000-00:00:07,000",
+                    "narration": "解说",
+                    "OST": 0,
+                }
+            ]
+            tts_results = [
+                {
+                    "_id": 9,
+                    "timestamp": "00:00:05,000-00:00:07,000",
+                    "audio_file": str(audio_path),
+                    "subtitle_file": "",
+                    "duration": 1.25,
+                }
+            ]
+
+            draft_script = jianying_task._build_jianying_draft_script(script, params, tts_results)
+
+            self.assertEqual(str(video_two), draft_script[0]["video"])
+            self.assertEqual(str(audio_path), draft_script[0]["audio"])
+            self.assertEqual(5.0, draft_script[0]["source_start_time"])
+            self.assertEqual(1.25, draft_script[0]["duration"])
+            self.assertTrue(draft_script[0]["use_source_timerange"])
+
+    def test_start_export_jianying_draft_does_not_clip_video(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root_path = Path(temp_dir) / "drafts"
+            task_dir = Path(temp_dir) / "task"
+            root_path.mkdir()
+            task_dir.mkdir()
+            video_path = Path(temp_dir) / "source.mp4"
+            audio_path = task_dir / "audio.mp3"
+            script_path = Path(temp_dir) / "script.json"
+            subtitle_path = task_dir / "script_subtitles.srt"
+            video_path.write_bytes(b"video")
+            audio_path.write_bytes(b"audio")
+            script_path.write_text(
+                json.dumps([
+                    {
+                        "_id": 1,
+                        "timestamp": "00:00:01,000-00:00:03,000",
+                        "narration": "测试解说",
+                        "OST": 0,
+                    }
+                ], ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            params = VideoClipParams(
+                video_clip_json_path=str(script_path),
+                video_origin_path=str(video_path),
+                tts_engine="edge_tts",
+                voice_name="zh-CN-YunjianNeural",
+                subtitle_enabled=True,
+                draft_name="NarratoAI_no_clip",
+            )
+            tts_results = [
+                {
+                    "_id": 1,
+                    "timestamp": "00:00:01,000-00:00:03,000",
+                    "audio_file": str(audio_path),
+                    "subtitle_file": "",
+                    "duration": 1.5,
+                }
+            ]
+
+            with (
+                patch.dict(jianying_task.config.ui, {"jianying_draft_path": str(root_path)}, clear=False),
+                patch.object(jianying_task.utils, "task_dir", return_value=str(task_dir)),
+                patch.object(jianying_task.voice, "tts_multiple", return_value=tts_results),
+                patch.object(jianying_task, "_create_jianying_subtitle_file", return_value=str(subtitle_path)),
+                patch.object(jianying_task, "write_plaintext_jianying_draft", return_value=(str(root_path / "draft"), "NarratoAI_no_clip")) as write_draft,
+                patch.object(jianying_task.clip_video, "clip_video_unified") as clip_video_unified,
+            ):
+                result = jianying_task.start_export_jianying_draft("task-id", params)
+
+            clip_video_unified.assert_not_called()
+            write_kwargs = write_draft.call_args.kwargs
+            self.assertTrue(write_kwargs["new_script_list"][0]["use_source_timerange"])
+            self.assertEqual(str(audio_path), write_kwargs["new_script_list"][0]["audio"])
+            self.assertEqual(str(subtitle_path), write_kwargs["subtitle_path"])
+            self.assertEqual(str(subtitle_path), result["subtitles"][0])
+
 
 if __name__ == "__main__":
     unittest.main()
