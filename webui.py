@@ -328,11 +328,22 @@ def get_jianying_export_params(draft_name=None) -> VideoClipParams:
     voice_name = get_voice_name_for_tts_engine(tts_engine)
     voice_rate = st.session_state.get('voice_rate', 1.0)
     voice_pitch = st.session_state.get('voice_pitch', 1.0)
+    subtitle_paths = st.session_state.get('subtitle_paths', [])
+    if isinstance(subtitle_paths, str):
+        subtitle_paths = [subtitle_paths]
+    subtitle_paths = [
+        path for path in subtitle_paths
+        if isinstance(path, str) and path.strip()
+    ]
+    if not subtitle_paths and st.session_state.get('subtitle_path'):
+        subtitle_paths = [st.session_state.get('subtitle_path')]
     
     return VideoClipParams(
         video_clip_json_path=st.session_state['video_clip_json_path'],
         video_origin_path=st.session_state['video_origin_path'],
         video_origin_paths=st.session_state.get('video_origin_paths', []),
+        original_subtitle_path=subtitle_paths[0] if subtitle_paths else "",
+        original_subtitle_paths=subtitle_paths,
         tts_engine=tts_engine,
         voice_name=voice_name,
         voice_rate=voice_rate,

@@ -38,6 +38,125 @@ def _get_auto_transcription_backend(params: VideoClipParams) -> str:
     return backend
 
 
+def _get_original_subtitle_paths(params: VideoClipParams) -> list[str]:
+    subtitle_paths = getattr(params, "original_subtitle_paths", []) or []
+    if isinstance(subtitle_paths, str):
+        subtitle_paths = [subtitle_paths]
+
+    normalized_paths = []
+    seen = set()
+    for subtitle_path in subtitle_paths:
+        if not isinstance(subtitle_path, str):
+            continue
+        subtitle_path = subtitle_path.strip()
+        if subtitle_path and subtitle_path not in seen:
+            normalized_paths.append(subtitle_path)
+            seen.add(subtitle_path)
+
+    single_subtitle_path = str(getattr(params, "original_subtitle_path", "") or "").strip()
+    if single_subtitle_path and single_subtitle_path not in seen:
+        normalized_paths.insert(0, single_subtitle_path)
+
+    if not normalized_paths:
+        normalized_paths = _find_original_subtitle_paths_for_videos(_get_video_origin_paths(params))
+
+    return normalized_paths
+
+
+def _get_video_origin_paths(params: VideoClipParams) -> list[str]:
+    video_paths = getattr(params, "video_origin_paths", []) or []
+    if isinstance(video_paths, str):
+        video_paths = [video_paths]
+
+    normalized_paths = []
+    seen = set()
+    for video_path in video_paths:
+        if not isinstance(video_path, str):
+            continue
+        video_path = video_path.strip()
+        if video_path and video_path not in seen:
+            normalized_paths.append(video_path)
+            seen.add(video_path)
+
+    single_video_path = str(getattr(params, "video_origin_path", "") or "").strip()
+    if single_video_path and single_video_path not in seen:
+        normalized_paths.insert(0, single_video_path)
+
+    return normalized_paths
+
+
+def _video_stem_candidates(video_path: str) -> list[str]:
+    stem = path.splitext(path.basename(str(video_path or "").strip()))[0]
+    if not stem:
+        return []
+
+    candidates = [stem]
+    timestamp_stripped = re.sub(r"_[0-9]{14}$", "", stem)
+    if timestamp_stripped and timestamp_stripped not in candidates:
+        candidates.append(timestamp_stripped)
+    return candidates
+
+
+def _find_original_subtitle_paths_for_videos(video_paths: list[str]) -> list[str]:
+    subtitle_dir = utils.subtitle_dir()
+    if not path.isdir(subtitle_dir):
+        return []
+
+    subtitle_files = [
+        path.join(subtitle_dir, filename)
+        for filename in os.listdir(subtitle_dir)
+        if filename.lower().endswith(".srt")
+    ]
+    if not subtitle_files:
+        return []
+
+    resolved_paths = []
+    seen = set()
+    for video_path in video_paths:
+        candidates = _video_stem_candidates(video_path)
+        if not candidates:
+            continue
+
+        matches = []
+        for subtitle_path in subtitle_files:
+            subtitle_stem = path.splitext(path.basename(subtitle_path))[0]
+            for candidate in candidates:
+                if subtitle_stem == candidate or subtitle_stem.startswith(f"{candidate}_"):
+                    matches.append(subtitle_path)
+                    break
+
+        if not matches:
+            continue
+
+        matches.sort(key=lambda item: path.getmtime(item), reverse=True)
+        selected_path = matches[0]
+        if selected_path not in seen:
+            resolved_paths.append(selected_path)
+            seen.add(selected_path)
+
+    if resolved_paths:
+        logger.info(f"未从参数获取原片字幕，已按视频文件名自动匹配: {resolved_paths}")
+    return resolved_paths
+
+
+def _create_programmatic_subtitle_file(
+    task_id: str,
+    list_script: list[dict],
+    params: VideoClipParams,
+) -> str:
+    if not getattr(params, "subtitle_enabled", True):
+        return ""
+
+    original_subtitle_paths = _get_original_subtitle_paths(params)
+    logger.info(f"程序化字幕使用原片字幕路径: {original_subtitle_paths or '未提供'}")
+    return script_subtitle.create_script_subtitle_file(
+        task_id=task_id,
+        list_script=list_script,
+        original_subtitle_paths=original_subtitle_paths,
+        video_origin_paths=_get_video_origin_paths(params),
+    )
+
+
 def _build_subtitle_mask_options(params: VideoClipParams, enabled=None) -> dict:
     mask_configured = bool(
         getattr(params, "subtitle_enabled", True)
@@ -279,7 +398,19 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
             logger.info(f"音频文件合并成功->{merged_audio_path}")
 
             # 合并字幕文件
-            merged_subtitle_path = subtitle_merger.merge_subtitle_files(new_script_list)
+            merged_subtitle_path = ""
+            if getattr(params, "subtitle_enabled", True):
+                try:
+                    merged_subtitle_path = _create_programmatic_subtitle_file(
+                        task_id,
+                        new_script_list,
+                        params,
+                    )
+                except Exception as e:
+                    logger.warning(f"程序化字幕生成失败，将尝试合并TTS字幕: {e}")
+
+            if not merged_subtitle_path and getattr(params, "subtitle_enabled", True):
+                merged_subtitle_path = subtitle_merger.merge_subtitle_files(new_script_list)
             if merged_subtitle_path:
                 logger.info(f"字幕文件合并成功->{merged_subtitle_path}")
             else:
@@ -296,6 +427,15 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         logger.warning("没有需要合并的音频/字幕")
         merged_audio_path = ""
         merged_subtitle_path = ""
+        if getattr(params, "subtitle_enabled", True):
+            try:
+                merged_subtitle_path = _create_programmatic_subtitle_file(
+                    task_id,
+                    new_script_list,
+                    params,
+                )
+            except Exception as e:
+                logger.warning(f"程序化字幕生成失败: {e}")
 
     """
     5. 合并视频
@@ -574,9 +714,10 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
             merged_subtitle_path = ""
             if getattr(params, "subtitle_enabled", True):
                 try:
-                    merged_subtitle_path = script_subtitle.create_script_subtitle_file(
-                        task_id=task_id,
-                        list_script=new_script_list,
+                    merged_subtitle_path = _create_programmatic_subtitle_file(
+                        task_id,
+                        new_script_list,
+                        params,
                     )
                 except Exception as e:
                     logger.warning(f"程序化字幕生成失败，将尝试合并TTS字幕: {e}")
@@ -600,6 +741,15 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
         logger.warning("没有需要合并的音频/字幕")
         merged_audio_path = ""
         merged_subtitle_path = ""
+        if getattr(params, "subtitle_enabled", True):
+            try:
+                merged_subtitle_path = _create_programmatic_subtitle_file(
+                    task_id,
+                    new_script_list,
+                    params,
+                )
+            except Exception as e:
+                logger.warning(f"程序化字幕生成失败: {e}")
     sm.state.update_task(
         task_id,
         state=const.TASK_STATE_PROCESSING,

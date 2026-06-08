@@ -165,6 +165,8 @@ class VideoClipParams(BaseModel):
     video_clip_json_path: Optional[str] = Field(default="", description="LLM 生成的视频剪辑脚本路径")
     video_origin_path: Optional[str] = Field(default="", description="原视频路径")
     video_origin_paths: Optional[List[str]] = Field(default=[], description="原视频路径列表")
+    original_subtitle_path: Optional[str] = Field(default="", description="原视频字幕路径")
+    original_subtitle_paths: Optional[List[str]] = Field(default=[], description="原视频字幕路径列表")
     video_aspect: Optional[VideoAspect] = Field(default=VideoAspect.portrait.value, description="视频比例")
     video_language: Optional[str] = Field(default="zh-CN", description="视频语言")
 

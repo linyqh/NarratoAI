@@ -1718,11 +1718,14 @@ def save_script_with_validation(tr, video_clip_json_details):
 
 def get_script_params():
     """获取脚本参数"""
+    subtitle_paths = _selected_subtitle_paths()
     return {
         'video_language': st.session_state.get('video_language', ''),
         'video_clip_json_path': st.session_state.get('video_clip_json_path', ''),
         'video_origin_path': st.session_state.get('video_origin_path', ''),
         'video_origin_paths': _selected_video_paths(),
+        'original_subtitle_path': subtitle_paths[0] if subtitle_paths else '',
+        'original_subtitle_paths': subtitle_paths,
         'video_name': st.session_state.get('video_name', ''),
         'video_plot': st.session_state.get('video_plot', '')
     }
