@@ -11,8 +11,8 @@
 import os
 import json
 import re
-import shlex
 import subprocess
+import time
 import traceback
 import tempfile
 from typing import Optional, Dict, Any
@@ -327,6 +327,16 @@ def _format_ffmpeg_float(value: float) -> str:
     return f"{float(value):.3f}".rstrip("0").rstrip(".")
 
 
+def _format_duration(seconds: float) -> str:
+    seconds = max(0, float(seconds or 0))
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
 def _quote_filter_value(value: str) -> str:
     escaped = str(value).replace("\\", "\\\\").replace("'", "\\'")
     return f"'{escaped}'"
@@ -433,6 +443,106 @@ def _select_compatible_encoder(preferred_encoder: str) -> str:
         return preferred_encoder
     logger.warning(f"当前 ffmpeg 二进制不支持编码器 {preferred_encoder}，回退 libx264")
     return "libx264"
+
+
+def _parse_ffmpeg_progress_time(progress: Dict[str, str]) -> float:
+    for key in ("out_time_us", "out_time_ms"):
+        value = progress.get(key)
+        if value:
+            try:
+                return max(0.0, int(value) / 1_000_000)
+            except ValueError:
+                pass
+
+    value = progress.get("out_time")
+    if value:
+        match = re.match(
+            r"(?P<hours>\d+):(?P<minutes>\d{2}):(?P<seconds>\d{2})(?:\.(?P<fraction>\d+))?",
+            value,
+        )
+        if match:
+            fraction = match.group("fraction") or "0"
+            return (
+                int(match.group("hours")) * 3600
+                + int(match.group("minutes")) * 60
+                + int(match.group("seconds"))
+                + float(f"0.{fraction}")
+            )
+    return 0.0
+
+
+def _run_ffmpeg_with_progress(cmd: list[str], duration: float) -> tuple[int, str]:
+    progress_keys = {
+        "frame",
+        "fps",
+        "stream_0_0_q",
+        "bitrate",
+        "total_size",
+        "out_time_us",
+        "out_time_ms",
+        "out_time",
+        "dup_frames",
+        "drop_frames",
+        "speed",
+        "progress",
+    }
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    progress: Dict[str, str] = {}
+    output_tail: list[str] = []
+    last_log_time = 0.0
+    last_logged_percent = -1.0
+
+    assert process.stdout is not None
+    for raw_line in process.stdout:
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        if "=" not in line:
+            output_tail.append(line)
+            output_tail = output_tail[-80:]
+            continue
+
+        key, value = line.split("=", 1)
+        if key not in progress_keys:
+            output_tail.append(line)
+            output_tail = output_tail[-80:]
+            continue
+
+        progress[key] = value
+        if key != "progress":
+            continue
+
+        current = _parse_ffmpeg_progress_time(progress)
+        if value == "end":
+            current = duration
+        percent = min(100.0, (current / duration) * 100) if duration > 0 else 0.0
+        now = time.monotonic()
+        should_log = (
+            value == "end"
+            or now - last_log_time >= 5
+            or percent - last_logged_percent >= 5
+        )
+        if should_log:
+            speed = progress.get("speed", "N/A")
+            logger.info(
+                "ffmpeg 合并进度: "
+                f"{percent:.1f}% "
+                f"({_format_duration(current)}/{_format_duration(duration)}), "
+                f"speed={speed}"
+            )
+            last_log_time = now
+            last_logged_percent = percent
+        progress = {}
+
+    return_code = process.wait()
+    return return_code, "\n".join(output_tail[-80:])
 
 
 def _srt_timestamp_to_seconds(timestamp: str) -> float:
@@ -917,7 +1027,7 @@ def _build_ffmpeg_merge_command(
     subtitle_path: Optional[str],
     bgm_path: Optional[str],
     options: Dict[str, Any],
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], float]:
     from app.utils import ffmpeg_utils
 
     video_meta = _probe_video(video_path)
@@ -1118,7 +1228,17 @@ def _build_ffmpeg_merge_command(
 
     filter_parts = [*video_filters, *audio_filters]
     ffmpeg_binary = _get_ffmpeg_binary()
-    cmd = [ffmpeg_binary, "-y", "-hide_banner", "-loglevel", "error", *input_args]
+    cmd = [
+        ffmpeg_binary,
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostats",
+        "-progress",
+        "pipe:1",
+        *input_args,
+    ]
     if filter_parts:
         cmd.extend(["-filter_complex", ";".join(filter_parts)])
 
@@ -1134,7 +1254,7 @@ def _build_ffmpeg_merge_command(
         cmd.append("-an")
 
     cmd.extend(["-t", duration_arg, "-movflags", "+faststart", output_path])
-    return cmd, temp_files
+    return cmd, temp_files, duration
 
 
 def _merge_materials_with_ffmpeg(
@@ -1152,7 +1272,7 @@ def _merge_materials_with_ffmpeg(
     options = options or {}
     temp_files = []
     try:
-        cmd, temp_files = _build_ffmpeg_merge_command(
+        cmd, temp_files, duration = _build_ffmpeg_merge_command(
             video_path=video_path,
             audio_path=audio_path,
             output_path=output_path,
@@ -1160,16 +1280,14 @@ def _merge_materials_with_ffmpeg(
             bgm_path=bgm_path,
             options=options,
         )
-        logger.info(f"使用 ffmpeg 快速合并素材: {shlex.join(cmd)}")
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
+        logger.info(
+            "使用 ffmpeg 快速合并素材: "
+            f"video={video_path}, audio={audio_path}, output={output_path}, "
+            f"duration={_format_duration(duration)}"
         )
-        if result.returncode != 0:
-            logger.warning(f"ffmpeg 快速合并失败，将回退 MoviePy: {result.stderr[-3000:]}")
+        return_code, ffmpeg_output = _run_ffmpeg_with_progress(cmd, duration)
+        if return_code != 0:
+            logger.warning(f"ffmpeg 快速合并失败，将回退 MoviePy: {ffmpeg_output[-3000:]}")
             if os.path.exists(output_path):
                 try:
                     os.remove(output_path)

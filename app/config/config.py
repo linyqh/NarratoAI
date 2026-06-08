@@ -173,8 +173,43 @@ imagemagick_path = app.get("imagemagick_path", "")
 if imagemagick_path and os.path.isfile(imagemagick_path):
     os.environ["IMAGEMAGICK_BINARY"] = imagemagick_path
 
+_applied_ffmpeg_dir = None
+
+
+def apply_ffmpeg_path(ffmpeg_binary: str = "") -> None:
+    """Apply the configured FFmpeg binary to this Python process."""
+    global _applied_ffmpeg_dir
+
+    if not ffmpeg_binary or not os.path.isfile(ffmpeg_binary):
+        return
+
+    ffmpeg_binary = os.path.abspath(os.path.expanduser(ffmpeg_binary))
+    ffmpeg_dir = os.path.dirname(ffmpeg_binary)
+    os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_binary
+
+    current_paths = os.environ.get("PATH", "").split(os.pathsep)
+    normalized_ffmpeg_dir = os.path.normcase(os.path.abspath(ffmpeg_dir))
+    normalized_previous_dir = (
+        os.path.normcase(os.path.abspath(_applied_ffmpeg_dir))
+        if _applied_ffmpeg_dir
+        else None
+    )
+    filtered_paths = []
+    for path_item in current_paths:
+        if not path_item:
+            continue
+        normalized_item = os.path.normcase(os.path.abspath(path_item))
+        if normalized_item == normalized_ffmpeg_dir:
+            continue
+        if normalized_previous_dir and normalized_item == normalized_previous_dir:
+            continue
+        filtered_paths.append(path_item)
+
+    os.environ["PATH"] = os.pathsep.join([ffmpeg_dir, *filtered_paths])
+    _applied_ffmpeg_dir = ffmpeg_dir
+
+
 ffmpeg_path = app.get("ffmpeg_path", "")
-if ffmpeg_path and os.path.isfile(ffmpeg_path):
-    os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
+apply_ffmpeg_path(ffmpeg_path)
 
 logger.info(f"{project_name} v{project_version}")

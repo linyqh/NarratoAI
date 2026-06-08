@@ -75,6 +75,10 @@
     # WebUI 界面是否显示配置项
     hide_config = true
 
+    # FFmpeg 引擎路径（可选）
+    # 为空时使用系统 PATH；也可以在系统设置中通过下拉框选择整合包或本机 ffmpeg。
+    ffmpeg_path = ""
+
     # 官方 OpenAI 默认端点（可选）：
     # text_openai_base_url = "https://api.openai.com/v1"
 
