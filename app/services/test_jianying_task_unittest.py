@@ -305,6 +305,63 @@ class JianyingTaskTests(unittest.TestCase):
             self.assertEqual(1.25, draft_script[0]["duration"])
             self.assertTrue(draft_script[0]["use_source_timerange"])
 
+    def test_get_original_subtitle_paths_falls_back_to_matching_video_name(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            video_path = temp_path / "episode_20260608010240.mp4"
+            older_subtitle = temp_path / "episode_fun_asr_20260608000100.srt"
+            newer_subtitle = temp_path / "episode_fun_asr_20260608010100.srt"
+            video_path.write_bytes(b"video")
+            older_subtitle.write_text("old", encoding="utf-8")
+            newer_subtitle.write_text("new", encoding="utf-8")
+
+            params = VideoClipParams(video_origin_path=str(video_path))
+
+            with patch.object(jianying_task.utils, "subtitle_dir", return_value=str(temp_path)):
+                subtitle_paths = jianying_task._get_original_subtitle_paths(params)
+
+            self.assertEqual([str(newer_subtitle)], subtitle_paths)
+
+    def test_create_jianying_subtitle_file_includes_original_audio_subtitles(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            task_dir = temp_path / "task"
+            task_dir.mkdir()
+            video_path = temp_path / "episode.mp4"
+            subtitle_path = temp_path / "episode.srt"
+            video_path.write_bytes(b"video")
+            subtitle_path.write_text(
+                "1\n00:00:05,000 --> 00:00:06,500\n原片对白\n",
+                encoding="utf-8",
+            )
+
+            params = VideoClipParams(video_origin_path=str(video_path), subtitle_enabled=True)
+            draft_script = jianying_task._build_jianying_draft_script(
+                [
+                    {
+                        "_id": 1,
+                        "timestamp": "00:00:05,000-00:00:07,000",
+                        "narration": "播放原片1",
+                        "OST": 1,
+                    }
+                ],
+                params,
+                [],
+            )
+
+            with (
+                patch.object(jianying_task.utils, "subtitle_dir", return_value=str(temp_path)),
+                patch.object(jianying_task.utils, "task_dir", return_value=str(task_dir)),
+            ):
+                output_path = jianying_task._create_jianying_subtitle_file(
+                    "task-id",
+                    draft_script,
+                    params,
+                )
+
+            self.assertTrue(output_path)
+            self.assertIn("原片对白", Path(output_path).read_text(encoding="utf-8"))
+
     def test_start_export_jianying_draft_does_not_clip_video(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root_path = Path(temp_dir) / "drafts"

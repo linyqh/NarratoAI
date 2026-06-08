@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import time
 from os import path
@@ -253,7 +254,64 @@ def _get_original_subtitle_paths(params: VideoClipParams) -> list[str]:
     if single_subtitle_path and single_subtitle_path not in seen:
         normalized_paths.insert(0, single_subtitle_path)
 
+    if not normalized_paths:
+        normalized_paths = _find_original_subtitle_paths_for_videos(_get_video_source_paths(params))
+
     return normalized_paths
+
+
+def _video_stem_candidates(video_path: str) -> list[str]:
+    stem = path.splitext(path.basename(str(video_path or "").strip()))[0]
+    if not stem:
+        return []
+
+    candidates = [stem]
+    timestamp_stripped = re.sub(r"_[0-9]{14}$", "", stem)
+    if timestamp_stripped and timestamp_stripped not in candidates:
+        candidates.append(timestamp_stripped)
+    return candidates
+
+
+def _find_original_subtitle_paths_for_videos(video_paths: list[str]) -> list[str]:
+    subtitle_dir = utils.subtitle_dir()
+    if not path.isdir(subtitle_dir):
+        return []
+
+    subtitle_files = [
+        path.join(subtitle_dir, filename)
+        for filename in os.listdir(subtitle_dir)
+        if filename.lower().endswith(".srt")
+    ]
+    if not subtitle_files:
+        return []
+
+    resolved_paths = []
+    seen = set()
+    for video_path in video_paths:
+        candidates = _video_stem_candidates(video_path)
+        if not candidates:
+            continue
+
+        matches = []
+        for subtitle_path in subtitle_files:
+            subtitle_stem = path.splitext(path.basename(subtitle_path))[0]
+            for candidate in candidates:
+                if subtitle_stem == candidate or subtitle_stem.startswith(f"{candidate}_"):
+                    matches.append(subtitle_path)
+                    break
+
+        if not matches:
+            continue
+
+        matches.sort(key=lambda item: path.getmtime(item), reverse=True)
+        selected_path = matches[0]
+        if selected_path not in seen:
+            resolved_paths.append(selected_path)
+            seen.add(selected_path)
+
+    if resolved_paths:
+        logger.info(f"剪映导出未从参数获取原片字幕，已按视频文件名自动匹配: {resolved_paths}")
+    return resolved_paths
 
 
 def _create_jianying_subtitle_file(

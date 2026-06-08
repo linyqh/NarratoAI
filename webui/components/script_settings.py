@@ -448,7 +448,7 @@ def render_script_file(tr, params):
         # 如果当前path是特殊值(auto/short/summary/film_summary)，则重置为空
         saved_script_path = (
             current_path
-            if current_path not in [MODE_AUTO, MODE_SHORT, MODE_SHORT_SUMMARY, MODE_FILM_SUMMARY]
+            if current_path not in [MODE_FILE, MODE_AUTO, MODE_SHORT, MODE_SHORT_SUMMARY, MODE_FILM_SUMMARY]
             else ""
         )
         
@@ -458,13 +458,18 @@ def render_script_file(tr, params):
                 selected_index = i
                 break
 
-        # 如果找到了保存的脚本，同步更新 selectbox 的 key 状态
-        if saved_script_path and selected_index > 0:
+        # 用 session_state 作为 selectbox 的唯一来源，避免同时传默认 index 和设置 key 状态。
+        if (
+            "script_file_selection" not in st.session_state
+            or st.session_state["script_file_selection"] >= len(script_list)
+        ):
+            st.session_state["script_file_selection"] = selected_index
+        elif saved_script_path and selected_index > 0:
             st.session_state['script_file_selection'] = selected_index
 
         selected_script_index = st.selectbox(
             tr("Script Files"),
-            index=selected_index,
+            index=None,
             options=range(len(script_list)),
             format_func=lambda x: script_list[x][0],
             key="script_file_selection"
