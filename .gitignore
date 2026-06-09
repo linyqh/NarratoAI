@@ -51,3 +51,6 @@ tests/*
 !tests/test_script_service_documentary_unittest.py
 !tests/test_generate_narration_script_documentary_unittest.py
 !tests/test_generate_script_docu_unittest.py
+
+docs/reddit-community
+docs/wechat-0.8
