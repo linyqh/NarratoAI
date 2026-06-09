@@ -12,9 +12,11 @@ from app.services import fun_asr_subtitle as fasr
 
 
 class FakeResponse:
-    def __init__(self, payload=None, status_code=200):
+    def __init__(self, payload=None, status_code=200, text=None):
         self.payload = payload or {}
         self.status_code = status_code
+        self.text = text
+        self.content = text.encode("utf-8") if isinstance(text, str) else b""
 
     def json(self):
         return self.payload
@@ -375,6 +377,195 @@ class FunAsrServiceTests(unittest.TestCase):
             fasr.download_transcription_result("https://result.example/bad.json", session=MalformedDownloadSession({}))
 
 
+class LocalFunAsrServiceTests(unittest.TestCase):
+    def test_request_local_fun_asr_posts_file_and_options(self):
+        class LocalSession:
+            def __init__(self):
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append(("POST", url, kwargs))
+                return FakeResponse({"text": "你好", "srt_file": "/tmp/out.srt"})
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_file = Path(tmp_dir) / "audio.wav"
+            local_file.write_bytes(b"audio")
+            session = LocalSession()
+
+            result = fasr.request_local_fun_asr(
+                str(local_file),
+                api_url="127.0.0.1:7860",
+                hotword="NarratoAI",
+                enable_spk=True,
+                timeout=123,
+                session=session,
+            )
+
+        self.assertEqual("你好", result["text"])
+        self.assertEqual("POST", session.calls[0][0])
+        self.assertEqual("http://127.0.0.1:7860/asr", session.calls[0][1])
+        self.assertEqual({"hotword": "NarratoAI", "enable_spk": "true"}, session.calls[0][2]["data"])
+        self.assertEqual(123, session.calls[0][2]["timeout"])
+        self.assertIn("file", session.calls[0][2]["files"])
+
+    def test_create_with_local_fun_asr_copies_pack_srt_file(self):
+        class LocalSession:
+            def __init__(self, srt_file):
+                self.srt_file = srt_file
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append(("POST", url, kwargs))
+                return FakeResponse({"text": "你好", "srt_file": str(self.srt_file)})
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_file = Path(tmp_dir) / "audio.wav"
+            local_file.write_bytes(b"audio")
+            pack_srt = Path(tmp_dir) / "pack.srt"
+            pack_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\n你好\n", encoding="utf-8")
+            subtitle_file = Path(tmp_dir) / "out.srt"
+
+            result_path = fasr.create_with_local_fun_asr(
+                str(local_file),
+                subtitle_file=str(subtitle_file),
+                api_url="http://127.0.0.1:7860",
+                session=LocalSession(pack_srt),
+            )
+
+            self.assertEqual(str(subtitle_file), result_path)
+            self.assertEqual(pack_srt.read_text(encoding="utf-8"), subtitle_file.read_text(encoding="utf-8"))
+
+    def test_create_with_local_fun_asr_downloads_relative_srt(self):
+        class LocalSession:
+            def __init__(self):
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append(("POST", url, kwargs))
+                return FakeResponse({"text": "你好", "downloads": {"srt": "/download/result.srt"}})
+
+            def get(self, url, **kwargs):
+                self.calls.append(("GET", url, kwargs))
+                return FakeResponse(text="1\n00:00:00,000 --> 00:00:01,000\n你好\n")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_file = Path(tmp_dir) / "audio.wav"
+            local_file.write_bytes(b"audio")
+            subtitle_file = Path(tmp_dir) / "out.srt"
+            session = LocalSession()
+
+            result_path = fasr.create_with_local_fun_asr(
+                str(local_file),
+                subtitle_file=str(subtitle_file),
+                api_url="http://127.0.0.1:7860/asr",
+                session=session,
+            )
+
+            self.assertEqual(str(subtitle_file), result_path)
+            self.assertEqual("http://127.0.0.1:7860/download/result.srt", session.calls[1][1])
+            self.assertIn("你好", subtitle_file.read_text(encoding="utf-8"))
+
+    def test_local_fun_asr_result_to_srt_uses_raw_timestamps(self):
+        result = {
+            "raw": [
+                {
+                    "text": "你好，世界。",
+                    "timestamp": [[0, 300], [300, 600], [600, 900], [900, 1200]],
+                }
+            ]
+        }
+
+        srt = fasr.local_fun_asr_result_to_srt(result, max_chars=20)
+
+        self.assertIn("00:00:00,000 --> 00:00:00,600\n你好，", srt)
+        self.assertIn("世界。", srt)
+
+
+class LocalFireRedAsrServiceTests(unittest.TestCase):
+    def test_request_local_firered_asr_posts_file_and_options(self):
+        class LocalSession:
+            def __init__(self):
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append(("POST", url, kwargs))
+                return FakeResponse({"text": "你好", "srt_url": "/outputs/out.srt"})
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_file = Path(tmp_dir) / "audio.wav"
+            local_file.write_bytes(b"audio")
+            session = LocalSession()
+
+            result = fasr.request_local_firered_asr(
+                str(local_file),
+                api_url="127.0.0.1:7867",
+                enable_vad=True,
+                enable_lid=False,
+                enable_punc=True,
+                return_timestamp=True,
+                timeout=456,
+                session=session,
+            )
+
+        self.assertEqual("你好", result["text"])
+        self.assertEqual("POST", session.calls[0][0])
+        self.assertEqual("http://127.0.0.1:7867/asr", session.calls[0][1])
+        self.assertEqual(
+            {
+                "enable_vad": "true",
+                "enable_lid": "false",
+                "enable_punc": "true",
+                "return_timestamp": "true",
+            },
+            session.calls[0][2]["data"],
+        )
+        self.assertEqual(456, session.calls[0][2]["timeout"])
+        self.assertIn("file", session.calls[0][2]["files"])
+
+    def test_create_with_local_firered_asr_downloads_srt_url(self):
+        class LocalSession:
+            def __init__(self):
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append(("POST", url, kwargs))
+                return FakeResponse({"text": "你好", "srt_url": "/outputs/result.srt"})
+
+            def get(self, url, **kwargs):
+                self.calls.append(("GET", url, kwargs))
+                return FakeResponse(text="1\n00:00:00,000 --> 00:00:01,000\n你好\n")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_file = Path(tmp_dir) / "audio.wav"
+            local_file.write_bytes(b"audio")
+            subtitle_file = Path(tmp_dir) / "out.srt"
+            session = LocalSession()
+
+            result_path = fasr.create_with_local_firered_asr(
+                str(local_file),
+                subtitle_file=str(subtitle_file),
+                api_url="http://127.0.0.1:7867",
+                session=session,
+            )
+
+            self.assertEqual(str(subtitle_file), result_path)
+            self.assertEqual("http://127.0.0.1:7867/outputs/result.srt", session.calls[1][1])
+            self.assertIn("你好", subtitle_file.read_text(encoding="utf-8"))
+
+    def test_firered_asr_result_to_srt_uses_sentence_timestamps(self):
+        result = {
+            "sentences": [
+                {"text": "你好。", "start_ms": 40, "end_ms": 900},
+                {"text": "欢迎观看。", "start_ms": 900, "end_ms": 2100},
+            ]
+        }
+
+        srt = fasr.firered_asr_result_to_srt(result)
+
+        self.assertIn("1\n00:00:00,040 --> 00:00:00,900\n你好。", srt)
+        self.assertIn("2\n00:00:00,900 --> 00:00:02,100\n欢迎观看。", srt)
+
+
 class FunAsrConfigTests(unittest.TestCase):
     def test_save_config_persists_fun_asr_section(self):
         original_config_file = cfg.config_file
@@ -395,6 +586,9 @@ class FunAsrConfigTests(unittest.TestCase):
 
     def test_config_example_fun_asr_section_parses(self):
         config_data = tomllib.loads(Path("config.example.toml").read_text(encoding="utf-8"))
+        self.assertEqual("local", config_data["fun_asr"]["backend"])
+        self.assertEqual("http://127.0.0.1:7860", config_data["fun_asr"]["api_url"])
+        self.assertEqual("http://127.0.0.1:7867", config_data["fun_asr"]["firered_api_url"])
         self.assertEqual("fun-asr", config_data["fun_asr"]["model"])
         self.assertIn("api_key", config_data["fun_asr"])
 

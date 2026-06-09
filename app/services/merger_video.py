@@ -9,6 +9,7 @@
 '''
 
 import os
+import json
 import shutil
 import subprocess
 from enum import Enum
@@ -125,6 +126,188 @@ def create_ffmpeg_concat_file(video_paths: List[str], concat_file_path: str) -> 
 
             f.write(f"file '{abs_path}'\n")
     return concat_file_path
+
+
+def _get_video_stream_signature(video_path: str) -> Optional[dict]:
+    """
+    获取用于判断 concat copy 是否安全的视频流关键参数。
+    """
+    probe_cmd = [
+        'ffprobe', '-v', 'error',
+        '-select_streams', 'v:0',
+        '-show_entries',
+        'stream=codec_name,profile,width,height,pix_fmt,r_frame_rate,avg_frame_rate,time_base,sample_aspect_ratio',
+        '-of', 'json',
+        video_path
+    ]
+
+    try:
+        result = subprocess.run(
+            probe_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True
+        )
+        streams = json.loads(result.stdout or "{}").get("streams", [])
+        if not streams:
+            logger.warning(f"视频没有可用的视频流，不能使用 copy 合并: {video_path}")
+            return None
+
+        stream = streams[0]
+        return {
+            "codec_name": stream.get("codec_name"),
+            "profile": stream.get("profile"),
+            "width": stream.get("width"),
+            "height": stream.get("height"),
+            "pix_fmt": stream.get("pix_fmt"),
+            "r_frame_rate": stream.get("r_frame_rate"),
+            "avg_frame_rate": stream.get("avg_frame_rate"),
+            "time_base": stream.get("time_base"),
+            "sample_aspect_ratio": stream.get("sample_aspect_ratio", "1:1"),
+        }
+    except Exception as e:
+        logger.warning(f"探测视频流参数失败，不能使用 copy 合并: {video_path}, 错误: {str(e)}")
+        return None
+
+
+def _can_concat_video_copy(video_paths: List[str]) -> bool:
+    """
+    判断所有片段的视频流参数是否一致，避免 concat copy 造成时间轴或封装异常。
+    """
+    if not video_paths:
+        return False
+
+    signatures = []
+    for video_path in video_paths:
+        signature = _get_video_stream_signature(video_path)
+        if not signature:
+            return False
+        signatures.append(signature)
+
+    base_signature = signatures[0]
+    for video_path, signature in zip(video_paths[1:], signatures[1:]):
+        if signature != base_signature:
+            logger.warning(
+                "视频片段参数不一致，跳过 copy 合并并回退重编码: "
+                f"{video_path}, 基准={base_signature}, 当前={signature}"
+            )
+            return False
+
+    return True
+
+
+def _get_media_duration(video_path: str) -> Optional[float]:
+    probe_cmd = [
+        'ffprobe', '-v', 'error',
+        '-show_entries', 'format=duration',
+        '-of', 'csv=p=0',
+        video_path
+    ]
+
+    try:
+        result = subprocess.run(
+            probe_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True
+        )
+        return float(result.stdout.strip())
+    except Exception as e:
+        logger.warning(f"探测视频时长失败: {video_path}, 错误: {str(e)}")
+        return None
+
+
+def _concat_duration_matches(video_paths: List[str], output_path: str) -> bool:
+    input_durations = []
+    for video_path in video_paths:
+        duration = _get_media_duration(video_path)
+        if duration is None:
+            return False
+        input_durations.append(duration)
+
+    output_duration = _get_media_duration(output_path)
+    if output_duration is None:
+        return False
+
+    expected_duration = sum(input_durations)
+    diff = abs(expected_duration - output_duration)
+    tolerance = max(0.5, len(video_paths) * 0.04)
+    if diff > tolerance:
+        logger.warning(
+            "视频流 copy 合并后的时长偏差过大，将回退重编码: "
+            f"期望={expected_duration:.3f}s, 实际={output_duration:.3f}s, 偏差={diff:.3f}s"
+        )
+        return False
+
+    logger.info(
+        "视频流 copy 合并时长校验通过: "
+        f"期望={expected_duration:.3f}s, 实际={output_duration:.3f}s"
+    )
+    return True
+
+
+def _build_concat_video_copy_cmd(concat_file: str, output_path: str) -> List[str]:
+    return [
+        'ffmpeg', '-y',
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', concat_file,
+        '-c:v', 'copy',
+        '-an',
+        '-movflags', '+faststart',
+        '-avoid_negative_ts', 'make_zero',
+        output_path
+    ]
+
+
+def _build_concat_video_reencode_cmd(concat_file: str, output_path: str, threads: int) -> List[str]:
+    return [
+        'ffmpeg', '-y',
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', concat_file,
+        '-c:v', 'libx264',
+        '-preset', 'medium',
+        '-profile:v', 'high',
+        '-an',
+        '-threads', str(threads),
+        output_path
+    ]
+
+
+def _concat_video_streams(
+        video_paths: List[str],
+        concat_file: str,
+        output_path: str,
+        threads: int
+) -> None:
+    """
+    优先使用无损 copy 合并视频流，失败时回退到原来的重编码合并。
+    """
+    if _can_concat_video_copy(video_paths):
+        copy_cmd = _build_concat_video_copy_cmd(concat_file, output_path)
+        try:
+            subprocess.run(copy_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if _concat_duration_matches(video_paths, output_path):
+                logger.info("视频流 copy 合并完成")
+                return
+
+            if os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                except OSError as e:
+                    logger.warning(f"删除 copy 合并临时结果失败，将继续尝试重编码覆盖: {str(e)}")
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.decode() if e.stderr else str(e)
+            logger.warning(f"视频流 copy 合并失败，将回退重编码合并: {error_msg}")
+    else:
+        logger.info("视频流不满足 copy 合并条件，将使用重编码合并")
+
+    reencode_cmd = _build_concat_video_reencode_cmd(concat_file, output_path, threads)
+    subprocess.run(reencode_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    logger.info("视频流重编码合并完成")
 
 
 def process_single_video(
@@ -474,22 +657,7 @@ def combine_clip_videos(
             concat_file = os.path.join(temp_dir, "concat_list.txt")
             create_ffmpeg_concat_file(video_paths_only, concat_file)
 
-            # 合并所有视频流，但不包含音频
-            concat_cmd = [
-                'ffmpeg', '-y',
-                '-f', 'concat',
-                '-safe', '0',
-                '-i', concat_file,
-                '-c:v', 'libx264',
-                '-preset', 'medium',
-                '-profile:v', 'high',
-                '-an',  # 不包含音频
-                '-threads', str(threads),
-                video_concat_path
-            ]
-
-            subprocess.run(concat_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            logger.info("视频流合并完成")
+            _concat_video_streams(video_paths_only, concat_file, video_concat_path, threads)
 
             # 2. 提取并合并有音频的片段
             audio_segments = [video for video in processed_videos if video["keep_audio"]]

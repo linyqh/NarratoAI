@@ -25,6 +25,10 @@
     vision_openai_model_name = "Qwen/Qwen3.5-122B-A10B"
     vision_openai_api_key = ""  # 填入对应 provider 的 API key
     vision_openai_base_url = "https://api.siliconflow.cn/v1"  # 可选：自定义 API base URL（官方 OpenAI 可留空）
+    vision_openai_temperature = 1.0
+    vision_openai_top_p = 0.95
+    vision_openai_max_tokens = 65536
+    vision_openai_thinking_level = "auto"  # auto/off/low/medium/high
 
     # ===== 文本模型配置 =====
     text_llm_provider = "openai"
@@ -40,6 +44,16 @@
     text_openai_model_name = "Pro/zai-org/GLM-5"
     text_openai_api_key = ""  # 填入对应 provider 的 API key
     text_openai_base_url = "https://api.siliconflow.cn/v1"  # 可选：自定义 API base URL（官方 OpenAI 可留空）
+    text_openai_temperature = 1.0
+    text_openai_top_p = 0.95
+    text_openai_max_tokens = 65536
+    text_openai_thinking_level = "auto"  # auto/off/low/medium/high
+
+    # ===== Tavily 联网搜索配置 =====
+    # 用于短剧剧情理解前，按短剧名称检索公开剧情/人物/分集信息
+    tavily_api_key = ""  # 获取地址：https://app.tavily.com
+    tavily_search_depth = "basic"  # basic / advanced / fast / ultra-fast
+    tavily_max_results = 5
 
     # ===== API Keys 参考 =====
     # 主流 LLM Providers API Key 获取地址：
@@ -60,6 +74,10 @@
 
     # WebUI 界面是否显示配置项
     hide_config = true
+
+    # FFmpeg 引擎路径（可选）
+    # 为空时使用系统 PATH；也可以在系统设置中通过下拉框选择整合包或本机 ffmpeg。
+    ffmpeg_path = ""
 
     # 官方 OpenAI 默认端点（可选）：
     # text_openai_base_url = "https://api.openai.com/v1"
@@ -95,24 +113,32 @@
     model_name = "qwen3-tts-flash"
 
 [fun_asr]
-    # 阿里百炼 Fun-ASR 字幕转录配置
-    # 访问 https://bailian.console.aliyun.com/?tab=model#/api-key 获取你的 API 密钥
+    # Fun-ASR 字幕转录配置
+    # backend = "local" 使用本地 FunASR-Pack API；backend = "firered" 使用本地 FireRedASR2-AED-Pack API；backend = "bailian" 使用阿里百炼在线 fun-asr
+    auto_transcribe_enabled = false
+    backend = "local"
+    api_url = "http://127.0.0.1:7860"
+    firered_api_url = "http://127.0.0.1:7867"
+    hotword = ""
+    enable_spk = false
+    # 使用阿里百炼在线 fun-asr 时，访问 https://bailian.console.aliyun.com/?tab=model#/api-key 获取 API Key
     api_key = ""
     model = "fun-asr"
-    
-[indextts2]
-    # IndexTTS2 语音克隆配置
+
+[indextts]
+    # IndexTTS-1.5 语音克隆配置
     # 这是一个开源的零样本语音克隆项目，需要自行部署
     # 项目地址：https://github.com/index-tts/index-tts
     # 默认 API 地址（本地部署）
     api_url = "http://127.0.0.1:8081/tts"
-    
-    # 默认参考音频路径（可选）
+
+    # 默认参考音频（可选）
+    reference_audio_source = "resource"
     # reference_audio = "/path/to/reference_audio.wav"
-    
+
     # 推理模式：普通推理 / 快速推理
     infer_mode = "普通推理"
-    
+
     # 高级参数
     temperature = 1.0
     top_p = 0.8
@@ -120,6 +146,66 @@
     do_sample = true
     num_beams = 3
     repetition_penalty = 10.0
+
+[indextts2]
+    # IndexTTS-2 语音克隆配置
+    # 支持 IndexTTS2-Pack FastAPI 接口：POST /tts
+    api_url = "http://192.168.3.6:7863/tts"
+
+    # 默认参考音频（可选），音色列表复用 IndexTTS-1.5 的资源目录
+    reference_audio_source = "resource"
+    # reference_audio = "/path/to/reference_audio.wav"
+
+    # 情感控制：speaker / audio / vector / text
+    emotion_mode = "speaker"
+    emotion_audio = ""
+    emotion_alpha = 0.65
+    emotion_text = ""
+    use_random = false
+    max_text_tokens_per_segment = 120
+
+    # 8 维情感向量，顺序：happy, angry, sad, afraid, disgusted, melancholic, surprised, calm
+    vec_happy = 0.0
+    vec_angry = 0.0
+    vec_sad = 0.0
+    vec_afraid = 0.0
+    vec_disgusted = 0.0
+    vec_melancholic = 0.0
+    vec_surprised = 0.0
+    vec_calm = 0.8
+
+    # 高级生成参数
+    temperature = 0.8
+    top_p = 0.8
+    top_k = 30
+    num_beams = 3
+    repetition_penalty = 10.0
+    max_mel_tokens = 1500
+
+[omnivoice]
+    # OmniVoice-Pack 语音合成配置
+    # 支持 OmniVoice-Pack FastAPI 接口：POST /tts
+    api_url = "http://127.0.0.1:7866/tts"
+    language = "zh"
+
+    # 生成模式：auto / voice_design / voice_clone
+    mode = "auto"
+    instruct = ""
+
+    # voice_clone 模式下使用，音色列表复用 IndexTTS-1.5 的资源目录
+    reference_audio_source = "resource"
+    reference_audio = ""
+    ref_text = ""
+
+    # 高级生成参数
+    num_step = 32
+    guidance_scale = 2.0
+    speed = 1.0
+    duration = ""
+    denoise = true
+    postprocess_output = true
+    preprocess_prompt = true
+
 [doubaotts]
     # 豆包语音 TTS 配置
     # 申请流程：
@@ -138,8 +224,8 @@
     silence_duration = 0.125
 
 [ui]
-    # TTS引擎选择 (edge_tts, azure_speech, soulvoice, tencent_tts, tts_qwen, doubaotts)
-    tts_engine = "edge_tts"
+    # TTS引擎选择 (indextts, indextts2, omnivoice, edge_tts, qwen3_tts, tencent_tts, doubaotts, azure_speech)
+    tts_engine = "indextts"
 
     # Edge TTS 配置
     edge_voice_name = "zh-CN-XiaoyiNeural-Female"
@@ -156,6 +242,23 @@
     # 豆包语音 TTS 配置
     doubaotts_voice_type = "BV700_V2_streaming"
     doubaotts_rate = 1.0
+
+    # 字幕遮罩配置：用于在烧录新字幕前遮盖原视频自带字幕
+    subtitle_mask_enabled = false
+    subtitle_mask_landscape_x_percent = 10
+    subtitle_mask_landscape_y_percent = 78
+    subtitle_mask_landscape_width_percent = 80
+    subtitle_mask_landscape_height_percent = 14
+    subtitle_mask_landscape_blur_radius = 18
+    subtitle_mask_landscape_opacity_percent = 82
+    subtitle_mask_portrait_x_percent = 8
+    subtitle_mask_portrait_y_percent = 79
+    subtitle_mask_portrait_width_percent = 84
+    subtitle_mask_portrait_height_percent = 16
+    subtitle_mask_portrait_blur_radius = 26
+    subtitle_mask_portrait_opacity_percent = 84
+    subtitle_position_landscape_y_percent = 85
+    subtitle_position_portrait_y_percent = 82
 
 ##########################################
 # 代理和网络配置

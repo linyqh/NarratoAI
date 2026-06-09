@@ -178,6 +178,27 @@ class TextModelProvider(BaseLLMProvider):
             生成的文本内容
         """
         pass
+
+    async def generate_text_stream(self,
+                                 prompt: str,
+                                 system_prompt: Optional[str] = None,
+                                 temperature: float = 1.0,
+                                 max_tokens: Optional[int] = None,
+                                 response_format: Optional[str] = None,
+                                 on_chunk=None,
+                                 **kwargs) -> str:
+        """生成文本内容并尽可能回调流式片段；默认退化为一次性输出。"""
+        result = await self.generate_text(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=response_format,
+            **kwargs,
+        )
+        if on_chunk:
+            on_chunk({"type": "content", "text": result})
+        return result
     
     def _build_messages(self, prompt: str, system_prompt: Optional[str] = None) -> List[Dict[str, str]]:
         """构建消息列表"""

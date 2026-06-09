@@ -113,6 +113,8 @@ class OutputValidator:
                             "required": ["_id", "timestamp", "picture", "narration"],
                             "properties": {
                                 "_id": {"type": "number"},
+                                "video_id": {"type": "number"},
+                                "video_name": {"type": "string"},
                                 "timestamp": {"type": "string"},
                                 "picture": {"type": "string"},
                                 "narration": {"type": "string"},
@@ -161,6 +163,16 @@ class OutputValidator:
         item_id = item.get("_id")
         if not isinstance(item_id, (int, float)) or item_id <= 0:
             raise ValidationError(f"第{index+1}项ID必须为正整数: {item_id}", "invalid_id")
+
+        video_id = item.get("video_id")
+        if video_id not in (None, "") and (
+            not isinstance(video_id, (int, float)) or video_id <= 0
+        ):
+            raise ValidationError(f"第{index+1}项video_id必须为正整数: {video_id}", "invalid_video_id")
+
+        video_name = item.get("video_name")
+        if video_name not in (None, "") and not isinstance(video_name, str):
+            raise ValidationError(f"第{index+1}项video_name必须为字符串: {video_name}", "invalid_video_name")
     
     @staticmethod
     def validate_subtitle_analysis(output: str) -> str:

@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import sys
 import time
+from html import escape
 from loguru import logger
 from app.config import config
 from webui.components import basic_settings, video_settings, audio_settings, subtitle_settings, script_settings, \
@@ -9,6 +10,7 @@ from webui.components import basic_settings, video_settings, audio_settings, sub
 # from webui.utils import cache, file_utils
 from app.utils import utils
 from app.utils import ffmpeg_utils
+from app.models import const
 from app.models.schema import VideoClipParams, VideoAspect
 
 
@@ -128,6 +130,82 @@ def tr(key):
     return loc.get("Translation", {}).get(key, key)
 
 
+VIDEO_GENERATION_STEP_LABELS = [
+    "正在加载剪辑脚本",
+    "正在生成 TTS 配音",
+    "正在按脚本裁剪视频片段",
+    "正在合并配音和字幕",
+    "正在合并视频片段",
+    "正在合成最终视频",
+]
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _format_optional_percent(value):
+    try:
+        percent = max(0.0, min(100.0, float(value)))
+    except (TypeError, ValueError):
+        return None
+    if percent.is_integer():
+        return str(int(percent))
+    return f"{percent:.1f}"
+
+
+def _render_generation_status(task: dict | None) -> str:
+    task = task or {}
+    state = task.get("state")
+    current_step = _safe_int(task.get("step_current"), 0)
+    step_total = _safe_int(task.get("step_total"), len(VIDEO_GENERATION_STEP_LABELS))
+    message = str(task.get("message") or "")
+    ffmpeg_percent = _format_optional_percent(task.get("ffmpeg_progress"))
+
+    if current_step <= 0:
+        return f"<div style='font-weight:650;color:#262730;'>{escape(message or '正在生成视频，请稍候...')}</div>"
+
+    lines = []
+    for index, default_label in enumerate(VIDEO_GENERATION_STEP_LABELS, start=1):
+        is_current = index == current_step
+        is_complete = state == const.TASK_STATE_COMPLETE
+        is_done = is_complete or index < current_step
+        label = message if is_current and message else default_label
+
+        suffix = f"{index}/{step_total}"
+        if (
+            is_current
+            and index == step_total
+            and ffmpeg_percent is not None
+            and not is_complete
+        ):
+            suffix = f"{suffix}，ffmpeg {ffmpeg_percent}%"
+
+        color = "#262730" if is_current else "#8b9099" if is_done else "#b9bec7"
+        weight = "650" if is_current else "500"
+        lines.append(
+            "<div style='"
+            "font-size:1.02rem;"
+            "line-height:1.85;"
+            "margin:0.28rem 0;"
+            f"color:{color};"
+            f"font-weight:{weight};"
+            "'>"
+            f"{escape(label)} <span style='white-space:nowrap;'>({escape(suffix)})</span>"
+            "</div>"
+        )
+
+    return "".join(lines)
+
+
+def get_help_text():
+    """返回带当前项目版本号的帮助文案"""
+    return tr("Get Help").replace("🎉🎉🎉", f" v{config.project_version}")
+
+
 def render_generate_button():
     """渲染生成按钮和处理逻辑"""
     if st.button(tr("Generate Video"), use_container_width=True, type="primary"):
@@ -143,10 +221,10 @@ def render_generate_button():
         # 移除task_id检查 - 现在使用统一裁剪策略，不再需要预裁剪
         # 直接检查必要的文件是否存在
         if not st.session_state.get('video_clip_json_path'):
-            st.error(tr("脚本文件不能为空"))
+            st.error(tr("Script file cannot be empty"))
             return
         if not st.session_state.get('video_origin_path'):
-            st.error(tr("视频文件不能为空"))
+            st.error(tr("Video file cannot be empty"))
             return
 
         # 获取所有参数
@@ -169,79 +247,189 @@ def render_generate_button():
         # 生成一个新的task_id用于本次处理
         task_id = str(uuid.uuid4())
 
-        # 创建进度条
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        @st.dialog(tr("Generating Video"), width="large")
+        def generate_video_dialog():
+            st.markdown(
+                """
+                <style>
+                    div[data-testid="stDialog"] div[data-testid="stStatusWidget"] {
+                        margin-top: 0.25rem;
+                    }
+                    div[data-testid="stDialog"] div[data-testid="stProgress"] {
+                        margin-bottom: 0.75rem;
+                    }
+                    div[data-testid="stDialog"] video {
+                        max-height: 62vh;
+                        object-fit: contain;
+                        background: #000;
+                    }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
 
-        def run_task():
-            try:
-                tm.start_subclip_unified(
-                    task_id=task_id,
-                    params=params
+            progress_bar = st.progress(0)
+            status_panel = st.status(tr("Generating Video"), expanded=True)
+            with status_panel:
+                status_placeholder = st.empty()
+                status_placeholder.markdown(
+                    _render_generation_status(None),
+                    unsafe_allow_html=True,
                 )
-            except Exception as e:
-                logger.error(f"任务执行失败: {e}")
-                sm.state.update_task(task_id, state=const.TASK_STATE_FAILED, message=str(e))
 
-        # 在新线程中启动任务
-        thread = threading.Thread(target=run_task)
-        thread.start()
+            def run_task():
+                try:
+                    tm.start_subclip_unified(
+                        task_id=task_id,
+                        params=params
+                    )
+                except Exception as e:
+                    logger.error(f"任务执行失败: {e}")
+                    current_task = sm.state.get_task(task_id) or {}
+                    sm.state.update_task(
+                        task_id,
+                        state=const.TASK_STATE_FAILED,
+                        progress=current_task.get("progress", 0),
+                        message=str(e),
+                    )
 
-        # 轮询任务状态
-        while True:
-            task = sm.state.get_task(task_id)
-            if task:
-                progress = task.get("progress", 0)
-                state = task.get("state")
-                
-                # 更新进度条
-                progress_bar.progress(progress / 100)
-                status_text.text(f"Processing... {progress}%")
+            # 在新线程中启动任务
+            thread = threading.Thread(target=run_task)
+            thread.start()
 
-                if state == const.TASK_STATE_COMPLETE:
-                    status_text.text(tr("视频生成完成"))
-                    progress_bar.progress(1.0)
-                    
-                    # 显示结果
-                    video_files = task.get("videos", [])
+            last_status_key = None
+
+            # 轮询任务状态
+            while True:
+                task = sm.state.get_task(task_id)
+                if task:
+                    progress = task.get("progress", 0)
+                    state = task.get("state")
+
                     try:
-                        if video_files:
-                            player_cols = st.columns(len(video_files) * 2 + 1)
-                            for i, url in enumerate(video_files):
-                                player_cols[i * 2 + 1].video(url)
-                    except Exception as e:
-                        logger.error(f"播放视频失败: {e}")
-                    
-                    st.success(tr("视频生成完成"))
-                    break
-                
-                elif state == const.TASK_STATE_FAILED:
-                    st.error(f"任务失败: {task.get('message', 'Unknown error')}")
-                    break
-            
-            time.sleep(0.5)
+                        progress = int(progress)
+                    except (TypeError, ValueError):
+                        progress = 0
+                    progress = max(0, min(progress, 100))
+
+                    # 更新进度条和阶段状态
+                    progress_bar.progress(progress / 100)
+                    current_message = task.get("message") or f"Processing... {progress}%"
+                    status_key = (
+                        state,
+                        progress,
+                        current_message,
+                        task.get("step_current"),
+                        task.get("step_total"),
+                        task.get("ffmpeg_progress"),
+                    )
+                    if status_key != last_status_key:
+                        status_placeholder.markdown(
+                            _render_generation_status(task),
+                            unsafe_allow_html=True,
+                        )
+                        last_status_key = status_key
+
+                    if state == const.TASK_STATE_COMPLETE:
+                        status_panel.update(
+                            label=tr("Video Generation Completed"),
+                            state="complete",
+                            expanded=False,
+                        )
+                        progress_bar.progress(1.0)
+
+                        # 显示结果
+                        video_files = task.get("videos", [])
+                        try:
+                            if video_files:
+                                aspect = getattr(params, "video_aspect", "")
+                                aspect = getattr(aspect, "value", aspect)
+                                preview_width = 320 if aspect in {
+                                    VideoAspect.portrait.value,
+                                    VideoAspect.portrait_2.value,
+                                } else 600
+                                for url in video_files:
+                                    _, preview_col, _ = st.columns([1, 2, 1])
+                                    with preview_col:
+                                        st.video(url, width=preview_width)
+                        except Exception as e:
+                            logger.error(f"播放视频失败: {e}")
+
+                        st.success(tr("Video Generation Completed"))
+                        break
+
+                    if state == const.TASK_STATE_FAILED:
+                        status_panel.update(
+                            label=f"{tr('Task failed')}: {task.get('message', 'Unknown error')}",
+                            state="error",
+                            expanded=True,
+                        )
+                        st.error(f"{tr('Task failed')}: {task.get('message', 'Unknown error')}")
+                        break
+
+                time.sleep(0.5)
+
+        generate_video_dialog()
 
 
 def get_voice_name_for_tts_engine(tts_engine: str) -> str:
     """根据TTS引擎获取用户选择的音色"""
+    if tts_engine == 'edge_tts':
+        return config.ui.get('edge_voice_name', 'zh-CN-XiaoxiaoNeural-Female')
+    if tts_engine == 'azure_speech':
+        return config.ui.get('azure_voice_name', 'zh-CN-XiaoxiaoMultilingualNeural')
+    if tts_engine == 'tencent_tts':
+        return f"tencent:{config.ui.get('tencent_voice_type', '101001')}"
+    if tts_engine == 'qwen3_tts':
+        return f"qwen3:{config.ui.get('qwen_voice_type', 'Cherry')}"
+    if tts_engine == config.INDEXTTS2_ENGINE:
+        reference_audio = config.indextts2.get('reference_audio', '')
+        if reference_audio:
+            return f"{config.INDEXTTS2_VOICE_PREFIX}{reference_audio}"
+        return config.ui.get('voice_name', '')
+    if config.normalize_tts_engine_name(tts_engine) == config.INDEXTTS_ENGINE:
+        reference_audio = config.indextts.get('reference_audio', '')
+        if reference_audio:
+            return f"{config.INDEXTTS_VOICE_PREFIX}{reference_audio}"
+        return config.ui.get('voice_name', '')
+    if tts_engine == config.OMNIVOICE_ENGINE:
+        mode = config.omnivoice.get('mode', 'auto')
+        reference_audio = config.omnivoice.get('reference_audio', '')
+        if mode == 'voice_clone' and reference_audio:
+            return f"{config.OMNIVOICE_VOICE_PREFIX}{reference_audio}"
+        return f"{config.OMNIVOICE_VOICE_PREFIX}{mode}"
     if tts_engine == 'doubaotts':
-        return st.session_state.get('voice_name', config.ui.get('doubaotts_voice_type', 'BV700_streaming'))
-    elif tts_engine == 'azure_speech':
-        return st.session_state.get('voice_name', config.ui.get('azure_voice_name', 'zh-CN-XiaoxiaoMultilingualNeural'))
-    else:
-        return st.session_state.get('voice_name', config.ui.get('edge_voice_name', 'zh-CN-XiaoxiaoNeural-Female'))
+        return config.ui.get('doubaotts_voice_type', 'BV700_streaming')
+    if tts_engine == 'soulvoice':
+        voice_uri = config.soulvoice.get('voice_uri', '')
+        if voice_uri and not voice_uri.startswith(('soulvoice:', 'speech:')):
+            return f"soulvoice:{voice_uri}"
+        return voice_uri
+    return config.ui.get('voice_name', config.ui.get('edge_voice_name', 'zh-CN-XiaoxiaoNeural-Female'))
 
 
-def get_jianying_export_params() -> VideoClipParams:
+def get_jianying_export_params(draft_name=None) -> VideoClipParams:
     """获取导出到剪映草稿的参数"""
-    tts_engine = st.session_state.get('tts_engine', 'azure')
+    tts_engine = st.session_state.get('tts_engine', config.ui.get('tts_engine', 'edge_tts'))
     voice_name = get_voice_name_for_tts_engine(tts_engine)
     voice_rate = st.session_state.get('voice_rate', 1.0)
     voice_pitch = st.session_state.get('voice_pitch', 1.0)
+    subtitle_paths = st.session_state.get('subtitle_paths', [])
+    if isinstance(subtitle_paths, str):
+        subtitle_paths = [subtitle_paths]
+    subtitle_paths = [
+        path for path in subtitle_paths
+        if isinstance(path, str) and path.strip()
+    ]
+    if not subtitle_paths and st.session_state.get('subtitle_path'):
+        subtitle_paths = [st.session_state.get('subtitle_path')]
     
     return VideoClipParams(
         video_clip_json_path=st.session_state['video_clip_json_path'],
         video_origin_path=st.session_state['video_origin_path'],
+        video_origin_paths=st.session_state.get('video_origin_paths', []),
+        original_subtitle_path=subtitle_paths[0] if subtitle_paths else "",
+        original_subtitle_paths=subtitle_paths,
         tts_engine=tts_engine,
         voice_name=voice_name,
         voice_rate=voice_rate,
@@ -257,108 +445,208 @@ def get_jianying_export_params() -> VideoClipParams:
         tts_volume=st.session_state.get('tts_volume', 1.0),
         original_volume=st.session_state.get('original_volume', 0.7),
         bgm_volume=st.session_state.get('bgm_volume', 0.3),
-        draft_name=st.session_state.get('draft_name_input', f"NarratoAI_{int(time.time())}")
+        draft_name=(
+            draft_name
+            if draft_name is not None
+            else st.session_state.get('draft_name_input', f"NarratoAI_{int(time.time())}")
+        )
     )
+
+
+def _render_jianying_export_status():
+    """渲染剪映导出的结果提示。"""
+    result = st.session_state.get('jianying_export_result')
+    error = st.session_state.get('jianying_export_error')
+
+    if result:
+        st.success(tr("Jianying draft exported successfully").format(name=result['draft_name']))
+        st.info(tr("Draft saved to").format(path=result['draft_path']))
+    elif error:
+        st.error(f"{tr('Failed to export Jianying draft')}: {error}")
+
+
+def _render_jianying_export_dialog():
+    """使用弹窗确认剪映草稿名称。"""
+    import uuid
+    from loguru import logger
+
+    @st.dialog(tr("Export to Jianying Draft"), width="small")
+    def jianying_export_dialog():
+        jianying_draft_path = config.ui.get("jianying_draft_path", "")
+        dialog_title = escape(tr("Jianying export dialog title"))
+        dialog_description = escape(tr("Jianying export dialog description"))
+        destination_label = escape(tr("Jianying export destination"))
+        destination_path = escape(jianying_draft_path or "-")
+
+        st.markdown(
+            f"""
+            <style>
+                .jianying-export-panel {{
+                    display: flex;
+                    gap: 12px;
+                    align-items: flex-start;
+                    padding: 14px;
+                    margin: 2px 0 18px;
+                    border: 1px solid rgba(255, 75, 75, 0.24);
+                    border-radius: 8px;
+                    background: linear-gradient(135deg, rgba(255, 75, 75, 0.10), rgba(255, 255, 255, 0.96));
+                }}
+                .jianying-export-icon {{
+                    width: 38px;
+                    height: 38px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex: 0 0 auto;
+                    border-radius: 8px;
+                    color: #ffffff;
+                    background: #ff4b4b;
+                    font-size: 20px;
+                    line-height: 1;
+                }}
+                .jianying-export-title {{
+                    color: #202534;
+                    font-size: 17px;
+                    font-weight: 700;
+                    line-height: 1.35;
+                    margin-bottom: 4px;
+                }}
+                .jianying-export-description {{
+                    color: #5f6575;
+                    font-size: 13px;
+                    line-height: 1.55;
+                }}
+                .jianying-export-path {{
+                    padding: 10px 12px;
+                    margin: 2px 0 16px;
+                    border: 1px solid #e4e7ef;
+                    border-radius: 8px;
+                    background: #f8f9fc;
+                    color: #323846;
+                    font-size: 13px;
+                    line-height: 1.45;
+                    word-break: break-all;
+                }}
+                .jianying-export-path-label {{
+                    display: block;
+                    color: #7a8192;
+                    font-size: 12px;
+                    margin-bottom: 4px;
+                }}
+            </style>
+            <div class="jianying-export-panel">
+                <div class="jianying-export-icon">📤</div>
+                <div>
+                    <div class="jianying-export-title">{dialog_title}</div>
+                    <div class="jianying-export-description">{dialog_description}</div>
+                </div>
+            </div>
+            <div class="jianying-export-path">
+                <span class="jianying-export-path-label">{destination_label}</span>
+                {destination_path}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        draft_name = st.text_input(
+            tr("Jianying draft name"),
+            key="draft_name_input",
+            placeholder="NarratoAI_",
+        )
+
+        error = st.session_state.get('jianying_export_error')
+        if error:
+            st.error(f"{tr('Failed to export Jianying draft')}: {error}")
+
+        cancel_col, confirm_col = st.columns(2)
+        with cancel_col:
+            if st.button(tr("Cancel"), key="cancel_export", use_container_width=True):
+                st.session_state['jianying_export_error'] = None
+                st.rerun()
+
+        with confirm_col:
+            if st.button(tr("Confirm Export"), key="confirm_export", type="primary", use_container_width=True):
+                draft_name = (draft_name or "").strip()
+                if not draft_name:
+                    st.error(tr("Please enter draft name"))
+                    return
+
+                # 创建任务ID
+                task_id = str(uuid.uuid4())
+                st.session_state['task_id'] = task_id
+
+                # 构建参数
+                try:
+                    params = get_jianying_export_params(draft_name)
+                except Exception as e:
+                    logger.error(f"构建参数失败: {e}")
+                    st.session_state['jianying_export_error'] = f"{tr('Failed to build parameters')}: {e}"
+                    st.error(st.session_state['jianying_export_error'])
+                    return
+
+                with st.spinner(tr("Exporting to Jianying draft...")):
+                    try:
+                        from app.services import jianying_task
+
+                        # 调用导出到剪映草稿的任务
+                        result = jianying_task.start_export_jianying_draft(task_id, params)
+
+                        # 记录日志
+                        logger.info(f"成功导出到剪映草稿: {result['draft_name']}")
+                        logger.info(f"草稿已保存到: {result['draft_path']}")
+
+                        # 保存结果到session state
+                        st.session_state['jianying_export_result'] = result
+                        st.session_state['jianying_export_error'] = None
+                        st.rerun()
+                    except Exception as e:
+                        logger.error(f"导出到剪映草稿失败: {e}")
+                        import traceback
+                        logger.error(f"错误详情: {traceback.format_exc()}")
+                        st.session_state['jianying_export_error'] = str(e)
+                        st.session_state['jianying_export_result'] = None
+                        st.error(f"{tr('Failed to export Jianying draft')}: {e}")
+
+    jianying_export_dialog()
 
 
 def render_export_jianying_button():
     """渲染导出到剪映草稿按钮和处理逻辑"""
     import os
     import time
-    import uuid
-    from loguru import logger
     
     # 初始化session state
-    if 'show_jianying_export_form' not in st.session_state:
-        st.session_state['show_jianying_export_form'] = False
     if 'jianying_export_result' not in st.session_state:
         st.session_state['jianying_export_result'] = None
     if 'jianying_export_error' not in st.session_state:
         st.session_state['jianying_export_error'] = None
     
-    if st.button("📤 导出到剪映草稿", use_container_width=True, type="secondary"):
+    if st.button(tr("Export to Jianying Draft"), use_container_width=True, type="secondary"):
         config.save_config()
         
         if not st.session_state.get('video_clip_json_path'):
-            st.error("脚本文件不能为空")
+            st.error(tr("Script file cannot be empty"))
             return
         if not st.session_state.get('video_origin_path'):
-            st.error("视频文件不能为空")
+            st.error(tr("Video file cannot be empty"))
             return
         
         jianying_draft_path = config.ui.get("jianying_draft_path", "")
         if not jianying_draft_path:
-            st.error("请在基础设置中配置剪映草稿地址")
+            st.error(tr("Please configure Jianying draft folder in basic settings"))
             return
         
         if not os.path.exists(jianying_draft_path):
-            st.error(f"剪映草稿文件夹不存在: {jianying_draft_path}")
+            st.error(tr("Jianying draft folder does not exist").format(path=jianying_draft_path))
             return
         
-        # 显示导出表单
-        st.session_state['show_jianying_export_form'] = True
         st.session_state['jianying_export_result'] = None
         st.session_state['jianying_export_error'] = None
+        st.session_state['draft_name_input'] = f"NarratoAI_{int(time.time())}"
+        _render_jianying_export_dialog()
     
-    # 显示导出表单
-    if st.session_state['show_jianying_export_form']:
-        st.markdown("---")
-        st.subheader("导出到剪映草稿")
-        
-        draft_name = st.text_input(
-            "请输入剪映草稿名称",
-            value=f"NarratoAI_{int(time.time())}",
-            key="draft_name_input"
-        )
-        
-        if st.button("确认导出", key="confirm_export"):
-            if not draft_name:
-                st.error("请输入草稿名称")
-                return
-            
-            # 创建任务ID
-            task_id = str(uuid.uuid4())
-            st.session_state['task_id'] = task_id
-            
-            # 构建参数
-            try:
-                params = get_jianying_export_params()
-            except Exception as e:
-                logger.error(f"构建参数失败: {e}")
-                st.error(f"参数构建失败: {e}")
-                return
-            
-            with st.spinner("正在导出到剪映草稿，请稍候..."):
-                try:
-                    from app.services import jianying_task
-                    
-                    # 调用导出到剪映草稿的任务
-                    result = jianying_task.start_export_jianying_draft(task_id, params)
-                    
-                    # 记录日志
-                    logger.info(f"成功导出到剪映草稿: {result['draft_name']}")
-                    logger.info(f"草稿已保存到: {result['draft_path']}")
-                    
-                    # 保存结果到session state
-                    st.session_state['jianying_export_result'] = result
-                    st.session_state['jianying_export_error'] = None
-                    st.session_state['show_jianying_export_form'] = False
-                    
-                    st.success(f"✅ 成功导出到剪映草稿: {result['draft_name']}")
-                    st.info(f"📁 草稿已保存到: {result['draft_path']}")
-                except Exception as e:
-                    logger.error(f"导出到剪映草稿失败: {e}")
-                    import traceback
-                    logger.error(f"错误详情: {traceback.format_exc()}")
-                    st.session_state['jianying_export_error'] = str(e)
-                    st.session_state['jianying_export_result'] = None
-                    st.error(f"❌ 导出到剪映草稿失败: {e}")
-        
-        if st.button("取消", key="cancel_export"):
-            st.session_state['show_jianying_export_form'] = False
-            st.session_state['jianying_export_result'] = None
-            st.session_state['jianying_export_error'] = None
-            st.rerun()
+    _render_jianying_export_status()
 
 
 
@@ -379,7 +667,7 @@ def main():
             logger.error(f"❌ LLM 提供商注册失败: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-            st.error(f"⚠️ LLM 初始化失败: {str(e)}\n\n请检查配置文件和依赖是否正确安装。")
+            st.error(tr("LLM initialization failed").format(error=str(e)))
             # 不抛出异常，允许应用继续运行（但 LLM 功能不可用）
 
     # 检测FFmpeg硬件加速，但只打印一次日志（使用 session_state 持久化）
@@ -402,7 +690,7 @@ def main():
         logger.warning(f"资源初始化时出现警告: {e}")
 
     st.title(f"Narrato:blue[AI]:sunglasses: 📽️")
-    st.write(tr("Get Help"))
+    st.write(get_help_text())
 
     # 首先渲染不依赖PyTorch的UI部分
     # 渲染基础设置面板

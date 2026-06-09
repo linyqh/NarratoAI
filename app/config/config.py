@@ -9,6 +9,56 @@ from app.config.defaults import build_default_app_config, merge_missing_app_defa
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 config_file = f"{root_dir}/config.toml"
 version_file = f"{root_dir}/project_version"
+INDEXTTS_ENGINE = "indextts"
+INDEXTTS_DISPLAY_NAME = "IndexTTS-1.5"
+INDEXTTS2_ENGINE = "indextts2"
+INDEXTTS2_DISPLAY_NAME = "IndexTTS-2"
+OMNIVOICE_ENGINE = "omnivoice"
+OMNIVOICE_DISPLAY_NAME = "OmniVoice"
+INDEXTTS_VOICE_PREFIX = f"{INDEXTTS_ENGINE}:"
+INDEXTTS2_VOICE_PREFIX = f"{INDEXTTS2_ENGINE}:"
+OMNIVOICE_VOICE_PREFIX = f"{OMNIVOICE_ENGINE}:"
+
+
+def normalize_tts_engine_name(tts_engine: str) -> str:
+    return tts_engine
+
+
+def normalize_indextts_voice_prefix(voice_name: str) -> str:
+    return voice_name
+
+
+def _is_legacy_indextts2_config(indextts2_config) -> bool:
+    if not isinstance(indextts2_config, dict):
+        return False
+    api_url = str(indextts2_config.get("api_url", ""))
+    has_indextts2_fields = any(
+        key in indextts2_config
+        for key in (
+            "emotion_mode",
+            "emotion_alpha",
+            "max_text_tokens_per_segment",
+            "max_mel_tokens",
+            "vec_calm",
+        )
+    )
+    return "8081" in api_url and not has_indextts2_fields
+
+
+def migrate_indextts_config(config_data):
+    migrated_legacy_indextts2 = _is_legacy_indextts2_config(config_data.get(INDEXTTS2_ENGINE))
+    if migrated_legacy_indextts2:
+        if "indextts" not in config_data:
+            config_data["indextts"] = config_data[INDEXTTS2_ENGINE]
+        config_data.pop(INDEXTTS2_ENGINE, None)
+
+    ui_config = config_data.get("ui")
+    if isinstance(ui_config, dict):
+        if migrated_legacy_indextts2 and ui_config.get("tts_engine") == INDEXTTS2_ENGINE:
+            ui_config["tts_engine"] = INDEXTTS_ENGINE
+        if ui_config.get("voice_name", "").startswith(INDEXTTS2_VOICE_PREFIX) and ui_config.get("tts_engine") == INDEXTTS_ENGINE:
+            ui_config["voice_name"] = f"{INDEXTTS_VOICE_PREFIX}{ui_config['voice_name'][len(INDEXTTS2_VOICE_PREFIX):]}"
+    return config_data
 
 
 def get_version_from_file():
@@ -32,13 +82,13 @@ def load_config():
         _config_ = build_default_config()
         write_config_file(_config_)
         logger.info("create config.toml with shared defaults")
-        return _config_
+        return migrate_indextts_config(_config_)
 
     logger.info(f"load config from file: {config_file}")
 
     _config_ = load_toml_file(config_file)
     _config_["app"] = merge_missing_app_defaults(_config_.get("app", {}))
-    return _config_
+    return migrate_indextts_config(_config_)
 
 
 def load_toml_file(file_path):
@@ -60,7 +110,7 @@ def build_default_config():
         config_data = load_toml_file(example_file)
 
     config_data["app"] = build_default_app_config(config_data.get("app", {}))
-    return config_data
+    return migrate_indextts_config(config_data)
 
 
 def write_config_file(config_data):
@@ -82,7 +132,9 @@ def save_config():
         _cfg["ui"] = ui
         _cfg["tts_qwen"] = tts_qwen
         _cfg["fun_asr"] = fun_asr
+        _cfg["indextts"] = indextts
         _cfg["indextts2"] = indextts2
+        _cfg["omnivoice"] = omnivoice
         _cfg["doubaotts"] = doubaotts
         f.write(toml.dumps(_cfg))
 
@@ -98,7 +150,9 @@ ui = _cfg.get("ui", {})
 frames = _cfg.get("frames", {})
 tts_qwen = _cfg.get("tts_qwen", {})
 fun_asr = _cfg.get("fun_asr", {})
+indextts = _cfg.get("indextts", {})
 indextts2 = _cfg.get("indextts2", {})
+omnivoice = _cfg.get("omnivoice", {})
 doubaotts = _cfg.get("doubaotts", {})
 
 hostname = socket.gethostname()
@@ -119,8 +173,43 @@ imagemagick_path = app.get("imagemagick_path", "")
 if imagemagick_path and os.path.isfile(imagemagick_path):
     os.environ["IMAGEMAGICK_BINARY"] = imagemagick_path
 
+_applied_ffmpeg_dir = None
+
+
+def apply_ffmpeg_path(ffmpeg_binary: str = "") -> None:
+    """Apply the configured FFmpeg binary to this Python process."""
+    global _applied_ffmpeg_dir
+
+    if not ffmpeg_binary or not os.path.isfile(ffmpeg_binary):
+        return
+
+    ffmpeg_binary = os.path.abspath(os.path.expanduser(ffmpeg_binary))
+    ffmpeg_dir = os.path.dirname(ffmpeg_binary)
+    os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_binary
+
+    current_paths = os.environ.get("PATH", "").split(os.pathsep)
+    normalized_ffmpeg_dir = os.path.normcase(os.path.abspath(ffmpeg_dir))
+    normalized_previous_dir = (
+        os.path.normcase(os.path.abspath(_applied_ffmpeg_dir))
+        if _applied_ffmpeg_dir
+        else None
+    )
+    filtered_paths = []
+    for path_item in current_paths:
+        if not path_item:
+            continue
+        normalized_item = os.path.normcase(os.path.abspath(path_item))
+        if normalized_item == normalized_ffmpeg_dir:
+            continue
+        if normalized_previous_dir and normalized_item == normalized_previous_dir:
+            continue
+        filtered_paths.append(path_item)
+
+    os.environ["PATH"] = os.pathsep.join([ffmpeg_dir, *filtered_paths])
+    _applied_ffmpeg_dir = ffmpeg_dir
+
+
 ffmpeg_path = app.get("ffmpeg_path", "")
-if ffmpeg_path and os.path.isfile(ffmpeg_path):
-    os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
+apply_ffmpeg_path(ffmpeg_path)
 
 logger.info(f"{project_name} v{project_version}")

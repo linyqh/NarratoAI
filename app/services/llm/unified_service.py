@@ -12,6 +12,7 @@ from loguru import logger
 from .manager import LLMServiceManager
 from .validators import OutputValidator
 from .exceptions import LLMServiceError
+from app.services.prompts import PromptManager
 
 # 提供商注册由 webui.py:main() 显式调用（见 LLM 提供商注册机制重构）
 # 这样更可靠，错误也更容易调试
@@ -107,6 +108,37 @@ class UnifiedLLMService:
         except Exception as e:
             logger.error(f"文本生成失败: {str(e)}")
             raise LLMServiceError(f"文本生成失败: {str(e)}")
+
+    @staticmethod
+    async def generate_text_stream(prompt: str,
+                                 system_prompt: Optional[str] = None,
+                                 provider: Optional[str] = None,
+                                 temperature: float = 1.0,
+                                 max_tokens: Optional[int] = None,
+                                 response_format: Optional[str] = None,
+                                 on_chunk=None,
+                                 **kwargs) -> str:
+        """
+        流式生成文本内容；不支持流式的 provider 会退化为一次性返回。
+        """
+        try:
+            text_provider = LLMServiceManager.get_text_provider(provider)
+            result = await text_provider.generate_text_stream(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+                on_chunk=on_chunk,
+                **kwargs
+            )
+
+            logger.info(f"流式文本生成完成，生成内容长度: {len(result)} 字符")
+            return result
+
+        except Exception as e:
+            logger.error(f"流式文本生成失败: {str(e)}")
+            raise LLMServiceError(f"流式文本生成失败: {str(e)}")
     
     @staticmethod
     async def generate_narration_script(prompt: str,
@@ -162,6 +194,7 @@ class UnifiedLLMService:
     async def analyze_subtitle(subtitle_content: str,
                              provider: Optional[str] = None,
                              temperature: float = 1.0,
+                             prompt_category: str = "short_drama_narration",
                              validate_output: bool = True,
                              **kwargs) -> str:
         """
@@ -181,12 +214,20 @@ class UnifiedLLMService:
             LLMServiceError: 服务调用失败时抛出
         """
         try:
-            # 构建分析提示词
-            system_prompt = "你是一位专业的剧本分析师和剧情概括助手。请仔细分析字幕内容，提取关键剧情信息。"
+            prompt = PromptManager.get_prompt(
+                category=prompt_category,
+                name="plot_analysis",
+                parameters={"subtitle_content": subtitle_content},
+            )
+            prompt_object = PromptManager.get_prompt_object(
+                category=prompt_category,
+                name="plot_analysis",
+            )
+            system_prompt = prompt_object.get_system_prompt()
             
             # 生成分析结果
             result = await UnifiedLLMService.generate_text(
-                prompt=subtitle_content,
+                prompt=prompt,
                 system_prompt=system_prompt,
                 provider=provider,
                 temperature=temperature,

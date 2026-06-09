@@ -164,6 +164,9 @@ class VideoClipParams(BaseModel):
     video_clip_json: Optional[list] = Field(default=[], description="LLM 生成的视频剪辑脚本内容")
     video_clip_json_path: Optional[str] = Field(default="", description="LLM 生成的视频剪辑脚本路径")
     video_origin_path: Optional[str] = Field(default="", description="原视频路径")
+    video_origin_paths: Optional[List[str]] = Field(default=[], description="原视频路径列表")
+    original_subtitle_path: Optional[str] = Field(default="", description="原视频字幕路径")
+    original_subtitle_paths: Optional[List[str]] = Field(default=[], description="原视频字幕路径列表")
     video_aspect: Optional[VideoAspect] = Field(default=VideoAspect.portrait.value, description="视频比例")
     video_language: Optional[str] = Field(default="zh-CN", description="视频语言")
 
@@ -182,6 +185,28 @@ class VideoClipParams(BaseModel):
     bgm_file: Optional[str] = Field(default="", description="背景音乐文件")
 
     subtitle_enabled: bool = True
+    subtitle_mask_enabled: bool = False
+    subtitle_mask_landscape_x_percent: float = 10.0
+    subtitle_mask_landscape_y_percent: float = 78.0
+    subtitle_mask_landscape_width_percent: float = 80.0
+    subtitle_mask_landscape_height_percent: float = 14.0
+    subtitle_mask_landscape_blur_radius: int = 18
+    subtitle_mask_landscape_opacity_percent: int = 82
+    subtitle_mask_portrait_x_percent: float = 8.0
+    subtitle_mask_portrait_y_percent: float = 79.0
+    subtitle_mask_portrait_width_percent: float = 84.0
+    subtitle_mask_portrait_height_percent: float = 16.0
+    subtitle_mask_portrait_blur_radius: int = 26
+    subtitle_mask_portrait_opacity_percent: int = 84
+    subtitle_position_landscape_y_percent: float = 85.0
+    subtitle_position_portrait_y_percent: float = 82.0
+    subtitle_auto_transcribe_enabled: bool = False
+    subtitle_auto_transcribe_backend: str = "local"
+    subtitle_auto_transcribe_api_url: str = ""
+    subtitle_auto_transcribe_firered_api_url: str = ""
+    subtitle_auto_transcribe_api_key: str = ""
+    subtitle_auto_transcribe_hotword: str = ""
+    subtitle_auto_transcribe_enable_spk: bool = False
     font_name: str = "SimHei"  # 默认使用黑体
     font_size: int = 36
     text_fore_color: str = "white"              # 文本前景色
@@ -206,4 +231,3 @@ class SubtitlePosition(str, Enum):
     TOP = "top"
     CENTER = "center"
     BOTTOM = "bottom"
-

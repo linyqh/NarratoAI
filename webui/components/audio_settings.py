@@ -1,11 +1,50 @@
 import streamlit as st
 import os
+import shutil
+import json
 from uuid import uuid4
 from app.config import config
 from app.services import voice
 from app.models.schema import AudioVolumeDefaults
 from app.utils import utils
-from webui.utils.cache import get_songs_cache
+
+
+INDEXTTS_REFERENCE_AUDIO_SOURCE_DIR = "/Users/viccy/Downloads/tts-mp3-clone/mp3"
+INDEXTTS_REFERENCE_AUDIO_COPY_SUBDIR = "indextts_refs"
+INDEXTTS_REFERENCE_AUDIO_MAP = [
+    ("yingshijieshuo-zh-male.mp3", "影视解说", "Film Narration"),
+    ("maikeashe-zh-male.mp3", "麦克阿瑟", "Macintosh"),
+    ("dong-yuhui-zh-male.mp3", "董宇辉", "Dong Yuhui"),
+    ("fangzhenren-ad-fake-news-zh-male.mp3", "仿真人", "Realistic Human"),
+    ("fengyin-jilupian-jieshuo-zh-male.mp3", "风吟纪录片解说", "Fengyin Documentary Narration"),
+    ("guwo-dianying-jieshuo-zh-male.mp3", "顾我电影解说", "Guwo Film Narration"),
+    ("jia-xiaojun-final-zh-male.mp3", "贾小军", "Jia Xiaojun"),
+    ("junshi-zh-male.mp3", "军事解说", "Military Narration"),
+    ("qi-tongwei-v2-zh-male.mp3", "祁同伟", "Qi Tongwei"),
+    ("saima-niang-mambo-oye-zh-female.mp3", "赛马娘曼波欧耶版", "Uma Musume Mambo Oye Version"),
+    ("shejian-shangde-zhongguo-zh-male.mp3", "舌尖上的中国", "A Bite of China"),
+    ("xiaoming-jianmo-zh-male.mp3", "小明剑魔", "Xiaoming Sword Demon"),
+    ("xin-youxi-jieshuo-zh-male.mp3", "新游戏解说", "New Game Narration"),
+    ("xinzhong-zhicheng-zh-male.mp3", "心中之城", "City in the Heart"),
+    ("alex-chikna-en-male.mp3", "亚历克斯", "Alex Chikna"),
+    ("alle-en-unknown.mp3", "艾莉", "ALLE"),
+    ("calm-normal-en-unknown.mp3", "沉稳男声", "Calm Normal"),
+    ("donald-j-trump-noise-reduction-en-male.mp3", "唐纳德·特朗普", "Donald J. Trump"),
+    ("elite-en-unknown.mp3", "精英男声", "ELITE"),
+    ("horror-en-unknown.mp3", "惊悚男声", "Horror"),
+    ("meiqu-kelong-en-unknown.mp3", "美式男声", "US Clone"),
+    ("sarah-en-female.mp3", "莎拉", "Sarah"),
+]
+INDEXTTS_REFERENCE_AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg")
+BGM_RESOURCE_DIR = "/Users/viccy/Downloads/tts-mp3-clone/bgms-safe"
+BGM_TRACKS_JSON = os.path.join(BGM_RESOURCE_DIR, "tracks.json")
+BGM_UPLOAD_SUBDIR = "uploaded_bgms"
+BGM_AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg")
+LOCAL_TTS_ENGINES = {
+    config.INDEXTTS_ENGINE,
+    config.INDEXTTS2_ENGINE,
+    config.OMNIVOICE_ENGINE,
+}
 
 
 def get_soulvoice_voices():
@@ -19,58 +58,432 @@ def get_soulvoice_voices():
     return ["soulvoice:custom"]
 
 
-def get_tts_engine_options():
+def get_tts_engine_options(tr=lambda key: key):
     """获取TTS引擎选项"""
-    return {
+    engine_options = {
+        config.INDEXTTS_ENGINE: config.INDEXTTS_DISPLAY_NAME,
+        config.INDEXTTS2_ENGINE: config.INDEXTTS2_DISPLAY_NAME,
+        config.OMNIVOICE_ENGINE: config.OMNIVOICE_DISPLAY_NAME,
         "edge_tts": "Edge TTS",
-        "azure_speech": "Azure Speech Services",
-        "tencent_tts": "腾讯云 TTS",
-        "qwen3_tts": "通义千问 Qwen3 TTS",
-        "indextts2": "IndexTTS2 语音克隆",
-        "doubaotts": "豆包语音 TTS"
+        "qwen3_tts": tr("Tongyi Qwen3 TTS"),
+        "tencent_tts": tr("Tencent Cloud TTS"),
+        "doubaotts": tr("Doubao TTS"),
+        "azure_speech": "Azure Speech Services"
+    }
+
+    return {
+        engine: format_tts_engine_option(engine, display_name, tr)
+        for engine, display_name in engine_options.items()
     }
 
 
-def get_tts_engine_descriptions():
+def get_tts_engine_deployment_label(tts_engine, tr=lambda key: key):
+    """获取TTS引擎部署类型标签"""
+    if tts_engine in LOCAL_TTS_ENGINES:
+        return tr("Local Deployment")
+
+    return tr("Cloud Service")
+
+
+def format_tts_engine_option(tts_engine, display_name, tr=lambda key: key):
+    """格式化TTS引擎下拉显示名"""
+    deployment_label = get_tts_engine_deployment_label(tts_engine, tr)
+    return f"{display_name} [{deployment_label}]"
+
+
+def get_tts_engine_descriptions(tr=lambda key: key):
     """获取TTS引擎详细描述"""
     return {
         "edge_tts": {
             "title": "Edge TTS",
-            "features": "完全免费，但服务稳定性一般，不支持语音克隆功能",
-            "use_case": "测试和轻量级使用",
+            "features": tr("Edge TTS features"),
+            "use_case": tr("Edge TTS use case"),
             "registration": None
         },
         "azure_speech": {
             "title": "Azure Speech Services",
-            "features": "提供一定免费额度，超出后按量付费，需要绑定海外信用卡",
-            "use_case": "企业级应用，需要稳定服务",
+            "features": tr("Azure Speech Services features"),
+            "use_case": tr("Azure Speech Services use case"),
             "registration": "https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/SpeechServices"
         },
         "tencent_tts": {
-            "title": "腾讯云 TTS",
-            "features": "提供免费额度，音质优秀，支持多种音色，国内访问速度快",
-            "use_case": "个人和企业用户，需要稳定的中文语音合成",
+            "title": tr("Tencent Cloud TTS"),
+            "features": tr("Tencent Cloud TTS features"),
+            "use_case": tr("Tencent Cloud TTS use case"),
             "registration": "https://console.cloud.tencent.com/tts"
         },
         "qwen3_tts": {
-            "title": "通义千问 Qwen3 TTS",
-            "features": "阿里云通义千问语音合成，音质优秀，支持多种音色",
-            "use_case": "需要高质量中文语音合成的用户",
+            "title": tr("Tongyi Qwen3 TTS"),
+            "features": tr("Tongyi Qwen3 TTS features"),
+            "use_case": tr("High-quality Chinese speech synthesis use case"),
             "registration": "https://dashscope.aliyuncs.com/"
         },
-        "indextts2": {
-            "title": "IndexTTS2 语音克隆",
-            "features": "零样本语音克隆，上传参考音频即可合成相同音色的语音，需要本地或私有部署",
-            "use_case": "下载地址：https://pan.quark.cn/s/0767c9bcefd5",
+        config.INDEXTTS_ENGINE: {
+            "title": config.INDEXTTS_DISPLAY_NAME,
+            "features": tr("IndexTTS features"),
+            "use_case": tr("IndexTTS use case"),
+            "registration": None
+        },
+        config.INDEXTTS2_ENGINE: {
+            "title": config.INDEXTTS2_DISPLAY_NAME,
+            "features": tr("IndexTTS2 features"),
+            "use_case": tr("IndexTTS2 use case"),
+            "registration": None
+        },
+        config.OMNIVOICE_ENGINE: {
+            "title": config.OMNIVOICE_DISPLAY_NAME,
+            "features": tr("OmniVoice features"),
+            "use_case": tr("OmniVoice use case"),
             "registration": None
         },
         "doubaotts": {
-            "title": "豆包语音 TTS",
-            "features": "火山引擎豆包语音合成，支持多种音色和情感，国内访问速度快",
-            "use_case": "需要高质量中文语音合成的用户",
+            "title": tr("Doubao TTS"),
+            "features": tr("Doubao TTS features"),
+            "use_case": tr("High-quality Chinese speech synthesis use case"),
             "registration": "https://www.volcengine.com/product/voice-tech"
         }
     }
+
+
+def infer_indextts_reference_audio_language(filename):
+    """根据文件名推断参考音频语言"""
+    lower_filename = filename.lower()
+    if "-zh-" in lower_filename:
+        return "zh"
+    if "-en-" in lower_filename:
+        return "en"
+    return "unknown"
+
+
+def get_indextts_reference_audio_options():
+    """获取本地 IndexTTS-1.5 参考音频选项"""
+    options = []
+    mapped_files = set()
+
+    for filename, zh_name, en_name in INDEXTTS_REFERENCE_AUDIO_MAP:
+        audio_path = os.path.join(INDEXTTS_REFERENCE_AUDIO_SOURCE_DIR, filename)
+        if os.path.isfile(audio_path):
+            options.append({
+                "filename": filename,
+                "path": audio_path,
+                "zh": zh_name,
+                "en": en_name,
+                "language": infer_indextts_reference_audio_language(filename),
+            })
+            mapped_files.add(filename)
+
+    if os.path.isdir(INDEXTTS_REFERENCE_AUDIO_SOURCE_DIR):
+        for filename in sorted(os.listdir(INDEXTTS_REFERENCE_AUDIO_SOURCE_DIR)):
+            if filename in mapped_files:
+                continue
+            if not filename.lower().endswith(INDEXTTS_REFERENCE_AUDIO_EXTENSIONS):
+                continue
+            audio_path = os.path.join(INDEXTTS_REFERENCE_AUDIO_SOURCE_DIR, filename)
+            if not os.path.isfile(audio_path):
+                continue
+            fallback_name = os.path.splitext(filename)[0]
+            options.append({
+                "filename": filename,
+                "path": audio_path,
+                "zh": fallback_name,
+                "en": fallback_name,
+                "language": infer_indextts_reference_audio_language(filename),
+            })
+
+    return options
+
+
+def format_indextts_reference_audio_option(option):
+    """格式化 IndexTTS-1.5 参考音频下拉显示名"""
+    zh_name = option.get("zh", "")
+    en_name = option.get("en", "")
+    language = option.get("language", "unknown")
+    ui_language = str(st.session_state.get("ui_language", "zh-CN")).lower()
+
+    if ui_language.startswith("en"):
+        display_name = en_name or zh_name or option.get("filename", "")
+        language_labels = {
+            "zh": "Chinese",
+            "en": "English",
+        }
+    else:
+        display_name = zh_name or en_name or option.get("filename", "")
+        language_labels = {
+            "zh": "中文",
+            "en": "英文",
+        }
+
+    language_label = language_labels.get(language)
+    if not language_label:
+        return display_name
+
+    return f"{display_name} ({language_label})"
+
+
+def get_indextts_reference_audio_index(options, saved_reference_audio):
+    """根据已保存的参考音频文件匹配下拉选项索引"""
+    if not options:
+        return 0
+
+    saved_filename = os.path.basename(saved_reference_audio or "")
+    for index, option in enumerate(options):
+        if option["filename"] == saved_filename:
+            return index
+
+    return 0
+
+
+def copy_indextts_reference_audio(source_path):
+    """复制一份参考音频到项目存储目录，并返回复制后的路径"""
+    if not source_path or not os.path.isfile(source_path):
+        return ""
+
+    target_dir = utils.storage_dir(INDEXTTS_REFERENCE_AUDIO_COPY_SUBDIR, create=True)
+    target_path = os.path.join(target_dir, os.path.basename(source_path))
+
+    if os.path.abspath(source_path) == os.path.abspath(target_path):
+        return target_path
+
+    should_copy = True
+    if os.path.exists(target_path):
+        should_copy = os.path.getsize(source_path) != os.path.getsize(target_path)
+
+    if should_copy:
+        shutil.copy2(source_path, target_path)
+
+    return target_path
+
+
+def load_bgm_tracks_metadata():
+    """读取 BGM 资源描述信息。"""
+    if not os.path.isfile(BGM_TRACKS_JSON):
+        return {}
+
+    try:
+        with open(BGM_TRACKS_JSON, "r", encoding="utf-8") as f:
+            tracks = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(tracks, list):
+        return {}
+
+    metadata = {}
+    for track in tracks:
+        if not isinstance(track, dict):
+            continue
+        filename = track.get("fileName")
+        if filename:
+            metadata[filename] = track
+
+    return metadata
+
+
+def get_bgm_resource_options():
+    """获取 BGM 资源目录中的音频选项。"""
+    options = []
+    metadata = load_bgm_tracks_metadata()
+    added_files = set()
+
+    for filename, track in metadata.items():
+        audio_path = os.path.join(BGM_RESOURCE_DIR, filename)
+        if not os.path.isfile(audio_path):
+            continue
+
+        options.append({
+            "filename": filename,
+            "path": audio_path,
+            "title": track.get("title") or os.path.splitext(filename)[0],
+            "style": track.get("style", ""),
+            "category": track.get("category", ""),
+        })
+        added_files.add(filename)
+
+    if os.path.isdir(BGM_RESOURCE_DIR):
+        for filename in sorted(os.listdir(BGM_RESOURCE_DIR)):
+            if filename in added_files:
+                continue
+            if not filename.lower().endswith(BGM_AUDIO_EXTENSIONS):
+                continue
+
+            audio_path = os.path.join(BGM_RESOURCE_DIR, filename)
+            if not os.path.isfile(audio_path):
+                continue
+
+            options.append({
+                "filename": filename,
+                "path": audio_path,
+                "title": os.path.splitext(filename)[0],
+                "style": "",
+                "category": "",
+            })
+
+    return options
+
+
+def format_bgm_resource_option(option):
+    """格式化 BGM 资源下拉显示名。"""
+    title = option.get("title") or os.path.splitext(option.get("filename", ""))[0]
+    style = option.get("style", "")
+    category = option.get("category", "")
+
+    if style:
+        return f"{title} ({style})"
+    if category:
+        return f"{title} ({category})"
+    return title
+
+
+def get_bgm_resource_index(options, saved_bgm_file):
+    """根据已保存的 BGM 文件匹配下拉选项索引。"""
+    if not options:
+        return 0
+
+    saved_filename = os.path.basename(saved_bgm_file or "")
+    for index, option in enumerate(options):
+        if option["filename"] == saved_filename:
+            return index
+
+    return 0
+
+
+def get_audio_mime_type(audio_path):
+    """根据音频文件扩展名返回 MIME 类型"""
+    extension = os.path.splitext(audio_path or "")[1].lower()
+    if extension == ".wav":
+        return "audio/wav"
+    if extension == ".flac":
+        return "audio/flac"
+    if extension == ".ogg":
+        return "audio/ogg"
+    if extension == ".m4a":
+        return "audio/mp4"
+    if extension == ".aac":
+        return "audio/aac"
+    return "audio/mp3"
+
+
+def render_reference_audio_preview_button(reference_audio, key, tr, preview_state_key="indextts_reference_audio_preview_path"):
+    """渲染参考音频试听按钮"""
+    can_preview = bool(reference_audio and os.path.isfile(reference_audio))
+    if st.button(
+        " ",
+        key=key,
+        icon=":material/play_arrow:",
+        help=tr("Preview Reference Audio Help"),
+        disabled=not can_preview,
+        use_container_width=True,
+    ):
+        st.session_state[preview_state_key] = reference_audio
+
+
+def render_indextts_reference_audio_selector(tr, tts_config, key_prefix):
+    """渲染 IndexTTS 系列共用的参考音频选择器。"""
+    saved_reference_audio = tts_config.get("reference_audio", "")
+    reference_audio_source_options = {
+        tr("Select from Resource Directory"): "resource",
+        tr("Upload Reference Audio"): "upload",
+    }
+    reference_audio_source_labels = list(reference_audio_source_options.keys())
+    saved_reference_audio_source = tts_config.get("reference_audio_source", "resource")
+    if saved_reference_audio_source not in reference_audio_source_options.values():
+        saved_reference_audio_source = "resource"
+    default_reference_audio_source_label = next(
+        label
+        for label, source_value in reference_audio_source_options.items()
+        if source_value == saved_reference_audio_source
+    )
+
+    st.markdown(f"**{tr('Reference Audio Path')}**")
+    reference_audio_source_label = st.pills(
+        tr("Reference Audio Source"),
+        options=reference_audio_source_labels,
+        selection_mode="single",
+        default=default_reference_audio_source_label,
+        key=f"{key_prefix}_reference_audio_source_selection",
+        help=tr("Reference Audio Source Help"),
+        label_visibility="collapsed",
+        width="stretch",
+    )
+    if not reference_audio_source_label:
+        reference_audio_source_label = default_reference_audio_source_label
+    reference_audio_source = reference_audio_source_options[reference_audio_source_label]
+
+    reference_audio = saved_reference_audio
+    preview_state_key = f"{key_prefix}_reference_audio_preview_path"
+    reference_audio_options = get_indextts_reference_audio_options()
+    if reference_audio_source == "resource" and reference_audio_options:
+        selected_audio_index = get_indextts_reference_audio_index(reference_audio_options, saved_reference_audio)
+        select_col, preview_col = st.columns([5, 1])
+        with select_col:
+            selected_audio_option = reference_audio_options[st.selectbox(
+                tr("Reference Audio Path"),
+                options=range(len(reference_audio_options)),
+                index=selected_audio_index,
+                format_func=lambda x: format_indextts_reference_audio_option(reference_audio_options[x]),
+                help=tr("Reference Audio Path Help"),
+                label_visibility="collapsed",
+                key=f"{key_prefix}_reference_audio_select",
+            )]
+        reference_audio = copy_indextts_reference_audio(selected_audio_option["path"])
+        with preview_col:
+            render_reference_audio_preview_button(
+                reference_audio,
+                f"{key_prefix}_resource_reference_audio_preview",
+                tr,
+                preview_state_key=preview_state_key,
+            )
+    elif reference_audio_source == "resource":
+        st.warning(tr("No Reference Audio Resources Found"))
+
+    if reference_audio_source == "upload":
+        if saved_reference_audio_source != "upload":
+            reference_audio = ""
+        upload_col, preview_col = st.columns([5, 1])
+        with upload_col:
+            uploaded_file = st.file_uploader(
+                tr("Upload Reference Audio File"),
+                type=["wav", "mp3"],
+                help=tr("Upload Reference Audio Help"),
+                label_visibility="collapsed",
+                key=f"{key_prefix}_reference_audio_upload",
+            )
+
+        if uploaded_file is not None:
+            target_dir = utils.storage_dir(INDEXTTS_REFERENCE_AUDIO_COPY_SUBDIR, create=True)
+            audio_path = os.path.join(target_dir, f"uploaded_{uploaded_file.name}")
+            with open(audio_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            reference_audio = audio_path
+            st.success(tr("Audio uploaded").format(path=audio_path))
+        with preview_col:
+            render_reference_audio_preview_button(
+                reference_audio,
+                f"{key_prefix}_upload_reference_audio_preview",
+                tr,
+                preview_state_key=preview_state_key,
+            )
+
+    preview_audio_path = st.session_state.get(preview_state_key, "")
+    if preview_audio_path == reference_audio and os.path.isfile(preview_audio_path):
+        with open(preview_audio_path, "rb") as audio_file:
+            st.audio(audio_file.read(), format=get_audio_mime_type(preview_audio_path))
+
+    return reference_audio_source, reference_audio
+
+
+def render_bgm_preview_button(bgm_file, key, tr):
+    """渲染 BGM 试听按钮。"""
+    can_preview = bool(bgm_file and os.path.isfile(bgm_file))
+    if st.button(
+        " ",
+        key=key,
+        icon=":material/play_arrow:",
+        help=tr("Preview Background Music Help"),
+        disabled=not can_preview,
+        use_container_width=True,
+    ):
+        st.session_state["bgm_preview_path"] = bgm_file
 
 
 def is_valid_azure_voice_name(voice_name: str) -> bool:
@@ -95,7 +508,13 @@ def render_audio_panel(tr):
         # 渲染TTS设置
         render_tts_settings(tr)
 
-        # 渲染背景音乐设置
+    # 背景音乐独立成框，放在音频设置下方
+    render_bgm_panel(tr)
+
+
+def render_bgm_panel(tr):
+    """渲染背景音乐设置面板"""
+    with st.container(border=True):
         render_bgm_settings(tr)
 
 
@@ -103,25 +522,27 @@ def render_tts_settings(tr):
     """渲染TTS(文本转语音)设置"""
 
     # 1. TTS引擎选择器
-    # st.subheader("🎤 TTS引擎选择")
+    # st.subheader("TTS引擎选择")
 
-    engine_options = get_tts_engine_options()
-    engine_descriptions = get_tts_engine_descriptions()
+    engine_options = get_tts_engine_options(tr)
+    engine_descriptions = get_tts_engine_descriptions(tr)
 
     # 获取保存的TTS引擎设置
-    saved_tts_engine = config.ui.get("tts_engine", "edge_tts")
+    saved_tts_engine = config.normalize_tts_engine_name(
+        config.ui.get("tts_engine", config.INDEXTTS_ENGINE)
+    )
 
     # 确保保存的引擎在可用选项中
     if saved_tts_engine not in engine_options:
-        saved_tts_engine = "edge_tts"
+        saved_tts_engine = config.INDEXTTS_ENGINE
 
     # TTS引擎选择下拉框
     selected_engine = st.selectbox(
-        "选择TTS引擎",
+        tr("Select TTS Engine"),
         options=list(engine_options.keys()),
         format_func=lambda x: engine_options[x],
         index=list(engine_options.keys()).index(saved_tts_engine),
-        help="选择您要使用的文本转语音引擎"
+        help=tr("Select TTS Engine Help")
     )
 
     # 保存TTS引擎选择
@@ -132,15 +553,15 @@ def render_tts_settings(tr):
     if selected_engine in engine_descriptions:
         desc = engine_descriptions[selected_engine]
 
-        with st.expander(f"📋 {desc['title']} 详细说明", expanded=True):
-            st.markdown(f"**特点：** {desc['features']}")
-            st.markdown(f"**适用场景：** {desc['use_case']}")
+        with st.expander(tr("TTS Engine Details").format(engine=desc['title']), expanded=False):
+            st.markdown(f"**{tr('Features')}:** {desc['features']}")
+            st.markdown(f"**{tr('Use Case')}:** {desc['use_case']}")
 
             if desc['registration']:
-                st.markdown(f"**注册地址：** [{desc['registration']}]({desc['registration']})")
+                st.markdown(f"**{tr('Registration URL')}:** [{desc['registration']}]({desc['registration']})")
 
     # 3. 根据选择的引擎渲染对应的配置界面
-    # st.subheader("⚙️ 引擎配置")
+    # st.subheader("引擎配置")
 
     if selected_engine == "edge_tts":
         render_edge_tts_settings(tr)
@@ -152,8 +573,12 @@ def render_tts_settings(tr):
         render_tencent_tts_settings(tr)
     elif selected_engine == "qwen3_tts":
         render_qwen3_tts_settings(tr)
-    elif selected_engine == "indextts2":
+    elif selected_engine == config.INDEXTTS_ENGINE:
+        render_indextts_tts_settings(tr)
+    elif selected_engine == config.INDEXTTS2_ENGINE:
         render_indextts2_tts_settings(tr)
+    elif selected_engine == config.OMNIVOICE_ENGINE:
+        render_omnivoice_tts_settings(tr)
     elif selected_engine == "doubaotts":
         render_doubaotts_settings(tr)
 
@@ -163,12 +588,8 @@ def render_tts_settings(tr):
 
 def render_edge_tts_settings(tr):
     """渲染 Edge TTS 引擎设置"""
-    # 获取支持的语音列表
-    support_locales = ["zh-CN", "en-US"]
-    all_voices = voice.get_all_azure_voices(filter_locals=support_locales)
-
-    # 只保留标准版本的语音（Edge TTS专用，不包含V2）
-    edge_voices = [v for v in all_voices if "-V2" not in v]
+    # 获取 Edge TTS 支持的全部语言和音色
+    edge_voices = voice.get_all_edge_voices()
 
     # 创建友好的显示名称
     friendly_names = {}
@@ -189,12 +610,12 @@ def render_edge_tts_settings(tr):
             # 如果没找到匹配的，使用第一个
             saved_voice_name = edge_voices[0] if edge_voices else ""
 
-    # 音色选择下拉框（Edge TTS音色相对较少，保留下拉框）
+    # 音色选择下拉框
     selected_friendly_name = st.selectbox(
-        "音色选择",
+        tr("Voice Selection"),
         options=list(friendly_names.values()),
         index=list(friendly_names.keys()).index(saved_voice_name) if saved_voice_name in friendly_names else 0,
-        help="选择Edge TTS音色"
+        help=tr("Select Edge TTS Voice")
     )
 
     # 获取实际的语音名称
@@ -203,60 +624,48 @@ def render_edge_tts_settings(tr):
     ]
 
     # 显示音色信息
-    with st.expander("💡 Edge TTS 音色说明", expanded=False):
-        st.write("**中文音色：**")
-        zh_voices = [v for v in edge_voices if v.startswith("zh-CN")]
-        for v in zh_voices:
-            gender = "女声" if "Female" in v else "男声"
-            name = v.replace("-Female", "").replace("-Male", "").replace("zh-CN-", "").replace("Neural", "")
+    with st.expander(tr("Edge TTS Voice Description"), expanded=False):
+        st.write(tr("Loaded voice count").format(count=len(edge_voices)))
+        for v in edge_voices:
+            gender = tr("Female Voice") if "Female" in v else tr("Male Voice")
+            name = v.replace("-Female", "").replace("-Male", "").replace("Neural", "")
             st.write(f"• {name} ({gender})")
-
-        st.write("")
-        st.write("**英文音色：**")
-        en_voices = [v for v in edge_voices if v.startswith("en-US")][:5]  # 只显示前5个
-        for v in en_voices:
-            gender = "女声" if "Female" in v else "男声"
-            name = v.replace("-Female", "").replace("-Male", "").replace("en-US-", "").replace("Neural", "")
-            st.write(f"• {name} ({gender})")
-
-        if len([v for v in edge_voices if v.startswith("en-US")]) > 5:
-            st.write("• ... 更多英文音色")
 
     config.ui["edge_voice_name"] = voice_name
     config.ui["voice_name"] = voice_name  # 兼容性
 
     # 音量调节
     voice_volume = st.slider(
-        "音量调节",
+        tr("Voice Volume"),
         min_value=0,
         max_value=100,
         value=int(config.ui.get("edge_volume", 80)),
         step=1,
-        help="调节语音音量 (0-100)"
+        help=tr("Voice Volume Help Percent")
     )
     config.ui["edge_volume"] = voice_volume
     st.session_state['voice_volume'] = voice_volume / 100.0
 
     # 语速调节
     voice_rate = st.slider(
-        "语速调节",
+        tr("Voice Rate"),
         min_value=0.5,
         max_value=2.0,
         value=config.ui.get("edge_rate", 1.0),
         step=0.1,
-        help="调节语音速度 (0.5-2.0倍速)"
+        help=tr("Voice Rate Help 0.5-2.0")
     )
     config.ui["edge_rate"] = voice_rate
     st.session_state['voice_rate'] = voice_rate
 
     # 语调调节
     voice_pitch = st.slider(
-        "语调调节",
+        tr("Voice Pitch"),
         min_value=-50,
         max_value=50,
         value=int(config.ui.get("edge_pitch", 0)),
         step=5,
-        help="调节语音音调 (-50%到+50%)"
+        help=tr("Voice Pitch Help Percent")
     )
     config.ui["edge_pitch"] = voice_pitch
     # 转换为比例值
@@ -267,10 +676,10 @@ def render_azure_speech_settings(tr):
     """渲染 Azure Speech Services 引擎设置"""
     # 服务区域配置
     azure_speech_region = st.text_input(
-        "服务区域",
+        tr("Service Region"),
         value=config.azure.get("speech_region", ""),
-        placeholder="例如：eastus",
-        help="Azure Speech Services 服务区域，如：eastus, westus2, eastasia 等"
+        placeholder=tr("Service Region Placeholder"),
+        help=tr("Azure Service Region Help")
     )
 
     # API Key配置
@@ -278,7 +687,7 @@ def render_azure_speech_settings(tr):
         "API Key",
         value=config.azure.get("speech_key", ""),
         type="password",
-        help="Azure Speech Services API 密钥"
+        help=tr("Azure Speech Key Help")
     )
 
     # 保存Azure配置
@@ -290,41 +699,41 @@ def render_azure_speech_settings(tr):
 
     # 音色名称输入
     voice_name = st.text_input(
-        "音色名称",
+        tr("Voice Name"),
         value=saved_voice_name,
-        help="输入Azure Speech Services音色名称，直接使用官方音色名称即可。例如：zh-CN-YunzeNeural",
+        help=tr("Azure Voice Name Help"),
         placeholder="zh-CN-YunzeNeural"
     )
 
     # 显示常用音色示例
-    with st.expander("💡 常用音色参考", expanded=False):
-        st.write("**中文音色：**")
-        st.write("• zh-CN-XiaoxiaoMultilingualNeural (女声，多语言)")
-        st.write("• zh-CN-YunzeNeural (男声)")
-        st.write("• zh-CN-YunxiNeural (男声)")
-        st.write("• zh-CN-XiaochenNeural (女声)")
+    with st.expander(tr("Common Voice Reference"), expanded=False):
+        st.write(f"**{tr('Chinese Voices')}:**")
+        st.write(f"• zh-CN-XiaoxiaoMultilingualNeural ({tr('Female Voice')}, {tr('Multilingual')})")
+        st.write(f"• zh-CN-YunzeNeural ({tr('Male Voice')})")
+        st.write(f"• zh-CN-YunxiNeural ({tr('Male Voice')})")
+        st.write(f"• zh-CN-XiaochenNeural ({tr('Female Voice')})")
         st.write("")
-        st.write("**英文音色：**")
-        st.write("• en-US-AndrewMultilingualNeural (男声，多语言)")
-        st.write("• en-US-AvaMultilingualNeural (女声，多语言)")
-        st.write("• en-US-BrianMultilingualNeural (男声，多语言)")
-        st.write("• en-US-EmmaMultilingualNeural (女声，多语言)")
+        st.write(f"**{tr('English Voices')}:**")
+        st.write(f"• en-US-AndrewMultilingualNeural ({tr('Male Voice')}, {tr('Multilingual')})")
+        st.write(f"• en-US-AvaMultilingualNeural ({tr('Female Voice')}, {tr('Multilingual')})")
+        st.write(f"• en-US-BrianMultilingualNeural ({tr('Male Voice')}, {tr('Multilingual')})")
+        st.write(f"• en-US-EmmaMultilingualNeural ({tr('Female Voice')}, {tr('Multilingual')})")
         st.write("")
-        st.info("💡 更多音色请参考 [Azure Speech Services 官方文档](https://docs.microsoft.com/en-us/azure/cognitive-services/speech-service/language-support)")
+        st.info(tr("Azure Voices Docs Notice"))
 
     # 快速选择按钮
-    st.write("**快速选择：**")
+    st.write(f"**{tr('Quick Select')}:**")
     cols = st.columns(3)
     with cols[0]:
-        if st.button("中文女声", help="zh-CN-XiaoxiaoMultilingualNeural"):
+        if st.button(tr("Chinese Female Voice"), help="zh-CN-XiaoxiaoMultilingualNeural"):
             voice_name = "zh-CN-XiaoxiaoMultilingualNeural"
             st.rerun()
     with cols[1]:
-        if st.button("中文男声", help="zh-CN-YunzeNeural"):
+        if st.button(tr("Chinese Male Voice"), help="zh-CN-YunzeNeural"):
             voice_name = "zh-CN-YunzeNeural"
             st.rerun()
     with cols[2]:
-        if st.button("英文女声", help="en-US-AvaMultilingualNeural"):
+        if st.button(tr("English Female Voice"), help="en-US-AvaMultilingualNeural"):
             voice_name = "en-US-AvaMultilingualNeural"
             st.rerun()
 
@@ -332,10 +741,10 @@ def render_azure_speech_settings(tr):
     if voice_name.strip():
         # 检查是否为有效的Azure音色格式
         if is_valid_azure_voice_name(voice_name):
-            st.success(f"✅ 音色名称有效: {voice_name}")
+            st.success(tr("Voice name valid").format(voice=voice_name))
         else:
-            st.warning(f"⚠️ 音色名称格式可能不正确: {voice_name}")
-            st.info("💡 Azure音色名称通常格式为: [语言]-[地区]-[名称]Neural")
+            st.warning(tr("Voice name format may be invalid").format(voice=voice_name))
+            st.info(tr("Azure voice name format notice"))
 
     # 保存配置
     config.ui["azure_voice_name"] = voice_name
@@ -343,36 +752,36 @@ def render_azure_speech_settings(tr):
 
     # 音量调节
     voice_volume = st.slider(
-        "音量调节",
+        tr("Voice Volume"),
         min_value=0,
         max_value=100,
         value=int(config.ui.get("azure_volume", 80)),
         step=1,
-        help="调节语音音量 (0-100)"
+        help=tr("Voice Volume Help Percent")
     )
     config.ui["azure_volume"] = voice_volume
     st.session_state['voice_volume'] = voice_volume / 100.0
 
     # 语速调节
     voice_rate = st.slider(
-        "语速调节",
+        tr("Voice Rate"),
         min_value=0.5,
         max_value=2.0,
         value=config.ui.get("azure_rate", 1.0),
         step=0.1,
-        help="调节语音速度 (0.5-2.0倍速)"
+        help=tr("Voice Rate Help 0.5-2.0")
     )
     config.ui["azure_rate"] = voice_rate
     st.session_state['voice_rate'] = voice_rate
 
     # 语调调节
     voice_pitch = st.slider(
-        "语调调节",
+        tr("Voice Pitch"),
         min_value=-50,
         max_value=50,
         value=int(config.ui.get("azure_pitch", 0)),
         step=5,
-        help="调节语音音调 (-50%到+50%)"
+        help=tr("Voice Pitch Help Percent")
     )
     config.ui["azure_pitch"] = voice_pitch
     # 转换为比例值
@@ -380,11 +789,11 @@ def render_azure_speech_settings(tr):
 
     # 显示配置状态
     if azure_speech_region and azure_speech_key:
-        st.success("✅ Azure Speech Services 配置已设置")
+        st.success(tr("Azure Speech Services configured"))
     elif not azure_speech_region:
-        st.warning("⚠️ 请配置服务区域")
+        st.warning(tr("Please configure service region"))
     elif not azure_speech_key:
-        st.warning("⚠️ 请配置 API Key")
+        st.warning(tr("Please configure API Key"))
 
 
 def render_tencent_tts_settings(tr):
@@ -393,7 +802,7 @@ def render_tencent_tts_settings(tr):
     secret_id = st.text_input(
         "Secret ID",
         value=config.tencent.get("secret_id", ""),
-        help="请输入您的腾讯云 Secret ID"
+        help=tr("Tencent Secret ID Help")
     )
 
     # Secret Key 输入
@@ -401,7 +810,7 @@ def render_tencent_tts_settings(tr):
         "Secret Key",
         value=config.tencent.get("secret_key", ""),
         type="password",
-        help="请输入您的腾讯云 Secret Key"
+        help=tr("Tencent Secret Key Help")
     )
 
     # 地域选择
@@ -420,10 +829,10 @@ def render_tencent_tts_settings(tr):
         region_options.append(saved_region)
     
     region = st.selectbox(
-        "服务地域",
+        tr("Service Region"),
         options=region_options,
         index=region_options.index(saved_region),
-        help="选择腾讯云 TTS 服务地域"
+        help=tr("Tencent Service Region Help")
     )
 
     # 音色选择
@@ -450,13 +859,13 @@ def render_tencent_tts_settings(tr):
     
     saved_voice_type = config.ui.get("tencent_voice_type", "101001")
     if saved_voice_type not in voice_type_options:
-        voice_type_options[saved_voice_type] = f"自定义音色 ({saved_voice_type})"
+        voice_type_options[saved_voice_type] = f"{tr('Custom Voice')} ({saved_voice_type})"
     
     selected_voice_display = st.selectbox(
-        "音色选择",
+        tr("Voice Selection"),
         options=list(voice_type_options.values()),
         index=list(voice_type_options.keys()).index(saved_voice_type),
-        help="选择腾讯云 TTS 音色"
+        help=tr("Select Tencent TTS Voice")
     )
     
     # 获取实际的音色ID
@@ -466,31 +875,31 @@ def render_tencent_tts_settings(tr):
     
     # 语速调节
     voice_rate = st.slider(
-        "语速调节",
+        tr("Voice Rate"),
         min_value=0.5,
         max_value=2.0,
         value=config.ui.get("tencent_rate", 1.0),
         step=0.1,
-        help="调节语音速度 (0.5-2.0)"
+        help=tr("Voice Rate Help 0.5-2.0")
     )
     
     config.ui["voice_name"] = saved_voice_type  # 兼容性
     
     # 显示音色说明
-    with st.expander("💡 腾讯云 TTS 音色说明", expanded=False):
-        st.write("**女声音色：**")
+    with st.expander(tr("Tencent Cloud TTS Voice Description"), expanded=False):
+        st.write(f"**{tr('Female Voices')}:**")
         female_voices = [(k, v) for k, v in voice_type_options.items() if "女声" in v]
         for voice_id, voice_desc in female_voices[:6]:  # 显示前6个
             st.write(f"• {voice_desc} (ID: {voice_id})")
         
         st.write("")
-        st.write("**男声音色：**")
+        st.write(f"**{tr('Male Voices')}:**")
         male_voices = [(k, v) for k, v in voice_type_options.items() if "男声" in v]
         for voice_id, voice_desc in male_voices:
             st.write(f"• {voice_desc} (ID: {voice_id})")
         
         st.write("")
-        st.info("💡 更多音色请参考腾讯云官方文档")
+        st.info(tr("Tencent More Voices Notice"))
     
     # 保存配置
     config.tencent["secret_id"] = secret_id
@@ -507,13 +916,13 @@ def render_qwen3_tts_settings(tr):
         "API Key",
         value=config.tts_qwen.get("api_key", ""),
         type="password",
-        help="通义千问 DashScope API Key"
+        help=tr("Qwen DashScope API Key Help")
     )
 
     model_name = st.text_input(
-        "模型名称",
+        tr("TTS Model Name"),
         value=config.tts_qwen.get("model_name", "qwen3-tts-flash"),
-        help="Qwen TTS 模型名，例如 qwen3-tts-flash"
+        help=tr("Qwen TTS Model Help")
     )
 
     # Qwen3 TTS 音色选项 - 中文名: 英文参数
@@ -554,22 +963,22 @@ def render_qwen3_tts_settings(tr):
         voice_options[saved_display_name] = saved_voice_param
 
     selected_display_name = st.selectbox(
-        "音色选择",
+        tr("Voice Selection"),
         options=display_names,
         index=display_names.index(saved_display_name) if saved_display_name in display_names else 0,
-        help="选择Qwen3 TTS音色"
+        help=tr("Select Qwen3 TTS Voice")
     )
     
     # 获取对应的英文参数
     voice_type = voice_options.get(selected_display_name, "Cherry")
 
     voice_rate = st.slider(
-        "语速调节",
+        tr("Voice Rate"),
         min_value=0.5,
         max_value=2.0,
         value=1.0,
         step=0.1,
-        help="调节语音速度 (0.5-2.0)"
+        help=tr("Voice Rate Help 0.5-2.0")
     )
 
     # 保存配置
@@ -580,136 +989,464 @@ def render_qwen3_tts_settings(tr):
     config.ui["voice_name"] = voice_type #兼容性
 
 
-def render_indextts2_tts_settings(tr):
-    """渲染 IndexTTS2 TTS 设置"""
-    import os
-    
+def render_indextts_tts_settings(tr):
+    """渲染 IndexTTS-1.5 TTS 设置"""
     # API 地址配置
     api_url = st.text_input(
-        "API 地址",
-        value=config.indextts2.get("api_url", "http://127.0.0.1:8081/tts"),
-        help="IndexTTS2 API 服务地址"
+        tr("API URL"),
+        value=config.indextts.get("api_url", "http://127.0.0.1:8081/tts"),
+        help=tr("IndexTTS API URL Help")
     )
     
-    # 参考音频文件路径
-    reference_audio = st.text_input(
-        "参考音频路径",
-        value=config.indextts2.get("reference_audio", ""),
-        help="用于语音克隆的参考音频文件路径（WAV 格式，建议 3-10 秒）"
+    reference_audio_source, reference_audio = render_indextts_reference_audio_selector(
+        tr,
+        config.indextts,
+        "indextts",
     )
-    
-    # 文件上传功能
-    uploaded_file = st.file_uploader(
-        "或上传参考音频文件",
-        type=["wav", "mp3"],
-        help="上传一段清晰的音频用于语音克隆"
-    )
-    
-    if uploaded_file is not None:
-        # 保存上传的文件
-        import tempfile
-        temp_dir = tempfile.gettempdir()
-        audio_path = os.path.join(temp_dir, f"indextts2_ref_{uploaded_file.name}")
-        with open(audio_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        reference_audio = audio_path
-        st.success(f"✅ 音频已上传: {audio_path}")
     
     # 推理模式
-    infer_mode = st.selectbox(
-        "推理模式",
-        options=["普通推理", "快速推理"],
-        index=0 if config.indextts2.get("infer_mode", "普通推理") == "普通推理" else 1,
-        help="普通推理质量更高但速度较慢，快速推理速度更快但质量略低"
-    )
+    infer_mode_options = [
+        ("普通推理", tr("Standard Inference")),
+        ("快速推理", tr("Fast Inference")),
+    ]
+    infer_mode_index = 0 if config.indextts.get("infer_mode", "普通推理") == "普通推理" else 1
+    infer_mode = infer_mode_options[st.selectbox(
+        tr("Inference Mode"),
+        options=range(len(infer_mode_options)),
+        index=infer_mode_index,
+        format_func=lambda x: infer_mode_options[x][1],
+        help=tr("Inference Mode Help")
+    )][0]
     
     # 高级参数折叠面板
-    with st.expander("🔧 高级参数", expanded=False):
+    with st.expander(tr("Advanced Parameters"), expanded=False):
         col1, col2 = st.columns(2)
         
         with col1:
             temperature = st.slider(
-                "采样温度 (Temperature)",
+                tr("Sampling Temperature"),
                 min_value=0.1,
                 max_value=2.0,
-                value=float(config.indextts2.get("temperature", 1.0)),
+                value=float(config.indextts.get("temperature", 1.0)),
                 step=0.1,
-                help="控制随机性，值越高输出越随机，值越低越确定"
+                help=tr("Sampling Temperature Help")
             )
             
             top_p = st.slider(
                 "Top P",
                 min_value=0.0,
                 max_value=1.0,
-                value=float(config.indextts2.get("top_p", 0.8)),
+                value=float(config.indextts.get("top_p", 0.8)),
                 step=0.05,
-                help="nucleus 采样的概率阈值，值越小结果越确定"
+                help=tr("Top P Help")
             )
             
             top_k = st.slider(
                 "Top K",
                 min_value=0,
                 max_value=100,
-                value=int(config.indextts2.get("top_k", 30)),
+                value=int(config.indextts.get("top_k", 30)),
                 step=5,
-                help="top-k 采样的 k 值，0 表示不使用 top-k"
+                help=tr("Top K Help")
             )
         
         with col2:
             num_beams = st.slider(
-                "束搜索 (Num Beams)",
+                tr("Num Beams"),
+                min_value=1,
+                max_value=10,
+                value=int(config.indextts.get("num_beams", 3)),
+                step=1,
+                help=tr("Num Beams Help")
+            )
+            
+            repetition_penalty = st.slider(
+                tr("Repetition Penalty"),
+                min_value=1.0,
+                max_value=20.0,
+                value=float(config.indextts.get("repetition_penalty", 10.0)),
+                step=0.5,
+                help=tr("Repetition Penalty Help")
+            )
+            
+            do_sample = st.checkbox(
+                tr("Enable Sampling"),
+                value=config.indextts.get("do_sample", True),
+                help=tr("Enable Sampling Help")
+            )
+    
+    # 显示使用说明
+    with st.expander(tr("IndexTTS Usage Instructions Title"), expanded=False):
+        st.markdown(tr("IndexTTS Usage Instructions"))
+    
+    # 保存配置
+    config.indextts["api_url"] = api_url
+    config.indextts["reference_audio_source"] = reference_audio_source
+    config.indextts["reference_audio"] = reference_audio
+    config.indextts["infer_mode"] = infer_mode
+    config.indextts["temperature"] = temperature
+    config.indextts["top_p"] = top_p
+    config.indextts["top_k"] = top_k
+    config.indextts["num_beams"] = num_beams
+    config.indextts["repetition_penalty"] = repetition_penalty
+    config.indextts["do_sample"] = do_sample
+    
+    # 保存 voice_name 用于兼容性
+    if reference_audio:
+        config.ui["voice_name"] = f"{config.INDEXTTS_VOICE_PREFIX}{reference_audio}"
+
+
+def render_indextts2_tts_settings(tr):
+    """渲染 IndexTTS-2 TTS 设置"""
+    api_url = st.text_input(
+        tr("API URL"),
+        value=config.indextts2.get("api_url", "http://192.168.3.6:7863/tts"),
+        help=tr("IndexTTS2 API URL Help")
+    )
+
+    reference_audio_source, reference_audio = render_indextts_reference_audio_selector(
+        tr,
+        config.indextts2,
+        "indextts2",
+    )
+
+    emotion_mode_options = [
+        ("speaker", tr("Emotion Mode Speaker")),
+        ("audio", tr("Emotion Mode Audio")),
+        ("vector", tr("Emotion Mode Vector")),
+        ("text", tr("Emotion Mode Text")),
+    ]
+    saved_emotion_mode = config.indextts2.get("emotion_mode", "speaker")
+    emotion_mode_values = [item[0] for item in emotion_mode_options]
+    if saved_emotion_mode not in emotion_mode_values:
+        saved_emotion_mode = "speaker"
+
+    with st.expander(tr("IndexTTS2 Emotion Parameters"), expanded=False):
+        emotion_mode = emotion_mode_options[st.selectbox(
+            tr("Emotion Mode"),
+            options=range(len(emotion_mode_options)),
+            index=emotion_mode_values.index(saved_emotion_mode),
+            format_func=lambda x: emotion_mode_options[x][1],
+            help=tr("Emotion Mode Help"),
+        )][0]
+
+        emotion_alpha = st.slider(
+            tr("Emotion Alpha"),
+            min_value=0.0,
+            max_value=1.0,
+            value=float(config.indextts2.get("emotion_alpha", 0.65)),
+            step=0.05,
+            help=tr("Emotion Alpha Help"),
+        )
+
+        emotion_audio = config.indextts2.get("emotion_audio", "")
+        emotion_text = config.indextts2.get("emotion_text", "")
+        if emotion_mode == "audio":
+            emotion_audio_col, emotion_preview_col = st.columns([5, 1])
+            with emotion_audio_col:
+                emotion_audio = st.text_input(
+                    tr("Emotion Reference Audio Path"),
+                    value=emotion_audio,
+                    help=tr("Emotion Reference Audio Path Help"),
+                )
+            with emotion_preview_col:
+                render_reference_audio_preview_button(
+                    emotion_audio,
+                    "indextts2_emotion_audio_preview",
+                    tr,
+                    preview_state_key="indextts2_emotion_audio_preview_path",
+                )
+            preview_audio_path = st.session_state.get("indextts2_emotion_audio_preview_path", "")
+            if preview_audio_path == emotion_audio and os.path.isfile(preview_audio_path):
+                with open(preview_audio_path, "rb") as audio_file:
+                    st.audio(audio_file.read(), format=get_audio_mime_type(preview_audio_path))
+        elif emotion_mode == "text":
+            emotion_text = st.text_input(
+                tr("Emotion Text"),
+                value=emotion_text,
+                help=tr("Emotion Text Help"),
+                placeholder=tr("Emotion Text Placeholder"),
+            )
+
+        use_random = st.checkbox(
+            tr("Use Random Emotion"),
+            value=bool(config.indextts2.get("use_random", False)),
+            help=tr("Use Random Emotion Help"),
+        )
+
+        emotion_vector_defaults = {
+            "vec_happy": 0.0,
+            "vec_angry": 0.0,
+            "vec_sad": 0.0,
+            "vec_afraid": 0.0,
+            "vec_disgusted": 0.0,
+            "vec_melancholic": 0.0,
+            "vec_surprised": 0.0,
+            "vec_calm": 0.8,
+        }
+        emotion_vector_labels = {
+            "vec_happy": tr("Emotion Happy"),
+            "vec_angry": tr("Emotion Angry"),
+            "vec_sad": tr("Emotion Sad"),
+            "vec_afraid": tr("Emotion Afraid"),
+            "vec_disgusted": tr("Emotion Disgusted"),
+            "vec_melancholic": tr("Emotion Melancholic"),
+            "vec_surprised": tr("Emotion Surprised"),
+            "vec_calm": tr("Emotion Calm"),
+        }
+        emotion_vector_values = {}
+        if emotion_mode == "vector":
+            vec_cols = st.columns(2)
+            for index, (field, default_value) in enumerate(emotion_vector_defaults.items()):
+                with vec_cols[index % 2]:
+                    emotion_vector_values[field] = st.slider(
+                        emotion_vector_labels[field],
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=float(config.indextts2.get(field, default_value)),
+                        step=0.05,
+                    )
+        else:
+            emotion_vector_values = {
+                field: float(config.indextts2.get(field, default_value))
+                for field, default_value in emotion_vector_defaults.items()
+            }
+
+    with st.expander(tr("Advanced Parameters"), expanded=False):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            temperature = st.slider(
+                tr("Sampling Temperature"),
+                min_value=0.1,
+                max_value=2.0,
+                value=float(config.indextts2.get("temperature", 0.8)),
+                step=0.1,
+                help=tr("Sampling Temperature Help")
+            )
+
+            top_p = st.slider(
+                "Top P",
+                min_value=0.0,
+                max_value=1.0,
+                value=float(config.indextts2.get("top_p", 0.8)),
+                step=0.05,
+                help=tr("Top P Help")
+            )
+
+            top_k = st.slider(
+                "Top K",
+                min_value=0,
+                max_value=100,
+                value=int(config.indextts2.get("top_k", 30)),
+                step=5,
+                help=tr("Top K Help")
+            )
+
+            max_text_tokens_per_segment = st.slider(
+                tr("Max Text Tokens Per Segment"),
+                min_value=20,
+                max_value=600,
+                value=int(config.indextts2.get("max_text_tokens_per_segment", 120)),
+                step=10,
+                help=tr("Max Text Tokens Per Segment Help")
+            )
+
+        with col2:
+            num_beams = st.slider(
+                tr("Num Beams"),
                 min_value=1,
                 max_value=10,
                 value=int(config.indextts2.get("num_beams", 3)),
                 step=1,
-                help="束搜索的 beam 数量，值越大质量可能越好但速度越慢"
+                help=tr("Num Beams Help")
             )
-            
+
             repetition_penalty = st.slider(
-                "重复惩罚 (Repetition Penalty)",
-                min_value=1.0,
+                tr("Repetition Penalty"),
+                min_value=0.1,
                 max_value=20.0,
                 value=float(config.indextts2.get("repetition_penalty", 10.0)),
-                step=0.5,
-                help="值越大越能避免重复，但过大可能导致不自然"
+                step=0.1,
+                help=tr("Repetition Penalty Help")
             )
-            
-            do_sample = st.checkbox(
-                "启用采样",
-                value=config.indextts2.get("do_sample", True),
-                help="启用采样可以获得更自然的语音"
+
+            max_mel_tokens = st.slider(
+                tr("Max Mel Tokens"),
+                min_value=50,
+                max_value=1815,
+                value=int(config.indextts2.get("max_mel_tokens", 1500)),
+                step=10,
+                help=tr("Max Mel Tokens Help")
             )
-    
-    # 显示使用说明
-    with st.expander("💡 IndexTTS2 使用说明", expanded=False):
-        st.markdown("""
-        **零样本语音克隆**
-        
-        1. **准备参考音频**：上传或指定一段清晰的音频文件（建议 3-10 秒）
-        2. **设置 API 地址**：确保 IndexTTS2 服务正常运行
-        3. **开始合成**：系统会自动使用参考音频的音色合成新语音
-        
-        **注意事项**：
-        - 参考音频质量直接影响合成效果
-        - 建议使用无背景噪音的清晰音频
-        - 文本长度建议控制在合理范围内
-        - 首次合成可能需要较长时间
-        """)
-    
-    # 保存配置
+
+    with st.expander(tr("IndexTTS2 Usage Instructions Title"), expanded=False):
+        st.markdown(tr("IndexTTS2 Usage Instructions"))
+
     config.indextts2["api_url"] = api_url
+    config.indextts2["reference_audio_source"] = reference_audio_source
     config.indextts2["reference_audio"] = reference_audio
-    config.indextts2["infer_mode"] = infer_mode
+    config.indextts2["emotion_mode"] = emotion_mode
+    config.indextts2["emotion_audio"] = emotion_audio
+    config.indextts2["emotion_alpha"] = emotion_alpha
+    config.indextts2["emotion_text"] = emotion_text
+    config.indextts2["use_random"] = use_random
+    config.indextts2["max_text_tokens_per_segment"] = max_text_tokens_per_segment
+    for field, value in emotion_vector_values.items():
+        config.indextts2[field] = value
     config.indextts2["temperature"] = temperature
     config.indextts2["top_p"] = top_p
     config.indextts2["top_k"] = top_k
     config.indextts2["num_beams"] = num_beams
     config.indextts2["repetition_penalty"] = repetition_penalty
-    config.indextts2["do_sample"] = do_sample
-    
-    # 保存 voice_name 用于兼容性
+    config.indextts2["max_mel_tokens"] = max_mel_tokens
+
     if reference_audio:
-        config.ui["voice_name"] = f"indextts2:{reference_audio}"
+        config.ui["voice_name"] = f"{config.INDEXTTS2_VOICE_PREFIX}{reference_audio}"
+    st.session_state['voice_rate'] = 1.0
+    st.session_state['voice_pitch'] = 1.0
+
+
+def render_omnivoice_tts_settings(tr):
+    """渲染 OmniVoice TTS 设置"""
+    omnivoice_config = config.omnivoice
+
+    api_url = st.text_input(
+        tr("API URL"),
+        value=omnivoice_config.get("api_url", "http://127.0.0.1:7866/tts"),
+        help=tr("OmniVoice API URL Help"),
+    )
+
+    language = st.text_input(
+        tr("OmniVoice Language Code"),
+        value=omnivoice_config.get("language", "zh"),
+        help=tr("OmniVoice Language Code Help"),
+        placeholder="zh",
+    )
+
+    mode_options = [
+        ("auto", tr("OmniVoice Mode Auto")),
+        ("voice_design", tr("OmniVoice Mode Voice Design")),
+        ("voice_clone", tr("OmniVoice Mode Voice Clone")),
+    ]
+    mode_values = [item[0] for item in mode_options]
+    saved_mode = omnivoice_config.get("mode", "auto")
+    if saved_mode not in mode_values:
+        saved_mode = "auto"
+
+    mode = mode_options[st.selectbox(
+        tr("OmniVoice Generation Mode"),
+        options=range(len(mode_options)),
+        index=mode_values.index(saved_mode),
+        format_func=lambda x: mode_options[x][1],
+        help=tr("OmniVoice Generation Mode Help"),
+    )][0]
+
+    instruct = omnivoice_config.get("instruct", "")
+    reference_audio_source = omnivoice_config.get("reference_audio_source", "resource")
+    reference_audio = omnivoice_config.get("reference_audio", "")
+    ref_text = omnivoice_config.get("ref_text", "")
+
+    if mode == "voice_design":
+        instruct = st.text_area(
+            tr("OmniVoice Instruct"),
+            value=instruct,
+            help=tr("OmniVoice Instruct Help"),
+            placeholder=tr("OmniVoice Instruct Placeholder"),
+            height=80,
+        )
+    elif mode == "voice_clone":
+        reference_audio_source, reference_audio = render_indextts_reference_audio_selector(
+            tr,
+            omnivoice_config,
+            "omnivoice",
+        )
+        ref_text = st.text_area(
+            tr("OmniVoice Reference Text"),
+            value=ref_text,
+            help=tr("OmniVoice Reference Text Help"),
+            placeholder=tr("OmniVoice Reference Text Placeholder"),
+            height=90,
+        )
+
+    with st.expander(tr("Advanced Parameters"), expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            num_step = st.slider(
+                "Num Step",
+                min_value=4,
+                max_value=64,
+                value=int(omnivoice_config.get("num_step", 32)),
+                step=1,
+                help=tr("OmniVoice Num Step Help"),
+            )
+            guidance_scale = st.slider(
+                "Guidance Scale",
+                min_value=0.1,
+                max_value=10.0,
+                value=float(omnivoice_config.get("guidance_scale", 2.0)),
+                step=0.1,
+                help=tr("OmniVoice Guidance Scale Help"),
+            )
+            voice_rate = st.slider(
+                tr("Voice Rate"),
+                min_value=0.5,
+                max_value=2.0,
+                value=float(omnivoice_config.get("speed", 1.0)),
+                step=0.1,
+                help=tr("Voice Rate Help 0.5-2.0"),
+            )
+        with col2:
+            saved_duration = omnivoice_config.get("duration", "")
+            duration_value = float(saved_duration) if saved_duration not in (None, "") else 0.0
+            duration = st.number_input(
+                tr("OmniVoice Duration"),
+                min_value=0.0,
+                max_value=120.0,
+                value=duration_value,
+                step=0.5,
+                help=tr("OmniVoice Duration Help"),
+            )
+            denoise = st.checkbox(
+                tr("OmniVoice Denoise"),
+                value=bool(omnivoice_config.get("denoise", True)),
+                help=tr("OmniVoice Denoise Help"),
+            )
+            postprocess_output = st.checkbox(
+                tr("OmniVoice Postprocess Output"),
+                value=bool(omnivoice_config.get("postprocess_output", True)),
+                help=tr("OmniVoice Postprocess Output Help"),
+            )
+            preprocess_prompt = st.checkbox(
+                tr("OmniVoice Preprocess Prompt"),
+                value=bool(omnivoice_config.get("preprocess_prompt", True)),
+                help=tr("OmniVoice Preprocess Prompt Help"),
+            )
+
+    with st.expander(tr("OmniVoice Usage Instructions Title"), expanded=False):
+        st.markdown(tr("OmniVoice Usage Instructions"))
+
+    config.omnivoice["api_url"] = api_url
+    config.omnivoice["language"] = language
+    config.omnivoice["mode"] = mode
+    config.omnivoice["instruct"] = instruct
+    config.omnivoice["reference_audio_source"] = reference_audio_source
+    config.omnivoice["reference_audio"] = reference_audio
+    config.omnivoice["ref_text"] = ref_text
+    config.omnivoice["num_step"] = num_step
+    config.omnivoice["guidance_scale"] = guidance_scale
+    config.omnivoice["speed"] = voice_rate
+    config.omnivoice["duration"] = duration if duration > 0 else ""
+    config.omnivoice["denoise"] = denoise
+    config.omnivoice["postprocess_output"] = postprocess_output
+    config.omnivoice["preprocess_prompt"] = preprocess_prompt
+
+    if mode == "voice_clone" and reference_audio:
+        config.ui["voice_name"] = f"{config.OMNIVOICE_VOICE_PREFIX}{reference_audio}"
+    else:
+        config.ui["voice_name"] = f"{config.OMNIVOICE_VOICE_PREFIX}{mode}"
+    st.session_state["voice_rate"] = voice_rate
+    st.session_state["voice_pitch"] = 1.0
 
 
 def render_doubaotts_settings(tr):
@@ -718,7 +1455,7 @@ def render_doubaotts_settings(tr):
     ak = st.text_input(
         "Access Key",
         value=config.doubaotts.get("ak", ""),
-        help="火山引擎 Access Key"
+        help=tr("Volcengine Access Key Help")
     )
 
     # SK 输入
@@ -726,14 +1463,14 @@ def render_doubaotts_settings(tr):
         "Secret Key",
         value=config.doubaotts.get("sk", ""),
         type="password",
-        help="火山引擎 Secret Key"
+        help=tr("Volcengine Secret Key Help")
     )
 
     # AppID 输入
     appid = st.text_input(
         "AppID",
         value=config.doubaotts.get("appid", ""),
-        help="豆包语音应用 AppID"
+        help=tr("Doubao AppID Help")
     )
 
     # Token 输入
@@ -741,14 +1478,14 @@ def render_doubaotts_settings(tr):
         "Token",
         value=config.doubaotts.get("token", ""),
         type="password",
-        help="豆包语音应用 Token"
+        help=tr("Doubao Token Help")
     )
 
     # 集群配置
     cluster = st.text_input(
-        "集群",
+        tr("Cluster"),
         value=config.doubaotts.get("cluster", "volcano_tts"),
-        help="业务集群，标准音色使用 volcano_tts"
+        help=tr("Doubao Cluster Help")
     )
 
     # 音色选择
@@ -852,13 +1589,13 @@ def render_doubaotts_settings(tr):
     
     saved_voice_type = config.ui.get("doubaotts_voice_type", "BV700_streaming")
     if saved_voice_type not in voice_options:
-        voice_options[saved_voice_type] = f"自定义音色 ({saved_voice_type})"
+        voice_options[saved_voice_type] = f"{tr('Custom Voice')} ({saved_voice_type})"
     
     selected_voice_display = st.selectbox(
-        "音色选择",
+        tr("Voice Selection"),
         options=list(voice_options.values()),
         index=list(voice_options.keys()).index(saved_voice_type) if saved_voice_type in voice_options else 0,
-        help="选择豆包语音 TTS 音色"
+        help=tr("Select Doubao TTS Voice")
     )
     
     # 获取实际的音色ID
@@ -867,63 +1604,63 @@ def render_doubaotts_settings(tr):
     ]
     
     # 高级参数折叠面板
-    with st.expander("🔧 高级参数", expanded=False):
+    with st.expander(tr("Advanced Parameters"), expanded=False):
         col1, col2 = st.columns(2)
         
         with col1:
             # 语速调节
             voice_rate = st.slider(
-                "语速调节",
+                tr("Voice Rate"),
                 min_value=0.2,
                 max_value=3.0,
                 value=config.ui.get("doubaotts_rate", 1.0),
                 step=0.1,
-                help="调节语音速度 (0.2-3.0)"
+                help=tr("Voice Rate Help 0.2-3.0")
             )
             
             # 音量调节
             voice_volume = st.slider(
-                "音量调节",
+                tr("Voice Volume"),
                 min_value=0.1,
                 max_value=2.0,
                 value=config.doubaotts.get("volume", 1.0),
                 step=0.1,
-                help="调节语音音量 (0.1-2.0)"
+                help=tr("Voice Volume Help 0.1-2.0")
             )
         
         with col2:
             # 音高调节
             voice_pitch = st.slider(
-                "音高调节",
+                tr("Voice Pitch"),
                 min_value=0.5,
                 max_value=1.5,
                 value=config.doubaotts.get("pitch", 1.0),
                 step=0.1,
-                help="调节语音音高 (0.5-1.5)"
+                help=tr("Voice Pitch Help 0.5-1.5")
             )
             
             # 句尾静音时长
             silence_duration = st.slider(
-                "句尾静音时长 (秒)",
+                tr("Sentence Silence Duration"),
                 min_value=0.0,
                 max_value=2.0,
                 value=config.doubaotts.get("silence_duration", 0.125),
                 step=0.05,
-                help="调节句尾静音时长 (0.0-2.0秒)"
+                help=tr("Sentence Silence Duration Help")
             )
     
     # 显示API Key申请流程
-    with st.expander("💡 豆包语音 TTS API Key申请流程", expanded=False):
-        st.write("**申请步骤：**")
-        st.write("1. 打开 [https://console.volcengine.com/iam/keymanage](https://console.volcengine.com/iam/keymanage)")
-        st.write("2. 新建 Access Key 和 Secret Key")
-        st.write("3. 打开 [https://www.volcengine.com/product/voice-tech](https://www.volcengine.com/product/voice-tech)")
-        st.write("4. 点击立即使用")
-        st.write("5. 在最左边的API服务中心找到音频生成下面的语音合成（注意：是语音合成，不是语音合成大模型）")
-        st.write("6. 翻到最下面获取 APPID 和 Access Token")
+    with st.expander(tr("Doubao TTS API Key Application Process"), expanded=False):
+        st.write(f"**{tr('Application Steps')}:**")
+        st.write(tr("Doubao TTS Step 1"))
+        st.write(tr("Doubao TTS Step 2"))
+        st.write(tr("Doubao TTS Step 3"))
+        st.write(tr("Doubao TTS Step 4"))
+        st.write(tr("Doubao TTS Step 5"))
+        st.write(tr("Doubao TTS Step 6"))
         
         st.write("")
-        st.info("💡 请将获取到的 Access Key、Secret Key、AppID 和 Token 填写到上方的配置中")
+        st.info(tr("Doubao TTS Fill Credentials Notice"))
     
     # 保存配置
     config.doubaotts["ak"] = ak
@@ -941,7 +1678,7 @@ def render_doubaotts_settings(tr):
 
     # 显示配置状态
     if ak and sk and appid and token:
-        st.success("✅ 豆包语音 TTS 配置已设置")
+        st.success(tr("Doubao TTS configured"))
     else:
         missing = []
         if not ak:
@@ -953,13 +1690,13 @@ def render_doubaotts_settings(tr):
         if not token:
             missing.append("Token")
         if missing:
-            st.warning(f"⚠️ 请配置: {', '.join(missing)}")
+            st.warning(tr("Please configure missing fields").format(fields=', '.join(missing)))
 
 
 def render_voice_preview_new(tr, selected_engine):
     """渲染新的语音试听功能"""
-    if st.button("🎵 试听语音合成", use_container_width=True):
-        play_content = "感谢关注 NarratoAI，有任何问题或建议，可以关注微信公众号，求助或讨论"
+    if st.button(tr("Preview Voice Synthesis"), use_container_width=True):
+        play_content = tr("Voice Preview Sample")
 
         # 根据选择的引擎获取对应的语音配置
         voice_name = ""
@@ -993,12 +1730,27 @@ def render_voice_preview_new(tr, selected_engine):
             voice_name = f"qwen3:{vt}"
             voice_rate = config.ui.get("qwen3_rate", 1.0)
             voice_pitch = 1.0  # Qwen3 TTS 不支持音调调节
-        elif selected_engine == "indextts2":
+        elif selected_engine == config.INDEXTTS_ENGINE:
+            reference_audio = config.indextts.get("reference_audio", "")
+            if reference_audio:
+                voice_name = f"{config.INDEXTTS_VOICE_PREFIX}{reference_audio}"
+            voice_rate = 1.0  # IndexTTS-1.5 不支持速度调节
+            voice_pitch = 1.0  # IndexTTS-1.5 不支持音调调节
+        elif selected_engine == config.INDEXTTS2_ENGINE:
             reference_audio = config.indextts2.get("reference_audio", "")
             if reference_audio:
-                voice_name = f"indextts2:{reference_audio}"
-            voice_rate = 1.0  # IndexTTS2 不支持速度调节
-            voice_pitch = 1.0  # IndexTTS2 不支持音调调节
+                voice_name = f"{config.INDEXTTS2_VOICE_PREFIX}{reference_audio}"
+            voice_rate = 1.0  # IndexTTS-2 使用自身生成参数
+            voice_pitch = 1.0
+        elif selected_engine == config.OMNIVOICE_ENGINE:
+            mode = config.omnivoice.get("mode", "auto")
+            reference_audio = config.omnivoice.get("reference_audio", "")
+            if mode == "voice_clone" and reference_audio:
+                voice_name = f"{config.OMNIVOICE_VOICE_PREFIX}{reference_audio}"
+            else:
+                voice_name = f"{config.OMNIVOICE_VOICE_PREFIX}{mode}"
+            voice_rate = config.omnivoice.get("speed", 1.0)
+            voice_pitch = 1.0
         elif selected_engine == "doubaotts":
             voice_type = config.ui.get("doubaotts_voice_type", "BV700_streaming")
             voice_name = voice_type
@@ -1006,12 +1758,18 @@ def render_voice_preview_new(tr, selected_engine):
             voice_pitch = 1.0  # 豆包语音 TTS 不支持音调调节
 
         if not voice_name:
-            st.error("请先配置语音设置")
+            st.error(tr("Please configure voice settings first"))
             return
 
-        with st.spinner("正在合成语音..."):
+        with st.spinner(tr("Synthesizing Voice")):
             temp_dir = utils.storage_dir("temp", create=True)
-            audio_file = os.path.join(temp_dir, f"tmp-voice-{str(uuid4())}.mp3")
+            audio_format = "audio/wav" if selected_engine in (
+                config.INDEXTTS_ENGINE,
+                config.INDEXTTS2_ENGINE,
+                config.OMNIVOICE_ENGINE,
+            ) else "audio/mp3"
+            audio_extension = ".wav" if audio_format == "audio/wav" else ".mp3"
+            audio_file = os.path.join(temp_dir, f"tmp-voice-{str(uuid4())}{audio_extension}")
 
             sub_maker = voice.tts(
                 text=play_content,
@@ -1023,12 +1781,12 @@ def render_voice_preview_new(tr, selected_engine):
             )
 
             if sub_maker and os.path.exists(audio_file):
-                st.success("✅ 语音合成成功！")
+                st.success(tr("Voice synthesis successful"))
 
                 # 播放音频
                 with open(audio_file, 'rb') as audio_file_obj:
                     audio_bytes = audio_file_obj.read()
-                    st.audio(audio_bytes, format='audio/mp3')
+                    st.audio(audio_bytes, format=audio_format)
 
                 # 清理临时文件
                 try:
@@ -1036,7 +1794,7 @@ def render_voice_preview_new(tr, selected_engine):
                 except:
                     pass
             else:
-                st.error("❌ 语音合成失败，请检查配置")
+                st.error(tr("Voice synthesis failed"))
 
 
 def render_azure_v2_settings(tr):
@@ -1105,7 +1863,7 @@ def render_voice_parameters(tr, voice_name):
     else:
         # SoulVoice 不支持音调调节，设置默认值
         st.session_state['voice_pitch'] = 1.0
-        st.info("ℹ️ SoulVoice 引擎不支持音调调节")
+        st.info(tr("SoulVoice pitch not supported"))
 
 
 def render_voice_preview(tr, voice_name):
@@ -1151,29 +1909,106 @@ def render_voice_preview(tr, voice_name):
 
 def render_bgm_settings(tr):
     """渲染背景音乐设置"""
-    # 背景音乐选项
-    bgm_options = [
-        (tr("No Background Music"), ""),
-        (tr("Random Background Music"), "random"),
-        (tr("Custom Background Music"), "custom"),
-    ]
+    saved_bgm_file = st.session_state.get('bgm_file', '')
+    saved_bgm_source = st.session_state.get('bgm_source', 'resource')
+    if st.session_state.get('bgm_type') == "":
+        saved_bgm_source = "none"
 
-    selected_index = st.selectbox(
-        tr("Background Music"),
-        index=1,
-        options=range(len(bgm_options)),
-        format_func=lambda x: bgm_options[x][0],
+    bgm_source_options = {
+        tr("Select from Resource Directory"): "resource",
+        tr("Upload Background Music"): "upload",
+        tr("No Background Music"): "none",
+    }
+    if saved_bgm_source not in bgm_source_options.values():
+        saved_bgm_source = "resource"
+
+    default_bgm_source_label = next(
+        label
+        for label, source_value in bgm_source_options.items()
+        if source_value == saved_bgm_source
     )
 
-    # 获取选择的背景音乐类型
-    bgm_type = bgm_options[selected_index][1]
-    st.session_state['bgm_type'] = bgm_type
+    st.markdown(f"**{tr('Background Music')}**")
+    bgm_source_label = st.pills(
+        tr("Background Music Source"),
+        options=list(bgm_source_options.keys()),
+        selection_mode="single",
+        default=default_bgm_source_label,
+        key="bgm_source_selection",
+        help=tr("Background Music Source Help"),
+        label_visibility="collapsed",
+        width="stretch",
+    )
+    if not bgm_source_label:
+        bgm_source_label = default_bgm_source_label
 
-    # 自定义背景音乐处理
-    if bgm_type == "custom":
-        custom_bgm_file = st.text_input(tr("Custom Background Music File"))
-        if custom_bgm_file and os.path.exists(custom_bgm_file):
-            st.session_state['bgm_file'] = custom_bgm_file
+    bgm_source = bgm_source_options[bgm_source_label]
+    bgm_file = ""
+    bgm_name = ""
+
+    if bgm_source == "resource":
+        bgm_options = get_bgm_resource_options()
+        if bgm_options:
+            selected_bgm_index = get_bgm_resource_index(bgm_options, saved_bgm_file)
+            select_col, preview_col = st.columns([5, 1])
+            with select_col:
+                selected_bgm_option = bgm_options[st.selectbox(
+                    tr("Background Music"),
+                    options=range(len(bgm_options)),
+                    index=selected_bgm_index,
+                    format_func=lambda x: format_bgm_resource_option(bgm_options[x]),
+                    help=tr("Background Music Path Help"),
+                    label_visibility="collapsed"
+                )]
+            bgm_file = selected_bgm_option["path"]
+            bgm_name = selected_bgm_option["title"]
+            with preview_col:
+                render_bgm_preview_button(
+                    bgm_file,
+                    "resource_bgm_preview",
+                    tr,
+                )
+        else:
+            st.warning(tr("No Background Music Resources Found"))
+
+    if bgm_source == "upload":
+        if st.session_state.get('bgm_source') != "upload":
+            saved_bgm_file = ""
+        bgm_file = saved_bgm_file if saved_bgm_file and os.path.isfile(saved_bgm_file) else ""
+        bgm_name = os.path.splitext(os.path.basename(bgm_file))[0] if bgm_file else ""
+        upload_col, preview_col = st.columns([5, 1])
+        with upload_col:
+            uploaded_file = st.file_uploader(
+                tr("Upload Background Music File"),
+                type=[extension.lstrip(".") for extension in BGM_AUDIO_EXTENSIONS],
+                help=tr("Upload Background Music Help"),
+                label_visibility="collapsed"
+            )
+
+        if uploaded_file is not None:
+            target_dir = utils.storage_dir(BGM_UPLOAD_SUBDIR, create=True)
+            bgm_file = os.path.join(target_dir, f"uploaded_{uploaded_file.name}")
+            with open(bgm_file, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            bgm_name = os.path.splitext(uploaded_file.name)[0]
+            st.success(tr("Background Music uploaded").format(path=bgm_file))
+        with preview_col:
+            render_bgm_preview_button(
+                bgm_file,
+                "upload_bgm_preview",
+                tr,
+            )
+
+    preview_bgm_path = st.session_state.get("bgm_preview_path", "")
+    if preview_bgm_path == bgm_file and os.path.isfile(preview_bgm_path):
+        with open(preview_bgm_path, "rb") as audio_file:
+            st.audio(audio_file.read(), format=get_audio_mime_type(preview_bgm_path))
+
+    bgm_type = "" if bgm_source == "none" or not bgm_file else "custom"
+    st.session_state['bgm_source'] = bgm_source
+    st.session_state['bgm_type'] = bgm_type
+    st.session_state['bgm_file'] = bgm_file if bgm_type else ""
+    st.session_state['bgm_name'] = bgm_name if bgm_type else ""
 
     # 背景音乐音量 - 使用统一的默认值
     bgm_volume = st.slider(
@@ -1194,8 +2029,9 @@ def get_audio_params():
         'voice_volume': st.session_state.get('voice_volume', AudioVolumeDefaults.VOICE_VOLUME),
         'voice_rate': st.session_state.get('voice_rate', 1.0),
         'voice_pitch': st.session_state.get('voice_pitch', 1.0),
+        'bgm_name': st.session_state.get('bgm_name', ''),
         'bgm_type': st.session_state.get('bgm_type', 'random'),
         'bgm_file': st.session_state.get('bgm_file', ''),
         'bgm_volume': st.session_state.get('bgm_volume', AudioVolumeDefaults.BGM_VOLUME),
-        'tts_engine': st.session_state.get('tts_engine', "edge_tts"),
+        'tts_engine': st.session_state.get('tts_engine', config.INDEXTTS_ENGINE),
     }

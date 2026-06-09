@@ -24,7 +24,7 @@ def _normalize_progress_value(progress: float | int) -> int:
     return max(0, min(100, int(round(value))))
 
 
-def generate_script_docu(params):
+def generate_script_docu(params, tr=lambda key: key):
     """
     生成纪录片视频脚本。
     要求: 原视频无字幕无配音
@@ -39,12 +39,12 @@ def generate_script_docu(params):
         if message:
             status_text.text(f"🎬 {message}")
         else:
-            status_text.text(f"📊 进度: {normalized_progress}%")
+            status_text.text(f"📊 {tr('Progress')}: {normalized_progress}%")
 
     try:
-        with st.spinner("正在生成脚本..."):
+        with st.spinner(tr("Generating script...")):
             if not params.video_origin_path:
-                st.error("请先选择视频文件")
+                st.error(tr("Please select video file first"))
                 return
 
             vision_llm_provider = (
@@ -76,7 +76,7 @@ def generate_script_docu(params):
                 "vision_max_concurrency", 2
             )
 
-            update_progress(10, "正在提取关键帧...")
+            update_progress(10, tr("Extracting keyframes..."))
             service = DocumentaryFrameAnalysisService()
             script_items = asyncio.run(
                 service.generate_documentary_script(
@@ -100,15 +100,15 @@ def generate_script_docu(params):
                 st.session_state["video_clip_json"] = script
             elif isinstance(script, str):
                 st.session_state["video_clip_json"] = json.loads(script)
-            update_progress(100, "脚本生成完成")
+            update_progress(100, tr("Script generation completed"))
 
         time.sleep(0.1)
         progress_bar.progress(100)
-        status_text.text("🎉 脚本生成完成！")
-        st.success("✅ 视频脚本生成成功！")
+        status_text.text(tr("Script generation completed!"))
+        st.success(tr("Video script generated successfully"))
 
     except Exception as err:
-        st.error(f"❌ 生成过程中发生错误: {str(err)}")
+        st.error(f"{tr('Generation error')}: {str(err)}")
         logger.exception(f"生成脚本时发生错误\n{traceback.format_exc()}")
     finally:
         time.sleep(2)
