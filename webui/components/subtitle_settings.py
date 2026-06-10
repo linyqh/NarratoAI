@@ -37,6 +37,16 @@ SUBTITLE_POSITION_DEFAULTS = {
 
 VIDEO_PREVIEW_UPLOAD_TYPES = ["mp4", "mov", "avi", "flv", "mkv", "mpeg4"]
 
+SUBTITLE_SAFE_AREA_PREVIEW_IMAGES = {
+    "portrait": "subtitle_safe_area_portrait.png",
+    "landscape": "subtitle_safe_area_landscape.png",
+}
+
+SUBTITLE_PREVIEW_FALLBACK_SIZES = {
+    "portrait": (1080, 1920),
+    "landscape": (1920, 1080),
+}
+
 
 def render_subtitle_panel(tr):
     """渲染字幕设置面板"""
@@ -378,8 +388,9 @@ def _render_subtitle_mask_region_controls(tr, orientation):
 
 
 def _render_subtitle_position_controls(tr, orientation):
+    label = tr("Portrait Subtitle Position") if orientation == "portrait" else tr("Landscape Subtitle Position")
     y_percent = st.slider(
-        tr("Subtitle Burn Position"),
+        label,
         min_value=0,
         max_value=99,
         value=int(_get_orientation_subtitle_position_value(orientation, "y_percent")),
@@ -397,20 +408,14 @@ def _render_subtitle_mask_dialog(tr):
         with settings_col:
             st.caption(tr("Subtitle Mask Settings Caption"))
             st.caption(tr("Subtitle Mask Preview Caption"))
-            landscape_mask_tab, portrait_mask_tab, landscape_position_tab, portrait_position_tab = st.tabs([
+            landscape_mask_tab, portrait_mask_tab = st.tabs([
                 tr("Landscape Subtitle Mask"),
                 tr("Portrait Subtitle Mask"),
-                tr("Landscape Subtitle Position"),
-                tr("Portrait Subtitle Position"),
             ])
             with landscape_mask_tab:
                 _render_subtitle_mask_region_controls(tr, "landscape")
             with portrait_mask_tab:
                 _render_subtitle_mask_region_controls(tr, "portrait")
-            with landscape_position_tab:
-                _render_subtitle_position_controls(tr, "landscape")
-            with portrait_position_tab:
-                _render_subtitle_position_controls(tr, "portrait")
 
         with preview_col:
             _render_subtitle_mask_preview(tr)
@@ -604,10 +609,11 @@ def render_font_settings(tr):
 
     with font_cols[1]:
         saved_font_size = config.ui.get("font_size", 60)
+        saved_font_size = max(20, min(160, int(saved_font_size)))
         font_size = st.slider(
             tr("Font Size"),
             min_value=20,
-            max_value=100,
+            max_value=160,
             value=saved_font_size
         )
         config.ui["font_size"] = font_size
@@ -653,6 +659,136 @@ def render_position_settings(tr):
             st.error(tr("Please enter a valid number"))
 
 
+def _resolve_subtitle_preview_font_path(font_name):
+    if not font_name:
+        return ""
+
+    font_name = str(font_name)
+    candidates = []
+    if os.path.isabs(font_name):
+        candidates.append(font_name)
+
+    candidates.extend(
+        [
+            os.path.join(utils.font_dir(), font_name),
+            os.path.join(utils.font_dir(), os.path.basename(font_name)),
+        ]
+    )
+
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+
+    return ""
+
+
+def _load_subtitle_preview_font(font_name, font_size):
+    from PIL import ImageFont
+
+    font_path = _resolve_subtitle_preview_font_path(font_name)
+    font_size = max(12, int(round(font_size or 60)))
+    if font_path:
+        try:
+            return ImageFont.truetype(font_path, font_size)
+        except OSError:
+            pass
+
+    return ImageFont.load_default(size=font_size)
+
+
+def _resolve_subtitle_preview_color(color, fallback):
+    from PIL import ImageColor
+
+    try:
+        value = ImageColor.getrgb(str(color or fallback).strip())
+    except ValueError:
+        value = ImageColor.getrgb(fallback)
+
+    if len(value) == 4:
+        return value
+    return (*value, 255)
+
+
+def _get_subtitle_preview_y(image_height, text_height, orientation):
+    subtitle_position = st.session_state.get("subtitle_position", "bottom")
+
+    if subtitle_position == "top":
+        return max(12, round(image_height * 0.05))
+    if subtitle_position == "center":
+        return max(0, round((image_height - text_height) / 2))
+
+    y_percent = _get_orientation_subtitle_position_value(orientation, "y_percent")
+    if y_percent is None and subtitle_position == "custom":
+        y_percent = st.session_state.get("custom_position", 70.0)
+
+    try:
+        y_percent = max(0.0, min(100.0, float(y_percent)))
+    except (TypeError, ValueError):
+        y_percent = 85.0
+
+    return max(0, round((image_height - text_height) * y_percent / 100))
+
+
+def _get_subtitle_preview_background(orientation):
+    from PIL import Image
+
+    image_path = os.path.join(
+        utils.resource_dir("safe_areas"),
+        SUBTITLE_SAFE_AREA_PREVIEW_IMAGES.get(orientation, SUBTITLE_SAFE_AREA_PREVIEW_IMAGES["portrait"]),
+    )
+
+    if os.path.exists(image_path):
+        return Image.open(image_path).convert("RGBA")
+
+    width, height = SUBTITLE_PREVIEW_FALLBACK_SIZES.get(orientation, SUBTITLE_PREVIEW_FALLBACK_SIZES["portrait"])
+    return Image.new("RGBA", (width, height), (19, 24, 35, 255))
+
+
+def _render_subtitle_preview_image(tr):
+    from PIL import ImageDraw
+
+    font_name = st.session_state.get("font_name") or config.ui.get("font_name", "")
+    font_size = int(st.session_state.get("font_size", config.ui.get("font_size", 60)) or 60)
+    text_color = st.session_state.get("text_fore_color", config.ui.get("text_fore_color", "#FFFFFF"))
+    stroke_color = st.session_state.get("stroke_color", config.ui.get("stroke_color", "#000000"))
+    stroke_width = float(st.session_state.get("stroke_width", config.ui.get("stroke_width", 1.5)) or 0)
+
+    orientation = st.pills(
+        tr("Subtitle Preview Orientation"),
+        options=["portrait", "landscape"],
+        default=st.session_state.get("subtitle_preview_orientation", "portrait"),
+        format_func=lambda value: tr("Portrait Safe Area") if value == "portrait" else tr("Landscape Safe Area"),
+        key="subtitle_preview_orientation",
+        width="stretch",
+    ) or "portrait"
+    _render_subtitle_position_controls(tr, orientation)
+
+    preview_text = tr("Subtitle Preview Sample Text")
+    image = _get_subtitle_preview_background(orientation)
+    draw = ImageDraw.Draw(image)
+
+    font = _load_subtitle_preview_font(font_name, font_size)
+    stroke_width_px = max(0, int(round(stroke_width)))
+    bbox = draw.textbbox((0, 0), preview_text, font=font, stroke_width=stroke_width_px)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    x = max(20, round((image.width - text_width) / 2))
+    y = _get_subtitle_preview_y(image.height, text_height, orientation)
+    margin = max(10, stroke_width_px * 2 + 6)
+    y = max(margin, min(y, image.height - text_height - margin))
+
+    draw.text(
+        (x - bbox[0], y - bbox[1]),
+        preview_text,
+        font=font,
+        fill=_resolve_subtitle_preview_color(text_color, "#FFFFFF"),
+        stroke_width=stroke_width_px,
+        stroke_fill=_resolve_subtitle_preview_color(stroke_color, "#000000"),
+    )
+
+    st.image(image.convert("RGB"), width="stretch", output_format="PNG")
+
+
 def render_style_settings(tr):
     """渲染样式设置"""
     stroke_cols = st.columns([0.3, 0.7])
@@ -673,6 +809,9 @@ def render_style_settings(tr):
             step=0.01
         )
         st.session_state['stroke_width'] = stroke_width
+
+    with st.expander(tr("Subtitle Preview"), expanded=False):
+        _render_subtitle_preview_image(tr)
 
 
 def get_subtitle_params():

@@ -671,6 +671,8 @@ def _resolve_font_path(subtitle_font: str) -> Optional[str]:
 
     for candidate in [
         os.path.join(utils.font_dir(), "SourceHanSansCN-Regular.otf"),
+        os.path.join(utils.font_dir(), "SourceHanSerifSC-SemiBold.otf"),
+        os.path.join(utils.font_dir(), "LXGWWenKaiScreen.ttf"),
         os.path.join(utils.font_dir(), "SimHei.ttf"),
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
