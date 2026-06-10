@@ -616,6 +616,19 @@ def init_resources():
         font_dir = os.path.join(root_dir(), "resource", "fonts")
         os.makedirs(font_dir, exist_ok=True)
 
+        existing_fonts = [
+            filename
+            for filename in os.listdir(font_dir)
+            if filename.lower().endswith((".ttf", ".ttc", ".otf"))
+            and os.path.isfile(os.path.join(font_dir, filename))
+            and os.path.getsize(os.path.join(font_dir, filename)) > 0
+        ]
+        if existing_fonts:
+            if not getattr(init_resources, "_logged_existing_fonts_skip", False):
+                logger.info(f"已检测到内置字体文件，跳过字体下载: {', '.join(sorted(existing_fonts))}")
+                init_resources._logged_existing_fonts_skip = True
+            return
+
         # 检查字体文件
         font_files = [
             ("SourceHanSansCN-Regular.otf",
