@@ -205,6 +205,14 @@ def _format_file_list_for_display(paths, max_items=3):
     return f"{visible_names} +{len(file_names) - max_items}"
 
 
+def _safe_filename_fragment(value, fallback="translated"):
+    fragment = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "_"
+        for char in str(value or "").strip()
+    ).strip("_")
+    return fragment or fallback
+
+
 def _read_subtitle_file(path):
     try:
         return read_subtitle_text(path).text
@@ -1211,23 +1219,41 @@ def render_fun_asr_transcription(tr):
     # 上传字幕面板会在本轮渲染中更新 session_state，这里重新读取一次，保证按钮状态同步。
     subtitle_paths = _selected_subtitle_paths()
     can_transcribe = backend != "upload" and bool(media_paths)
-    can_correct_subtitles = bool(subtitle_paths)
+    can_manage_subtitles = bool(subtitle_paths)
+    saved_target_language = str(config.ui.get("subtitle_translate_target_language", "中文") or "中文")
+
     with subtitle_cols[1]:
-        action_cols = st.columns(2)
-        with action_cols[0]:
-            transcribe_clicked = st.button(
-                tr("Transcribe subtitles"),
-                key="fun_asr_transcribe",
-                disabled=not can_transcribe,
-                use_container_width=True,
-            )
-        with action_cols[1]:
-            correct_clicked = st.button(
-                tr("Calibrate subtitles"),
-                key="subtitle_correct",
-                disabled=not can_correct_subtitles,
-                use_container_width=True,
-            )
+        transcribe_clicked = st.button(
+            tr("Transcribe subtitles"),
+            key="fun_asr_transcribe",
+            disabled=not can_transcribe,
+            use_container_width=True,
+        )
+
+    subtitle_action_cols = st.columns(3, vertical_alignment="bottom")
+    with subtitle_action_cols[0]:
+        target_language = st.text_input(
+            tr("Subtitle target language"),
+            value=saved_target_language,
+            key="subtitle_translate_target_language",
+            placeholder=tr("Subtitle target language placeholder"),
+        )
+    with subtitle_action_cols[1]:
+        translate_clicked = st.button(
+            tr("Translate subtitles"),
+            key="subtitle_translate",
+            disabled=not can_manage_subtitles,
+            use_container_width=True,
+        )
+    with subtitle_action_cols[2]:
+        correct_clicked = st.button(
+            tr("Calibrate subtitles"),
+            key="subtitle_correct",
+            disabled=not can_manage_subtitles,
+            use_container_width=True,
+        )
+
+    target_language = str(target_language or "").strip() or "中文"
 
     if correct_clicked:
         from app.services import subtitle_corrector
@@ -1276,6 +1302,87 @@ def render_fun_asr_transcription(tr):
         except Exception as e:
             logger.error(f"字幕校准失败: {traceback.format_exc()}")
             st.error(f"{tr('Subtitle calibration failed')}: {str(e)}")
+        return
+
+    if translate_clicked:
+        from app.services import subtitle_translator
+
+        text_provider = config.app.get('text_llm_provider', 'openai').lower()
+        text_api_key = config.app.get(f'text_{text_provider}_api_key')
+        text_base_url = config.app.get(f'text_{text_provider}_base_url')
+
+        translated_paths = []
+        try:
+            config.ui["subtitle_translate_target_language"] = target_language
+            config.save_config()
+
+            spinner_text = tr("Translating subtitles...").format(language=target_language)
+            with st.spinner(spinner_text):
+                progress_bar = st.progress(0)
+                progress_caption = st.empty()
+                target_suffix = _safe_filename_fragment(target_language)
+                for index, subtitle_path in enumerate(subtitle_paths, start=1):
+                    subtitle_name = (
+                        f"{os.path.splitext(os.path.basename(subtitle_path))[0]}"
+                        f"_translated_{target_suffix}.srt"
+                    )
+                    output_path = _unique_file_path(utils.subtitle_dir(), subtitle_name)
+                    subtitle_file_label = os.path.basename(subtitle_path)
+
+                    def update_translation_progress(
+                        completed,
+                        total,
+                        message,
+                        file_index=index,
+                        file_label=subtitle_file_label,
+                    ):
+                        total = max(int(total or 0), 1)
+                        completed = max(0, min(int(completed or 0), total))
+                        file_progress = completed / total
+                        overall_progress = ((file_index - 1) + file_progress) / max(len(subtitle_paths), 1)
+                        progress_bar.progress(min(overall_progress, 1.0))
+                        progress_caption.caption(
+                            tr("Subtitle translation progress").format(
+                                file=file_label,
+                                completed=completed,
+                                total=total,
+                                message=message,
+                            )
+                        )
+
+                    translated_path = subtitle_translator.translate_subtitle_file(
+                        subtitle_file=subtitle_path,
+                        output_file=output_path,
+                        target_language=target_language,
+                        provider=text_provider,
+                        api_key=text_api_key,
+                        base_url=text_base_url,
+                        progress_callback=update_translation_progress,
+                    )
+                    translated_paths.append(translated_path)
+                    progress_bar.progress(index / len(subtitle_paths))
+
+                progress_caption.empty()
+                progress_bar.empty()
+
+            _set_subtitle_state(translated_paths)
+            success_placeholder = st.empty()
+            if len(translated_paths) == 1:
+                success_placeholder.success(
+                    tr("Subtitle translation succeeded").format(file=os.path.basename(translated_paths[0]))
+                )
+            else:
+                success_placeholder.success(
+                    tr("Subtitle translation succeeded for multiple files").format(
+                        count=len(translated_paths),
+                        files=_format_file_list_for_display(translated_paths),
+                    )
+                )
+            time.sleep(3)
+            success_placeholder.empty()
+        except Exception as e:
+            logger.error(f"字幕翻译失败: {traceback.format_exc()}")
+            st.error(f"{tr('Subtitle translation failed')}: {str(e)}")
         return
 
     if not transcribe_clicked:

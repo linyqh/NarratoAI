@@ -5,6 +5,8 @@
     llm_vision_timeout = 120  # 视觉模型基础超时时间
     llm_text_timeout = 180    # 文本模型基础超时时间（解说文案生成等复杂任务需要更长时间）
     llm_max_retries = 3       # API 重试次数
+    subtitle_translate_batch_size = 20   # 字幕翻译每批处理的字幕条数
+    subtitle_translate_max_workers = 3   # 字幕翻译最大并发批次数
 
     ##########################################
     # 🚀 LLM 配置 - 使用 OpenAI 兼容统一接口
