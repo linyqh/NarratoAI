@@ -26,6 +26,7 @@ from webui.tools.generate_short_summary import (
 
 
 SCRIPT_TABLE_BASE_COLUMNS = ["_id", "video_id", "video_name", "timestamp", "picture", "narration", "OST"]
+SCRIPT_TABLE_TEXT_COLUMNS = {"video_name", "timestamp", "picture", "narration", "value"}
 MODE_FILE = "file_selection"
 MODE_AUTO = "auto"
 MODE_SHORT = "short"
@@ -666,16 +667,42 @@ def render_short_generate_options(tr):
     渲染Short Generate模式下的特殊选项
     在Short Generate模式下，替换原有的输入框为自定义片段选项
     """
-    summary_narration_panel(tr, SUMMARY_MODE_CONFIGS[MODE_SHORT_SUMMARY])
-    # 显示自定义片段数量选择器
-    custom_clips = st.number_input(
-        tr("自定义片段"),
-        min_value=1,
-        max_value=20,
-        value=st.session_state.get('custom_clips', 5),
-        help=tr("设置需要生成的短视频片段数量"),
-        key="custom_clips_input"
-    )
+    summary_config = SUMMARY_MODE_CONFIGS[MODE_SHORT_SUMMARY]
+    summary_narration_panel(tr, summary_config)
+
+    type_option_key = _summary_state_key(summary_config, "type_option")
+    custom_type_key = _summary_state_key(summary_config, "custom_type")
+    type_options = [code for code, _ in summary_config["type_options"]]
+    if st.session_state.get(type_option_key) not in type_options:
+        st.session_state[type_option_key] = summary_config["default_type"]
+
+    show_custom_type = st.session_state.get(type_option_key, summary_config["default_type"]) == "custom"
+    option_cols = st.columns([1.1, 1.1, 1], vertical_alignment="bottom") if show_custom_type else st.columns([1.1, 1], vertical_alignment="bottom")
+    with option_cols[0]:
+        st.selectbox(
+            tr(summary_config["type_label_key"]),
+            options=type_options,
+            format_func=lambda code: tr(dict(summary_config["type_options"]).get(code, code)),
+            key=type_option_key,
+        )
+    option_index = 1
+    if show_custom_type:
+        with option_cols[option_index]:
+            st.text_input(
+                tr(summary_config["custom_type_label_key"]),
+                key=custom_type_key,
+                placeholder=tr(summary_config["custom_type_placeholder_key"]),
+            )
+        option_index += 1
+    with option_cols[option_index]:
+        custom_clips = st.number_input(
+            tr("自定义片段"),
+            min_value=1,
+            max_value=20,
+            value=st.session_state.get('custom_clips', 5),
+            help=tr("设置需要生成的短视频片段数量"),
+            key="custom_clips_input"
+        )
     st.session_state['custom_clips'] = custom_clips
 
 
@@ -729,6 +756,7 @@ def summary_narration_panel(tr, summary_config):
     plot_analysis_key = _summary_state_key(summary_config, "plot_analysis")
     plot_source_key = _summary_state_key(summary_config, "plot_analysis_subtitle_path")
     plot_signature_key = _summary_state_key(summary_config, "plot_analysis_signature")
+    pending_plot_key = _summary_state_key(summary_config, "pending_plot_analysis")
 
     st.markdown(
         f"""
@@ -815,6 +843,15 @@ def summary_narration_panel(tr, summary_config):
         st.session_state[plot_analysis_key] = ""
         st.session_state[plot_source_key] = ""
         st.session_state[plot_signature_key] = ""
+        st.session_state.pop(pending_plot_key, None)
+    else:
+        pending_plot = st.session_state.pop(pending_plot_key, None)
+        if isinstance(pending_plot, dict) and pending_plot.get("signature") == current_signature:
+            pending_analysis = str(pending_plot.get("plot_analysis") or "")
+            if pending_analysis:
+                st.session_state[plot_analysis_key] = pending_analysis
+                st.session_state[plot_source_key] = pending_plot.get("subtitle_path") or current_subtitle_path
+                st.session_state[plot_signature_key] = current_signature
 
     if analyze_plot_clicked:
         with st.spinner(tr("Analyzing plot...")):
@@ -1003,10 +1040,17 @@ def _script_json_to_table(script_data):
             {"value": json.dumps(item, ensure_ascii=False)}
             for item in script_data
         ]
-        return pd.DataFrame(rows, columns=["value"])
+        return _normalize_script_table_types(pd.DataFrame(rows, columns=["value"]))
 
     columns = _ordered_script_columns(script_data)
-    return pd.DataFrame(script_data, columns=columns)
+    return _normalize_script_table_types(pd.DataFrame(script_data, columns=columns))
+
+
+def _normalize_script_table_types(table_data):
+    for column in SCRIPT_TABLE_TEXT_COLUMNS:
+        if column in table_data.columns:
+            table_data[column] = table_data[column].where(table_data[column].notna(), "").astype(str).astype("object")
+    return table_data
 
 
 def _normalize_script_table_value(column, value):
@@ -1723,8 +1767,66 @@ def render_script_buttons(tr, params):
             generate_script_docu(params, tr)
         elif script_path == "short":
             # 执行 短剧混剪 脚本生成
+            summary_config = SUMMARY_MODE_CONFIGS[MODE_SHORT_SUMMARY]
+            type_option_key = _summary_state_key(summary_config, "type_option")
+            custom_type_key = _summary_state_key(summary_config, "custom_type")
+            web_search_key = _summary_state_key(summary_config, "web_search_enabled")
+            plot_analysis_key = _summary_state_key(summary_config, "plot_analysis")
+            plot_source_key = _summary_state_key(summary_config, "plot_analysis_subtitle_path")
+            plot_signature_key = _summary_state_key(summary_config, "plot_analysis_signature")
+            pending_plot_key = _summary_state_key(summary_config, "pending_plot_analysis")
+            if (
+                st.session_state.get(type_option_key) == "custom"
+                and not str(st.session_state.get(custom_type_key, '') or '').strip()
+            ):
+                st.error(tr(summary_config["custom_type_empty_key"]))
+                st.stop()
+
+            subtitle_paths = _selected_subtitle_paths()
+            subtitle_path = subtitle_paths[0] if subtitle_paths else None
+            video_theme = st.session_state.get('video_theme')
+            web_search_enabled = bool(st.session_state.get(web_search_key, False))
+            current_signature = _short_drama_plot_analysis_signature(
+                subtitle_paths,
+                video_theme,
+                web_search_enabled,
+                _selected_video_paths(),
+            )
+            plot_analysis = ""
+            if st.session_state.get(plot_signature_key) == current_signature:
+                plot_analysis = st.session_state.get(plot_analysis_key, '')
+            elif (
+                not web_search_enabled
+                and st.session_state.get(plot_source_key) == subtitle_path
+            ):
+                plot_analysis = st.session_state.get(plot_analysis_key, '')
+
             custom_clips = st.session_state.get('custom_clips')
-            generate_script_short(tr, params, custom_clips)
+            short_result = generate_script_short(
+                tr,
+                params,
+                custom_clips,
+                subtitle_paths=subtitle_paths,
+                video_theme=video_theme,
+                temperature=st.session_state.get('temperature', 0.7),
+                plot_analysis=plot_analysis,
+                subtitle_content=st.session_state.get('subtitle_content', ''),
+                enable_web_search=web_search_enabled,
+                video_paths=_selected_video_paths(),
+                drama_genre=_resolve_short_drama_type(),
+                prompt_category=summary_config["prompt_category"],
+                search_keywords=summary_config["search_keywords"],
+                empty_title_message_key=summary_config["empty_title_message_key"],
+                web_search_context_description=summary_config["web_search_context_description"],
+            )
+            if short_result and short_result.get("plot_analysis"):
+                st.session_state[pending_plot_key] = {
+                    "plot_analysis": short_result["plot_analysis"],
+                    "subtitle_path": subtitle_path,
+                    "signature": current_signature,
+                }
+                st.session_state[plot_source_key] = subtitle_path
+                st.session_state[plot_signature_key] = current_signature
         else:
             load_script(tr, script_path)
 

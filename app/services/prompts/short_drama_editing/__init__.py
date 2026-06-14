@@ -11,6 +11,7 @@
 
 from .subtitle_analysis import SubtitleAnalysisPrompt
 from .plot_extraction import PlotExtractionPrompt
+from .script_generation import ScriptGenerationPrompt
 from ..manager import PromptManager
 
 
@@ -25,9 +26,14 @@ def register_prompts():
     plot_extraction_prompt = PlotExtractionPrompt()
     PromptManager.register_prompt(plot_extraction_prompt, is_default=True)
 
+    # 注册混剪脚本生成提示词
+    script_generation_prompt = ScriptGenerationPrompt()
+    PromptManager.register_prompt(script_generation_prompt, is_default=True)
+
 
 __all__ = [
     "SubtitleAnalysisPrompt",
-    "PlotExtractionPrompt", 
+    "PlotExtractionPrompt",
+    "ScriptGenerationPrompt",
     "register_prompts"
 ]

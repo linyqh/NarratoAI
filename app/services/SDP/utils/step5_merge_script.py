@@ -8,7 +8,8 @@ from typing import Dict, List
 
 def merge_script(
         plot_points: List[Dict],
-        output_path: str
+        output_path: str,
+        video_paths=None,
 ):
     """合并生成最终脚本
 
@@ -19,6 +20,10 @@ def merge_script(
     Returns:
         str: 最终合并的脚本
     """
+    if isinstance(video_paths, str):
+        video_paths = [video_paths]
+    video_paths = [path for path in (video_paths or []) if isinstance(path, str) and path.strip()]
+
     # 创建包含所有信息的临时列表
     final_script = []
 
@@ -29,9 +34,12 @@ def merge_script(
             "_id": number,
             "timestamp": plot_point["timestamp"],
             "picture": plot_point["picture"],
-            "narration": f"播放原生_{os.urandom(4).hex()}",
+            "narration": f"播放原片{number}",
             "OST": 1,  # OST=0 仅保留解说 OST=2 保留解说和原声
         }
+        if video_paths:
+            script_item["video_id"] = 1
+            script_item["video_name"] = os.path.basename(video_paths[0])
         final_script.append(script_item)
         number += 1
 
