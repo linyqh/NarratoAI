@@ -51,6 +51,9 @@
     text_openai_max_tokens = 65536
     text_openai_thinking_level = "auto"  # auto/off/low/medium/high
 
+    # 默认只允许受信任的 OpenAI 兼容端点。确需自建网关时，确认 API key 会发送到该端点后再启用。
+    allow_custom_openai_base_url = false
+
     # ===== Tavily 联网搜索配置 =====
     # 用于短剧剧情理解前，按短剧名称检索公开剧情/人物/分集信息
     tavily_api_key = ""  # 获取地址：https://app.tavily.com

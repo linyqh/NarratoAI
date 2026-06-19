@@ -15,6 +15,7 @@ from app.config.defaults import (
     get_openai_compatible_ui_values,
     normalize_openai_compatible_model_name as normalize_openai_compatible_model_id,
 )
+from app.utils.openai_base_url_security import validate_openai_compatible_base_url
 from app.utils import utils
 from loguru import logger
 from app.services.llm.unified_service import UnifiedLLMService
@@ -72,6 +73,11 @@ def validate_base_url(base_url: str, provider: str) -> tuple[bool, str]:
     base_url = base_url.strip()
     if not (base_url.startswith('http://') or base_url.startswith('https://')):
         return False, f"{provider} Base URL必须以http://或https://开头"
+
+    try:
+        validate_openai_compatible_base_url(base_url)
+    except ValueError as exc:
+        return False, f"{provider} Base URL未通过安全校验: {exc}"
 
     return True, ""
 
@@ -420,6 +426,7 @@ def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
     elif provider.lower() == 'gemini(openai)':
         # OpenAI兼容的Gemini代理测试
         try:
+            base_url = validate_openai_compatible_base_url(base_url)
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
@@ -444,6 +451,7 @@ def test_vision_model_connection(api_key, base_url, model_name, provider, tr):
     else:
         from openai import OpenAI
         try:
+            base_url = validate_openai_compatible_base_url(base_url)
             client = OpenAI(
                 api_key=api_key,
                 base_url=base_url,
@@ -493,9 +501,10 @@ def test_openai_compatible_vision_model(api_key: str, base_url: str, model_name:
         from PIL import Image
 
         logger.debug(
-            f"OpenAI 兼容视觉模型连通性测试: model={model_name}, api_key={api_key[:10]}..., base_url={base_url}"
+            f"OpenAI 兼容视觉模型连通性测试: model={model_name}, base_url={base_url}"
         )
 
+        base_url = validate_openai_compatible_base_url(base_url)
         client = OpenAI(
             api_key=api_key,
             base_url=base_url or None,
@@ -548,9 +557,10 @@ def test_openai_compatible_text_model(api_key: str, base_url: str, model_name: s
         from openai import OpenAI
 
         logger.debug(
-            f"OpenAI 兼容文本模型连通性测试: model={model_name}, api_key={api_key[:10]}..., base_url={base_url}"
+            f"OpenAI 兼容文本模型连通性测试: model={model_name}, base_url={base_url}"
         )
 
+        base_url = validate_openai_compatible_base_url(base_url)
         client = OpenAI(
             api_key=api_key,
             base_url=base_url or None,

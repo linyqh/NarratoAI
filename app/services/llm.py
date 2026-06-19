@@ -17,6 +17,7 @@ import subprocess
 from typing import Union, TextIO
 
 from app.config import config
+from app.utils.openai_base_url_security import validate_openai_compatible_base_url
 from app.utils.utils import clean_model_output
 
 _max_retries = 5
@@ -330,6 +331,7 @@ def _generate_response(prompt: str, llm_provider: str = None) -> str:
                 azure_endpoint=base_url,
             )
         else:
+            base_url = validate_openai_compatible_base_url(base_url)
             client = OpenAI(
                 api_key=api_key,
                 base_url=base_url,

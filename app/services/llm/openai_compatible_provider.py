@@ -23,8 +23,12 @@ from openai import (
 
 from app.config import config
 from app.config.defaults import DEFAULT_LLM_GENERATION_CONFIG, normalize_openai_compatible_model_name
+from app.utils.openai_base_url_security import (
+    is_trusted_openai_compatible_base_url,
+    validate_openai_compatible_base_url as _validate_openai_compatible_base_url_value,
+)
 from .base import TextModelProvider, VisionModelProvider
-from .exceptions import APICallError, AuthenticationError, ContentFilterError, RateLimitError
+from .exceptions import APICallError, AuthenticationError, ConfigurationError, ContentFilterError, RateLimitError
 
 
 def _normalize_model_name(model_name: str) -> str:
@@ -39,6 +43,13 @@ def _is_response_format_error(message: str) -> bool:
 def _is_content_filter_error(message: str) -> bool:
     lowered = (message or "").lower()
     return "content_filter" in lowered or "safety" in lowered
+
+
+def validate_openai_compatible_base_url(base_url: Optional[str]) -> Optional[str]:
+    try:
+        return _validate_openai_compatible_base_url_value(base_url)
+    except ValueError as exc:
+        raise ConfigurationError(str(exc), "base_url") from exc
 
 
 def _clean_json_output(output: str) -> str:
@@ -118,6 +129,7 @@ class _OpenAICompatibleBase:
         """按请求构建 AsyncOpenAI 客户端，支持动态覆盖 api_key / base_url。"""
         api_key = api_key_override or self.api_key
         base_url = base_url_override or self.base_url or None
+        base_url = validate_openai_compatible_base_url(base_url)
 
         timeout_seconds: float = timeout_override or config.app.get("llm_text_timeout", 180)
         max_retries: int = max_retries_override or config.app.get("llm_max_retries", 3)
