@@ -25,6 +25,9 @@ tqdm>=4.66.6
 tenacity>=9.0.0
 
 # 可选依赖（根据功能需要）
+# 如果使用 TwelveLabs Pegasus 视频理解作为视觉提供商，取消注释下面的行
+# twelvelabs>=1.2.8
+
 # 如果需要本地语音识别，取消注释下面的行
 # faster-whisper>=1.0.1
 

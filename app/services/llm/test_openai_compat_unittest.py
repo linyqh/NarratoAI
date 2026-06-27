@@ -45,11 +45,12 @@ class OpenAICompatManagerTests(unittest.TestCase):
         config.app.clear()
         config.app.update(self._original_app)
 
-    def test_register_all_providers_only_registers_openai_provider(self):
+    def test_register_all_providers_registers_expected_providers(self):
         register_all_providers()
 
+        # 文本仅 OpenAI 兼容；视觉额外提供可选的 TwelveLabs Pegasus。
         self.assertEqual({"openai"}, set(LLMServiceManager.list_text_providers()))
-        self.assertEqual({"openai"}, set(LLMServiceManager.list_vision_providers()))
+        self.assertEqual({"openai", "twelvelabs"}, set(LLMServiceManager.list_vision_providers()))
 
     def test_get_text_provider_uses_openai_keys(self):
         LLMServiceManager.register_text_provider("openai", DummyOpenAITextProvider)

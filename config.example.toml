@@ -32,6 +32,16 @@
     vision_openai_max_tokens = 65536
     vision_openai_thinking_level = "auto"  # auto/off/low/medium/high
 
+    # ===== 可选：TwelveLabs Pegasus 视频理解 =====
+    # 将 vision_llm_provider 改为 "twelvelabs" 即可启用（默认仍为 openai，不影响现有行为）。
+    # Pegasus 是原生的视频理解模型，会把每批关键帧拼成短片后整体理解，更擅长把握镜头内的
+    # 动作、时序与高光片段，从而生成更贴合画面的解说。需要本地可用的 ffmpeg。
+    # 免费 API Key 获取地址：https://twelvelabs.io （有较充裕的免费额度）
+    # vision_llm_provider = "twelvelabs"
+    vision_twelvelabs_api_key = ""        # 填入 TwelveLabs API Key
+    vision_twelvelabs_model_name = "pegasus1.5"  # pegasus1.5 / pegasus1.2
+    vision_twelvelabs_max_tokens = 1024   # Pegasus 1.5 有效区间 512-98304
+
     # ===== 文本模型配置 =====
     text_llm_provider = "openai"
 
