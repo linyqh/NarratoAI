@@ -72,6 +72,7 @@ Below is a screenshot of this person's x (Twitter) homepage
 - [x] Optimized the story generation process and improved the generation effect
 - [x] Released version 0.3.5 integration package
 - [x] Support Alibaba Qwen2-VL large model for video understanding
+- [x] Support TwelveLabs Pegasus as an optional video-understanding backend (analyzes footage natively to drive highlight selection and commentary; opt-in, set `vision_llm_provider = "twelvelabs"`)
 - [x] Support short drama commentary
   - [x] One-click merge materials
   - [x] One-click transcription

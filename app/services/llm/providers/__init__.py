@@ -12,7 +12,7 @@ def register_all_providers():
     """
     注册所有提供商
 
-    当前实现：只注册 OpenAI 兼容统一接口
+    当前实现：注册 OpenAI 兼容统一接口，并可选注册 TwelveLabs Pegasus 视频理解。
     """
     # 在函数内部导入，避免循环依赖
     from ..manager import LLMServiceManager
@@ -31,6 +31,14 @@ def register_all_providers():
     LLMServiceManager.register_text_provider('openai', OpenAICompatibleTextProvider)
 
     logger.info("✅ OpenAI 兼容提供商注册完成")
+
+    # ===== 注册 TwelveLabs Pegasus 视频理解（可选视觉提供商）=====
+    # 仅当用户将 vision_llm_provider 设为 "twelvelabs" 时启用；默认行为保持不变。
+    from ..twelvelabs_provider import TwelveLabsVisionProvider
+
+    LLMServiceManager.register_vision_provider('twelvelabs', TwelveLabsVisionProvider)
+
+    logger.info("✅ TwelveLabs Pegasus 视觉提供商注册完成")
 
 
 # 导出注册函数
