@@ -129,6 +129,7 @@
     # backend = "local" 使用本地 FunASR-Pack API；backend = "firered" 使用本地 FireRedASR2-AED-Pack API；backend = "bailian" 使用阿里百炼在线 fun-asr
     auto_transcribe_enabled = false
     backend = "local"
+    # 支持填写服务根地址、完整 /asr 地址，或 OpenAI-compatible /v1 地址
     api_url = "http://127.0.0.1:7860"
     firered_api_url = "http://127.0.0.1:7867"
     hotword = ""

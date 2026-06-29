@@ -23,6 +23,7 @@ UPLOAD_POLICY_URL = f"{DASHSCOPE_BASE_URL}/api/v1/uploads"
 TRANSCRIPTION_URL = f"{DASHSCOPE_BASE_URL}/api/v1/services/audio/asr/transcription"
 TASK_URL_TEMPLATE = f"{DASHSCOPE_BASE_URL}/api/v1/tasks/{{task_id}}"
 MODEL_NAME = "fun-asr"
+LOCAL_FUN_ASR_OPENAI_MODEL = "sensevoice"
 LOCAL_FUN_ASR_API_URL = "http://127.0.0.1:7860"
 LOCAL_FIRERED_ASR_API_URL = "http://127.0.0.1:7867"
 TERMINAL_FAILED_STATUSES = {"FAILED", "CANCELED", "UNKNOWN"}
@@ -111,16 +112,40 @@ def _local_base_url(api_url: str = "") -> str:
     api_url = _normalize_local_api_url(api_url)
     parsed = urlparse(api_url)
     path = parsed.path.rstrip("/")
-    if path.endswith("/asr"):
-        path = path[:-4].rstrip("/")
+    for suffix in ("/v1/audio/transcriptions", "/v1", "/asr"):
+        if path.endswith(suffix):
+            path = path[: -len(suffix)].rstrip("/")
+            break
     return urlunparse(parsed._replace(path=path, params="", query="", fragment="")).rstrip("/")
 
 
 def _local_asr_url(api_url: str = "") -> str:
     api_url = _normalize_local_api_url(api_url)
-    if urlparse(api_url).path.rstrip("/").endswith("/asr"):
+    path = urlparse(api_url).path.rstrip("/")
+    if path.endswith("/asr"):
         return api_url
+    if path.endswith("/v1") or path.endswith("/v1/audio/transcriptions"):
+        return f"{_local_base_url(api_url)}/asr"
     return f"{api_url}/asr"
+
+
+def _local_openai_transcriptions_url(api_url: str = "") -> str:
+    api_url = _normalize_local_api_url(api_url)
+    path = urlparse(api_url).path.rstrip("/")
+    if path.endswith("/v1/audio/transcriptions"):
+        return api_url
+    if path.endswith("/v1"):
+        return f"{api_url}/audio/transcriptions"
+    return f"{_local_base_url(api_url)}/v1/audio/transcriptions"
+
+
+def _local_fun_asr_prefers_openai(api_url: str = "") -> bool:
+    path = urlparse(_normalize_local_api_url(api_url)).path.rstrip("/")
+    return path.endswith("/v1") or path.endswith("/v1/audio/transcriptions")
+
+
+def _is_not_found_response(response: requests.Response) -> bool:
+    return getattr(response, "status_code", 200) == 404
 
 
 def _absolute_local_download_url(api_url: str, download_url: str) -> str:
@@ -547,27 +572,52 @@ def request_local_fun_asr(
     api_url: str = LOCAL_FUN_ASR_API_URL,
     hotword: str = "",
     enable_spk: Optional[bool] = None,
+    model: str = LOCAL_FUN_ASR_OPENAI_MODEL,
     timeout: float = 600.0,
     session=requests,
 ) -> dict[str, Any]:
-    """Call the local FunASR-Pack `/asr` API and return its JSON result."""
+    """Call the local FunASR-Pack API and return its JSON result."""
     _require_local_file(local_file)
-    data: dict[str, str] = {}
+    rest_data: dict[str, str] = {}
     if hotword.strip():
-        data["hotword"] = hotword.strip()
+        rest_data["hotword"] = hotword.strip()
     if enable_spk is not None:
-        data["enable_spk"] = "true" if enable_spk else "false"
+        rest_data["enable_spk"] = "true" if enable_spk else "false"
 
-    with open(local_file, "rb") as file_obj:
-        files = {"file": (_safe_upload_name(local_file), file_obj)}
-        response = _session_post(
-            session,
-            _local_asr_url(api_url),
-            data=data,
-            files=files,
-            timeout=timeout,
-        )
-    return _local_json(response, "调用本地 FunASR-Pack ASR API")
+    openai_data: dict[str, str] = {
+        "model": (model or LOCAL_FUN_ASR_OPENAI_MODEL).strip() or LOCAL_FUN_ASR_OPENAI_MODEL,
+        "response_format": "verbose_json",
+    }
+    if enable_spk is not None:
+        openai_data["spk"] = "true" if enable_spk else "false"
+
+    rest_url = _local_asr_url(api_url)
+    openai_url = _local_openai_transcriptions_url(api_url)
+    attempts = [
+        (openai_url, openai_data),
+        (rest_url, rest_data),
+    ] if _local_fun_asr_prefers_openai(api_url) else [
+        (rest_url, rest_data),
+        (openai_url, openai_data),
+    ]
+
+    last_response = None
+    for index, (url, data) in enumerate(attempts):
+        with open(local_file, "rb") as file_obj:
+            files = {"file": (_safe_upload_name(local_file), file_obj)}
+            response = _session_post(
+                session,
+                url,
+                data=data,
+                files=files,
+                timeout=timeout,
+            )
+        if index == 0 and _is_not_found_response(response):
+            last_response = response
+            continue
+        return _local_json(response, "调用本地 FunASR-Pack ASR API")
+
+    return _local_json(last_response, "调用本地 FunASR-Pack ASR API")
 
 
 def request_local_firered_asr(
@@ -640,6 +690,40 @@ def _local_result_items(result_json: dict[str, Any]):
         yield result_json
 
 
+def _openai_segment_ms(value: Any, field_name: str) -> float:
+    return _timestamp_ms(value, field_name) * 1000
+
+
+def _blocks_from_openai_segments(result_json: dict[str, Any], max_chars: int) -> list[dict[str, Any]]:
+    segments = result_json.get("segments") or []
+    if not isinstance(segments, list):
+        return []
+
+    blocks: list[dict[str, Any]] = []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        text = str(segment.get("text") or "").strip()
+        if not text:
+            continue
+        start = segment.get("start", segment.get("start_time", 0))
+        end = segment.get("end", segment.get("end_time"))
+        start_ms = _openai_segment_ms(start, "openai.segment.start")
+        end_ms = _openai_segment_ms(end, "openai.segment.end") if end is not None else start_ms + 500
+        blocks.extend(
+            _blocks_from_sentence(
+                {
+                    "begin_time": start_ms,
+                    "end_time": end_ms,
+                    "text": text,
+                    "speaker_id": segment.get("speaker"),
+                },
+                max_chars=max_chars,
+            )
+        )
+    return blocks
+
+
 def _blocks_from_local_timestamp(item: dict[str, Any], max_chars: int, max_duration: float) -> list[dict[str, Any]]:
     text = str(item.get("text") or "").strip()
     timestamps = item.get("timestamp") or []
@@ -702,7 +786,7 @@ def local_fun_asr_result_to_srt(
     max_duration: float = 3.5,
 ) -> str:
     """Convert a FunASR-Pack JSON response into SRT when the API SRT is unavailable."""
-    blocks: list[dict[str, Any]] = []
+    blocks = _blocks_from_openai_segments(result_json, max_chars=max_chars)
     for item in _local_result_items(result_json):
         item_blocks = _blocks_from_local_timestamp(item, max_chars, max_duration)
         if not item_blocks:
