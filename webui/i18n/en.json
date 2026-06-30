@@ -483,7 +483,7 @@
     "Auto Transcription FireRed Caption": "After the final video is merged, it will be converted to SRT subtitles through the locally running FireRedASR2-AED-Pack API.",
     "Auto Transcription Online Caption": "After the final video is merged, it will be uploaded to temporary Ali Bailian storage and converted to SRT subtitles with fun-asr.",
     "Local FunASR-Pack API URL": "Local FunASR-Pack API URL",
-    "Local FunASR-Pack API URL Help": "For example, http://127.0.0.1:7860. A full /asr endpoint URL is also supported.",
+    "Local FunASR-Pack API URL Help": "For example, http://127.0.0.1:7860. A full /asr, /v1, or /v1/audio/transcriptions URL is also supported.",
     "Local FireRedASR API URL": "Local ASR API URL",
     "Local FireRedASR API URL Help": "For example, http://127.0.0.1:7867. A full /asr endpoint URL is also supported.",
     "Fun-ASR Hotword": "Hotword",

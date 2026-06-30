@@ -422,7 +422,7 @@
     "Auto Transcription FireRed Caption": "将在最终视频合并完成后，通过本机运行的 FireRedASR2-AED-Pack API 生成 SRT 字幕。",
     "Auto Transcription Online Caption": "将在最终视频合并完成后，自动上传到阿里百炼临时存储并通过 fun-asr 生成 SRT 字幕。",
     "Local FunASR-Pack API URL": "本地 FunASR-Pack API 地址",
-    "Local FunASR-Pack API URL Help": "例如 http://127.0.0.1:7860；也可以直接填到 /asr 的完整地址。",
+    "Local FunASR-Pack API URL Help": "例如 http://127.0.0.1:7860；也可以直接填写 /asr、/v1 或 /v1/audio/transcriptions 的完整地址。",
     "Local FireRedASR API URL": "本地ASR API 地址",
     "Local FireRedASR API URL Help": "例如 http://127.0.0.1:7867；也可以直接填到 /asr 的完整地址。",
     "Fun-ASR Hotword": "热词",

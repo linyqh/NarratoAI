@@ -408,6 +408,69 @@ class LocalFunAsrServiceTests(unittest.TestCase):
         self.assertEqual(123, session.calls[0][2]["timeout"])
         self.assertIn("file", session.calls[0][2]["files"])
 
+    def test_request_local_fun_asr_falls_back_to_openai_transcriptions_on_404(self):
+        class LocalSession:
+            def __init__(self):
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append(("POST", url, kwargs))
+                if url.endswith("/asr"):
+                    return FakeResponse({"detail": "Not Found"}, status_code=404)
+                return FakeResponse(
+                    {
+                        "text": "你好",
+                        "segments": [{"start": 0.0, "end": 1.2, "text": "你好"}],
+                    }
+                )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_file = Path(tmp_dir) / "audio.wav"
+            local_file.write_bytes(b"audio")
+            session = LocalSession()
+
+            result = fasr.request_local_fun_asr(
+                str(local_file),
+                api_url="http://127.0.0.1:7860",
+                enable_spk=True,
+                session=session,
+            )
+
+        self.assertEqual("你好", result["text"])
+        self.assertEqual("http://127.0.0.1:7860/asr", session.calls[0][1])
+        self.assertEqual("http://127.0.0.1:7860/v1/audio/transcriptions", session.calls[1][1])
+        self.assertEqual(
+            {"model": "sensevoice", "response_format": "verbose_json", "spk": "true"},
+            session.calls[1][2]["data"],
+        )
+
+    def test_request_local_fun_asr_prefers_explicit_openai_base_url(self):
+        class LocalSession:
+            def __init__(self):
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append(("POST", url, kwargs))
+                return FakeResponse({"text": "你好"})
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_file = Path(tmp_dir) / "audio.wav"
+            local_file.write_bytes(b"audio")
+            session = LocalSession()
+
+            fasr.request_local_fun_asr(
+                str(local_file),
+                api_url="http://127.0.0.1:8000/v1",
+                session=session,
+            )
+
+        self.assertEqual(1, len(session.calls))
+        self.assertEqual("http://127.0.0.1:8000/v1/audio/transcriptions", session.calls[0][1])
+        self.assertEqual(
+            {"model": "sensevoice", "response_format": "verbose_json"},
+            session.calls[0][2]["data"],
+        )
+
     def test_create_with_local_fun_asr_copies_pack_srt_file(self):
         class LocalSession:
             def __init__(self, srt_file):
@@ -479,6 +542,20 @@ class LocalFunAsrServiceTests(unittest.TestCase):
 
         self.assertIn("00:00:00,000 --> 00:00:00,600\n你好，", srt)
         self.assertIn("世界。", srt)
+
+    def test_local_fun_asr_result_to_srt_uses_openai_segments(self):
+        result = {
+            "text": "你好世界",
+            "segments": [
+                {"start": 1.2, "end": 2.4, "text": "你好"},
+                {"start": 2.4, "end": 3.6, "text": "世界"},
+            ],
+        }
+
+        srt = fasr.local_fun_asr_result_to_srt(result, max_chars=20)
+
+        self.assertIn("00:00:01,200 --> 00:00:02,400\n你好", srt)
+        self.assertIn("00:00:02,400 --> 00:00:03,600\n世界", srt)
 
 
 class LocalFireRedAsrServiceTests(unittest.TestCase):
