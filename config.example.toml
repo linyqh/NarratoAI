@@ -26,7 +26,7 @@
     #   - SiliconFlow: siliconflow/Qwen/Qwen2.5-VL-32B-Instruct
     vision_openai_model_name = "Qwen/Qwen3.5-122B-A10B"
     vision_openai_api_key = ""  # 填入对应 provider 的 API key
-    vision_openai_base_url = "https://api.siliconflow.cn/v1"  # 可选：自定义 API base URL（官方 OpenAI 可留空）
+    vision_openai_base_url = "https://api.siliconflow.cn/v1"  # 可选：自定义 API base URL；界面会提示 API key 将发送到对应端点
     vision_openai_temperature = 1.0
     vision_openai_top_p = 0.95
     vision_openai_max_tokens = 65536
@@ -55,7 +55,7 @@
     #   - Moonshot: moonshot/moonshot-v1-8k
     text_openai_model_name = "Pro/zai-org/GLM-5"
     text_openai_api_key = ""  # 填入对应 provider 的 API key
-    text_openai_base_url = "https://api.siliconflow.cn/v1"  # 可选：自定义 API base URL（官方 OpenAI 可留空）
+    text_openai_base_url = "https://api.siliconflow.cn/v1"  # 可选：自定义 API base URL；界面会提示 API key 将发送到对应端点
     text_openai_temperature = 1.0
     text_openai_top_p = 0.95
     text_openai_max_tokens = 65536

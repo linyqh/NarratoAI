@@ -6,10 +6,17 @@ from unittest.mock import patch
 
 from app.config import config
 from app.services.llm.base import TextModelProvider
+from app.services.llm.exceptions import ConfigurationError
 from app.services.llm.manager import LLMServiceManager
 from app.services.llm.migration_adapter import LegacyLLMAdapter, VisionAnalyzerAdapter
-from app.services.llm.openai_compatible_provider import OpenAICompatibleTextProvider, OpenAICompatibleVisionProvider
+from app.services.llm.openai_compatible_provider import (
+    OpenAICompatibleTextProvider,
+    OpenAICompatibleVisionProvider,
+    is_trusted_openai_compatible_base_url,
+    validate_openai_compatible_base_url,
+)
 from app.services.llm.providers import register_all_providers
+from app.utils.openai_base_url_security import openai_compatible_base_url_warning
 
 
 class DummyOpenAITextProvider(TextModelProvider):
@@ -168,6 +175,77 @@ class OpenAICompatGenerationOptionTests(unittest.TestCase):
 
         self.assertEqual(0.9, options["temperature"])
         self.assertEqual(512, options["max_tokens"])
+
+
+class OpenAICompatBaseURLValidationTests(unittest.TestCase):
+    def setUp(self):
+        self._original_app = dict(config.app)
+
+    def tearDown(self):
+        config.app.clear()
+        config.app.update(self._original_app)
+
+    def test_known_providers_and_local_ollama_are_trusted(self):
+        trusted_urls = [
+            "https://api.openai.com/v1",
+            "https://api.siliconflow.cn/v1",
+            "https://openrouter.ai/api/v1",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "https://example.openai.azure.com/openai/deployments/demo",
+            "http://localhost:11434/v1",
+            "http://127.0.0.1:11434/v1",
+        ]
+
+        for url in trusted_urls:
+            with self.subTest(url=url):
+                self.assertTrue(is_trusted_openai_compatible_base_url(url))
+
+    def test_unrecognized_or_unsafe_base_urls_are_not_trusted(self):
+        untrusted_urls = [
+            "https://attacker.example/v1",
+            "http://api.openai.com/v1",
+            "https://user@api.openai.com/v1",
+            "https://127.0.0.1:9999/v1",
+            "not-a-url",
+        ]
+
+        for url in untrusted_urls:
+            with self.subTest(url=url):
+                self.assertFalse(is_trusted_openai_compatible_base_url(url))
+
+    def test_build_client_allows_well_formed_custom_base_url_by_default(self):
+        provider = OpenAICompatibleTextProvider(
+            api_key="test-key",
+            model_name="test-model",
+            base_url="https://custom.example/v1",
+        )
+
+        with patch("app.services.llm.openai_compatible_provider.AsyncOpenAI") as async_openai:
+            provider._build_client()
+
+        self.assertEqual("https://custom.example/v1", async_openai.call_args.kwargs["base_url"])
+
+    def test_custom_base_url_validation_returns_normalized_url(self):
+        self.assertEqual(
+            "https://custom.example/v1",
+            validate_openai_compatible_base_url(" https://custom.example/v1 "),
+        )
+
+    def test_custom_base_url_warning_only_for_untrusted_well_formed_urls(self):
+        warning = openai_compatible_base_url_warning("https://custom.example/v1")
+        self.assertIn("custom.example", warning)
+        self.assertEqual("", openai_compatible_base_url_warning("https://api.openai.com/v1"))
+        self.assertEqual("", openai_compatible_base_url_warning(""))
+
+    def test_custom_base_url_validation_rejects_malformed_urls(self):
+        provider = OpenAICompatibleTextProvider(
+            api_key="test-key",
+            model_name="test-model",
+            base_url="https://user@custom.example/v1",
+        )
+
+        with self.assertRaises(ConfigurationError):
+            provider._build_client()
 
 
 class ExplicitVisionAdapterSettingsTests(unittest.IsolatedAsyncioTestCase):
