@@ -1150,14 +1150,13 @@ def doubaotts_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.
     """
     # 读取配置
     doubaotts_cfg = getattr(config, "doubaotts", {}) or {}
+    api_key = (doubaotts_cfg.get("api_key", "") or doubaotts_cfg.get("apikey", "")).strip()
     appid = doubaotts_cfg.get("appid", "")
     token = doubaotts_cfg.get("token", "")
-    ak = doubaotts_cfg.get("ak", "")
-    sk = doubaotts_cfg.get("sk", "")
     cluster = doubaotts_cfg.get("cluster", "volcano_tts")
     
-    if not appid or not token:
-        logger.error("豆包语音 TTS 配置未完成")
+    if not api_key and (not appid or not token):
+        logger.error("豆包语音 TTS 配置未完成，请配置 API Key，或填写旧版 AppID 和 Token")
         return None
 
     # 准备参数
@@ -1174,12 +1173,15 @@ def doubaotts_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.
     pitch = doubaotts_cfg.get("pitch", 1.0)
     silence_duration = doubaotts_cfg.get("silence_duration", 0.125)
     
-    payload = {
-        "app": {
+    app_payload = {"cluster": cluster}
+    if not api_key:
+        app_payload.update({
             "appid": appid,
             "token": token,
-            "cluster": cluster
-        },
+        })
+
+    payload = {
+        "app": app_payload,
         "user": {
             "uid": "NarratoAI"
         },
@@ -1206,11 +1208,14 @@ def doubaotts_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.
     # API 地址
     url = "https://openspeech.bytedance.com/api/v1/tts"
     
-    # 构建请求头（使用Bearer Token认证）
+    # 构建请求头。新版控制台优先使用 API Key，旧配置继续使用 Token。
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer;{token}"
     }
+    if api_key:
+        headers["X-Api-Key"] = api_key
+    else:
+        headers["Authorization"] = f"Bearer;{token}"
 
     for i in range(3):
         try:
