@@ -4,8 +4,54 @@ import shutil
 from loguru import logger
 
 from app.config import config
+from app.services.llm.unified_service import UnifiedLLMService
 from app.utils import ffmpeg_detector, ffmpeg_utils
-from app.utils.utils import storage_dir
+from app.utils.utils import clear_keyframes_cache, storage_dir
+
+
+APPLICATION_CACHE_SESSION_KEYS = (
+    "fonts_cache",
+    "video_files_cache",
+    "songs_cache",
+    "ffmpeg_engine_report",
+)
+
+
+def _clear_streamlit_caches():
+    st.cache_data.clear()
+    cache_resource = getattr(st, "cache_resource", None)
+    if cache_resource is not None:
+        cache_resource.clear()
+
+
+def clear_application_cache(
+    session_state=None,
+    clear_streamlit_cache=None,
+    clear_llm_cache=None,
+    clear_keyframes_cache=None,
+    reset_ffmpeg_detection=None,
+):
+    """Clear runtime caches that can keep stale UI/model/media state."""
+    state = st.session_state if session_state is None else session_state
+    for key in APPLICATION_CACHE_SESSION_KEYS:
+        state.pop(key, None)
+
+    operations = (
+        ("streamlit", clear_streamlit_cache or _clear_streamlit_caches),
+        ("llm", clear_llm_cache or UnifiedLLMService.clear_cache),
+        ("keyframes", clear_keyframes_cache or globals()["clear_keyframes_cache"]),
+        ("ffmpeg", reset_ffmpeg_detection or ffmpeg_utils.reset_hwaccel_detection),
+    )
+
+    errors = []
+    for name, operation in operations:
+        try:
+            operation()
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
+            logger.error(f"Failed to clear {name} cache: {exc}")
+
+    return errors
 
 
 def clear_directory(dir_path, tr):
@@ -188,7 +234,7 @@ def render_ffmpeg_engine_settings(tr):
 def render_system_panel(tr):
     """渲染系统设置面板"""
     with st.expander(tr("System settings"), expanded=False):
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
                 
         with col1:
             if st.button(tr("Clear frames"), use_container_width=True):
@@ -201,5 +247,13 @@ def render_system_panel(tr):
         with col3:
             if st.button(tr("Clear tasks"), use_container_width=True):
                 clear_directory(os.path.join(storage_dir(), "tasks"), tr)
+
+        with col4:
+            if st.button(tr("Clear Cache"), use_container_width=True):
+                errors = clear_application_cache()
+                if errors:
+                    st.error(f"{tr('Failed to clear cache')}: {'; '.join(errors)}")
+                else:
+                    st.success(tr("Cache cleared"))
 
         render_ffmpeg_engine_settings(tr)
