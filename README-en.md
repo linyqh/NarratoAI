@@ -33,6 +33,7 @@ NarratoAI is an automated video narration tool that provides an all-in-one solut
 </div>
 
 ## Latest News
+- 2026.07.02 Released version 0.8.4 with Doubao TTS API Key setup and legacy credential compatibility
 - 2026.04.03 Released version 0.7.8, refactored the documentary frame-analysis pipeline with a shared service and improved extraction, caching, vision batching, and narration generation
 - 2025.05.11 Released new version 0.6.0, supports **short drama commentary** and optimized editing process
 - 2025.03.06 Released new version 0.5.2, supports DeepSeek R1 and DeepSeek V3 models for short drama mixing

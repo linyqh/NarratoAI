@@ -1,5 +1,5 @@
 [app]
-    project_version="0.7.8"
+    project_version="0.8.4"
 
     # LLM API 超时配置（秒）
     llm_vision_timeout = 120  # 视觉模型基础超时时间
@@ -221,10 +221,14 @@
 
 [doubaotts]
     # 豆包语音 TTS 配置
+    # 新版配置优先填写 API Key；旧版 appid/token 配置仍兼容
     # 申请流程：
-    # 1. 打开 https://console.volcengine.com/iam/keymanage 新建 Access Key 和 Secret Key
-    # 2. 打开 https://www.volcengine.com/product/voice-tech 点击立即使用
-    # 3. 在 API 服务中心找到音频生成下面的语音合成，获取 APPID 和 Token
+    # 1. 打开火山引擎豆包语音控制台
+    # 2. 进入 API Key 管理并创建 API Key
+    # 3. 确认已开通豆包语音合成服务
+    api_key = ""
+
+    # 旧版配置（兼容保留）
     ak = ""
     sk = ""
     appid = ""

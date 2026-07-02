@@ -1464,42 +1464,55 @@ def render_omnivoice_tts_settings(tr):
 
 def render_doubaotts_settings(tr):
     """渲染豆包语音 TTS 设置"""
-    # AK 输入
-    ak = st.text_input(
-        "Access Key",
-        value=config.doubaotts.get("ak", ""),
-        help=tr("Volcengine Access Key Help")
-    )
-
-    # SK 输入
-    sk = st.text_input(
-        "Secret Key",
-        value=config.doubaotts.get("sk", ""),
+    api_key = st.text_input(
+        "API Key",
+        value=config.doubaotts.get("api_key", ""),
         type="password",
-        help=tr("Volcengine Secret Key Help")
+        help=tr("Doubao API Key Help")
     )
+    ak = config.doubaotts.get("ak", "")
+    sk = config.doubaotts.get("sk", "")
+    appid = config.doubaotts.get("appid", "")
+    token = config.doubaotts.get("token", "")
+    cluster = config.doubaotts.get("cluster", "volcano_tts")
 
-    # AppID 输入
-    appid = st.text_input(
-        "AppID",
-        value=config.doubaotts.get("appid", ""),
-        help=tr("Doubao AppID Help")
-    )
+    with st.expander(tr("Doubao Legacy Credentials"), expanded=False):
+        # AK 输入
+        ak = st.text_input(
+            "Access Key",
+            value=ak,
+            help=tr("Volcengine Access Key Help")
+        )
 
-    # Token 输入
-    token = st.text_input(
-        "Token",
-        value=config.doubaotts.get("token", ""),
-        type="password",
-        help=tr("Doubao Token Help")
-    )
+        # SK 输入
+        sk = st.text_input(
+            "Secret Key",
+            value=sk,
+            type="password",
+            help=tr("Volcengine Secret Key Help")
+        )
 
-    # 集群配置
-    cluster = st.text_input(
-        tr("Cluster"),
-        value=config.doubaotts.get("cluster", "volcano_tts"),
-        help=tr("Doubao Cluster Help")
-    )
+        # AppID 输入
+        appid = st.text_input(
+            "AppID",
+            value=appid,
+            help=tr("Doubao AppID Help")
+        )
+
+        # Token 输入
+        token = st.text_input(
+            "Token",
+            value=token,
+            type="password",
+            help=tr("Doubao Token Help")
+        )
+
+        # 集群配置
+        cluster = st.text_input(
+            tr("Cluster"),
+            value=cluster,
+            help=tr("Doubao Cluster Help")
+        )
 
     # 音色选择
     # 在线音色列表（从文档中提取）
@@ -1676,6 +1689,7 @@ def render_doubaotts_settings(tr):
         st.info(tr("Doubao TTS Fill Credentials Notice"))
     
     # 保存配置
+    config.doubaotts["api_key"] = api_key
     config.doubaotts["ak"] = ak
     config.doubaotts["sk"] = sk
     config.doubaotts["appid"] = appid
@@ -1690,20 +1704,10 @@ def render_doubaotts_settings(tr):
     st.session_state['voice_rate'] = voice_rate # 确保语速参数被保存到session state
 
     # 显示配置状态
-    if ak and sk and appid and token:
+    if api_key or (appid and token):
         st.success(tr("Doubao TTS configured"))
     else:
-        missing = []
-        if not ak:
-            missing.append("Access Key")
-        if not sk:
-            missing.append("Secret Key")
-        if not appid:
-            missing.append("AppID")
-        if not token:
-            missing.append("Token")
-        if missing:
-            st.warning(tr("Please configure missing fields").format(fields=', '.join(missing)))
+        st.warning(tr("Please configure missing fields").format(fields="API Key / AppID + Token"))
 
 
 def render_voice_preview_new(tr, selected_engine):
