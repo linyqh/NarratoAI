@@ -15,7 +15,10 @@ from app.config.defaults import (
     get_openai_compatible_ui_values,
     normalize_openai_compatible_model_name as normalize_openai_compatible_model_id,
 )
-from app.utils.openai_base_url_security import validate_openai_compatible_base_url
+from app.utils.openai_base_url_security import (
+    openai_compatible_base_url_warning,
+    validate_openai_compatible_base_url,
+)
 from app.utils import utils
 from loguru import logger
 from app.services.llm.unified_service import UnifiedLLMService
@@ -77,9 +80,15 @@ def validate_base_url(base_url: str, provider: str) -> tuple[bool, str]:
     try:
         validate_openai_compatible_base_url(base_url)
     except ValueError as exc:
-        return False, f"{provider} Base URL未通过安全校验: {exc}"
+        return False, f"{provider} Base URL格式无效: {exc}"
 
     return True, ""
+
+
+def show_base_url_security_warning(base_url: str) -> None:
+    warning = openai_compatible_base_url_warning(base_url)
+    if warning:
+        st.warning(warning)
 
 
 def validate_model_name(model_name: str, provider: str) -> tuple[bool, str]:
@@ -663,6 +672,7 @@ def render_vision_llm_settings(tr):
     if vision_base_required and not st_vision_base_url:
         info_example = vision_placeholder or "https://your-openai-compatible-endpoint/v1"
         st.info(tr("Please fill OpenAI compatible gateway").format(example=info_example))
+    show_base_url_security_warning(st_vision_base_url)
 
     vision_generation_params = render_llm_generation_settings(tr, "vision")
 
@@ -933,6 +943,7 @@ def render_text_llm_settings(tr):
     if text_base_required and not st_text_base_url:
         info_example = text_placeholder or "https://your-openai-compatible-endpoint/v1"
         st.info(tr("Please fill OpenAI compatible gateway").format(example=info_example))
+    show_base_url_security_warning(st_text_base_url)
 
     text_generation_params = render_llm_generation_settings(tr, "text")
 

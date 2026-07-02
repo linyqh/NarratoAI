@@ -13,8 +13,10 @@ from app.services.llm.openai_compatible_provider import (
     OpenAICompatibleTextProvider,
     OpenAICompatibleVisionProvider,
     is_trusted_openai_compatible_base_url,
+    validate_openai_compatible_base_url,
 )
 from app.services.llm.providers import register_all_providers
+from app.utils.openai_base_url_security import openai_compatible_base_url_warning
 
 
 class DummyOpenAITextProvider(TextModelProvider):
@@ -210,18 +212,7 @@ class OpenAICompatBaseURLValidationTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertFalse(is_trusted_openai_compatible_base_url(url))
 
-    def test_build_client_rejects_untrusted_base_url_by_default(self):
-        provider = OpenAICompatibleTextProvider(
-            api_key="test-key",
-            model_name="test-model",
-            base_url="https://attacker.example/v1",
-        )
-
-        with self.assertRaises(ConfigurationError):
-            provider._build_client()
-
-    def test_build_client_allows_explicit_custom_base_url_opt_in(self):
-        config.app["allow_custom_openai_base_url"] = True
+    def test_build_client_allows_well_formed_custom_base_url_by_default(self):
         provider = OpenAICompatibleTextProvider(
             api_key="test-key",
             model_name="test-model",
@@ -233,8 +224,19 @@ class OpenAICompatBaseURLValidationTests(unittest.TestCase):
 
         self.assertEqual("https://custom.example/v1", async_openai.call_args.kwargs["base_url"])
 
-    def test_custom_base_url_opt_in_still_rejects_malformed_urls(self):
-        config.app["allow_custom_openai_base_url"] = True
+    def test_custom_base_url_validation_returns_normalized_url(self):
+        self.assertEqual(
+            "https://custom.example/v1",
+            validate_openai_compatible_base_url(" https://custom.example/v1 "),
+        )
+
+    def test_custom_base_url_warning_only_for_untrusted_well_formed_urls(self):
+        warning = openai_compatible_base_url_warning("https://custom.example/v1")
+        self.assertIn("custom.example", warning)
+        self.assertEqual("", openai_compatible_base_url_warning("https://api.openai.com/v1"))
+        self.assertEqual("", openai_compatible_base_url_warning(""))
+
+    def test_custom_base_url_validation_rejects_malformed_urls(self):
         provider = OpenAICompatibleTextProvider(
             api_key="test-key",
             model_name="test-model",

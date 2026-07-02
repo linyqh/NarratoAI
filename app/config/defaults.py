@@ -35,7 +35,6 @@ DEFAULT_LLM_APP_CONFIG = {
     "text_openai_model_name": DEFAULT_TEXT_OPENAI_MODEL_NAME,
     "text_openai_api_key": "",
     "text_openai_base_url": DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
-    "allow_custom_openai_base_url": False,
     "tavily_api_key": "",
     "tavily_search_depth": "basic",
     "tavily_max_results": 5,

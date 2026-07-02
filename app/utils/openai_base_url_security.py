@@ -2,8 +2,6 @@ import ipaddress
 from typing import Optional
 from urllib.parse import urlparse
 
-from app.config import config
-
 
 TRUSTED_OPENAI_COMPATIBLE_BASE_HOSTS = {
     "api.openai.com",
@@ -28,17 +26,13 @@ TRUSTED_OPENAI_COMPATIBLE_BASE_SUFFIXES = (
 )
 
 OPENAI_COMPATIBLE_BASE_URL_ERROR = (
-    "OpenAI-compatible base_url is not in the trusted provider list. "
-    "Use an official provider endpoint or set allow_custom_openai_base_url=true "
-    "only if you understand that the configured endpoint receives the API key."
+    "OpenAI-compatible base_url must be a valid http(s) URL without embedded credentials."
 )
 
-
-def custom_openai_base_url_allowed() -> bool:
-    value = config.app.get("allow_custom_openai_base_url", False)
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
+OPENAI_COMPATIBLE_BASE_URL_WARNING = (
+    "OpenAI-compatible base_url host '{host}' is not in the trusted provider list. "
+    "Only continue if you trust this endpoint, because it will receive the configured API key."
+)
 
 
 def _is_loopback_ollama_url(scheme: str, host: str, port: Optional[int]) -> bool:
@@ -91,6 +85,19 @@ def is_trusted_openai_compatible_base_url(base_url: Optional[str]) -> bool:
     return any(host.endswith(suffix) for suffix in TRUSTED_OPENAI_COMPATIBLE_BASE_SUFFIXES)
 
 
+def openai_compatible_base_url_warning(base_url: Optional[str]) -> str:
+    if not base_url:
+        return ""
+
+    normalized = str(base_url).strip()
+    if is_trusted_openai_compatible_base_url(normalized) or not _is_well_formed_http_base_url(normalized):
+        return ""
+
+    parsed = urlparse(normalized)
+    host = (parsed.hostname or "").rstrip(".").lower()
+    return OPENAI_COMPATIBLE_BASE_URL_WARNING.format(host=host)
+
+
 def validate_openai_compatible_base_url(base_url: Optional[str]) -> Optional[str]:
     if not base_url:
         return None
@@ -98,7 +105,7 @@ def validate_openai_compatible_base_url(base_url: Optional[str]) -> Optional[str
     normalized = str(base_url).strip()
     if is_trusted_openai_compatible_base_url(normalized):
         return normalized
-    if custom_openai_base_url_allowed() and _is_well_formed_http_base_url(normalized):
+    if _is_well_formed_http_base_url(normalized):
         return normalized
 
     raise ValueError(OPENAI_COMPATIBLE_BASE_URL_ERROR)

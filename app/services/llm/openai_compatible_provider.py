@@ -25,6 +25,7 @@ from app.config import config
 from app.config.defaults import DEFAULT_LLM_GENERATION_CONFIG, normalize_openai_compatible_model_name
 from app.utils.openai_base_url_security import (
     is_trusted_openai_compatible_base_url,
+    openai_compatible_base_url_warning,
     validate_openai_compatible_base_url as _validate_openai_compatible_base_url_value,
 )
 from .base import TextModelProvider, VisionModelProvider
@@ -47,9 +48,13 @@ def _is_content_filter_error(message: str) -> bool:
 
 def validate_openai_compatible_base_url(base_url: Optional[str]) -> Optional[str]:
     try:
-        return _validate_openai_compatible_base_url_value(base_url)
+        normalized = _validate_openai_compatible_base_url_value(base_url)
     except ValueError as exc:
         raise ConfigurationError(str(exc), "base_url") from exc
+    warning = openai_compatible_base_url_warning(normalized)
+    if warning:
+        logger.warning(warning)
+    return normalized
 
 
 def _clean_json_output(output: str) -> str:
