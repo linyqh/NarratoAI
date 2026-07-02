@@ -47,6 +47,13 @@ SUBTITLE_PREVIEW_FALLBACK_SIZES = {
     "landscape": (1920, 1080),
 }
 
+SUBTITLE_PREVIEW_ORIENTATIONS = ("portrait", "landscape")
+
+SUBTITLE_PREVIEW_ORIENTATION_LABELS = {
+    "portrait": "Portrait Safe Area",
+    "landscape": "Landscape Safe Area",
+}
+
 
 def render_subtitle_panel(tr):
     """渲染字幕设置面板"""
@@ -128,6 +135,25 @@ def _get_current_preview_video_path():
                 return path
 
     return ""
+
+
+def _normalize_subtitle_preview_orientation(value, tr=None):
+    if value in SUBTITLE_PREVIEW_ORIENTATIONS:
+        return value
+
+    labels = {
+        label: orientation
+        for orientation, label in SUBTITLE_PREVIEW_ORIENTATION_LABELS.items()
+    }
+    if tr:
+        labels.update(
+            {
+                tr(label): orientation
+                for orientation, label in SUBTITLE_PREVIEW_ORIENTATION_LABELS.items()
+            }
+        )
+
+    return labels.get(str(value), "portrait")
 
 
 def _save_subtitle_mask_preview_video(uploaded_file):
@@ -753,11 +779,17 @@ def _render_subtitle_preview_image(tr):
     stroke_color = st.session_state.get("stroke_color", config.ui.get("stroke_color", "#000000"))
     stroke_width = float(st.session_state.get("stroke_width", config.ui.get("stroke_width", 1.5)) or 0)
 
+    orientation_default = _normalize_subtitle_preview_orientation(
+        st.session_state.get("subtitle_preview_orientation", "portrait"),
+        tr,
+    )
+    st.session_state["subtitle_preview_orientation"] = orientation_default
+
     orientation = st.pills(
         tr("Subtitle Preview Orientation"),
-        options=["portrait", "landscape"],
-        default=st.session_state.get("subtitle_preview_orientation", "portrait"),
-        format_func=lambda value: tr("Portrait Safe Area") if value == "portrait" else tr("Landscape Safe Area"),
+        options=SUBTITLE_PREVIEW_ORIENTATIONS,
+        default=orientation_default,
+        format_func=lambda value: tr(SUBTITLE_PREVIEW_ORIENTATION_LABELS[value]),
         key="subtitle_preview_orientation",
         width="stretch",
     ) or "portrait"
