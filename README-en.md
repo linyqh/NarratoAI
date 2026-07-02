@@ -91,6 +91,17 @@ Below is a screenshot of this person's x (Twitter) homepage
 - Windows 10/11 or MacOS 11.0 or above
 - [Python 3.12+](https://www.python.org/downloads/)
 
+## Local Run 🚀
+
+```bash
+git clone https://github.com/linyqh/NarratoAI.git
+cd NarratoAI
+
+uv sync
+cp config.example.toml config.toml
+uv run streamlit run webui.py --server.maxUploadSize=2048
+```
+
 ## Feedback & Suggestions 📢
 
 👏 1. You can submit [issue](https://github.com/linyqh/NarratoAI/issues) or [pull request](https://github.com/linyqh/NarratoAI/pulls)
