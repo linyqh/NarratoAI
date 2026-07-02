@@ -176,8 +176,8 @@ def parse_and_fix_json(json_string):
         # 5. 修复单引号
         fixed_json = re.sub(r"'([^']*)':", r'"\1":', fixed_json)
 
-        # 6. 修复没有引号的属性名
-        fixed_json = re.sub(r'(\w+)(\s*):', r'"\1"\2:', fixed_json)
+        # 6. 修复没有引号的属性名，仅匹配对象边界后的 key，避免误伤时间戳等字符串值
+        fixed_json = re.sub(r'([{\[,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)', r'\1"\2"\3', fixed_json)
 
         # 7. 修复重复的引号
         fixed_json = re.sub(r'""([^"]*?)""', r'"\1"', fixed_json)

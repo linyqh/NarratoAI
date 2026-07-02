@@ -22,6 +22,19 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
 
         self.assertEqual(1, parsed["items"][0]["_id"])
 
+    def test_repair_does_not_corrupt_timestamp_values(self):
+        parsed = parse_and_fix_json(
+            """```json
+{
+  items: [
+    {_id: 1, timestamp: "00:00:01,000-00:00:02,000",},
+  ],
+}
+```"""
+        )
+
+        self.assertEqual("00:00:01,000-00:00:02,000", parsed["items"][0]["timestamp"])
+
 
 if __name__ == "__main__":
     unittest.main()

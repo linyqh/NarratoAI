@@ -14,7 +14,23 @@ from webui.tools.generate_short_summary import (
     _build_combined_subtitle_content,
     _normalize_paths,
     analyze_short_drama_plot,
+    parse_and_fix_json,
 )
+
+
+def _parse_generated_script_payload(script):
+    if isinstance(script, list):
+        return script
+
+    if isinstance(script, str):
+        parsed = parse_and_fix_json(script)
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict) and isinstance(parsed.get("items"), list):
+            return parsed["items"]
+        raise ValueError("Generated script JSON must be a list or contain an items list")
+
+    raise ValueError("Generated script payload must be a list or JSON string")
 
 
 def generate_script_short(
@@ -175,10 +191,7 @@ def generate_script_short(
             script = result.get("script")
             logger.info(f"脚本生成完成 {json.dumps(script, ensure_ascii=False, indent=4)}")
 
-            if isinstance(script, list):
-                st.session_state['video_clip_json'] = script
-            elif isinstance(script, str):
-                st.session_state['video_clip_json'] = json.loads(script)
+            st.session_state['video_clip_json'] = _parse_generated_script_payload(script)
 
             update_progress(80, tr("Script generation completed"))
 
