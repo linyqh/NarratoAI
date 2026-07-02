@@ -1,0 +1,50 @@
+[project]
+name = "narratoai"
+version = "0.8.4"
+description = "An all-in-one AI-powered tool for film commentary and automated video editing."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "requests>=2.32.0",
+    "moviepy==2.1.1",
+    "edge-tts==7.2.7",
+    "streamlit==1.56.0",
+    "watchdog==6.0.0",
+    "loguru>=0.7.3",
+    "tomli>=2.2.1",
+    "tomli-w>=1.0.0",
+    "pydub==0.25.1",
+    "pysrt==1.1.2",
+    "openai>=1.77.0",
+    "google-generativeai>=0.8.5",
+    "azure-cognitiveservices-speech>=1.37.0",
+    "tencentcloud-sdk-python>=3.0.1200",
+    "dashscope>=1.24.6",
+    "Pillow>=10.3.0",
+    "tqdm>=4.66.6",
+    "tenacity>=9.0.0",
+]
+
+[project.optional-dependencies]
+twelvelabs = [
+    "twelvelabs>=1.2.8",
+]
+local-asr = [
+    "faster-whisper>=1.0.1",
+]
+opencv = [
+    "opencv-python>=4.11.0.86",
+]
+cuda = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "torchaudio>=2.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.uv]
+package = false

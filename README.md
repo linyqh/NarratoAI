@@ -129,8 +129,8 @@ docker compose up -d
 git clone https://github.com/linyqh/NarratoAI.git
 cd NarratoAI
 
-# 2. 安装依赖
-pip install -r requirements.txt
+# 2. 使用 uv 安装依赖
+uv sync
 
 # 3. 复制配置文件
 cp config.example.toml config.toml
@@ -138,7 +138,7 @@ cp config.example.toml config.toml
 # 4. 编辑 config.toml，配置你的 API 密钥
 
 # 5. 启动应用
-streamlit run webui.py --server.maxUploadSize=2048
+uv run streamlit run webui.py --server.maxUploadSize=2048
 
 # 6. 访问应用
 # 浏览器打开 http://localhost:8501

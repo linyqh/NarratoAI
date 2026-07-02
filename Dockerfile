@@ -15,16 +15,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# 升级 pip 并创建虚拟环境
-RUN python -m pip install --upgrade pip setuptools wheel && \
-    python -m venv /opt/venv
+# 安装 uv 并创建构建虚拟环境
+RUN python -m pip install --upgrade pip setuptools wheel uv
 
-# 激活虚拟环境
-ENV PATH="/opt/venv/bin:$PATH"
+# 让 uv 将项目依赖同步到运行阶段复用的虚拟环境
+ENV UV_PROJECT_ENVIRONMENT="/opt/venv" \
+    UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    PATH="/opt/venv/bin:$PATH"
 
-# 复制 requirements.txt 并使用镜像安装 Python 依赖
-COPY requirements.txt .
-RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+# 复制 uv 项目文件并安装 Python 依赖
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
 
 # 运行阶段
 FROM python:3.12-slim-bookworm
