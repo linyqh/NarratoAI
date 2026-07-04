@@ -3,22 +3,12 @@
 <h3 align="center">一站式 AI 影视解说+自动化剪辑工具🎬🎞️ </h3>
 
 <p align="center">
-  📖 <a href="README-en.md">English</a> | 简体中文 | <a href="https://www.narratoai.cn">☁️ <b>云端版入口 (NarratoAI.cn)</b></a>
+  📖 <a href="README-en.md">English</a> | 简体中文 | <a href="https://www.narratoai.co">☁️ <b>云端版入口 (NarratoAI.cn)</b></a>
 </p>
 
-<div align="center">
 <br>
 
-> **🔥 隆重推荐：VibeCut 的新范式 —— [speclip.com](https://speclip.com)**
->
-> **一个真正意义上的视频剪辑 Agent！像聊天(vibecoding)一样剪辑视频。**
-> **[👉 点击立即免费下载 Speclip](https://speclip.com)**
-
-</div>
-
-<br>
-
-NarratoAI 是一款自动化影视解说工具，基于 LLM 实现文案撰写、自动化视频剪辑、配音和字幕生成的一站式流程，助力高效内容创作。支持本地部署开源版及 [云端托管版](https://www.narratoai.cn)。
+NarratoAI 是一款自动化影视解说工具，基于 LLM 实现文案撰写、自动化视频剪辑、配音和字幕生成的一站式流程，助力高效内容创作。支持本地部署开源版及 [云端托管版](https://www.narratoai.co)。
 
 <br>
 
