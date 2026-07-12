@@ -9,7 +9,7 @@ from app.models.schema import AudioVolumeDefaults
 from app.utils import utils
 
 
-INDEXTTS_REFERENCE_AUDIO_SOURCE_DIR = "/Users/viccy/Downloads/tts-mp3-clone/mp3"
+INDEXTTS_REFERENCE_AUDIO_SOURCE_DIR = utils.resource_dir("tts_reference_audio")
 INDEXTTS_REFERENCE_AUDIO_COPY_SUBDIR = "indextts_refs"
 INDEXTTS_REFERENCE_AUDIO_MAP = [
     ("yingshijieshuo-zh-male.mp3", "影视解说", "Film Narration"),
@@ -36,7 +36,7 @@ INDEXTTS_REFERENCE_AUDIO_MAP = [
     ("sarah-en-female.mp3", "莎拉", "Sarah"),
 ]
 INDEXTTS_REFERENCE_AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg")
-BGM_RESOURCE_DIR = "/Users/viccy/Downloads/tts-mp3-clone/bgms-safe"
+BGM_RESOURCE_DIR = utils.resource_dir("bgm")
 BGM_TRACKS_JSON = os.path.join(BGM_RESOURCE_DIR, "tracks.json")
 BGM_UPLOAD_SUBDIR = "uploaded_bgms"
 BGM_AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg")
@@ -1965,7 +1965,6 @@ def render_bgm_settings(tr):
         tr("Background Music Source"),
         options=list(bgm_source_labels.keys()),
         selection_mode="single",
-        default=default_bgm_source,
         key="bgm_source_selection",
         format_func=lambda source: tr(bgm_source_labels[source]),
         help=tr("Background Music Source Help"),

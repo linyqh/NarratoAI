@@ -788,11 +788,10 @@ def _render_subtitle_preview_image(tr):
     orientation = st.pills(
         tr("Subtitle Preview Orientation"),
         options=SUBTITLE_PREVIEW_ORIENTATIONS,
-        default=orientation_default,
         format_func=lambda value: tr(SUBTITLE_PREVIEW_ORIENTATION_LABELS[value]),
         key="subtitle_preview_orientation",
         width="stretch",
-    ) or "portrait"
+    ) or orientation_default
     _render_subtitle_position_controls(tr, orientation)
 
     preview_text = tr("Subtitle Preview Sample Text")
