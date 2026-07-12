@@ -2395,10 +2395,23 @@ def indextts_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.0
 
 
 def _normalize_indextts2_api_url(api_url: str) -> str:
-    api_url = (api_url or "http://192.168.3.6:7863/tts").strip()
-    if api_url.endswith("/tts"):
+    """Return the IndexTTS-2 MLX Pack upload endpoint for a configured URL.
+
+    The Pack accepts a server root, the JSON speech endpoint, or the multipart
+    upload endpoint.  Treat an old ``/tts`` value as a server root so existing
+    saved settings move to the new Pack route instead of continuing to 404.
+    """
+    api_url = (api_url or "http://127.0.0.1:7860").strip().rstrip("/")
+    upload_path = "/v1/audio/speech/upload"
+    speech_path = "/v1/audio/speech"
+
+    if api_url.endswith(upload_path):
         return api_url
-    return f"{api_url.rstrip('/')}/tts"
+    if api_url.endswith(speech_path):
+        return f"{api_url}/upload"
+    if api_url.endswith("/tts"):
+        api_url = api_url[: -len("/tts")]
+    return f"{api_url}{upload_path}"
 
 
 def _get_configured_proxies() -> dict:
@@ -2410,6 +2423,49 @@ def _get_configured_proxies() -> dict:
     }
 
 
+def _get_indextts2_number(
+    key: str,
+    default: float | int,
+    minimum: float | int,
+    maximum: float | int,
+    *,
+    integer: bool = False,
+) -> float | int:
+    """Read an IndexTTS-2 option and constrain it to the MLX Pack schema."""
+    try:
+        raw_value = config.indextts2.get(key, default)
+        value = int(float(raw_value)) if integer else float(raw_value)
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _get_indextts2_seed() -> int | None:
+    """Return the optional Pack seed, omitting invalid legacy text values."""
+    seed = config.indextts2.get("seed")
+    if seed in (None, ""):
+        return None
+    try:
+        return int(seed)
+    except (TypeError, ValueError):
+        logger.warning("IndexTTS-2 随机种子无效，将使用随机采样: {}", seed)
+        return None
+
+
+def _get_indextts2_emotion() -> str:
+    """Map current and legacy IndexTTS-2 emotion settings to the MLX Pack API."""
+    emotion = config.get_indextts2_pack_emotion(config.indextts2)
+    if emotion:
+        return emotion
+
+    emotion_mode = config.indextts2.get("emotion_mode", "speaker")
+    if emotion_mode == "audio" and config.indextts2.get("emotion_audio"):
+        logger.warning(
+            "IndexTTS-2 MLX Pack 不支持单独的情感参考音频，将使用音色参考音频的情感。"
+        )
+    return ""
+
+
 def _download_indextts2_audio(response: requests.Response, api_url: str, voice_file: str, proxies: dict) -> bool:
     content_type = response.headers.get("content-type", "").lower()
     if "application/json" not in content_type:
@@ -2417,9 +2473,14 @@ def _download_indextts2_audio(response: requests.Response, api_url: str, voice_f
             f.write(response.content)
         return os.path.getsize(voice_file) > 0
 
-    result = response.json()
-    downloads = result.get("downloads") if isinstance(result, dict) else {}
-    download_url = downloads.get("wav") if isinstance(downloads, dict) else ""
+    try:
+        result = response.json()
+    except ValueError:
+        logger.error("IndexTTS-2 API 返回了无效的 JSON 响应")
+        return False
+
+    output = result.get("output") if isinstance(result, dict) else {}
+    download_url = output.get("url") if isinstance(output, dict) else ""
     if not download_url:
         logger.error(f"IndexTTS-2 API 响应中没有音频下载地址: {result}")
         return False
@@ -2437,68 +2498,74 @@ def _download_indextts2_audio(response: requests.Response, api_url: str, voice_f
 
 def indextts2_tts(text: str, voice_name: str, voice_file: str) -> Union[SubMaker, None]:
     """
-    使用 IndexTTS-2 API 进行零样本语音克隆。
-    接口兼容 IndexTTS2-Pack 的 POST /tts multipart form。
+    使用 IndexTTS-2 MLX Pack API 进行零样本语音克隆。
+
+    参考音频通过 ``POST /v1/audio/speech/upload`` 上传，这样 Pack 即使
+    运行在另一台机器上，也不需要访问 NarratoAI 的本地文件路径。
     """
-    api_url = _normalize_indextts2_api_url(config.indextts2.get("api_url", "http://192.168.3.6:7863/tts"))
+    api_url = _normalize_indextts2_api_url(config.indextts2.get("api_url", "http://127.0.0.1:7860"))
     reference_audio_path = parse_indextts2_voice(voice_name)
 
     if not reference_audio_path or not os.path.exists(reference_audio_path):
         logger.error(f"IndexTTS-2 参考音频文件不存在: {reference_audio_path}")
         return None
 
-    emotion_mode = config.indextts2.get("emotion_mode", "speaker")
-    emotion_audio_path = config.indextts2.get("emotion_audio", "")
     data = {
         "text": text.strip(),
-        "emotion_mode": emotion_mode,
-        "emotion_alpha": config.indextts2.get("emotion_alpha", 0.65),
-        "emotion_text": config.indextts2.get("emotion_text", ""),
-        "use_random": str(bool(config.indextts2.get("use_random", False))).lower(),
-        "max_text_tokens_per_segment": config.indextts2.get("max_text_tokens_per_segment", 120),
-        "vec_happy": config.indextts2.get("vec_happy", 0.0),
-        "vec_angry": config.indextts2.get("vec_angry", 0.0),
-        "vec_sad": config.indextts2.get("vec_sad", 0.0),
-        "vec_afraid": config.indextts2.get("vec_afraid", 0.0),
-        "vec_disgusted": config.indextts2.get("vec_disgusted", 0.0),
-        "vec_melancholic": config.indextts2.get("vec_melancholic", 0.0),
-        "vec_surprised": config.indextts2.get("vec_surprised", 0.0),
-        "vec_calm": config.indextts2.get("vec_calm", 0.8),
-        "temperature": config.indextts2.get("temperature", 0.8),
-        "top_p": config.indextts2.get("top_p", 0.8),
-        "top_k": config.indextts2.get("top_k", 30),
-        "num_beams": config.indextts2.get("num_beams", 3),
-        "repetition_penalty": config.indextts2.get("repetition_penalty", 10.0),
-        "max_mel_tokens": config.indextts2.get("max_mel_tokens", 1500),
+        "emo_alpha": _get_indextts2_number(
+            "emo_alpha", config.indextts2.get("emotion_alpha", 0.6), 0.0, 1.0
+        ),
+        "speed": _get_indextts2_number("speed", 1.0, 0.5, 2.0),
+        "max_mel_tokens": _get_indextts2_number(
+            "max_mel_tokens", 1500, 64, 1815, integer=True
+        ),
+        "max_text_tokens_per_segment": _get_indextts2_number(
+            "max_text_tokens_per_segment", 120, 20, 600, integer=True
+        ),
+        "interval_silence": _get_indextts2_number(
+            "interval_silence", 200, 0, 5000, integer=True
+        ),
+        "temperature": _get_indextts2_number("temperature", 0.8, 0.05, 2.0),
+        "top_p": _get_indextts2_number("top_p", 0.8, 0.05, 1.0),
+        "top_k": _get_indextts2_number("top_k", 30, 1, 200, integer=True),
+        "repetition_penalty": _get_indextts2_number(
+            "repetition_penalty", 10.0, 1.0, 30.0
+        ),
+        "diffusion_steps": _get_indextts2_number(
+            "diffusion_steps", 25, 1, 100, integer=True
+        ),
+        "cfg_rate": _get_indextts2_number("cfg_rate", 0.7, 0.0, 2.0),
+        "segment_overlap_ms": _get_indextts2_number(
+            "segment_overlap_ms", 50, 0, 1000, integer=True
+        ),
     }
+    emotion = _get_indextts2_emotion()
+    if emotion:
+        data["emotion"] = emotion
+    seed = _get_indextts2_seed()
+    if seed is not None:
+        data["seed"] = seed
 
     proxies = _get_configured_proxies()
     for attempt in range(3):
-        files = {}
         try:
-            files["speaker_audio"] = open(reference_audio_path, "rb")
-            if emotion_mode == "audio":
-                if not emotion_audio_path or not os.path.exists(emotion_audio_path):
-                    logger.error(f"IndexTTS-2 情感参考音频文件不存在: {emotion_audio_path}")
-                    return None
-                files["emotion_audio"] = open(emotion_audio_path, "rb")
+            with open(reference_audio_path, "rb") as reference_audio:
+                logger.info(f"第 {attempt + 1} 次调用 IndexTTS-2 API: {api_url}")
+                response = requests.post(
+                    api_url,
+                    files={"reference_audio": reference_audio},
+                    data=data,
+                    proxies=proxies,
+                    timeout=180,
+                )
 
-            logger.info(f"第 {attempt + 1} 次调用 IndexTTS-2 API: {api_url}")
-            response = requests.post(
-                api_url,
-                files=files,
-                data=data,
-                proxies=proxies,
-                timeout=180,
-            )
-
-            if response.status_code == 200 and _download_indextts2_audio(response, api_url, voice_file, proxies):
-                logger.info(f"IndexTTS-2 成功生成音频: {voice_file}, 大小: {os.path.getsize(voice_file)} 字节")
-                sub_maker = new_sub_maker()
-                duration = get_audio_duration_from_file(voice_file)
-                duration_ms = int(duration * 1000) if duration > 0 else max(1000, int(len(text) * 200))
-                add_subtitle_event(sub_maker, 0, duration_ms * 10000, text)
-                return sub_maker
+                if response.status_code == 200 and _download_indextts2_audio(response, api_url, voice_file, proxies):
+                    logger.info(f"IndexTTS-2 成功生成音频: {voice_file}, 大小: {os.path.getsize(voice_file)} 字节")
+                    sub_maker = new_sub_maker()
+                    duration = get_audio_duration_from_file(voice_file)
+                    duration_ms = int(duration * 1000) if duration > 0 else max(1000, int(len(text) * 200))
+                    add_subtitle_event(sub_maker, 0, duration_ms * 10000, text)
+                    return sub_maker
 
             logger.error(f"IndexTTS-2 API 调用失败: {response.status_code} - {response.text}")
         except requests.exceptions.Timeout:
@@ -2507,12 +2574,6 @@ def indextts2_tts(text: str, voice_name: str, voice_file: str) -> Union[SubMaker
             logger.error(f"IndexTTS-2 API 网络错误: {str(e)} (尝试 {attempt + 1}/3)")
         except Exception as e:
             logger.error(f"IndexTTS-2 TTS 处理错误: {str(e)} (尝试 {attempt + 1}/3)")
-        finally:
-            for file_obj in files.values():
-                try:
-                    file_obj.close()
-                except Exception:
-                    pass
 
         if attempt < 2:
             time.sleep(2)

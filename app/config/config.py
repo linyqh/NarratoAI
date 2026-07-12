@@ -10,7 +10,7 @@ root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__fi
 config_file = f"{root_dir}/config.toml"
 version_file = f"{root_dir}/project_version"
 INDEXTTS_ENGINE = "indextts"
-INDEXTTS_DISPLAY_NAME = "IndexTTS-1.5"
+INDEXTTS_DISPLAY_NAME = "IndexTTS-1.5-windows"
 INDEXTTS2_ENGINE = "indextts2"
 INDEXTTS2_DISPLAY_NAME = "IndexTTS-2"
 OMNIVOICE_ENGINE = "omnivoice"
@@ -18,6 +18,16 @@ OMNIVOICE_DISPLAY_NAME = "OmniVoice"
 INDEXTTS_VOICE_PREFIX = f"{INDEXTTS_ENGINE}:"
 INDEXTTS2_VOICE_PREFIX = f"{INDEXTTS2_ENGINE}:"
 OMNIVOICE_VOICE_PREFIX = f"{OMNIVOICE_ENGINE}:"
+INDEXTTS2_EMOTION_VECTOR_FIELDS = (
+    ("happy", "vec_happy"),
+    ("angry", "vec_angry"),
+    ("sad", "vec_sad"),
+    ("afraid", "vec_afraid"),
+    ("disgusted", "vec_disgusted"),
+    ("melancholic", "vec_melancholic"),
+    ("surprised", "vec_surprised"),
+    ("calm", "vec_calm"),
+)
 
 
 def normalize_tts_engine_name(tts_engine: str) -> str:
@@ -26,6 +36,32 @@ def normalize_tts_engine_name(tts_engine: str) -> str:
 
 def normalize_indextts_voice_prefix(voice_name: str) -> str:
     return voice_name
+
+
+def get_indextts2_pack_emotion(indextts2_config) -> str:
+    """Return the MLX Pack emotion string for current or legacy settings."""
+    if not isinstance(indextts2_config, dict):
+        return ""
+
+    configured_emotion = str(indextts2_config.get("emotion", "")).strip()
+    if configured_emotion:
+        return configured_emotion
+
+    emotion_mode = indextts2_config.get("emotion_mode", "speaker")
+    if emotion_mode == "text":
+        return str(indextts2_config.get("emotion_text", "")).strip()
+    if emotion_mode != "vector":
+        return ""
+
+    weights = []
+    for emotion, field in INDEXTTS2_EMOTION_VECTOR_FIELDS:
+        try:
+            weight = float(indextts2_config.get(field, 0.0))
+        except (TypeError, ValueError):
+            continue
+        if weight > 0:
+            weights.append(f"{emotion}:{weight:g}")
+    return ",".join(weights)
 
 
 def _is_legacy_indextts2_config(indextts2_config) -> bool:

@@ -1123,10 +1123,18 @@ def render_indextts_tts_settings(tr):
 
 
 def render_indextts2_tts_settings(tr):
-    """渲染 IndexTTS-2 TTS 设置"""
+    """渲染 IndexTTS-2 MLX Pack TTS 设置"""
+
+    def bounded_value(key, default, min_value, max_value):
+        try:
+            value = float(config.indextts2.get(key, default))
+        except (TypeError, ValueError):
+            value = default
+        return max(min_value, min(max_value, value))
+
     api_url = st.text_input(
         tr("API URL"),
-        value=config.indextts2.get("api_url", "http://192.168.3.6:7863/tts"),
+        value=config.indextts2.get("api_url", "http://127.0.0.1:7860"),
         help=tr("IndexTTS2 API URL Help")
     )
 
@@ -1135,108 +1143,43 @@ def render_indextts2_tts_settings(tr):
         config.indextts2,
         "indextts2",
     )
-
-    emotion_mode_options = [
-        ("speaker", tr("Emotion Mode Speaker")),
-        ("audio", tr("Emotion Mode Audio")),
-        ("vector", tr("Emotion Mode Vector")),
-        ("text", tr("Emotion Mode Text")),
-    ]
-    saved_emotion_mode = config.indextts2.get("emotion_mode", "speaker")
-    emotion_mode_values = [item[0] for item in emotion_mode_options]
-    if saved_emotion_mode not in emotion_mode_values:
-        saved_emotion_mode = "speaker"
+    initial_emotion = config.get_indextts2_pack_emotion(config.indextts2)
+    legacy_emotion_audio = (
+        config.indextts2.get("emotion_mode") == "audio"
+        and bool(config.indextts2.get("emotion_audio"))
+    )
 
     with st.expander(tr("IndexTTS2 Emotion Parameters"), expanded=False):
-        emotion_mode = emotion_mode_options[st.selectbox(
-            tr("Emotion Mode"),
-            options=range(len(emotion_mode_options)),
-            index=emotion_mode_values.index(saved_emotion_mode),
-            format_func=lambda x: emotion_mode_options[x][1],
-            help=tr("Emotion Mode Help"),
-        )][0]
-
-        emotion_alpha = st.slider(
+        emotion = st.text_input(
+            tr("IndexTTS2 Emotion"),
+            value=initial_emotion,
+            help=tr("IndexTTS2 Emotion Help"),
+            placeholder=tr("IndexTTS2 Emotion Placeholder"),
+        )
+        if legacy_emotion_audio and not emotion.strip():
+            st.warning(tr("IndexTTS2 Emotion Audio Unsupported"))
+        emo_alpha = st.slider(
             tr("Emotion Alpha"),
             min_value=0.0,
             max_value=1.0,
-            value=float(config.indextts2.get("emotion_alpha", 0.65)),
+            value=bounded_value("emo_alpha", config.indextts2.get("emotion_alpha", 0.6), 0.0, 1.0),
             step=0.05,
             help=tr("Emotion Alpha Help"),
         )
-
-        emotion_audio = config.indextts2.get("emotion_audio", "")
-        emotion_text = config.indextts2.get("emotion_text", "")
-        if emotion_mode == "audio":
-            emotion_audio_col, emotion_preview_col = st.columns([5, 1])
-            with emotion_audio_col:
-                emotion_audio = st.text_input(
-                    tr("Emotion Reference Audio Path"),
-                    value=emotion_audio,
-                    help=tr("Emotion Reference Audio Path Help"),
-                )
-            with emotion_preview_col:
-                render_reference_audio_preview_button(
-                    emotion_audio,
-                    "indextts2_emotion_audio_preview",
-                    tr,
-                    preview_state_key="indextts2_emotion_audio_preview_path",
-                )
-            preview_audio_path = st.session_state.get("indextts2_emotion_audio_preview_path", "")
-            if preview_audio_path == emotion_audio and os.path.isfile(preview_audio_path):
-                with open(preview_audio_path, "rb") as audio_file:
-                    st.audio(audio_file.read(), format=get_audio_mime_type(preview_audio_path))
-        elif emotion_mode == "text":
-            emotion_text = st.text_input(
-                tr("Emotion Text"),
-                value=emotion_text,
-                help=tr("Emotion Text Help"),
-                placeholder=tr("Emotion Text Placeholder"),
-            )
-
-        use_random = st.checkbox(
-            tr("Use Random Emotion"),
-            value=bool(config.indextts2.get("use_random", False)),
-            help=tr("Use Random Emotion Help"),
+        speed = st.slider(
+            tr("IndexTTS2 Speed"),
+            min_value=0.5,
+            max_value=2.0,
+            value=bounded_value("speed", 1.0, 0.5, 2.0),
+            step=0.05,
+            help=tr("IndexTTS2 Speed Help"),
         )
-
-        emotion_vector_defaults = {
-            "vec_happy": 0.0,
-            "vec_angry": 0.0,
-            "vec_sad": 0.0,
-            "vec_afraid": 0.0,
-            "vec_disgusted": 0.0,
-            "vec_melancholic": 0.0,
-            "vec_surprised": 0.0,
-            "vec_calm": 0.8,
-        }
-        emotion_vector_labels = {
-            "vec_happy": tr("Emotion Happy"),
-            "vec_angry": tr("Emotion Angry"),
-            "vec_sad": tr("Emotion Sad"),
-            "vec_afraid": tr("Emotion Afraid"),
-            "vec_disgusted": tr("Emotion Disgusted"),
-            "vec_melancholic": tr("Emotion Melancholic"),
-            "vec_surprised": tr("Emotion Surprised"),
-            "vec_calm": tr("Emotion Calm"),
-        }
-        emotion_vector_values = {}
-        if emotion_mode == "vector":
-            vec_cols = st.columns(2)
-            for index, (field, default_value) in enumerate(emotion_vector_defaults.items()):
-                with vec_cols[index % 2]:
-                    emotion_vector_values[field] = st.slider(
-                        emotion_vector_labels[field],
-                        min_value=0.0,
-                        max_value=1.0,
-                        value=float(config.indextts2.get(field, default_value)),
-                        step=0.05,
-                    )
-        else:
-            emotion_vector_values = {
-                field: float(config.indextts2.get(field, default_value))
-                for field, default_value in emotion_vector_defaults.items()
-            }
+        seed = st.text_input(
+            tr("IndexTTS2 Seed"),
+            value=str(config.indextts2.get("seed", "") or ""),
+            help=tr("IndexTTS2 Seed Help"),
+            placeholder=tr("IndexTTS2 Seed Placeholder"),
+        )
 
     with st.expander(tr("Advanced Parameters"), expanded=False):
         col1, col2 = st.columns(2)
@@ -1244,65 +1187,92 @@ def render_indextts2_tts_settings(tr):
         with col1:
             temperature = st.slider(
                 tr("Sampling Temperature"),
-                min_value=0.1,
+                min_value=0.05,
                 max_value=2.0,
-                value=float(config.indextts2.get("temperature", 0.8)),
-                step=0.1,
+                value=bounded_value("temperature", 0.8, 0.05, 2.0),
+                step=0.05,
                 help=tr("Sampling Temperature Help")
             )
 
             top_p = st.slider(
                 "Top P",
-                min_value=0.0,
+                min_value=0.05,
                 max_value=1.0,
-                value=float(config.indextts2.get("top_p", 0.8)),
+                value=bounded_value("top_p", 0.8, 0.05, 1.0),
                 step=0.05,
                 help=tr("Top P Help")
             )
 
             top_k = st.slider(
                 "Top K",
-                min_value=0,
-                max_value=100,
-                value=int(config.indextts2.get("top_k", 30)),
-                step=5,
-                help=tr("Top K Help")
+                min_value=1,
+                max_value=200,
+                value=int(bounded_value("top_k", 30, 1, 200)),
+                step=1,
+                help=tr("IndexTTS2 Top K Help")
             )
 
             max_text_tokens_per_segment = st.slider(
                 tr("Max Text Tokens Per Segment"),
                 min_value=20,
                 max_value=600,
-                value=int(config.indextts2.get("max_text_tokens_per_segment", 120)),
+                value=int(bounded_value("max_text_tokens_per_segment", 120, 20, 600)),
                 step=10,
                 help=tr("Max Text Tokens Per Segment Help")
             )
 
+            interval_silence = st.slider(
+                tr("Interval Silence"),
+                min_value=0,
+                max_value=5000,
+                value=int(bounded_value("interval_silence", 200, 0, 5000)),
+                step=50,
+                help=tr("Interval Silence Help"),
+            )
+
+            segment_overlap_ms = st.slider(
+                tr("Segment Overlap"),
+                min_value=0,
+                max_value=1000,
+                value=int(bounded_value("segment_overlap_ms", 50, 0, 1000)),
+                step=10,
+                help=tr("Segment Overlap Help"),
+            )
+
         with col2:
-            num_beams = st.slider(
-                tr("Num Beams"),
+            diffusion_steps = st.slider(
+                tr("Diffusion Steps"),
                 min_value=1,
-                max_value=10,
-                value=int(config.indextts2.get("num_beams", 3)),
+                max_value=100,
+                value=int(bounded_value("diffusion_steps", 25, 1, 100)),
                 step=1,
-                help=tr("Num Beams Help")
+                help=tr("Diffusion Steps Help")
+            )
+
+            cfg_rate = st.slider(
+                tr("CFG Rate"),
+                min_value=0.0,
+                max_value=2.0,
+                value=bounded_value("cfg_rate", 0.7, 0.0, 2.0),
+                step=0.05,
+                help=tr("CFG Rate Help"),
             )
 
             repetition_penalty = st.slider(
                 tr("Repetition Penalty"),
-                min_value=0.1,
-                max_value=20.0,
-                value=float(config.indextts2.get("repetition_penalty", 10.0)),
+                min_value=1.0,
+                max_value=30.0,
+                value=bounded_value("repetition_penalty", 10.0, 1.0, 30.0),
                 step=0.1,
                 help=tr("Repetition Penalty Help")
             )
 
             max_mel_tokens = st.slider(
                 tr("Max Mel Tokens"),
-                min_value=50,
+                min_value=64,
                 max_value=1815,
-                value=int(config.indextts2.get("max_mel_tokens", 1500)),
-                step=10,
+                value=int(bounded_value("max_mel_tokens", 1500, 64, 1815)),
+                step=1,
                 help=tr("Max Mel Tokens Help")
             )
 
@@ -1312,20 +1282,32 @@ def render_indextts2_tts_settings(tr):
     config.indextts2["api_url"] = api_url
     config.indextts2["reference_audio_source"] = reference_audio_source
     config.indextts2["reference_audio"] = reference_audio
-    config.indextts2["emotion_mode"] = emotion_mode
-    config.indextts2["emotion_audio"] = emotion_audio
-    config.indextts2["emotion_alpha"] = emotion_alpha
-    config.indextts2["emotion_text"] = emotion_text
-    config.indextts2["use_random"] = use_random
+    config.indextts2["emotion"] = emotion
+    config.indextts2["emo_alpha"] = emo_alpha
+    config.indextts2["speed"] = speed
+    config.indextts2["seed"] = seed.strip()
     config.indextts2["max_text_tokens_per_segment"] = max_text_tokens_per_segment
-    for field, value in emotion_vector_values.items():
-        config.indextts2[field] = value
+    config.indextts2["interval_silence"] = interval_silence
+    config.indextts2["segment_overlap_ms"] = segment_overlap_ms
     config.indextts2["temperature"] = temperature
     config.indextts2["top_p"] = top_p
     config.indextts2["top_k"] = top_k
-    config.indextts2["num_beams"] = num_beams
     config.indextts2["repetition_penalty"] = repetition_penalty
     config.indextts2["max_mel_tokens"] = max_mel_tokens
+    config.indextts2["diffusion_steps"] = diffusion_steps
+    config.indextts2["cfg_rate"] = cfg_rate
+
+    legacy_fields = (
+        "emotion_mode", "emotion_audio", "emotion_alpha", "emotion_text", "use_random",
+        "num_beams", "vec_happy", "vec_angry", "vec_sad", "vec_afraid",
+        "vec_disgusted", "vec_melancholic", "vec_surprised", "vec_calm",
+    )
+    if legacy_emotion_audio and not emotion.strip():
+        legacy_fields = tuple(
+            field for field in legacy_fields if field not in {"emotion_mode", "emotion_audio"}
+        )
+    for field in legacy_fields:
+        config.indextts2.pop(field, None)
 
     if reference_audio:
         config.ui["voice_name"] = f"{config.INDEXTTS2_VOICE_PREFIX}{reference_audio}"
