@@ -413,7 +413,6 @@ def render_indextts_reference_audio_selector(tr, tts_config, key_prefix):
         tr("Reference Audio Source"),
         options=list(reference_audio_source_labels.keys()),
         selection_mode="single",
-        default=default_reference_audio_source,
         key=reference_audio_source_key,
         format_func=lambda source: tr(reference_audio_source_labels[source]),
         help=tr("Reference Audio Source Help"),
