@@ -1302,6 +1302,10 @@ def tts(
         logger.info("分发到 IndexTTS-1.5")
         return indextts_tts(text, voice_name, voice_file, speed=voice_rate)
 
+    if tts_engine == config.INDEXTTS_MACOS_ENGINE:
+        logger.info("分发到 IndexTTS-1.5-macOS")
+        return indextts_macos_tts(text, voice_name, voice_file)
+
     if tts_engine == config.INDEXTTS2_ENGINE:
         logger.info("分发到 IndexTTS-2")
         return indextts2_tts(text, voice_name, voice_file)
@@ -1796,6 +1800,7 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
     tts_results = []
     audio_extension = ".wav" if tts_engine in (
         config.INDEXTTS_ENGINE,
+        config.INDEXTTS_MACOS_ENGINE,
         config.INDEXTTS2_ENGINE,
         config.OMNIVOICE_ENGINE,
     ) else ".mp3"
@@ -1828,7 +1833,12 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                 if (
                     is_soulvoice_voice(voice_name)
                     or is_qwen_engine(tts_engine)
-                    or tts_engine in (config.INDEXTTS_ENGINE, config.INDEXTTS2_ENGINE, config.OMNIVOICE_ENGINE)
+                    or tts_engine in (
+                        config.INDEXTTS_ENGINE,
+                        config.INDEXTTS_MACOS_ENGINE,
+                        config.INDEXTTS2_ENGINE,
+                        config.OMNIVOICE_ENGINE,
+                    )
                     or tts_engine == "doubaotts"
                 ):
                     # 获取实际音频文件的时长
@@ -2271,6 +2281,13 @@ def parse_indextts2_voice(voice_name: str) -> str:
     return voice_name
 
 
+def parse_indextts_macos_voice(voice_name: str) -> str:
+    """解析 IndexTTS-1.5-macOS 参考音频路径。"""
+    if isinstance(voice_name, str) and voice_name.startswith(config.INDEXTTS_MACOS_VOICE_PREFIX):
+        return voice_name[len(config.INDEXTTS_MACOS_VOICE_PREFIX):]
+    return voice_name
+
+
 def parse_omnivoice_voice(voice_name: str) -> str:
     """
     解析 OmniVoice 语音名称
@@ -2412,6 +2429,149 @@ def _normalize_indextts2_api_url(api_url: str) -> str:
     if api_url.endswith("/tts"):
         api_url = api_url[: -len("/tts")]
     return f"{api_url}{upload_path}"
+
+
+def _normalize_indextts_macos_api_url(api_url: str) -> str:
+    """Return the IndexTTS 1.5 MLX Pack multipart upload endpoint."""
+    api_url = (api_url or "http://127.0.0.1:7866").strip().rstrip("/")
+    upload_path = "/v1/audio/speech/upload"
+    speech_path = "/v1/audio/speech"
+    if api_url.endswith(upload_path):
+        return api_url
+    if api_url.endswith(speech_path):
+        return f"{api_url}/upload"
+    return f"{api_url}{upload_path}"
+
+
+def _get_indextts_macos_number(
+    key: str,
+    default: float | int,
+    minimum: float | int,
+    maximum: float | int,
+    *,
+    integer: bool = False,
+) -> float | int:
+    try:
+        raw_value = config.indextts_macos.get(key, default)
+        value = int(float(raw_value)) if integer else float(raw_value)
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _get_indextts_macos_seed() -> int | None:
+    seed = config.indextts_macos.get("seed")
+    if seed in (None, ""):
+        return None
+    try:
+        return int(seed)
+    except (TypeError, ValueError):
+        logger.warning("IndexTTS-1.5-macOS 随机种子无效，将使用随机采样: {}", seed)
+        return None
+
+
+def _download_indextts_macos_audio(
+    response: requests.Response,
+    api_url: str,
+    voice_file: str,
+    proxies: dict,
+) -> bool:
+    try:
+        result = response.json()
+    except ValueError:
+        logger.error("IndexTTS-1.5-macOS API 返回了无效的 JSON 响应")
+        return False
+
+    download_url = result.get("output_url") if isinstance(result, dict) else ""
+    if not download_url:
+        logger.error(f"IndexTTS-1.5-macOS API 响应中没有音频下载地址: {result}")
+        return False
+
+    audio_response = requests.get(
+        urljoin(api_url, download_url),
+        proxies=proxies,
+        timeout=120,
+    )
+    if audio_response.status_code != 200:
+        logger.error(
+            f"IndexTTS-1.5-macOS 音频下载失败: "
+            f"{audio_response.status_code} - {audio_response.text}"
+        )
+        return False
+
+    with open(voice_file, "wb") as f:
+        f.write(audio_response.content)
+    return os.path.getsize(voice_file) > 0
+
+
+def indextts_macos_tts(text: str, voice_name: str, voice_file: str) -> Union[SubMaker, None]:
+    """使用 IndexTTS-MLX-1.5-Pack 的上传接口进行零样本语音克隆。"""
+    api_url = _normalize_indextts_macos_api_url(
+        config.indextts_macos.get("api_url", "http://127.0.0.1:7866")
+    )
+    reference_audio_path = parse_indextts_macos_voice(voice_name)
+    if not reference_audio_path or not os.path.exists(reference_audio_path):
+        logger.error(f"IndexTTS-1.5-macOS 参考音频文件不存在: {reference_audio_path}")
+        return None
+
+    data = {
+        "text": text.strip(),
+        "speed": _get_indextts_macos_number("speed", 1.0, 0.5, 2.0),
+        "max_mel_tokens": _get_indextts_macos_number(
+            "max_mel_tokens", 800, 64, 1600, integer=True
+        ),
+        "max_text_tokens_per_segment": _get_indextts_macos_number(
+            "max_text_tokens_per_segment", 120, 20, 600, integer=True
+        ),
+        "interval_silence": _get_indextts_macos_number(
+            "interval_silence", 200, 0, 2000, integer=True
+        ),
+        "temperature": _get_indextts_macos_number("temperature", 1.0, 0.0, 2.0),
+        "top_p": _get_indextts_macos_number("top_p", 0.8, 0.05, 1.0),
+        "top_k": _get_indextts_macos_number("top_k", 30, 0, 200, integer=True),
+        "repetition_penalty": _get_indextts_macos_number(
+            "repetition_penalty", 10.0, 1.0, 20.0
+        ),
+        "segment_overlap_ms": _get_indextts_macos_number(
+            "segment_overlap_ms", 50, 0, 500, integer=True
+        ),
+    }
+    seed = _get_indextts_macos_seed()
+    if seed is not None:
+        data["seed"] = seed
+
+    proxies = _get_configured_proxies()
+    for attempt in range(3):
+        try:
+            with open(reference_audio_path, "rb") as reference_audio:
+                logger.info(f"第 {attempt + 1} 次调用 IndexTTS-1.5-macOS API: {api_url}")
+                response = requests.post(
+                    api_url,
+                    files={"reference_audio": reference_audio},
+                    data=data,
+                    proxies=proxies,
+                    timeout=600,
+                )
+            if response.status_code == 200 and _download_indextts_macos_audio(
+                response, api_url, voice_file, proxies
+            ):
+                sub_maker = new_sub_maker()
+                duration = get_audio_duration_from_file(voice_file)
+                duration_ms = int(duration * 1000) if duration > 0 else max(1000, int(len(text) * 200))
+                add_subtitle_event(sub_maker, 0, duration_ms * 10000, text)
+                return sub_maker
+            logger.error(
+                f"IndexTTS-1.5-macOS API 调用失败: {response.status_code} - {response.text}"
+            )
+        except requests.exceptions.Timeout:
+            logger.error(f"IndexTTS-1.5-macOS API 调用超时 (尝试 {attempt + 1}/3)")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"IndexTTS-1.5-macOS API 网络错误: {str(e)} (尝试 {attempt + 1}/3)")
+        except Exception as e:
+            logger.error(f"IndexTTS-1.5-macOS TTS 处理错误: {str(e)} (尝试 {attempt + 1}/3)")
+        if attempt < 2:
+            time.sleep(2)
+    return None
 
 
 def _get_configured_proxies() -> dict:

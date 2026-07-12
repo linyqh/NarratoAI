@@ -160,6 +160,24 @@
     num_beams = 3
     repetition_penalty = 10.0
 
+[indextts_macos]
+    # IndexTTS-1.5 macOS MLX Pack 语音克隆配置（仅适用于 Apple Silicon）
+    # 参考音频会通过 POST /v1/audio/speech/upload 上传
+    api_url = "http://127.0.0.1:7866"
+    reference_audio_source = "resource"
+    # reference_audio = "/path/to/reference_audio.wav"
+
+    speed = 1.0
+    # seed = 42
+    max_mel_tokens = 800
+    max_text_tokens_per_segment = 120
+    interval_silence = 200
+    temperature = 1.0
+    top_p = 0.8
+    top_k = 30
+    repetition_penalty = 10.0
+    segment_overlap_ms = 50
+
 [indextts2]
     # IndexTTS-2 MLX Pack 语音克隆配置
     # 参考音频会通过 POST /v1/audio/speech/upload 上传；可填写服务根地址或完整接口地址

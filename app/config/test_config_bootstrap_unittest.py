@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 try:
     import tomllib
@@ -15,6 +16,30 @@ from app.config.defaults import (
 
 
 class ConfigBootstrapDefaultsTests(unittest.TestCase):
+    def test_save_config_keeps_macos_tts_settings_independent(self):
+        macos_settings = {
+            "api_url": "http://127.0.0.1:7866",
+            "reference_audio": "/tmp/macos-reference.wav",
+            "speed": 1.1,
+        }
+        windows_settings = {
+            "api_url": "http://127.0.0.1:8081/tts",
+            "reference_audio": "/tmp/windows-reference.wav",
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "config.toml"
+            with (
+                patch.object(cfg, "config_file", str(config_path)),
+                patch.object(cfg, "indextts_macos", dict(macos_settings)),
+                patch.object(cfg, "indextts", dict(windows_settings)),
+            ):
+                cfg.save_config()
+            saved_config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(macos_settings, saved_config["indextts_macos"])
+        self.assertEqual(windows_settings, saved_config["indextts"])
+
     def test_load_config_bootstraps_webui_llm_defaults(self):
         original_root_dir = cfg.root_dir
         original_config_file = cfg.config_file

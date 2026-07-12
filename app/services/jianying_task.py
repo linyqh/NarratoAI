@@ -114,6 +114,10 @@ def _normalize_indextts_reference_audio(params: VideoClipParams) -> None:
         tts_config = config.indextts
         voice_prefix = config.INDEXTTS_VOICE_PREFIX
         display_name = "IndexTTS-1.5"
+    elif params.tts_engine == config.INDEXTTS_MACOS_ENGINE:
+        tts_config = config.indextts_macos
+        voice_prefix = config.INDEXTTS_MACOS_VOICE_PREFIX
+        display_name = config.INDEXTTS_MACOS_DISPLAY_NAME
     elif params.tts_engine == config.INDEXTTS2_ENGINE:
         tts_config = config.indextts2
         voice_prefix = config.INDEXTTS2_VOICE_PREFIX

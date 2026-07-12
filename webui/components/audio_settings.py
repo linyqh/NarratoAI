@@ -42,6 +42,7 @@ BGM_UPLOAD_SUBDIR = "uploaded_bgms"
 BGM_AUDIO_EXTENSIONS = (".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg")
 LOCAL_TTS_ENGINES = {
     config.INDEXTTS_ENGINE,
+    config.INDEXTTS_MACOS_ENGINE,
     config.INDEXTTS2_ENGINE,
     config.OMNIVOICE_ENGINE,
 }
@@ -74,6 +75,7 @@ def get_tts_engine_options(tr=lambda key: key):
     """获取TTS引擎选项"""
     engine_options = {
         config.INDEXTTS_ENGINE: config.INDEXTTS_DISPLAY_NAME,
+        config.INDEXTTS_MACOS_ENGINE: config.INDEXTTS_MACOS_DISPLAY_NAME,
         config.INDEXTTS2_ENGINE: config.INDEXTTS2_DISPLAY_NAME,
         config.OMNIVOICE_ENGINE: config.OMNIVOICE_DISPLAY_NAME,
         "edge_tts": "Edge TTS",
@@ -134,6 +136,12 @@ def get_tts_engine_descriptions(tr=lambda key: key):
             "title": config.INDEXTTS_DISPLAY_NAME,
             "features": tr("IndexTTS features"),
             "use_case": tr("IndexTTS use case"),
+            "registration": None
+        },
+        config.INDEXTTS_MACOS_ENGINE: {
+            "title": config.INDEXTTS_MACOS_DISPLAY_NAME,
+            "features": tr("IndexTTS macOS features"),
+            "use_case": tr("IndexTTS macOS use case"),
             "registration": None
         },
         config.INDEXTTS2_ENGINE: {
@@ -588,6 +596,8 @@ def render_tts_settings(tr):
         render_qwen3_tts_settings(tr)
     elif selected_engine == config.INDEXTTS_ENGINE:
         render_indextts_tts_settings(tr)
+    elif selected_engine == config.INDEXTTS_MACOS_ENGINE:
+        render_indextts_macos_tts_settings(tr)
     elif selected_engine == config.INDEXTTS2_ENGINE:
         render_indextts2_tts_settings(tr)
     elif selected_engine == config.OMNIVOICE_ENGINE:
@@ -1120,6 +1130,102 @@ def render_indextts_tts_settings(tr):
     # 保存 voice_name 用于兼容性
     if reference_audio:
         config.ui["voice_name"] = f"{config.INDEXTTS_VOICE_PREFIX}{reference_audio}"
+
+
+def render_indextts_macos_tts_settings(tr):
+    """渲染 IndexTTS-1.5 macOS MLX Pack 设置。"""
+    tts_config = config.indextts_macos
+
+    def bounded_value(key, default, min_value, max_value):
+        try:
+            value = float(tts_config.get(key, default))
+        except (TypeError, ValueError):
+            value = default
+        return max(min_value, min(max_value, value))
+
+    api_url = st.text_input(
+        tr("API URL"),
+        value=tts_config.get("api_url", "http://127.0.0.1:7866"),
+        help=tr("IndexTTS macOS API URL Help"),
+    )
+    reference_audio_source, reference_audio = render_indextts_reference_audio_selector(
+        tr,
+        tts_config,
+        "indextts_macos",
+    )
+
+    speed = st.slider(
+        tr("IndexTTS2 Speed"),
+        min_value=0.5,
+        max_value=2.0,
+        value=bounded_value("speed", 1.0, 0.5, 2.0),
+        step=0.05,
+        help=tr("IndexTTS2 Speed Help"),
+    )
+    seed = st.text_input(
+        tr("IndexTTS2 Seed"),
+        value=str(tts_config.get("seed", "") or ""),
+        help=tr("IndexTTS2 Seed Help"),
+        placeholder=tr("IndexTTS2 Seed Placeholder"),
+    )
+
+    with st.expander(tr("Advanced Parameters"), expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            temperature = st.slider(
+                tr("Sampling Temperature"), 0.0, 2.0,
+                bounded_value("temperature", 1.0, 0.0, 2.0), 0.05,
+            )
+            top_p = st.slider(
+                "Top P", 0.05, 1.0,
+                bounded_value("top_p", 0.8, 0.05, 1.0), 0.05,
+            )
+            top_k = st.slider(
+                "Top K", 0, 200,
+                int(bounded_value("top_k", 30, 0, 200)), 1,
+            )
+            max_text_tokens_per_segment = st.slider(
+                tr("Max Text Tokens Per Segment"), 20, 600,
+                int(bounded_value("max_text_tokens_per_segment", 120, 20, 600)), 10,
+            )
+        with col2:
+            repetition_penalty = st.slider(
+                tr("Repetition Penalty"), 1.0, 20.0,
+                bounded_value("repetition_penalty", 10.0, 1.0, 20.0), 0.1,
+            )
+            max_mel_tokens = st.slider(
+                tr("Max Mel Tokens"), 64, 1600,
+                int(bounded_value("max_mel_tokens", 800, 64, 1600)), 1,
+            )
+            interval_silence = st.slider(
+                tr("Interval Silence"), 0, 2000,
+                int(bounded_value("interval_silence", 200, 0, 2000)), 50,
+            )
+            segment_overlap_ms = st.slider(
+                tr("Segment Overlap"), 0, 500,
+                int(bounded_value("segment_overlap_ms", 50, 0, 500)), 10,
+            )
+
+    with st.expander(tr("IndexTTS macOS Usage Instructions Title"), expanded=False):
+        st.markdown(tr("IndexTTS macOS Usage Instructions"))
+
+    tts_config["api_url"] = api_url
+    tts_config["reference_audio_source"] = reference_audio_source
+    tts_config["reference_audio"] = reference_audio
+    tts_config["speed"] = speed
+    tts_config["seed"] = seed.strip()
+    tts_config["temperature"] = temperature
+    tts_config["top_p"] = top_p
+    tts_config["top_k"] = top_k
+    tts_config["max_text_tokens_per_segment"] = max_text_tokens_per_segment
+    tts_config["repetition_penalty"] = repetition_penalty
+    tts_config["max_mel_tokens"] = max_mel_tokens
+    tts_config["interval_silence"] = interval_silence
+    tts_config["segment_overlap_ms"] = segment_overlap_ms
+    if reference_audio:
+        config.ui["voice_name"] = f"{config.INDEXTTS_MACOS_VOICE_PREFIX}{reference_audio}"
+    st.session_state["voice_rate"] = 1.0
+    st.session_state["voice_pitch"] = 1.0
 
 
 def render_indextts2_tts_settings(tr):
@@ -1748,6 +1854,12 @@ def render_voice_preview_new(tr, selected_engine):
                 voice_name = f"{config.INDEXTTS_VOICE_PREFIX}{reference_audio}"
             voice_rate = 1.0  # IndexTTS-1.5 不支持速度调节
             voice_pitch = 1.0  # IndexTTS-1.5 不支持音调调节
+        elif selected_engine == config.INDEXTTS_MACOS_ENGINE:
+            reference_audio = config.indextts_macos.get("reference_audio", "")
+            if reference_audio:
+                voice_name = f"{config.INDEXTTS_MACOS_VOICE_PREFIX}{reference_audio}"
+            voice_rate = 1.0  # 语速由 macOS Pack 配置传递
+            voice_pitch = 1.0
         elif selected_engine == config.INDEXTTS2_ENGINE:
             reference_audio = config.indextts2.get("reference_audio", "")
             if reference_audio:
@@ -1777,6 +1889,7 @@ def render_voice_preview_new(tr, selected_engine):
             temp_dir = utils.storage_dir("temp", create=True)
             audio_format = "audio/wav" if selected_engine in (
                 config.INDEXTTS_ENGINE,
+                config.INDEXTTS_MACOS_ENGINE,
                 config.INDEXTTS2_ENGINE,
                 config.OMNIVOICE_ENGINE,
             ) else "audio/mp3"

@@ -1,6 +1,9 @@
 import unittest
 
-from webui.components.audio_settings import _normalize_source_pills_value
+from webui.components.audio_settings import (
+    _normalize_source_pills_value,
+    get_tts_engine_options,
+)
 
 
 def zh_tr(key):
@@ -12,6 +15,17 @@ def zh_tr(key):
 
 
 class AudioSettingsSourcePillsTests(unittest.TestCase):
+    def test_tts_engine_options_include_indextts_15_macos_as_local_engine(self):
+        options = get_tts_engine_options(lambda key: {
+            "Local Deployment": "本地部署",
+            "Cloud Service": "云服务",
+        }.get(key, key))
+
+        self.assertEqual(
+            "IndexTTS-1.5-macOS [本地部署]",
+            options["indextts_macos"],
+        )
+
     def test_normalize_source_pills_value_keeps_canonical_value(self):
         options = {
             "resource": "Select from Resource Directory",
