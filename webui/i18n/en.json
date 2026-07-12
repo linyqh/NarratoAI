@@ -379,7 +379,7 @@
     "IndexTTS2 features": "A locally deployed IndexTTS-2 MLX Pack voice-cloning engine with emotion control and advanced generation parameters.",
     "IndexTTS2 use case": "Best for fixed voices, emotional narration, and local speech synthesis workflows that need finer sampling controls. Start the IndexTTS-2 MLX Pack service before use. Deployment packages:\n\n- **macOS**: [Download](https://cutagent.online/resources/indextts2-full-macos)\n- **Windows**: Coming soon",
     "OmniVoice features": "A locally or privately deployed OmniVoice-Pack multilingual TTS engine with automatic voice generation, voice design, and reference-audio cloning.",
-    "OmniVoice use case": "Best for local controllable multilingual narration, voice design, or reference-audio cloning. Start the OmniVoice-Pack API service before use.",
+    "OmniVoice use case": "Best for local controllable multilingual narration, voice design, or reference-audio cloning. Start the OmniVoice-Pack API service before use. Deployment packages:\n\n- **macOS**: [Download](https://cutagent.online/resources/omnivoice-macos)\n- **Windows**: [Download](https://cutagent.online/resources/omnivoice-windows)",
     "Doubao TTS features": "Volcengine Doubao speech synthesis with multiple voices and emotions, plus fast access in mainland China.",
     "Local Deployment": "Local Deployment",
     "Cloud Service": "Cloud Service",

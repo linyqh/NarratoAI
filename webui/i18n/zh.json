@@ -317,7 +317,7 @@
     "IndexTTS2 features": "本地部署的 IndexTTS-2 MLX Pack 语音克隆引擎，支持情感控制和更完整的生成参数。",
     "IndexTTS2 use case": "适合需要固定音色、情绪化旁白或更细致采样控制的本地语音合成场景。使用前请先启动 IndexTTS-2 MLX Pack 服务；部署包下载：\n\n- **macOS**：[下载地址](https://cutagent.online/resources/indextts2-full-macos)\n- **Windows**：待更新",
     "OmniVoice features": "本地/私有部署的 OmniVoice-Pack 多语种语音合成引擎，支持自动音色、指令音色和参考音频克隆。",
-    "OmniVoice use case": "适合需要本地可控、多语言旁白、音色设计或参考音频克隆的场景。使用前请先启动 OmniVoice-Pack API 服务。",
+    "OmniVoice use case": "适合需要本地可控、多语言旁白、音色设计或参考音频克隆的场景。使用前请先启动 OmniVoice-Pack API 服务；部署包下载：\n\n- **macOS**：[下载地址](https://cutagent.online/resources/omnivoice-macos)\n- **Windows**：[下载地址](https://cutagent.online/resources/omnivoice-windows)",
     "Doubao TTS features": "火山引擎豆包语音合成，支持多种音色和情感，国内访问速度快",
     "Local Deployment": "本地部署",
     "Cloud Service": "云端服务",
