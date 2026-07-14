@@ -1,7 +1,7 @@
 # 批量视频处理与 AI 解说后端开发计划
 
 > 需求来源：[`batch_deduplication_design.md`](./batch_deduplication_design.md)
-> 配套接口：[`backend_api.md`](./backend_api.md)
+> 配套接口：[`backend_api.yaml`](./backend_api.yaml)
 > 文档状态：Draft 1.0
 > 适用范围：用户拥有版权或已获授权的视频素材处理。内容变换不能保证通过任何平台审核，也不应被用于规避版权、原创度或社区规则检查。
 

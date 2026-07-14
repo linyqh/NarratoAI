@@ -1,0 +1,1534 @@
+openapi: 3.1.0
+
+info:
+  title: NarratoAI 批量视频处理 API
+  version: 1.0.0-draft
+  summary: 批量视频内容变换与 AI 解说后端接口
+  description: |
+    NarratoAI 无界面后端的 OpenAPI 3.1 契约。
+
+    接口覆盖视频上传、批次创建、状态查询、SSE 进度、取消、失败重试和产物下载。
+    所有供应商 API Key 只保存在服务端，不允许通过业务请求传入。
+
+    本服务仅用于处理用户拥有版权或已获授权的视频素材。内容变换不能保证通过任何
+    平台审核，也不应被用于规避版权、原创度或社区规则检查。
+
+servers:
+  - url: http://127.0.0.1:8080/api/v1
+    description: 本地开发服务
+
+tags:
+  - name: Health
+    description: 服务存活和就绪检查
+  - name: Capabilities
+    description: 查询当前实例支持的处理能力和限制
+  - name: Uploads
+    description: 视频上传和上传文件管理
+  - name: Batches
+    description: 批处理任务创建、查询和控制
+  - name: Events
+    description: 批次实时进度事件
+  - name: Artifacts
+    description: 处理产物查询和下载
+
+security:
+  - bearerAuth: []
+
+externalDocs:
+  description: 后端架构与开发计划
+  url: ./backend_plan.md
+
+x-frontend-workflow:
+  - GET /capabilities
+  - POST /uploads/videos
+  - POST /batches
+  - GET /batches/{batch_id}/events
+  - GET /batches/{batch_id}
+  - GET /artifacts/{artifact_id}/download
+
+x-error-catalog:
+  VALIDATION_ERROR:
+    http_status: [400, 422]
+    retryable: false
+    description: 请求字段或字段组合无效
+  UPLOAD_TOO_LARGE:
+    http_status: [413]
+    retryable: false
+    description: 单个文件超过服务端上限
+  BATCH_TOO_LARGE:
+    http_status: [413]
+    retryable: false
+    description: 文件数、总大小或总时长超过批次上限
+  UNSUPPORTED_MEDIA:
+    http_status: [400]
+    retryable: false
+    description: 文件不是可解码的视频
+  UPLOAD_IN_USE:
+    http_status: [409]
+    retryable: false
+    description: 上传文件正被任务引用
+  INVALID_STATE_TRANSITION:
+    http_status: [409]
+    retryable: false
+    description: 当前任务状态不允许执行此操作
+  CAPACITY_EXCEEDED:
+    http_status: [429]
+    retryable: true
+    description: 工作队列已满
+  VISION_NOT_CONFIGURED:
+    http_status: [503]
+    retryable: false
+    description: 服务端未配置视觉模型
+  TTS_NOT_CONFIGURED:
+    http_status: [503]
+    retryable: false
+    description: 服务端未配置 TTS
+  UPSTREAM_RATE_LIMITED:
+    http_status: [502, 429]
+    retryable: true
+    description: AI 或 TTS 上游限流
+  UPSTREAM_TIMEOUT:
+    http_status: [502]
+    retryable: true
+    description: AI 或 TTS 上游超时
+  UPSTREAM_BAD_RESPONSE:
+    http_status: [502]
+    retryable: conditional
+    description: 上游响应无法解析
+  FFPROBE_FAILED:
+    http_status: [400, 500]
+    retryable: conditional
+    description: 输入探测或输出验收失败
+  FFMPEG_FAILED:
+    http_status: [500]
+    retryable: conditional
+    description: 媒体处理失败
+  INSUFFICIENT_STORAGE:
+    http_status: [503]
+    retryable: true
+    description: 可用磁盘空间不足
+  WORKER_INTERRUPTED:
+    http_status: [500]
+    retryable: true
+    description: 服务重启或工作进程中断
+  ARTIFACT_NOT_FOUND:
+    http_status: [404]
+    retryable: false
+    description: 产物不存在或已过保留期
+  INTERNAL_ERROR:
+    http_status: [500]
+    retryable: false
+    description: 未预期的服务端错误
+
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      summary: 存活检查
+      operationId: getLiveness
+      security: []
+      responses:
+        "200":
+          description: 进程正在运行
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveResponse"
+              example:
+                data:
+                  status: ok
+                request_id: 2ec255f7-8bdf-46ce-a748-3a927582f828
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: 就绪检查
+      description: 只检查本地依赖，不发送真实 AI 或 TTS 请求，不消耗模型额度。
+      operationId: getReadiness
+      security: []
+      responses:
+        "200":
+          description: 服务已就绪
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /capabilities:
+    get:
+      tags: [Capabilities]
+      summary: 查询服务能力
+      description: |
+        返回文件限制、批次并发上限、可用滤镜和 AI/TTS 配置状态。
+        `narration.available=false` 表示服务端缺少模型配置，响应永远不会返回 API Key。
+      operationId: getCapabilities
+      responses:
+        "200":
+          description: 当前实例能力
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapabilitiesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /uploads/videos:
+    post:
+      tags: [Uploads]
+      summary: 上传一个或多个视频
+      description: |
+        文件应以流式方式落盘。服务端必须使用文件签名和 ffprobe 验证媒体，
+        不能只信任扩展名或客户端提供的 Content-Type。
+      operationId: uploadVideos
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files:
+                  type: array
+                  minItems: 1
+                  description: 待上传的视频文件列表
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "201":
+          description: 上传并校验成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /uploads/{upload_id}:
+    parameters:
+      - $ref: "#/components/parameters/UploadId"
+    get:
+      tags: [Uploads]
+      summary: 查询上传文件
+      operationId: getUpload
+      responses:
+        "200":
+          description: 上传文件详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [Uploads]
+      summary: 删除上传文件
+      description: 只有未被运行中任务引用的上传文件可以删除。
+      operationId: deleteUpload
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteUploadResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /batches:
+    post:
+      tags: [Batches]
+      summary: 创建批处理任务
+      description: |
+        异步创建批次，成功接收后立即返回 202。相同身份和相同 Idempotency-Key
+        在保留期内重复提交时，服务端返回第一次创建的批次，不重复执行。
+      operationId: createBatch
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchCreateRequest"
+            example:
+              upload_ids:
+                - 7299805d-e188-481e-9ef4-f6915af55bd0
+                - 9fbfcd61-9519-4513-b234-8ff483e452b3
+              output_subdir: campaign-20260714
+              concurrency: 2
+              narration:
+                enabled: true
+                language: zh-TW
+                video_theme: 悬疑影视解说
+                prompt: 叙述自然，保持事实准确，不虚构未出现的剧情
+                frame_interval_seconds: 5
+                vision_batch_size: 10
+                voice_id: zh_tw_male_mature
+                voice_prompt: 成熟、克制、略带悬疑感
+                voice_rate: 1.0
+                voice_volume: 1.0
+                original_audio_volume: 0.25
+                subtitle_enabled: true
+              deduplication:
+                enabled: true
+                change_file_hash: true
+                hash_strategy: metadata_remux
+                reencode: true
+                color_tweak: true
+                noise: true
+                border_mode: blurred
+                sticker: false
+                subtitle_mask: true
+                crop_scale: true
+                crop_ratio_range: [0.005, 0.015]
+                mirror_probability: 0.2
+                speed_tweak: true
+                speed_range: [0.99, 1.01]
+                random_seed: null
+      responses:
+        "202":
+          description: 批次已受理
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchAcceptedResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    get:
+      tags: [Batches]
+      summary: 分页列出批次
+      operationId: listBatches
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/BatchStatus"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: 服务端返回的不透明分页游标
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 批次列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /batches/{batch_id}:
+    parameters:
+      - $ref: "#/components/parameters/BatchId"
+    get:
+      tags: [Batches]
+      summary: 查询批次详情
+      description: 批次进度按所有 Job 等权聚合；单个 Job 的进度必须单调不下降。
+      operationId: getBatch
+      responses:
+        "200":
+          description: 批次及其视频任务详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchDetailResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /batches/{batch_id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/BatchId"
+    post:
+      tags: [Batches]
+      summary: 取消批次
+      description: |
+        queued Job 立即取消；running Job 先进入 cancelling 并在安全中断点终止。
+        已完成或已失败的 Job 保持原状态，成功产物继续可下载。对终态批次重复取消是幂等操作。
+      operationId: cancelBatch
+      responses:
+        "200":
+          description: 已接受取消请求或批次已经处于终态
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchCancelResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /batches/{batch_id}/jobs/{job_id}/retry:
+    parameters:
+      - $ref: "#/components/parameters/BatchId"
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [Batches]
+      summary: 重试失败任务
+      description: 创建一个新 Job，旧 Job 保留用于审计。
+      operationId: retryJob
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RetryJobRequest"
+      responses:
+        "202":
+          description: 重试任务已进入队列
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetryJobResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /batches/{batch_id}/events:
+    parameters:
+      - $ref: "#/components/parameters/BatchId"
+      - name: Last-Event-ID
+        in: header
+        required: false
+        description: 客户端上次成功处理的 SSE 事件 ID
+        schema:
+          type: string
+    get:
+      tags: [Events]
+      summary: 订阅批次实时进度
+      description: |
+        返回 Server-Sent Events。事件类型包括 batch.created、batch.started、
+        batch.progress、batch.completed、job.started、job.progress、job.completed、
+        job.failed、job.cancelled 和 heartbeat。
+
+        启用 Bearer Token 时，浏览器应使用支持自定义请求头的 fetch() 流式读取；
+        原生 EventSource 无法设置 Authorization 请求头。禁止把 Token 放进 URL 查询参数。
+      operationId: streamBatchEvents
+      responses:
+        "200":
+          description: SSE 事件流
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              example: no-cache
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                id: 148
+                event: job.progress
+                data: {"batch_id":"cc0ab617-6362-44da-a0df-f3ce0d2d36ed","job_id":"a52177c4-545d-4d64-b9b8-7ad59e8a04df","status":"running","stage":"synthesizing","progress":46,"message":"正在生成第 3/8 段解说音频","occurred_at":"2026-07-14T08:31:20Z"}
+
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /artifacts/{artifact_id}:
+    parameters:
+      - $ref: "#/components/parameters/ArtifactId"
+    get:
+      tags: [Artifacts]
+      summary: 查询产物元数据
+      operationId: getArtifact
+      responses:
+        "200":
+          description: 产物元数据
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /artifacts/{artifact_id}/download:
+    parameters:
+      - $ref: "#/components/parameters/ArtifactId"
+    get:
+      tags: [Artifacts]
+      summary: 下载或播放产物
+      description: |
+        响应使用正确的 Content-Type、Content-Length 和安全的 Content-Disposition。
+        视频产物应支持 HTTP Range。服务器绝对路径不属于公共接口。
+      operationId: downloadArtifact
+      responses:
+        "200":
+          description: 完整产物文件
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+            Accept-Ranges:
+              schema:
+                type: string
+              example: bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: 部分视频内容，响应客户端 Range 请求
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-token
+      description: 本地开发环境可以通过服务端配置关闭鉴权。
+
+  parameters:
+    UploadId:
+      name: upload_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BatchId:
+      name: batch_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ArtifactId:
+      name: artifact_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: 客户端生成的唯一值，用于避免重复创建批次。
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+  responses:
+    BadRequest:
+      description: 请求参数或媒体内容无效
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: 缺少认证信息或 Token 无效
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: 请求的资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: 资源当前状态不允许执行此操作
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PayloadTooLarge:
+      description: 文件大小、批次文件数或总时长超过上限
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnprocessableEntity:
+      description: 请求结构或字段校验失败
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    TooManyRequests:
+      description: 请求过快、上游限流或任务队列容量已满
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ServiceUnavailable:
+      description: FFmpeg、存储、模型配置或工作池暂不可用
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    RequestId:
+      type: string
+      format: uuid
+
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      properties:
+        field:
+          type: string
+        reason:
+          type: string
+      required: [reason]
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message, retryable]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+        retryable:
+          type: boolean
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error, request_id]
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+      example:
+        error:
+          code: VALIDATION_ERROR
+          message: speed_range 的最小值不能大于最大值
+          details:
+            - field: deduplication.speed_range
+              reason: invalid_range
+          retryable: false
+        request_id: 2ec255f7-8bdf-46ce-a748-3a927582f828
+
+    ErrorCode:
+      type: string
+      enum:
+        - VALIDATION_ERROR
+        - UPLOAD_TOO_LARGE
+        - BATCH_TOO_LARGE
+        - UNSUPPORTED_MEDIA
+        - UPLOAD_IN_USE
+        - INVALID_STATE_TRANSITION
+        - CAPACITY_EXCEEDED
+        - VISION_NOT_CONFIGURED
+        - TTS_NOT_CONFIGURED
+        - UPSTREAM_RATE_LIMITED
+        - UPSTREAM_TIMEOUT
+        - UPSTREAM_BAD_RESPONSE
+        - FFPROBE_FAILED
+        - FFMPEG_FAILED
+        - INSUFFICIENT_STORAGE
+        - WORKER_INTERRUPTED
+        - ARTIFACT_NOT_FOUND
+        - INTERNAL_ERROR
+
+    LiveData:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+
+    LiveResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/LiveData"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+
+    DependencyStatus:
+      type: string
+      enum: [ok, unavailable]
+
+    ReadyChecks:
+      type: object
+      additionalProperties: false
+      required: [database, storage, ffmpeg, ffprobe]
+      properties:
+        database:
+          $ref: "#/components/schemas/DependencyStatus"
+        storage:
+          $ref: "#/components/schemas/DependencyStatus"
+        ffmpeg:
+          $ref: "#/components/schemas/DependencyStatus"
+        ffprobe:
+          $ref: "#/components/schemas/DependencyStatus"
+
+    ReadyData:
+      type: object
+      additionalProperties: false
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          $ref: "#/components/schemas/ReadyChecks"
+
+    ReadyResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/ReadyData"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+
+    DeduplicationCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+        - reencode
+        - color_tweak
+        - noise
+        - border_modes
+        - sticker
+        - subtitle_mask
+        - crop_scale
+        - mirror
+        - speed_tweak
+      properties:
+        reencode:
+          type: boolean
+        color_tweak:
+          type: boolean
+        noise:
+          type: boolean
+        border_modes:
+          type: array
+          items:
+            $ref: "#/components/schemas/BorderMode"
+        sticker:
+          type: boolean
+        subtitle_mask:
+          type: boolean
+        crop_scale:
+          type: boolean
+        mirror:
+          type: boolean
+        speed_tweak:
+          type: boolean
+
+    NarrationCapabilities:
+      type: object
+      additionalProperties: false
+      required: [available, vision_provider, vision_model, tts_provider, tts_model, voice_ids]
+      properties:
+        available:
+          type: boolean
+        vision_provider:
+          type: string
+          example: openai
+        vision_model:
+          type: string
+          example: doubao-seed-2-1-turbo-260628
+        tts_provider:
+          type: string
+          example: seed_audio
+        tts_model:
+          type: string
+          example: seed-audio-1.0
+        voice_ids:
+          type: array
+          items:
+            type: string
+
+    CapabilitiesData:
+      type: object
+      additionalProperties: false
+      required:
+        - accepted_video_extensions
+        - max_upload_size_bytes
+        - max_files_per_batch
+        - max_batch_concurrency
+        - deduplication
+        - narration
+      properties:
+        accepted_video_extensions:
+          type: array
+          items:
+            type: string
+          example: [mp4, mov, mkv, webm]
+        max_upload_size_bytes:
+          type: integer
+          format: int64
+          minimum: 1
+          example: 2147483648
+        max_files_per_batch:
+          type: integer
+          minimum: 1
+          example: 20
+        max_batch_concurrency:
+          type: integer
+          minimum: 1
+          example: 4
+        deduplication:
+          $ref: "#/components/schemas/DeduplicationCapabilities"
+        narration:
+          $ref: "#/components/schemas/NarrationCapabilities"
+
+    CapabilitiesResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/CapabilitiesData"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+
+    MediaInfo:
+      type: object
+      additionalProperties: false
+      required:
+        - duration_seconds
+        - width
+        - height
+        - fps
+        - has_audio
+        - video_codec
+      properties:
+        duration_seconds:
+          type: number
+          minimum: 0
+        width:
+          type: integer
+          minimum: 1
+        height:
+          type: integer
+          minimum: 1
+        fps:
+          type: number
+          exclusiveMinimum: 0
+        has_audio:
+          type: boolean
+        video_codec:
+          type: string
+        audio_codec:
+          type: [string, "null"]
+
+    UploadStatus:
+      type: string
+      enum: [ready, rejected, deleted]
+
+    Upload:
+      type: object
+      additionalProperties: false
+      required: [id, original_name, size_bytes, sha256, status, media_info]
+      properties:
+        id:
+          type: string
+          format: uuid
+        original_name:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        sha256:
+          type: string
+          pattern: "^[a-fA-F0-9]{64}$"
+        status:
+          $ref: "#/components/schemas/UploadStatus"
+        media_info:
+          $ref: "#/components/schemas/MediaInfo"
+
+    UploadListData:
+      type: object
+      additionalProperties: false
+      required: [uploads]
+      properties:
+        uploads:
+          type: array
+          items:
+            $ref: "#/components/schemas/Upload"
+
+    UploadListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/UploadListData"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+
+    UploadResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/Upload"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+
+    DeleteUploadData:
+      type: object
+      additionalProperties: false
+      required: [id, deleted]
+      properties:
+        id:
+          type: string
+          format: uuid
+        deleted:
+          type: boolean
+          const: true
+
+    DeleteUploadResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/DeleteUploadData"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+
+    NarrationOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+          default: false
+        language:
+          type: string
+          default: zh-CN
+          minLength: 2
+          maxLength: 35
+        video_theme:
+          type: string
+          maxLength: 200
+          default: ""
+        prompt:
+          type: string
+          maxLength: 2000
+          default: ""
+        frame_interval_seconds:
+          type: number
+          minimum: 1
+          maximum: 60
+        vision_batch_size:
+          type: integer
+          minimum: 1
+        voice_id:
+          type: string
+          description: 必须来自 capabilities.narration.voice_ids。
+        voice_prompt:
+          type: string
+          maxLength: 500
+          default: ""
+        voice_rate:
+          type: number
+          minimum: 0.5
+          maximum: 2.0
+          default: 1.0
+        voice_volume:
+          type: number
+          minimum: 0
+          maximum: 2
+          default: 1.0
+        original_audio_volume:
+          type: number
+          minimum: 0
+          maximum: 2
+          default: 0.25
+        subtitle_enabled:
+          type: boolean
+          default: true
+
+    HashStrategy:
+      type: string
+      enum: [metadata_remux, append_bytes]
+      default: metadata_remux
+
+    BorderMode:
+      type: string
+      enum: [none, solid, blurred]
+
+    DeduplicationOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+          default: true
+        change_file_hash:
+          type: boolean
+          default: true
+          description: 只保证输出二进制摘要变化，不代表平台内容判定结果。
+        hash_strategy:
+          $ref: "#/components/schemas/HashStrategy"
+        reencode:
+          type: boolean
+          default: true
+          description: 开启任何视频滤镜时由服务端强制设为 true。
+        color_tweak:
+          type: boolean
+          default: false
+        noise:
+          type: boolean
+          default: false
+        border_mode:
+          allOf:
+            - $ref: "#/components/schemas/BorderMode"
+          default: none
+        sticker:
+          type: boolean
+          default: false
+        subtitle_mask:
+          type: boolean
+          default: false
+        crop_scale:
+          type: boolean
+          default: false
+        crop_ratio_range:
+          type: array
+          minItems: 2
+          maxItems: 2
+          prefixItems:
+            - type: number
+              minimum: 0
+              maximum: 0.05
+            - type: number
+              minimum: 0
+              maximum: 0.05
+          default: [0.005, 0.015]
+          description: 第一项不能大于第二项。
+        mirror_probability:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0
+        speed_tweak:
+          type: boolean
+          default: false
+        speed_range:
+          type: array
+          minItems: 2
+          maxItems: 2
+          prefixItems:
+            - type: number
+              minimum: 0.9
+              maximum: 1.1
+            - type: number
+              minimum: 0.9
+              maximum: 1.1
+          default: [0.99, 1.01]
+          description: 第一项不能大于第二项；视频和音频必须同步变速。
+        random_seed:
+          type: [integer, "null"]
+          format: int64
+          default: null
+
+    BatchCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [upload_ids]
+      properties:
+        upload_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+        output_subdir:
+          type: string
+          maxLength: 128
+          pattern: "^[A-Za-z0-9._-]+$"
+          description: 安全相对目录名；不接受绝对路径或 ..。
+        concurrency:
+          type: integer
+          minimum: 1
+          default: 1
+          description: 不能超过 capabilities.max_batch_concurrency。
+        narration:
+          $ref: "#/components/schemas/NarrationOptions"
+        deduplication:
+          $ref: "#/components/schemas/DeduplicationOptions"
+
+    BatchStatus:
+      type: string
+      enum:
+        - queued
+        - running
+        - partially_succeeded
+        - succeeded
+        - failed
+        - cancelling
+        - cancelled
+
+    JobStatus:
+      type: string
+      enum: [queued, running, succeeded, failed, cancelling, cancelled]
+
+    JobStage:
+      type: string
+      enum:
+        - queued
+        - probing
+        - analyzing
+        - scripting
+        - synthesizing
+        - composing
+        - transforming
+        - finalizing
+        - completed
+
+    ArtifactKind:
+      type: string
+      enum: [video, subtitle, script, analysis, narration_audio, manifest]
+
+    BatchAcceptedData:
+      type: object
+      additionalProperties: false
+      required: [batch_id, status, progress, total, status_url, events_url]
+      properties:
+        batch_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: queued
+        progress:
+          type: integer
+          const: 0
+        total:
+          type: integer
+          minimum: 1
+        status_url:
+          type: string
+        events_url:
+          type: string
+
+    BatchAcceptedResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/BatchAcceptedData"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+
+    ArtifactSummary:
+      type: object
+      required: [id, kind, file_name, size_bytes, sha256, download_url]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          $ref: "#/components/schemas/ArtifactKind"
+        file_name:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        sha256:
+          type: string
+          pattern: "^[a-fA-F0-9]{64}$"
+        download_url:
+          type: string
+
+    JobError:
+      type: object
+      additionalProperties: false
+      required: [code, message, retryable]
+      properties:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
+          type: string
+        retryable:
+          type: boolean
+
+    VideoJob:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - upload_id
+        - source_name
+        - status
+        - stage
+        - progress
+        - message
+        - random_seed
+        - artifacts
+        - error
+      properties:
+        id:
+          type: string
+          format: uuid
+        upload_id:
+          type: string
+          format: uuid
+        source_name:
+          type: string
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        stage:
+          $ref: "#/components/schemas/JobStage"
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        message:
+          type: string
+        random_seed:
+          type: integer
+          format: int64
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArtifactSummary"
+        error:
+          oneOf:
+            - $ref: "#/components/schemas/JobError"
+            - type: "null"
+
+    BatchSummary:
+      type: object
+      required:
+        - id
+        - status
+        - progress
+        - total
+        - queued
+        - running
+        - succeeded
+        - failed
+        - cancelled
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/BatchStatus"
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        total:
+          type: integer
+          minimum: 1
+        queued:
+          type: integer
+          minimum: 0
+        running:
+          type: integer
+          minimum: 0
+        succeeded:
+          type: integer
+          minimum: 0
+        failed:
+          type: integer
+          minimum: 0
+        cancelled:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: [string, "null"]
+          format: date-time
+        finished_at:
+          type: [string, "null"]
+          format: date-time
+
+    BatchDetail:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: "#/components/schemas/BatchSummary"
+        - type: object
+          required: [jobs]
+          properties:
+            jobs:
+              type: array
+              items:
+                $ref: "#/components/schemas/VideoJob"
+
+    BatchDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/BatchDetail"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+
+    BatchListData:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BatchSummary"
+        next_cursor:
+          type: [string, "null"]
+
+    BatchListResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/BatchListData"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+
+    BatchCancelData:
+      type: object
+      additionalProperties: false
+      required: [id, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/BatchStatus"
+
+    BatchCancelResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/BatchCancelData"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+
+    RetryJobRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reuse_random_seed:
+          type: boolean
+          default: true
+
+    RetryJobData:
+      type: object
+      additionalProperties: false
+      required: [job_id, retry_of, status]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        retry_of:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: queued
+
+    RetryJobResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/RetryJobData"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+
+    Artifact:
+      unevaluatedProperties: false
+      allOf:
+        - $ref: "#/components/schemas/ArtifactSummary"
+        - type: object
+          required: [job_id, content_type, created_at]
+          properties:
+            job_id:
+              type: string
+              format: uuid
+            content_type:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+
+    ArtifactResponse:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          $ref: "#/components/schemas/Artifact"
+        request_id:
+          $ref: "#/components/schemas/RequestId"
+
+    ProcessingManifest:
+      type: object
+      additionalProperties: false
+      required:
+        - schema_version
+        - job_id
+        - source
+        - random_seed
+        - narration
+        - effective_filters
+        - output
+        - software
+      properties:
+        schema_version:
+          type: string
+          const: "1.0"
+        job_id:
+          type: string
+          format: uuid
+        source:
+          type: object
+          required: [upload_id, file_name, sha256]
+          properties:
+            upload_id:
+              type: string
+              format: uuid
+            file_name:
+              type: string
+            sha256:
+              type: string
+              pattern: "^[a-fA-F0-9]{64}$"
+        random_seed:
+          type: integer
+          format: int64
+        narration:
+          type: object
+          required: [enabled]
+          properties:
+            enabled:
+              type: boolean
+            vision_model:
+              type: string
+            tts_model:
+              type: string
+            language:
+              type: string
+            script_artifact_id:
+              type: string
+              format: uuid
+        effective_filters:
+          type: object
+          additionalProperties: true
+          description: 本次任务实际采用的确定性滤镜参数。
+        output:
+          type: object
+          required: [artifact_id, sha256, duration_seconds]
+          properties:
+            artifact_id:
+              type: string
+              format: uuid
+            sha256:
+              type: string
+              pattern: "^[a-fA-F0-9]{64}$"
+            duration_seconds:
+              type: number
+              minimum: 0
+        software:
+          type: object
+          required: [narratoai_version, ffmpeg_version]
+          properties:
+            narratoai_version:
+              type: string
+            ffmpeg_version:
+              type: string
