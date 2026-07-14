@@ -17,6 +17,7 @@ from app.services.prompts import PromptManager
 from app.services.llm.unified_service import UnifiedLLMService
 # 导入安全的异步执行函数
 from app.services.llm.migration_adapter import _run_async_safely
+from app.utils.json_utils import parse_and_fix_json
 
 
 def _normalize_paths(paths):
@@ -180,7 +181,6 @@ def _generate_short_mix_script(
         max_tokens=4000,
     )
 
-    from webui.tools.generate_short_summary import parse_and_fix_json
     script_data = parse_and_fix_json(response)
     if not script_data:
         raise ValueError("无法解析短剧混剪脚本JSON")
@@ -315,7 +315,6 @@ def analyze_subtitle(
         )
 
         # 解析JSON响应
-        from webui.tools.generate_short_summary import parse_and_fix_json
         summary_data = parse_and_fix_json(response)
 
         if not summary_data:

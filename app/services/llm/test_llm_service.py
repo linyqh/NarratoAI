@@ -22,7 +22,7 @@ from app.services.llm.unified_service import UnifiedLLMService
 from app.services.llm.exceptions import LLMServiceError
 
 
-async def test_text_generation():
+async def check_text_generation():
     """测试文本生成功能"""
     print("\n🔤 测试文本生成功能...")
     
@@ -47,7 +47,7 @@ async def test_text_generation():
         return False
 
 
-async def test_json_generation():
+async def check_json_generation():
     """测试JSON格式生成功能"""
     print("\n📄 测试JSON格式生成功能...")
     
@@ -86,7 +86,7 @@ async def test_json_generation():
         return False
 
 
-async def test_narration_script_generation():
+async def check_narration_script_generation():
     """测试解说文案生成功能"""
     print("\n🎬 测试解说文案生成功能...")
     
@@ -121,7 +121,7 @@ async def test_narration_script_generation():
         return False
 
 
-async def test_subtitle_analysis():
+async def check_subtitle_analysis():
     """测试字幕分析功能"""
     print("\n📝 测试字幕分析功能...")
     
@@ -156,7 +156,7 @@ async def test_subtitle_analysis():
         return False
 
 
-def test_config_validation():
+def check_config_validation():
     """测试配置验证功能"""
     print("\n⚙️  测试配置验证功能...")
     
@@ -181,7 +181,7 @@ def test_config_validation():
         return False
 
 
-def test_provider_info():
+def check_provider_info():
     """测试提供商信息获取"""
     print("\n📋 测试提供商信息获取...")
     
@@ -211,22 +211,22 @@ async def run_all_tests():
     test_results = []
     
     # 1. 测试配置验证
-    test_results.append(("配置验证", test_config_validation()))
+    test_results.append(("配置验证", check_config_validation()))
     
     # 2. 测试提供商信息
-    test_results.append(("提供商信息", test_provider_info()))
+    test_results.append(("提供商信息", check_provider_info()))
     
     # 3. 测试文本生成
-    test_results.append(("文本生成", await test_text_generation()))
+    test_results.append(("文本生成", await check_text_generation()))
     
     # 4. 测试JSON生成
-    test_results.append(("JSON生成", await test_json_generation()))
+    test_results.append(("JSON生成", await check_json_generation()))
     
     # 5. 测试字幕分析
-    test_results.append(("字幕分析", await test_subtitle_analysis()))
+    test_results.append(("字幕分析", await check_subtitle_analysis()))
     
     # 6. 测试解说文案生成
-    test_results.append(("解说文案生成", await test_narration_script_generation()))
+    test_results.append(("解说文案生成", await check_narration_script_generation()))
     
     # 输出测试结果
     print("\n" + "="*60)

@@ -16,7 +16,7 @@ from .manager import LLMServiceManager
 # 导入新的提示词管理系统
 from app.services.prompts import PromptManager
 
-# 提供商注册由 webui.py:main() 显式调用（见 LLM 提供商注册机制重构）
+# 提供商注册由核心服务自行保证，不依赖 UI 生命周期。
 # 这样更可靠，错误也更容易调试
 
 

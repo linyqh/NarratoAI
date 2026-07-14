@@ -74,6 +74,24 @@ class OpenAICompatManagerTests(unittest.TestCase):
         self.assertEqual("new-model", provider.model_name)
         self.assertEqual("https://new.example/v1", provider.base_url)
 
+    def test_get_text_provider_registers_lazily_without_ui_bootstrap(self):
+        config.app["text_llm_provider"] = "openai"
+        config.app["text_openai_api_key"] = "new-key"
+        config.app["text_openai_model_name"] = "new-model"
+        config.app["text_openai_base_url"] = "https://new.example/v1"
+
+        def register_dummy_provider():
+            LLMServiceManager.register_text_provider("openai", DummyOpenAITextProvider)
+
+        with patch(
+            "app.services.llm.providers.register_all_providers",
+            side_effect=register_dummy_provider,
+        ) as register:
+            provider = LLMServiceManager.get_text_provider()
+
+        register.assert_called_once_with()
+        self.assertIsInstance(provider, DummyOpenAITextProvider)
+
 
 class OpenAICompatVisionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
     async def test_analyze_images_keeps_batch_order_when_running_concurrently(self):
