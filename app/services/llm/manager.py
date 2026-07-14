@@ -37,10 +37,16 @@ class LLMServiceManager:
         cls._text_providers[name.lower()] = provider_class
         logger.debug(f"注册文本模型提供商: {name}")
 
-    # _ensure_providers_registered() 方法已移除
-    # 现在使用显式注册机制（见 webui.py:main()）
-    # 如需检查注册状态，使用 is_registered() 方法
+    @classmethod
+    def _ensure_provider_registered(cls, model_type: str, provider_name: str) -> None:
+        """Lazily register built-in providers without relying on a UI startup hook."""
+        registry = cls._vision_providers if model_type == "vision" else cls._text_providers
+        if provider_name in registry:
+            return
 
+        from .providers import register_all_providers
+
+        register_all_providers()
 
     @classmethod
     def is_registered(cls) -> bool:
@@ -103,17 +109,11 @@ class LLMServiceManager:
             ProviderNotFoundError: 提供商未找到
             ConfigurationError: 配置错误
         """
-        # 检查提供商是否已注册
-        if not cls.is_registered():
-            raise ConfigurationError(
-                "LLM 提供商未注册。请确保在应用启动时调用了 register_all_providers()。"
-                f"\n当前已注册的提供商: {cls.get_registered_providers_info()}"
-            )
-
         # 确定提供商名称
         if not provider_name:
             provider_name = config.app.get('vision_llm_provider', 'openai')
         provider_name = cls._normalize_provider_name(provider_name)
+        cls._ensure_provider_registered("vision", provider_name)
 
         # 检查缓存
         cache_key = f"vision_{provider_name}"
@@ -168,17 +168,11 @@ class LLMServiceManager:
             ProviderNotFoundError: 提供商未找到
             ConfigurationError: 配置错误
         """
-        # 检查提供商是否已注册
-        if not cls.is_registered():
-            raise ConfigurationError(
-                "LLM 提供商未注册。请确保在应用启动时调用了 register_all_providers()。"
-                f"\n当前已注册的提供商: {cls.get_registered_providers_info()}"
-            )
-
         # 确定提供商名称
         if not provider_name:
             provider_name = config.app.get('text_llm_provider', 'openai')
         provider_name = cls._normalize_provider_name(provider_name)
+        cls._ensure_provider_registered("text", provider_name)
 
         logger.debug(f"获取文本模型提供商: {provider_name}")
         logger.debug(f"已注册的文本提供商: {list(cls._text_providers.keys())}")

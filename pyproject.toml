@@ -8,8 +8,6 @@ dependencies = [
     "requests>=2.32.0",
     "moviepy==2.1.1",
     "edge-tts==7.2.7",
-    "streamlit==1.56.0",
-    "watchdog==6.0.0",
     "loguru>=0.7.3",
     "tomli>=2.2.1",
     "tomli-w>=1.0.0",

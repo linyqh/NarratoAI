@@ -20,8 +20,7 @@ from .base import BaseLLMProvider, VisionModelProvider, TextModelProvider
 from .validators import OutputValidator, ValidationError
 from .exceptions import LLMServiceError, ProviderNotFoundError, ConfigurationError
 
-# 提供商注册由 webui.py:main() 显式调用（见 LLM 提供商注册机制重构）
-# 这样更可靠，错误也更容易调试
+# 提供商由 LLMServiceManager 在首次使用时延迟注册，核心层不依赖任何 UI 启动钩子。
 
 __all__ = [
     'LLMServiceManager',

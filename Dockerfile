@@ -53,39 +53,22 @@ ENV PATH="/opt/venv/bin:$PATH" \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     imagemagick \
     ffmpeg \
-    wget \
-    curl \
     git-lfs \
     ca-certificates \
-    dos2unix \
     && sed -i 's/<policy domain="path" rights="none" pattern="@\*"/<policy domain="path" rights="read|write" pattern="@\*"/' /etc/ImageMagick-6/policy.xml || true \
     && git lfs install \
     && groupadd -r narratoai && useradd -r -g narratoai -d /NarratoAI -s /bin/bash narratoai \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制入口脚本并修复换行符问题
-COPY --chown=narratoai:narratoai docker-entrypoint.sh /usr/local/bin/
-RUN dos2unix /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
-
 # 复制其余的应用代码
 COPY --chown=narratoai:narratoai . .
 
-# 创建目录、复制配置、设置权限
+# 创建核心服务需要的运行时目录
 RUN mkdir -p storage/temp storage/tasks storage/json storage/narration_scripts storage/drama_analysis && \
-    if [ ! -f config.toml ]; then cp config.example.toml config.toml; fi && \
-    chown -R narratoai:narratoai /NarratoAI && \
-    chmod -R 755 /NarratoAI
+    chown -R narratoai:narratoai /NarratoAI
 
 # 切换到非 root 用户
 USER narratoai
 
-# 暴露端口
-EXPOSE 8501
-
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8501/_stcore/health || exit 1
-
-# 设置入口点
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["webui"]
+# 默认只执行核心层自检；接入新的 API/前端后可覆盖该命令。
+CMD ["python", "-m", "app"]

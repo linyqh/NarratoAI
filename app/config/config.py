@@ -1,7 +1,9 @@
 import os
 import socket
-import toml
 import shutil
+import tomllib
+
+import tomli_w
 from loguru import logger
 
 from app.config.defaults import build_default_app_config, merge_missing_app_defaults
@@ -94,12 +96,13 @@ def load_config():
 def load_toml_file(file_path):
     """Load a TOML file and fall back to utf-8-sig when needed."""
     try:
-        return toml.load(file_path)
+        with open(file_path, "rb") as fp:
+            return tomllib.load(fp)
     except Exception as e:
         logger.warning(f"load config failed: {str(e)}, try to load as utf-8-sig")
         with open(file_path, mode="r", encoding="utf-8-sig") as fp:
             _cfg_content = fp.read()
-            return toml.loads(_cfg_content)
+            return tomllib.loads(_cfg_content)
 
 
 def build_default_config():
@@ -119,7 +122,7 @@ def write_config_file(config_data):
         os.makedirs(parent_dir, exist_ok=True)
 
     with open(config_file, "w", encoding="utf-8") as f:
-        f.write(toml.dumps(config_data))
+        f.write(tomli_w.dumps(config_data))
 
 
 def save_config():
@@ -136,7 +139,7 @@ def save_config():
         _cfg["indextts2"] = indextts2
         _cfg["omnivoice"] = omnivoice
         _cfg["doubaotts"] = doubaotts
-        f.write(toml.dumps(_cfg))
+        f.write(tomli_w.dumps(_cfg))
 
 
 _cfg = load_config()

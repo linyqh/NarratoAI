@@ -15,7 +15,7 @@ from app.config.defaults import (
 
 
 class ConfigBootstrapDefaultsTests(unittest.TestCase):
-    def test_load_config_bootstraps_webui_llm_defaults(self):
+    def test_load_config_bootstraps_headless_llm_defaults(self):
         original_root_dir = cfg.root_dir
         original_config_file = cfg.config_file
 

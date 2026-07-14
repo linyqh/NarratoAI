@@ -7,7 +7,9 @@
 
 import asyncio
 import os
+import sys
 import unittest
+from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import PIL.Image
@@ -40,17 +42,36 @@ class TwelveLabsProviderUnitTests(unittest.TestCase):
     def test_analyze_images_returns_pegasus_text(self):
         provider = _make_provider()
 
+        async def run_inline(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
         # 伪造 SDK client：上传 -> ready -> analyze 返回文本。
         fake_client = MagicMock()
         fake_client.assets.create.return_value = MagicMock(id="asset-1")
         fake_client.assets.retrieve.return_value = MagicMock(status="ready")
         fake_client.analyze.return_value = MagicMock(data="A red frame fades to blue.", finish_reason="stop")
 
+        fake_twelvelabs = ModuleType("twelvelabs")
+        fake_types = ModuleType("twelvelabs.types")
+        fake_video_context = ModuleType("twelvelabs.types.video_context")
+        fake_video_context.VideoContext_AssetId = MagicMock()
+        fake_errors = ModuleType("twelvelabs.errors")
+        fake_errors.BadRequestError = type("BadRequestError", (Exception,), {})
+        fake_errors.ForbiddenError = type("ForbiddenError", (Exception,), {})
+        fake_errors.TooManyRequestsError = type("TooManyRequestsError", (Exception,), {})
+
         img = PIL.Image.new("RGB", (64, 64), (200, 30, 30))
 
         with patch.object(provider, "_build_client", return_value=fake_client), \
              patch.object(provider, "_frames_to_clip", return_value="/tmp/clip.mp4"), \
              patch("app.services.llm.twelvelabs_provider.os.path.getsize", return_value=1234), \
+             patch("app.services.llm.twelvelabs_provider.asyncio.to_thread", side_effect=run_inline), \
+             patch.dict(sys.modules, {
+                 "twelvelabs": fake_twelvelabs,
+                 "twelvelabs.types": fake_types,
+                 "twelvelabs.types.video_context": fake_video_context,
+                 "twelvelabs.errors": fake_errors,
+             }), \
              patch("builtins.open", MagicMock()):
             results = asyncio.run(provider.analyze_images(images=[img, img], prompt="describe", batch_size=10))
 
@@ -65,7 +86,11 @@ class TwelveLabsProviderUnitTests(unittest.TestCase):
 
     def test_analyze_images_degrades_on_batch_error(self):
         provider = _make_provider()
-        with patch.object(provider, "_analyze_batch_sync", side_effect=RuntimeError("boom")):
+
+        async def fail_in_worker(*_args, **_kwargs):
+            raise RuntimeError("boom")
+
+        with patch("app.services.llm.twelvelabs_provider.asyncio.to_thread", side_effect=fail_in_worker):
             img = PIL.Image.new("RGB", (64, 64), (0, 0, 0))
             results = asyncio.run(provider.analyze_images(images=[img], prompt="p", batch_size=10))
         self.assertEqual(1, len(results))
