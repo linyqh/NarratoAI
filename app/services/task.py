@@ -19,6 +19,7 @@ from app.services import (
     update_script,
     generate_video,
     script_subtitle,
+    sonilo,
 )
 from app.services import state as sm
 from app.utils import utils
@@ -212,6 +213,27 @@ def _build_subtitle_mask_options(params: VideoClipParams, enabled=None) -> dict:
         'subtitle_position_landscape_y_percent': getattr(params, "subtitle_position_landscape_y_percent", 85.0),
         'subtitle_position_portrait_y_percent': getattr(params, "subtitle_position_portrait_y_percent", 82.0),
     }
+
+
+def _resolve_bgm_path(task_id: str, params: VideoClipParams, combined_video_path: str) -> str:
+    """解析最终合成使用的背景音乐文件路径。
+
+    bgm_type 为 "sonilo" 时（可选功能，默认关闭），将合并后的成片上传到
+    Sonilo API 生成配乐；任何失败都只记录日志并回退到现有的随机背景音乐
+    逻辑，绝不中断成片任务。其余 bgm_type 走原有逻辑，保持不变。
+    """
+    if getattr(params, "bgm_type", "") == "sonilo":
+        save_path = path.join(utils.task_dir(task_id), "sonilo_bgm.m4a")
+        bgm_path = sonilo.generate_bgm(combined_video_path, save_path)
+        if bgm_path:
+            return bgm_path
+        logger.warning("Sonilo 配乐不可用，回退到随机背景音乐")
+        return utils.get_bgm_file(bgm_type="random", bgm_file="")
+
+    return utils.get_bgm_file(
+        bgm_type=getattr(params, "bgm_type", "random"),
+        bgm_file=getattr(params, "bgm_file", ""),
+    )
 
 
 def _transcribe_final_video(task_id: str, video_path: str, params: VideoClipParams) -> str:
@@ -521,10 +543,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
     logger.info(f"\n\n## 6. 最后一步: 合并字幕/BGM/配音/视频 -> {merge_output_video_path}")
 
     # bgm_path = '/Users/apple/Desktop/home/NarratoAI/resource/songs/bgm.mp3'
-    bgm_path = utils.get_bgm_file(
-        bgm_type=getattr(params, "bgm_type", "random"),
-        bgm_file=getattr(params, "bgm_file", ""),
-    )
+    bgm_path = _resolve_bgm_path(task_id, params, combined_video_path)
 
     # 获取优化的音量配置
     optimized_volumes = get_recommended_volumes_for_content('mixed')
@@ -850,10 +869,7 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
         ffmpeg_progress=0,
     )
 
-    bgm_path = utils.get_bgm_file(
-        bgm_type=getattr(params, "bgm_type", "random"),
-        bgm_file=getattr(params, "bgm_file", ""),
-    )
+    bgm_path = _resolve_bgm_path(task_id, params, combined_video_path)
 
     # 获取优化的音量配置
     optimized_volumes = get_recommended_volumes_for_content('mixed')
