@@ -3,8 +3,9 @@ import os
 import shutil
 import json
 from uuid import uuid4
+from loguru import logger
 from app.config import config
-from app.services import voice
+from app.services import sonilo, voice
 from app.models.schema import AudioVolumeDefaults
 from app.utils import utils
 
@@ -1937,16 +1938,58 @@ def render_voice_preview(tr, voice_name):
                 st.error(tr("Voice synthesis failed"))
 
 
+def render_sonilo_bgm_settings(tr):
+    """渲染 Sonilo AI 配乐设置（可选功能，默认关闭）"""
+    # 避免在本模块顶层引入 basic_settings 的重依赖链，按需导入。
+    from webui.components.basic_settings import update_app_config_if_changed
+
+    st.info(tr("Sonilo BGM Notice"))
+
+    sonilo_api_key = st.text_input(
+        tr("Sonilo API Key"),
+        value=config.app.get("sonilo_api_key", ""),
+        type="password",
+        help=tr("Sonilo API Key Help"),
+        key="sonilo_api_key_input",
+    )
+    sonilo_bgm_prompt = st.text_input(
+        tr("Sonilo BGM Prompt"),
+        value=config.app.get("sonilo_bgm_prompt", ""),
+        help=tr("Sonilo BGM Prompt Help"),
+        key="sonilo_bgm_prompt_input",
+    )
+
+    api_key_changed = update_app_config_if_changed(
+        "sonilo_api_key", str(sonilo_api_key or "").strip()
+    )
+    prompt_changed = update_app_config_if_changed(
+        "sonilo_bgm_prompt", str(sonilo_bgm_prompt or "").strip()
+    )
+    if api_key_changed or prompt_changed:
+        try:
+            config.save_config()
+            st.success(tr("Sonilo config saved"))
+        except Exception as e:
+            st.error(f"{tr('Failed to save config')}: {str(e)}")
+            logger.error(f"保存 Sonilo 配置失败: {str(e)}")
+
+    if not sonilo.is_enabled():
+        st.warning(tr("Sonilo API Key Required"))
+
+
 def render_bgm_settings(tr):
     """渲染背景音乐设置"""
     saved_bgm_file = st.session_state.get('bgm_file', '')
     saved_bgm_source = st.session_state.get('bgm_source', 'resource')
     if st.session_state.get('bgm_type') == "":
         saved_bgm_source = "none"
+    elif st.session_state.get('bgm_type') == "sonilo":
+        saved_bgm_source = "sonilo"
 
     bgm_source_labels = {
         "resource": "Select from Resource Directory",
         "upload": "Upload Background Music",
+        "sonilo": "Sonilo AI Background Music",
         "none": "No Background Music",
     }
     if saved_bgm_source not in bgm_source_labels:
@@ -2029,12 +2072,18 @@ def render_bgm_settings(tr):
                 tr,
             )
 
+    if bgm_source == "sonilo":
+        render_sonilo_bgm_settings(tr)
+
     preview_bgm_path = st.session_state.get("bgm_preview_path", "")
     if preview_bgm_path == bgm_file and os.path.isfile(preview_bgm_path):
         with open(preview_bgm_path, "rb") as audio_file:
             st.audio(audio_file.read(), format=get_audio_mime_type(preview_bgm_path))
 
-    bgm_type = "" if bgm_source == "none" or not bgm_file else "custom"
+    if bgm_source == "sonilo":
+        bgm_type = "sonilo"
+    else:
+        bgm_type = "" if bgm_source == "none" or not bgm_file else "custom"
     st.session_state['bgm_source'] = bgm_source
     st.session_state['bgm_type'] = bgm_type
     st.session_state['bgm_file'] = bgm_file if bgm_type else ""
