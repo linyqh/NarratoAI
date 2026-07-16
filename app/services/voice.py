@@ -1313,6 +1313,14 @@ def tts(
     if tts_engine == config.OMNIVOICE_ENGINE:
         logger.info("分发到 OmniVoice")
         return omnivoice_tts(text, voice_name, voice_file, speed=voice_rate)
+
+    if tts_engine == config.VOXCPM_ENGINE:
+        logger.info("分发到 VoxCPM-0.5B")
+        return voxcpm_tts(text, voice_name, voice_file)
+
+    if tts_engine == config.VOXCPM2_ENGINE:
+        logger.info("分发到 VoxCPM-2B")
+        return voxcpm2_tts(text, voice_name, voice_file)
     
     if tts_engine == "doubaotts":
         logger.info("分发到豆包语音 TTS")
@@ -1803,6 +1811,8 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
         config.INDEXTTS_MACOS_ENGINE,
         config.INDEXTTS2_ENGINE,
         config.OMNIVOICE_ENGINE,
+        config.VOXCPM_ENGINE,
+        config.VOXCPM2_ENGINE,
     ) else ".mp3"
 
     for item in list_script:
@@ -1838,6 +1848,8 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                         config.INDEXTTS_MACOS_ENGINE,
                         config.INDEXTTS2_ENGINE,
                         config.OMNIVOICE_ENGINE,
+                        config.VOXCPM_ENGINE,
+                        config.VOXCPM2_ENGINE,
                     )
                     or tts_engine == "doubaotts"
                 ):
@@ -2299,6 +2311,20 @@ def parse_omnivoice_voice(voice_name: str) -> str:
     return voice_name
 
 
+def parse_voxcpm_voice(voice_name: str) -> str:
+    """解析 VoxCPM-0.5B 的可选参考音频路径。"""
+    if isinstance(voice_name, str) and voice_name.startswith(config.VOXCPM_VOICE_PREFIX):
+        return voice_name[len(config.VOXCPM_VOICE_PREFIX):]
+    return voice_name
+
+
+def parse_voxcpm2_voice(voice_name: str) -> str:
+    """解析 VoxCPM-2B 的模式或参考音频路径。"""
+    if isinstance(voice_name, str) and voice_name.startswith(config.VOXCPM2_VOICE_PREFIX):
+        return voice_name[len(config.VOXCPM2_VOICE_PREFIX):]
+    return voice_name
+
+
 def indextts_tts(text: str, voice_name: str, voice_file: str, speed: float = 1.0) -> Union[SubMaker, None]:
     """
     使用 IndexTTS-1.5 API 进行零样本语音克隆
@@ -2739,6 +2765,144 @@ def indextts2_tts(text: str, voice_name: str, voice_file: str) -> Union[SubMaker
             time.sleep(2)
 
     logger.error("IndexTTS-2 TTS 生成失败，已达到最大重试次数")
+    return None
+
+
+def _normalize_voxcpm_api_url(api_url: str) -> str:
+    api_url = (api_url or "http://127.0.0.1:7864").strip().rstrip("/")
+    if api_url.endswith("/v1/audio/speech"):
+        api_url = api_url[:-len("/v1/audio/speech")]
+    if api_url.endswith("/tts"):
+        return api_url
+    return f"{api_url}/tts"
+
+
+def voxcpm_tts(text: str, voice_name: str, voice_file: str) -> Union[SubMaker, None]:
+    """使用 VoxCPM-0.5B-Pack 的 multipart /tts 接口生成 WAV。"""
+    voxcpm_config = getattr(config, "voxcpm_05b", {}) or {}
+    api_url = _normalize_voxcpm_api_url(voxcpm_config.get("api_url", "http://127.0.0.1:7864"))
+    reference_audio = parse_voxcpm_voice(voice_name)
+    if reference_audio in ("", "default") or not os.path.isfile(reference_audio):
+        reference_audio = voxcpm_config.get("reference_audio", "") or ""
+    if reference_audio and not os.path.isfile(reference_audio):
+        logger.error(f"VoxCPM-0.5B 参考音频文件不存在: {reference_audio}")
+        return None
+
+    data = {"text": text.strip()}
+    optional_fields = {
+        "prompt_text": voxcpm_config.get("prompt_text"),
+        "cfg_value": voxcpm_config.get("cfg_value"),
+        "inference_timesteps": voxcpm_config.get("inference_timesteps"),
+        "max_length": voxcpm_config.get("max_length"),
+    }
+    for key, value in optional_fields.items():
+        if value not in (None, ""):
+            data[key] = value
+    for key in ("normalize", "denoise"):
+        if key in voxcpm_config:
+            data[key] = str(bool(voxcpm_config[key])).lower()
+
+    proxies = _get_configured_proxies()
+    for attempt in range(3):
+        files = {}
+        try:
+            if reference_audio:
+                files["prompt_audio"] = open(reference_audio, "rb")
+            response = requests.post(api_url, data=data, files=files or None, proxies=proxies, timeout=300)
+            if response.status_code == 200:
+                result = response.json()
+                audio_url = result.get("audio_url", "") if isinstance(result, dict) else ""
+                if audio_url:
+                    audio_response = requests.get(urljoin(api_url, audio_url), proxies=proxies, timeout=180)
+                    if audio_response.status_code == 200:
+                        with open(voice_file, "wb") as output:
+                            output.write(audio_response.content)
+                        if os.path.getsize(voice_file) > 0:
+                            sub_maker = new_sub_maker()
+                            duration = get_audio_duration_from_file(voice_file)
+                            duration_ms = int(duration * 1000) if duration > 0 else max(1000, len(text) * 200)
+                            add_subtitle_event(sub_maker, 0, duration_ms * 10000, text)
+                            return sub_maker
+                logger.error(f"VoxCPM-0.5B API 响应中没有有效音频地址: {result}")
+            else:
+                logger.error(f"VoxCPM-0.5B API 调用失败: {response.status_code} - {response.text}")
+        except (ValueError, requests.exceptions.RequestException) as exc:
+            logger.error(f"VoxCPM-0.5B TTS 请求失败 (尝试 {attempt + 1}/3): {exc}")
+        finally:
+            for file_obj in files.values():
+                file_obj.close()
+        if attempt < 2:
+            time.sleep(2)
+    return None
+
+
+def _normalize_voxcpm2_api_url(api_url: str) -> str:
+    api_url = (api_url or "http://127.0.0.1:7863").strip().rstrip("/")
+    for suffix in ("/v1/audio/speech", "/tts/batch"):
+        if api_url.endswith(suffix):
+            api_url = api_url[:-len(suffix)]
+    return api_url if api_url.endswith("/tts") else f"{api_url}/tts"
+
+
+def voxcpm2_tts(text: str, voice_name: str, voice_file: str) -> Union[SubMaker, None]:
+    """使用 VoxCPM-2B-Pack 的 /tts 接口进行音色设计或参考音频克隆。"""
+    pack_config = getattr(config, "voxcpm_2b", {}) or {}
+    api_url = _normalize_voxcpm2_api_url(pack_config.get("api_url", "http://127.0.0.1:7863"))
+    mode = str(pack_config.get("mode", "design"))
+    parsed_voice = parse_voxcpm2_voice(voice_name)
+    reference_audio = ""
+    if mode == "clone":
+        reference_audio = parsed_voice if parsed_voice and os.path.isfile(parsed_voice) else pack_config.get("reference_audio", "")
+        if not reference_audio or not os.path.isfile(reference_audio):
+            logger.error(f"VoxCPM-2B 参考音频文件不存在: {reference_audio}")
+            return None
+
+    data = {"text": text.strip()}
+    optional_fields = {
+        "control": pack_config.get("control"),
+        "prompt_text": pack_config.get("prompt_text") if mode == "clone" else None,
+        "cfg_value": pack_config.get("cfg_value"),
+        "inference_timesteps": pack_config.get("inference_timesteps"),
+    }
+    for key, value in optional_fields.items():
+        if value not in (None, ""):
+            data[key] = value
+    for key in ("normalize", "denoise", "output_48k", "context_aware", "streaming"):
+        if key in pack_config:
+            data[key] = str(bool(pack_config[key])).lower()
+
+    proxies = _get_configured_proxies()
+    for attempt in range(3):
+        files = {}
+        try:
+            if reference_audio:
+                files["reference_audio"] = open(reference_audio, "rb")
+            response = requests.post(api_url, data=data, files=files or None, proxies=proxies, timeout=600)
+            if response.status_code == 200:
+                result = response.json()
+                downloads = result.get("downloads", {}) if isinstance(result, dict) else {}
+                audio_url = downloads.get("wav", "") if isinstance(downloads, dict) else ""
+                if audio_url:
+                    audio_response = requests.get(urljoin(api_url, audio_url), proxies=proxies, timeout=180)
+                    if audio_response.status_code == 200:
+                        with open(voice_file, "wb") as output:
+                            output.write(audio_response.content)
+                        if os.path.getsize(voice_file) > 0:
+                            sub_maker = new_sub_maker()
+                            duration = get_audio_duration_from_file(voice_file)
+                            duration_ms = int(duration * 1000) if duration > 0 else max(1000, len(text) * 200)
+                            add_subtitle_event(sub_maker, 0, duration_ms * 10000, text)
+                            return sub_maker
+                logger.error(f"VoxCPM-2B API 响应中没有有效 WAV 下载地址: {result}")
+            else:
+                logger.error(f"VoxCPM-2B API 调用失败: {response.status_code} - {response.text}")
+        except (ValueError, requests.exceptions.RequestException) as exc:
+            logger.error(f"VoxCPM-2B TTS 请求失败 (尝试 {attempt + 1}/3): {exc}")
+        finally:
+            for file_obj in files.values():
+                file_obj.close()
+        if attempt < 2:
+            time.sleep(2)
     return None
 
 

@@ -1196,6 +1196,8 @@ def render_fun_asr_transcription(tr):
             )
             backend = backend_options[backend_label]
 
+            st.markdown(tr("Subtitle transcription package downloads"))
+
             if backend == "upload":
                 render_subtitle_upload(tr)
             elif backend == "local":

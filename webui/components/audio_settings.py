@@ -46,6 +46,8 @@ LOCAL_TTS_ENGINES = {
     config.INDEXTTS_MACOS_ENGINE,
     config.INDEXTTS2_ENGINE,
     config.OMNIVOICE_ENGINE,
+    config.VOXCPM_ENGINE,
+    config.VOXCPM2_ENGINE,
 }
 
 
@@ -79,6 +81,8 @@ def get_tts_engine_options(tr=lambda key: key):
         config.INDEXTTS_MACOS_ENGINE: config.INDEXTTS_MACOS_DISPLAY_NAME,
         config.INDEXTTS2_ENGINE: config.INDEXTTS2_DISPLAY_NAME,
         config.OMNIVOICE_ENGINE: config.OMNIVOICE_DISPLAY_NAME,
+        config.VOXCPM_ENGINE: config.VOXCPM_DISPLAY_NAME,
+        config.VOXCPM2_ENGINE: config.VOXCPM2_DISPLAY_NAME,
         "edge_tts": "Edge TTS",
         "qwen3_tts": tr("Tongyi Qwen3 TTS"),
         "tencent_tts": tr("Tencent Cloud TTS"),
@@ -156,6 +160,18 @@ def get_tts_engine_descriptions(tr=lambda key: key):
             "features": tr("OmniVoice features"),
             "use_case": tr("OmniVoice use case"),
             "registration": None
+        },
+        config.VOXCPM_ENGINE: {
+            "title": config.VOXCPM_DISPLAY_NAME,
+            "features": tr("VoxCPM features"),
+            "use_case": tr("VoxCPM use case"),
+            "registration": None,
+        },
+        config.VOXCPM2_ENGINE: {
+            "title": config.VOXCPM2_DISPLAY_NAME,
+            "features": tr("VoxCPM2 features"),
+            "use_case": tr("VoxCPM2 use case"),
+            "registration": None,
         },
         "doubaotts": {
             "title": tr("Doubao TTS"),
@@ -603,6 +619,10 @@ def render_tts_settings(tr):
         render_indextts2_tts_settings(tr)
     elif selected_engine == config.OMNIVOICE_ENGINE:
         render_omnivoice_tts_settings(tr)
+    elif selected_engine == config.VOXCPM_ENGINE:
+        render_voxcpm_tts_settings(tr)
+    elif selected_engine == config.VOXCPM2_ENGINE:
+        render_voxcpm2_tts_settings(tr)
     elif selected_engine == "doubaotts":
         render_doubaotts_settings(tr)
 
@@ -1564,6 +1584,109 @@ def render_omnivoice_tts_settings(tr):
     st.session_state["voice_pitch"] = 1.0
 
 
+def render_voxcpm_tts_settings(tr):
+    """渲染 VoxCPM-0.5B-Pack 设置。"""
+    pack_config = config.voxcpm_05b
+    api_url = st.text_input(
+        tr("API URL"),
+        value=pack_config.get("api_url", "http://127.0.0.1:7864"),
+        help=tr("VoxCPM API URL Help"),
+    )
+    use_reference = st.checkbox(
+        tr("VoxCPM Use Reference Audio"),
+        value=bool(pack_config.get("reference_audio", "")),
+        help=tr("VoxCPM Use Reference Audio Help"),
+    )
+    source = pack_config.get("reference_audio_source", "resource")
+    reference_audio = pack_config.get("reference_audio", "")
+    prompt_text = pack_config.get("prompt_text", "")
+    if use_reference:
+        source, reference_audio = render_indextts_reference_audio_selector(tr, pack_config, "voxcpm_05b")
+        prompt_text = st.text_area(
+            tr("VoxCPM Prompt Text"), value=prompt_text,
+            help=tr("VoxCPM Prompt Text Help"), height=90,
+        )
+    else:
+        reference_audio = ""
+
+    with st.expander(tr("Advanced Parameters"), expanded=False):
+        cfg_value = st.slider("CFG Value", 1.0, 3.0, float(pack_config.get("cfg_value", 2.0)), 0.1)
+        inference_timesteps = st.slider("Inference Timesteps", 1, 50, int(pack_config.get("inference_timesteps", 10)), 1)
+        max_length = st.number_input("Max Length", 128, 8192, int(pack_config.get("max_length", 4096)), 128)
+        normalize = st.checkbox(tr("VoxCPM Normalize"), value=bool(pack_config.get("normalize", True)))
+        denoise = st.checkbox(tr("VoxCPM Denoise"), value=bool(pack_config.get("denoise", False)))
+
+    with st.expander(tr("VoxCPM Usage Instructions Title"), expanded=False):
+        st.markdown(tr("VoxCPM Usage Instructions"))
+
+    pack_config.update({
+        "api_url": api_url, "reference_audio_source": source,
+        "reference_audio": reference_audio, "prompt_text": prompt_text,
+        "cfg_value": cfg_value, "inference_timesteps": inference_timesteps,
+        "max_length": max_length, "normalize": normalize, "denoise": denoise,
+    })
+    config.ui["voice_name"] = f"{config.VOXCPM_VOICE_PREFIX}{reference_audio or 'default'}"
+    st.session_state["voice_rate"] = 1.0
+    st.session_state["voice_pitch"] = 1.0
+
+
+def render_voxcpm2_tts_settings(tr):
+    """渲染 VoxCPM-2B-Pack 设置。"""
+    pack_config = config.voxcpm_2b
+    api_url = st.text_input(
+        tr("API URL"), value=pack_config.get("api_url", "http://127.0.0.1:7863"),
+        help=tr("VoxCPM2 API URL Help"),
+    )
+    mode_options = [("design", tr("VoxCPM2 Mode Design")), ("clone", tr("VoxCPM2 Mode Clone"))]
+    mode_values = [item[0] for item in mode_options]
+    saved_mode = pack_config.get("mode", "design")
+    if saved_mode not in mode_values:
+        saved_mode = "design"
+    mode = mode_options[st.selectbox(
+        tr("VoxCPM2 Generation Mode"), options=range(len(mode_options)),
+        index=mode_values.index(saved_mode), format_func=lambda index: mode_options[index][1],
+        help=tr("VoxCPM2 Generation Mode Help"),
+    )][0]
+    control = st.text_area(
+        tr("VoxCPM2 Voice Control"), value=pack_config.get("control", ""),
+        help=tr("VoxCPM2 Voice Control Help"), height=80,
+    )
+    source = pack_config.get("reference_audio_source", "resource")
+    reference_audio = pack_config.get("reference_audio", "")
+    prompt_text = pack_config.get("prompt_text", "")
+    if mode == "clone":
+        source, reference_audio = render_indextts_reference_audio_selector(tr, pack_config, "voxcpm_2b")
+        prompt_text = st.text_area(
+            tr("VoxCPM Prompt Text"), value=prompt_text,
+            help=tr("VoxCPM Prompt Text Help"), height=90,
+        )
+    else:
+        reference_audio = ""
+
+    with st.expander(tr("Advanced Parameters"), expanded=False):
+        cfg_value = st.slider("CFG Value", 1.0, 3.0, float(pack_config.get("cfg_value", 2.0)), 0.1, key="voxcpm2_cfg")
+        inference_timesteps = st.slider("Inference Timesteps", 1, 50, int(pack_config.get("inference_timesteps", 10)), 1, key="voxcpm2_steps")
+        normalize = st.checkbox(tr("VoxCPM Normalize"), value=bool(pack_config.get("normalize", True)), key="voxcpm2_normalize")
+        denoise = st.checkbox(tr("VoxCPM Denoise"), value=bool(pack_config.get("denoise", False)), key="voxcpm2_denoise")
+        output_48k = st.checkbox(tr("VoxCPM2 Output 48k"), value=bool(pack_config.get("output_48k", True)))
+        context_aware = st.checkbox(tr("VoxCPM2 Context Aware"), value=bool(pack_config.get("context_aware", True)))
+        streaming = st.checkbox(tr("VoxCPM2 Streaming"), value=bool(pack_config.get("streaming", False)))
+
+    with st.expander(tr("VoxCPM2 Usage Instructions Title"), expanded=False):
+        st.markdown(tr("VoxCPM2 Usage Instructions"))
+    pack_config.update({
+        "api_url": api_url, "mode": mode, "control": control,
+        "reference_audio_source": source, "reference_audio": reference_audio,
+        "prompt_text": prompt_text, "cfg_value": cfg_value,
+        "inference_timesteps": inference_timesteps, "normalize": normalize,
+        "denoise": denoise, "output_48k": output_48k,
+        "context_aware": context_aware, "streaming": streaming,
+    })
+    config.ui["voice_name"] = f"{config.VOXCPM2_VOICE_PREFIX}{reference_audio if mode == 'clone' else mode}"
+    st.session_state["voice_rate"] = 1.0
+    st.session_state["voice_pitch"] = 1.0
+
+
 def render_doubaotts_settings(tr):
     """渲染豆包语音 TTS 设置"""
     api_key = st.text_input(
@@ -1876,6 +1999,17 @@ def render_voice_preview_new(tr, selected_engine):
                 voice_name = f"{config.OMNIVOICE_VOICE_PREFIX}{mode}"
             voice_rate = config.omnivoice.get("speed", 1.0)
             voice_pitch = 1.0
+        elif selected_engine == config.VOXCPM_ENGINE:
+            reference_audio = config.voxcpm_05b.get("reference_audio", "")
+            voice_name = f"{config.VOXCPM_VOICE_PREFIX}{reference_audio or 'default'}"
+            voice_rate = 1.0
+            voice_pitch = 1.0
+        elif selected_engine == config.VOXCPM2_ENGINE:
+            mode = config.voxcpm_2b.get("mode", "design")
+            reference_audio = config.voxcpm_2b.get("reference_audio", "")
+            voice_name = f"{config.VOXCPM2_VOICE_PREFIX}{reference_audio if mode == 'clone' else mode}"
+            voice_rate = 1.0
+            voice_pitch = 1.0
         elif selected_engine == "doubaotts":
             voice_type = config.ui.get("doubaotts_voice_type", "BV700_streaming")
             voice_name = voice_type
@@ -1893,6 +2027,8 @@ def render_voice_preview_new(tr, selected_engine):
                 config.INDEXTTS_MACOS_ENGINE,
                 config.INDEXTTS2_ENGINE,
                 config.OMNIVOICE_ENGINE,
+                config.VOXCPM_ENGINE,
+                config.VOXCPM2_ENGINE,
             ) else "audio/mp3"
             audio_extension = ".wav" if audio_format == "audio/wav" else ".mp3"
             audio_file = os.path.join(temp_dir, f"tmp-voice-{str(uuid4())}{audio_extension}")

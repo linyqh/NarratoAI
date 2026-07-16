@@ -239,6 +239,35 @@
     postprocess_output = true
     preprocess_prompt = true
 
+[voxcpm_05b]
+    # VoxCPM-0.5B-Pack 本地语音合成/参考音频克隆配置
+    # 启动整合包后，可填写服务根地址或完整 /tts 地址
+    api_url = "http://127.0.0.1:7864"
+    reference_audio_source = "resource"
+    reference_audio = ""
+    prompt_text = ""
+    cfg_value = 2.0
+    inference_timesteps = 10
+    max_length = 4096
+    normalize = true
+    denoise = false
+
+[voxcpm_2b]
+    # VoxCPM-2B-Pack 本地语音合成、音色设计与参考音频克隆
+    api_url = "http://127.0.0.1:7863"
+    mode = "design"
+    control = ""
+    reference_audio_source = "resource"
+    reference_audio = ""
+    prompt_text = ""
+    cfg_value = 2.0
+    inference_timesteps = 10
+    normalize = true
+    denoise = false
+    output_48k = true
+    context_aware = true
+    streaming = false
+
 [doubaotts]
     # 豆包语音 TTS 配置
     # 新版配置优先填写 API Key；旧版 appid/token 配置仍兼容
