@@ -54,6 +54,7 @@ tests/*
 !tests/test_generate_narration_script_documentary_unittest.py
 !tests/test_generate_script_docu_unittest.py
 !tests/test_streamlit_widget_session_state.py
+!tests/test_sonilo_bgm_unittest.py
 
 docs/reddit-community
 docs/wechat-0.8
