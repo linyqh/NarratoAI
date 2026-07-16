@@ -549,11 +549,20 @@ def render_audio_panel(tr):
     # 背景音乐独立成框，放在音频设置下方
     render_bgm_panel(tr)
 
+    # AI 音效独立成框（可选功能，默认关闭）
+    render_sonilo_sfx_panel(tr)
+
 
 def render_bgm_panel(tr):
     """渲染背景音乐设置面板"""
     with st.container(border=True):
         render_bgm_settings(tr)
+
+
+def render_sonilo_sfx_panel(tr):
+    """渲染 Sonilo AI 音效设置面板（可选功能，默认关闭）"""
+    with st.container(border=True):
+        render_sonilo_sfx_settings(tr)
 
 
 def render_tts_settings(tr):
@@ -2208,6 +2217,55 @@ def render_sonilo_bgm_settings(tr):
         st.warning(tr("Sonilo API Key Required"))
 
 
+def render_sonilo_sfx_settings(tr):
+    """渲染 Sonilo AI 音效设置（可选功能，默认关闭）"""
+    # 避免在本模块顶层引入 basic_settings 的重依赖链，按需导入。
+    from webui.components.basic_settings import update_app_config_if_changed
+
+    sfx_enabled = st.checkbox(
+        tr("Sonilo AI Sound Effects"),
+        value=bool(st.session_state.get("sonilo_sfx_enabled", False)),
+        help=tr("Sonilo SFX Help"),
+        key="sonilo_sfx_enabled_checkbox",
+    )
+    st.session_state["sonilo_sfx_enabled"] = bool(sfx_enabled)
+    if not sfx_enabled:
+        return
+
+    st.info(tr("Sonilo SFX Notice"))
+
+    sonilo_api_key = st.text_input(
+        tr("Sonilo API Key"),
+        value=config.app.get("sonilo_api_key", ""),
+        type="password",
+        help=tr("Sonilo API Key Help"),
+        key="sonilo_sfx_api_key_input",
+    )
+    sonilo_sfx_prompt = st.text_input(
+        tr("Sonilo SFX Prompt"),
+        value=config.app.get("sonilo_sfx_prompt", ""),
+        help=tr("Sonilo SFX Prompt Help"),
+        key="sonilo_sfx_prompt_input",
+    )
+
+    api_key_changed = update_app_config_if_changed(
+        "sonilo_api_key", str(sonilo_api_key or "").strip()
+    )
+    prompt_changed = update_app_config_if_changed(
+        "sonilo_sfx_prompt", str(sonilo_sfx_prompt or "").strip()
+    )
+    if api_key_changed or prompt_changed:
+        try:
+            config.save_config()
+            st.success(tr("Sonilo config saved"))
+        except Exception as e:
+            st.error(f"{tr('Failed to save config')}: {str(e)}")
+            logger.error(f"保存 Sonilo 配置失败: {str(e)}")
+
+    if not sonilo.is_enabled():
+        st.warning(tr("Sonilo SFX API Key Required"))
+
+
 def render_bgm_settings(tr):
     """渲染背景音乐设置"""
     saved_bgm_file = st.session_state.get('bgm_file', '')
@@ -2343,5 +2401,6 @@ def get_audio_params():
         'bgm_type': st.session_state.get('bgm_type', 'random'),
         'bgm_file': st.session_state.get('bgm_file', ''),
         'bgm_volume': st.session_state.get('bgm_volume', AudioVolumeDefaults.BGM_VOLUME),
+        'sonilo_sfx_enabled': bool(st.session_state.get('sonilo_sfx_enabled', False)),
         'tts_engine': st.session_state.get('tts_engine', config.INDEXTTS_ENGINE),
     }
