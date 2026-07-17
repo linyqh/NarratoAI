@@ -55,8 +55,8 @@ class OpenAICompatManagerTests(unittest.TestCase):
     def test_register_all_providers_registers_expected_providers(self):
         register_all_providers()
 
-        # 文本仅 OpenAI 兼容；视觉额外提供可选的 TwelveLabs Pegasus。
-        self.assertEqual({"openai"}, set(LLMServiceManager.list_text_providers()))
+        # 文本提供 OpenAI-compatible aliases；视觉额外提供可选的 TwelveLabs Pegasus。
+        self.assertEqual({"openai", "atlascloud"}, set(LLMServiceManager.list_text_providers()))
         self.assertEqual({"openai", "twelvelabs"}, set(LLMServiceManager.list_vision_providers()))
 
     def test_get_text_provider_uses_openai_keys(self):
@@ -73,6 +73,21 @@ class OpenAICompatManagerTests(unittest.TestCase):
         self.assertEqual("new-key", provider.api_key)
         self.assertEqual("new-model", provider.model_name)
         self.assertEqual("https://new.example/v1", provider.base_url)
+
+    def test_get_text_provider_supports_atlascloud_alias(self):
+        register_all_providers()
+
+        config.app["text_llm_provider"] = "atlascloud"
+        config.app["text_atlascloud_api_key"] = "atlas-key"
+        config.app["text_atlascloud_model_name"] = "qwen/qwen3.5-flash"
+        config.app["text_atlascloud_base_url"] = "https://api.atlascloud.ai/v1"
+
+        provider = LLMServiceManager.get_text_provider()
+
+        self.assertEqual("atlascloud", provider.provider_name)
+        self.assertEqual("atlas-key", provider.api_key)
+        self.assertEqual("qwen/qwen3.5-flash", provider.model_name)
+        self.assertEqual("https://api.atlascloud.ai/v1", provider.base_url)
 
 
 class OpenAICompatVisionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
@@ -191,6 +206,7 @@ class OpenAICompatBaseURLValidationTests(unittest.TestCase):
             "https://api.siliconflow.cn/v1",
             "https://openrouter.ai/api/v1",
             "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "https://api.atlascloud.ai/v1",
             "https://example.openai.azure.com/openai/deployments/demo",
             "http://localhost:11434/v1",
             "http://127.0.0.1:11434/v1",

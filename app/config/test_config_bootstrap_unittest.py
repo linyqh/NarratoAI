@@ -10,6 +10,8 @@ except ModuleNotFoundError:  # Python < 3.11
 
 from app.config import config as cfg
 from app.config.defaults import (
+    DEFAULT_ATLASCLOUD_BASE_URL,
+    DEFAULT_ATLASCLOUD_TEXT_MODEL_NAME,
     get_openai_compatible_ui_values,
     normalize_openai_compatible_model_name,
 )
@@ -83,6 +85,9 @@ hide_config = true
         self.assertEqual("openai", config_data["app"]["text_llm_provider"])
         self.assertEqual("Pro/zai-org/GLM-5", config_data["app"]["text_openai_model_name"])
         self.assertEqual("https://api.siliconflow.cn/v1", config_data["app"]["text_openai_base_url"])
+        self.assertEqual(DEFAULT_ATLASCLOUD_TEXT_MODEL_NAME, config_data["app"]["text_atlascloud_model_name"])
+        self.assertEqual(DEFAULT_ATLASCLOUD_BASE_URL, config_data["app"]["text_atlascloud_base_url"])
+        self.assertEqual("", config_data["app"]["text_atlascloud_api_key"])
         self.assertEqual(1.0, config_data["app"]["text_openai_temperature"])
         self.assertEqual(0.95, config_data["app"]["text_openai_top_p"])
         self.assertEqual("Qwen/Qwen3.5-122B-A10B", saved_config["app"]["vision_openai_model_name"])

@@ -20,6 +20,7 @@ def register_all_providers():
 
     # 只导入 OpenAI 兼容 provider
     from ..openai_compatible_provider import (
+        AtlasCloudTextProvider,
         OpenAICompatibleVisionProvider,
         OpenAICompatibleTextProvider,
     )
@@ -29,6 +30,7 @@ def register_all_providers():
     # ===== 注册 OpenAI 兼容统一接口 =====
     LLMServiceManager.register_vision_provider('openai', OpenAICompatibleVisionProvider)
     LLMServiceManager.register_text_provider('openai', OpenAICompatibleTextProvider)
+    LLMServiceManager.register_text_provider('atlascloud', AtlasCloudTextProvider)
 
     logger.info("✅ OpenAI 兼容提供商注册完成")
 

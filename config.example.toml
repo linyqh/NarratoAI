@@ -61,6 +61,12 @@
     text_openai_max_tokens = 65536
     text_openai_thinking_level = "auto"  # auto/off/low/medium/high
 
+    # Atlas Cloud 文本模型（OpenAI-compatible）
+    # 使用方式：将 text_llm_provider 改为 "atlascloud"，并填入 text_atlascloud_api_key
+    text_atlascloud_model_name = "qwen/qwen3.5-flash"
+    text_atlascloud_api_key = ""
+    text_atlascloud_base_url = "https://api.atlascloud.ai/v1"
+
     # ===== Tavily 联网搜索配置 =====
     # 用于短剧剧情理解前，按短剧名称检索公开剧情/人物/分集信息
     tavily_api_key = ""  # 获取地址：https://app.tavily.com

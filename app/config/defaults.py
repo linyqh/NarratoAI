@@ -4,6 +4,8 @@ from __future__ import annotations
 
 DEFAULT_OPENAI_COMPATIBLE_BASE_URL = "https://api.siliconflow.cn/v1"
 DEFAULT_OPENAI_COMPATIBLE_PROVIDER = "openai"
+DEFAULT_ATLASCLOUD_BASE_URL = "https://api.atlascloud.ai/v1"
+DEFAULT_ATLASCLOUD_TEXT_MODEL_NAME = "qwen/qwen3.5-flash"
 
 DEFAULT_VISION_LLM_PROVIDER = DEFAULT_OPENAI_COMPATIBLE_PROVIDER
 DEFAULT_VISION_OPENAI_MODEL_NAME = "Qwen/Qwen3.5-122B-A10B"
@@ -35,6 +37,9 @@ DEFAULT_LLM_APP_CONFIG = {
     "text_openai_model_name": DEFAULT_TEXT_OPENAI_MODEL_NAME,
     "text_openai_api_key": "",
     "text_openai_base_url": DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+    "text_atlascloud_model_name": DEFAULT_ATLASCLOUD_TEXT_MODEL_NAME,
+    "text_atlascloud_api_key": "",
+    "text_atlascloud_base_url": DEFAULT_ATLASCLOUD_BASE_URL,
     "tavily_api_key": "",
     "tavily_search_depth": "basic",
     "tavily_max_results": 5,

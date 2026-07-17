@@ -15,6 +15,7 @@ TRUSTED_OPENAI_COMPATIBLE_BASE_HOSTS = {
     "generativelanguage.googleapis.com",
     "open.bigmodel.cn",
     "api.z.ai",
+    "api.atlascloud.ai",
     "ark.cn-beijing.volces.com",
     "ark.cn-shanghai.volces.com",
 }

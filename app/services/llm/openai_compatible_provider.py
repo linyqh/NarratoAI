@@ -24,7 +24,6 @@ from openai import (
 from app.config import config
 from app.config.defaults import DEFAULT_LLM_GENERATION_CONFIG, normalize_openai_compatible_model_name
 from app.utils.openai_base_url_security import (
-    is_trusted_openai_compatible_base_url,
     openai_compatible_base_url_warning,
     validate_openai_compatible_base_url as _validate_openai_compatible_base_url_value,
 )
@@ -444,3 +443,11 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
 
     async def _make_api_call(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return payload
+
+
+class AtlasCloudTextProvider(OpenAICompatibleTextProvider):
+    """Atlas Cloud text provider using the existing OpenAI-compatible chat path."""
+
+    @property
+    def provider_name(self) -> str:
+        return "atlascloud"
