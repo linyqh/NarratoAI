@@ -22,7 +22,14 @@ class NarrationCopyPrompt(ParameterizedPrompt):
             model_type=ModelType.TEXT,
             output_format=OutputFormat.TEXT,
             tags=["影视", "解说文案", "电影解说", "剧情承接", "用户审核"],
-            parameters=["drama_name", "drama_genre", "plot_analysis", "subtitle_content", "narration_language"],
+            parameters=[
+                "drama_name",
+                "drama_genre",
+                "plot_analysis",
+                "subtitle_content",
+                "narration_language",
+                "narration_word_count",
+            ],
         )
         super().__init__(metadata, required_parameters=["drama_name", "plot_analysis", "subtitle_content"])
 
@@ -57,6 +64,11 @@ ${narration_language}
 ${drama_genre}
 </drama_genre>
 
+## 用户要求的文案字数
+<narration_word_count>
+${narration_word_count}
+</narration_word_count>
+
 ## 类型写作规则
 必须按用户选择的影视类型调整表达重点，不要自行改判类型：
 - 剧情/情感：突出人物选择、关系裂痕、命运压力和情绪余波。
@@ -81,7 +93,7 @@ ${drama_genre}
 4. 每句话只表达一个信息点，适合后续按句匹配画面。
 5. 句子尽量短，单句优先 15-35 字；信息复杂时拆成多句。
 6. 每 2-3 句要有明确承接，让观众知道为什么从上一幕来到下一幕。
-7. 总长度控制在 350-750 字；短素材取下限，长素材取上限。
+7. 总长度以 ${narration_word_count} 字为目标，允许上下浮动 10%；中日韩语言按非空白字符计数，其他语言按单词计数。不得再套用固定长度区间。
 8. 不要使用编号、项目符号、章节标题或括号说明。
 
 ## 输出要求

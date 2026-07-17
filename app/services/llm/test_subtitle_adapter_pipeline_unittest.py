@@ -24,11 +24,14 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
                 temperature=0.7,
                 narration_language="简体中文（中国）",
                 drama_genre="家庭伦理",
+                narration_word_count=800,
             )
 
         self.assertEqual("success", result["status"])
         self.assertIn("反击", result["narration_copy"])
         self.assertIn("家庭伦理", call.call_args.kwargs["prompt"])
+        self.assertIn("800", call.call_args.kwargs["prompt"])
+        self.assertNotIn("300-650", call.call_args.kwargs["prompt"])
         self.assertNotIn("response_format", call.call_args.kwargs)
 
     def test_generate_narration_copy_can_use_film_tv_prompt_category(self):
@@ -49,11 +52,14 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
                 temperature=0.7,
                 narration_language="简体中文（中国）",
                 drama_genre="悬疑/犯罪",
+                narration_word_count=1200,
             )
 
         self.assertEqual("success", result["status"])
         self.assertIn("影视解说正文创作任务", call.call_args.kwargs["prompt"])
         self.assertIn("用户选择的影视类型", call.call_args.kwargs["prompt"])
+        self.assertIn("1200", call.call_args.kwargs["prompt"])
+        self.assertNotIn("350-750", call.call_args.kwargs["prompt"])
         self.assertNotIn("短剧解说正文创作任务", call.call_args.kwargs["prompt"])
 
     def test_film_tv_script_prompts_exclude_intro_outro_and_ads(self):

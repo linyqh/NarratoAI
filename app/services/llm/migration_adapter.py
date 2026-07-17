@@ -292,6 +292,7 @@ class SubtitleAnalyzerAdapter:
         temperature: float = 0.7,
         narration_language: str = "简体中文（中国）",
         drama_genre: str = "逆袭/复仇",
+        narration_word_count: int = 500,
     ) -> Dict[str, Any]:
         """Generate editable narration copy before timeline matching."""
         try:
@@ -303,6 +304,7 @@ class SubtitleAnalyzerAdapter:
                     "plot_analysis": plot_analysis,
                     "subtitle_content": subtitle_content,
                     "narration_language": narration_language,
+                    "narration_word_count": int(narration_word_count),
                 },
             )
             narration_copy = self._generate_plain_text(prompt, system_prompt, temperature)

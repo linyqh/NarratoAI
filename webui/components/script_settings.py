@@ -97,6 +97,9 @@ FILM_TV_TYPE_VALUES = {
     "horror_thriller": "恐怖/惊悚",
 }
 SHORT_DRAMA_ORIGINAL_SOUND_RATIO_OPTIONS = list(range(0, 100, 10))
+DEFAULT_NARRATION_WORD_COUNT = 500
+MIN_NARRATION_WORD_COUNT = 100
+MAX_NARRATION_WORD_COUNT = 5000
 SUMMARY_MODE_CONFIGS = {
     MODE_FILM_SUMMARY: {
         "mode_label_key": "Film TV Narration",
@@ -1574,6 +1577,7 @@ def render_script_buttons(tr, params):
         type_option_key = _summary_state_key(summary_config, "type_option")
         custom_type_key = _summary_state_key(summary_config, "custom_type")
         original_sound_ratio_key = _summary_state_key(summary_config, "original_sound_ratio")
+        narration_word_count_key = _summary_state_key(summary_config, "narration_word_count")
         language_option_key = _summary_state_key(summary_config, "narration_language_option")
         custom_language_key = _summary_state_key(summary_config, "custom_narration_language")
         narration_copy_key = _summary_state_key(summary_config, "narration_copy")
@@ -1592,7 +1596,7 @@ def render_script_buttons(tr, params):
         config_col_widths = [1.15]
         if show_custom_type:
             config_col_widths.append(1.15)
-        config_col_widths.extend([0.9, 1.15])
+        config_col_widths.extend([0.9, 0.9, 1.15])
         if show_custom_language:
             config_col_widths.append(1.15)
 
@@ -1621,6 +1625,16 @@ def render_script_buttons(tr, params):
                 format_func=lambda ratio: f"{ratio}%",
                 index=SHORT_DRAMA_ORIGINAL_SOUND_RATIO_OPTIONS.index(30),
                 key=original_sound_ratio_key,
+            )
+        config_col_index += 1
+        with config_cols[config_col_index]:
+            st.number_input(
+                tr("文案字数"),
+                min_value=MIN_NARRATION_WORD_COUNT,
+                max_value=MAX_NARRATION_WORD_COUNT,
+                value=DEFAULT_NARRATION_WORD_COUNT,
+                step=50,
+                key=narration_word_count_key,
             )
         config_col_index += 1
         with config_cols[config_col_index]:
@@ -1663,6 +1677,7 @@ def render_script_buttons(tr, params):
         type_option_key = _summary_state_key(summary_config, "type_option")
         custom_type_key = _summary_state_key(summary_config, "custom_type")
         original_sound_ratio_key = _summary_state_key(summary_config, "original_sound_ratio")
+        narration_word_count_key = _summary_state_key(summary_config, "narration_word_count")
         language_option_key = _summary_state_key(summary_config, "narration_language_option")
         custom_language_key = _summary_state_key(summary_config, "custom_narration_language")
         narration_copy_key = _summary_state_key(summary_config, "narration_copy")
@@ -1674,6 +1689,9 @@ def render_script_buttons(tr, params):
         narration_language = _resolve_summary_narration_language(summary_config)
         drama_genre = _resolve_summary_type(summary_config)
         original_sound_ratio = int(st.session_state.get(original_sound_ratio_key, 30))
+        narration_word_count = int(
+            st.session_state.get(narration_word_count_key, DEFAULT_NARRATION_WORD_COUNT)
+        )
         if (
             st.session_state.get(type_option_key) == "custom"
             and not str(st.session_state.get(custom_type_key, '') or '').strip()
@@ -1720,6 +1738,7 @@ def render_script_buttons(tr, params):
                     video_paths=_selected_video_paths(),
                     narration_language=narration_language,
                     drama_genre=drama_genre,
+                    narration_word_count=narration_word_count,
                     prompt_category=summary_config["prompt_category"],
                     search_keywords=summary_config["search_keywords"],
                     empty_title_message_key=summary_config["empty_title_message_key"],

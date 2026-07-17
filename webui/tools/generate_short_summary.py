@@ -363,6 +363,7 @@ def generate_short_drama_narration_copy(
     search_keywords: str = SHORT_DRAMA_SEARCH_KEYWORDS,
     empty_title_message_key: str = "Please enter short drama name before web search",
     web_search_context_description: str = "短剧名称、人物关系、剧情背景和公开剧情梗概",
+    narration_word_count: int = 500,
 ):
     """生成可由用户审核修改的短剧解说正文，不绑定时间戳。"""
     subtitle_paths = _normalize_paths(subtitle_path)
@@ -422,6 +423,7 @@ def generate_short_drama_narration_copy(
             temperature=temperature,
             narration_language=narration_language,
             drama_genre=drama_genre,
+            narration_word_count=narration_word_count,
         )
     except Exception as e:
         logger.warning(f"使用新LLM服务生成文案失败，回退到旧实现: {str(e)}")
@@ -436,6 +438,7 @@ def generate_short_drama_narration_copy(
             provider=text_provider,
             narration_language=narration_language,
             drama_genre=drama_genre,
+            narration_word_count=narration_word_count,
             prompt_category=prompt_category,
         )
 
