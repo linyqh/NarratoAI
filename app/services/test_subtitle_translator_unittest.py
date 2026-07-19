@@ -48,6 +48,14 @@ class SubtitleTranslatorTests(unittest.TestCase):
         }
 
         with (
+            mock.patch.dict(
+                translator.config.app,
+                {
+                    "text_openai_model_name": "reasoning-model",
+                    "text_openai_fast_model_name": "fast-subtitle-model",
+                },
+                clear=False,
+            ),
             mock.patch("app.services.subtitle_translator._ensure_llm_providers_registered"),
             mock.patch(
                 "app.services.subtitle_translator._run_async_safely",
@@ -71,6 +79,8 @@ class SubtitleTranslatorTests(unittest.TestCase):
         self.assertEqual("openai", call_kwargs["provider"])
         self.assertEqual("sk-test", call_kwargs["api_key"])
         self.assertEqual("https://llm.example/v1", call_kwargs["api_base"])
+        self.assertEqual("fast-subtitle-model", call_kwargs["model"])
+        self.assertEqual("off", call_kwargs["thinking_level"])
         self.assertEqual("json", call_kwargs["response_format"])
         self.assertIn("专业字幕翻译员", call_kwargs["system_prompt"])
         self.assertIn("翻译为中文", call_kwargs["prompt"])

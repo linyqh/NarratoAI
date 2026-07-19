@@ -9,6 +9,7 @@ from app.config.defaults import (
     DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
     DEFAULT_OPENAI_COMPATIBLE_PROVIDER,
     DEFAULT_TEXT_LLM_PROVIDER,
+    DEFAULT_TEXT_OPENAI_FAST_MODEL_NAME,
     DEFAULT_TEXT_OPENAI_MODEL_NAME,
     DEFAULT_VISION_LLM_PROVIDER,
     DEFAULT_VISION_OPENAI_MODEL_NAME,
@@ -876,6 +877,10 @@ def render_text_llm_settings(tr):
 
     # 获取已保存的配置
     full_text_model_name = config.app.get("text_openai_model_name") or DEFAULT_TEXT_OPENAI_MODEL_NAME
+    full_fast_model_name = (
+        config.app.get("text_openai_fast_model_name")
+        or DEFAULT_TEXT_OPENAI_FAST_MODEL_NAME
+    )
     text_api_key = config.app.get("text_openai_api_key", "")
     text_base_url = config.app.get("text_openai_base_url", DEFAULT_OPENAI_COMPATIBLE_BASE_URL)
 
@@ -885,10 +890,14 @@ def render_text_llm_settings(tr):
         DEFAULT_TEXT_OPENAI_MODEL_NAME,
         provider=DEFAULT_TEXT_LLM_PROVIDER,
     )
+    current_fast_model = normalize_openai_compatible_model_id(
+        full_fast_model_name,
+        provider=DEFAULT_TEXT_LLM_PROVIDER,
+    )
     selected_provider = DEFAULT_TEXT_LLM_PROVIDER
 
     # 渲染配置输入框
-    col1, col2 = st.columns([1, 2])
+    col1, col2, col3 = st.columns([1, 2, 2])
     with col1:
         render_openai_compatible_protocol_field(
             tr,
@@ -897,11 +906,13 @@ def render_text_llm_settings(tr):
         )
     
     with col2:
-        model_name_input = st.text_input(
-            tr("Text Model Name"),
+        reasoning_model_name_input = st.text_input(
+            tr("High Reasoning Model Name"),
             value=current_model,
             help=(
-                tr("Model Name Input Help")
+                tr("High Reasoning Model Help")
+                + "\n\n"
+                + tr("Model Name Input Help")
                 + "\n\n"
                 + "• Pro/zai-org/GLM-5\n"
                 + "• deepseek/deepseek-chat\n"
@@ -912,8 +923,24 @@ def render_text_llm_settings(tr):
             key="text_model_input"
         )
 
+    with col3:
+        fast_model_name_input = st.text_input(
+            tr("High Efficiency Model Name"),
+            value=current_fast_model,
+            help=(
+                tr("High Efficiency Model Help")
+                + "\n\n"
+                + "• Qwen/Qwen3.5-32B\n"
+                + "• gpt-4o-mini\n"
+                + "• gemini-2.5-flash\n"
+                + "• deepseek/deepseek-chat"
+            ),
+            key="text_fast_model_input",
+        )
+
     # 组合完整的模型名称
-    st_text_model_name = normalize_openai_compatible_model_name(model_name_input)
+    st_text_model_name = normalize_openai_compatible_model_name(reasoning_model_name_input)
+    st_text_fast_model_name = normalize_openai_compatible_model_name(fast_model_name_input)
 
     st_text_api_key = st.text_input(
         tr("Text API Key"),
@@ -952,7 +979,7 @@ def render_text_llm_settings(tr):
         test_errors = []
         if not st_text_api_key:
             test_errors.append(tr("Please enter API key"))
-        if not model_name_input:
+        if not reasoning_model_name_input:
             test_errors.append(tr("Please enter model name"))
 
         if test_errors:
@@ -961,17 +988,25 @@ def render_text_llm_settings(tr):
         else:
             with st.spinner(tr("Testing connection...")):
                 try:
-                    success, message = test_openai_compatible_text_model(
-                        api_key=st_text_api_key,
-                        base_url=st_text_base_url,
-                        model_name=st_text_model_name,
-                        tr=tr
-                    )
-
-                    if success:
-                        st.success(message)
-                    else:
-                        st.error(message)
+                    test_targets = [
+                        (tr("High Reasoning Model Name"), st_text_model_name),
+                    ]
+                    if st_text_fast_model_name:
+                        test_targets.append((
+                            tr("High Efficiency Model Name"),
+                            st_text_fast_model_name,
+                        ))
+                    for label, target_model in test_targets:
+                        success, message = test_openai_compatible_text_model(
+                            api_key=st_text_api_key,
+                            base_url=st_text_base_url,
+                            model_name=target_model,
+                            tr=tr,
+                        )
+                        if success:
+                            st.success(f"{label}: {message}")
+                        else:
+                            st.error(f"{label}: {message}")
                 except Exception as e:
                     st.error(f"{tr('Connection test error')}: {str(e)}")
                     logger.error(f"OpenAI 兼容 文案生成模型连接测试失败: {str(e)}")
@@ -991,6 +1026,25 @@ def render_text_llm_settings(tr):
             st.session_state["text_openai_model_name"] = st_text_model_name
         else:
             text_validation_errors.append(error_msg)
+
+    if st_text_fast_model_name:
+        is_valid, error_msg = validate_openai_compatible_model_name(
+            st_text_fast_model_name,
+            "高效率文案生成",
+        )
+        if is_valid:
+            text_config_changed |= update_app_config_if_changed(
+                "text_openai_fast_model_name",
+                st_text_fast_model_name,
+            )
+            st.session_state["text_openai_fast_model_name"] = st_text_fast_model_name
+        else:
+            text_validation_errors.append(error_msg)
+    else:
+        text_config_changed |= update_app_config_if_changed(
+            "text_openai_fast_model_name",
+            "",
+        )
 
     # 验证 API 密钥
     if st_text_api_key:
@@ -1027,7 +1081,7 @@ def render_text_llm_settings(tr):
             config.save_config()
             # 清除缓存，确保下次使用新配置
             UnifiedLLMService.clear_cache()
-            if st_text_api_key or st_text_base_url or st_text_model_name:
+            if st_text_api_key or st_text_base_url or st_text_model_name or st_text_fast_model_name:
                 st.success(tr("Text model config saved"))
         except Exception as e:
             st.error(f"{tr('Failed to save config')}: {str(e)}")

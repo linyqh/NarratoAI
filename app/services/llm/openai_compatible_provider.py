@@ -258,8 +258,9 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
         response_format: Optional[str],
         kwargs: Dict[str, Any],
     ) -> Dict[str, Any]:
-        model_name = _normalize_model_name(self.model_name)
         generation_kwargs = dict(kwargs)
+        model_override = generation_kwargs.pop("model", None) or generation_kwargs.pop("model_name", None)
+        model_name = _normalize_model_name(model_override or self.model_name)
         temperature_override = generation_kwargs.pop("temperature", None)
         if temperature_override is None and temperature != 1.0:
             temperature_override = temperature

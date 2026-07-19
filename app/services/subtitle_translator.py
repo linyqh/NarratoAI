@@ -11,6 +11,7 @@ from typing import Any, Callable
 from loguru import logger
 
 from app.config import config
+from app.config.defaults import resolve_text_model_name
 from app.services.llm.migration_adapter import _run_async_safely
 from app.services.llm.unified_service import UnifiedLLMService
 from app.services.subtitle_corrector import (
@@ -151,6 +152,7 @@ def _translate_chunk(
     provider: str,
     api_key: str,
     base_url: str,
+    model_name: str,
     temperature: float,
     max_repair_attempts: int,
 ) -> dict[int, str]:
@@ -189,6 +191,8 @@ def _translate_chunk(
             response_format="json",
             api_key=api_key,
             api_base=base_url,
+            model=model_name,
+            thinking_level="off",
         )
         last_output = str(raw_output or "")
         try:
@@ -243,6 +247,7 @@ def translate_srt_content(
     provider: str = "",
     api_key: str = "",
     base_url: str = "",
+    model_name: str = "",
     temperature: float = 0.2,
     batch_size: int | None = None,
     max_workers: int | None = None,
@@ -251,6 +256,9 @@ def translate_srt_content(
     target_language = str(target_language or "").strip() or "中文"
     blocks = parse_srt_blocks(srt_content)
     _ensure_llm_providers_registered()
+    resolved_model_name = str(
+        model_name or resolve_text_model_name(config.app, provider, prefer_fast=True)
+    ).strip()
 
     resolved_batch_size = _resolve_batch_size(batch_size)
     chunks = _split_blocks(blocks, resolved_batch_size)
@@ -260,7 +268,8 @@ def translate_srt_content(
 
     logger.info(
         f"开始批量翻译字幕: 共 {total_blocks} 条, {total_chunks} 批, "
-        f"每批最多 {resolved_batch_size} 条, 并发 {resolved_max_workers}, 目标语言: {target_language}"
+        f"每批最多 {resolved_batch_size} 条, 并发 {resolved_max_workers}, "
+        f"目标语言: {target_language}, 高效率模型: {resolved_model_name}"
     )
 
     translations: dict[int, str] = {}
@@ -282,6 +291,7 @@ def translate_srt_content(
                 provider=provider,
                 api_key=api_key,
                 base_url=base_url,
+                model_name=resolved_model_name,
                 temperature=temperature,
                 max_repair_attempts=DEFAULT_MAX_REPAIR_ATTEMPTS,
             )
@@ -301,6 +311,7 @@ def translate_srt_content(
                     provider=provider,
                     api_key=api_key,
                     base_url=base_url,
+                    model_name=resolved_model_name,
                     temperature=temperature,
                     max_repair_attempts=DEFAULT_MAX_REPAIR_ATTEMPTS,
                 )
@@ -347,6 +358,7 @@ def translate_subtitle_file(
     provider: str = "",
     api_key: str = "",
     base_url: str = "",
+    model_name: str = "",
     temperature: float = 0.2,
     batch_size: int | None = None,
     max_workers: int | None = None,
@@ -362,6 +374,7 @@ def translate_subtitle_file(
         provider=provider,
         api_key=api_key,
         base_url=base_url,
+        model_name=model_name,
         temperature=temperature,
         batch_size=batch_size,
         max_workers=max_workers,

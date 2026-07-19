@@ -12,6 +12,7 @@ from app.config import config as cfg
 from app.config.defaults import (
     get_openai_compatible_ui_values,
     normalize_openai_compatible_model_name,
+    resolve_text_model_name,
 )
 
 
@@ -82,11 +83,13 @@ hide_config = true
         self.assertEqual(0.95, config_data["app"]["vision_openai_top_p"])
         self.assertEqual("openai", config_data["app"]["text_llm_provider"])
         self.assertEqual("Pro/zai-org/GLM-5", config_data["app"]["text_openai_model_name"])
+        self.assertEqual("", config_data["app"]["text_openai_fast_model_name"])
         self.assertEqual("https://api.siliconflow.cn/v1", config_data["app"]["text_openai_base_url"])
         self.assertEqual(1.0, config_data["app"]["text_openai_temperature"])
         self.assertEqual(0.95, config_data["app"]["text_openai_top_p"])
         self.assertEqual("Qwen/Qwen3.5-122B-A10B", saved_config["app"]["vision_openai_model_name"])
         self.assertEqual("Pro/zai-org/GLM-5", saved_config["app"]["text_openai_model_name"])
+        self.assertEqual("", saved_config["app"]["text_openai_fast_model_name"])
         self.assertTrue(saved_config["app"]["hide_config"])
 
     def test_legacy_indextts2_config_is_migrated_to_indextts_15(self):
@@ -127,6 +130,23 @@ hide_config = true
 
 
 class OpenAICompatibleModelDefaultsTests(unittest.TestCase):
+    def test_fast_text_model_falls_back_to_reasoning_model(self):
+        app_config = {
+            "text_openai_model_name": "reasoning-model",
+            "text_openai_fast_model_name": "",
+        }
+
+        self.assertEqual(
+            "reasoning-model",
+            resolve_text_model_name(app_config, "openai", prefer_fast=True),
+        )
+
+        app_config["text_openai_fast_model_name"] = "fast-model"
+        self.assertEqual(
+            "fast-model",
+            resolve_text_model_name(app_config, "openai", prefer_fast=True),
+        )
+
     def test_ui_keeps_full_model_name_and_openai_provider(self):
         provider, model_name = get_openai_compatible_ui_values(
             "Qwen/Qwen3.5-122B-A10B",

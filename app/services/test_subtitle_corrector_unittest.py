@@ -27,6 +27,14 @@ class SubtitleCorrectorTests(unittest.TestCase):
         }
 
         with (
+            mock.patch.dict(
+                corrector.config.app,
+                {
+                    "text_openai_model_name": "reasoning-model",
+                    "text_openai_fast_model_name": "fast-subtitle-model",
+                },
+                clear=False,
+            ),
             mock.patch("app.services.subtitle_corrector._ensure_llm_providers_registered"),
             mock.patch(
                 "app.services.subtitle_corrector._run_async_safely",
@@ -49,6 +57,8 @@ class SubtitleCorrectorTests(unittest.TestCase):
         self.assertEqual("openai", call_kwargs["provider"])
         self.assertEqual("sk-test", call_kwargs["api_key"])
         self.assertEqual("https://llm.example/v1", call_kwargs["api_base"])
+        self.assertEqual("fast-subtitle-model", call_kwargs["model"])
+        self.assertEqual("off", call_kwargs["thinking_level"])
         self.assertEqual("json", call_kwargs["response_format"])
         self.assertIn("多语言字幕校对员", call_kwargs["system_prompt"])
         self.assertIn("保持原语言", call_kwargs["prompt"])

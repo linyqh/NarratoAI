@@ -149,6 +149,20 @@ class OpenAICompatGenerationOptionTests(unittest.TestCase):
         self.assertEqual(65536, options["max_tokens"])
         self.assertNotIn("extra_body", options)
 
+    def test_text_request_can_override_model_for_fast_tasks(self):
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="reasoning-model")
+
+        options = provider._build_text_completion_kwargs(
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.2,
+            max_tokens=None,
+            response_format=None,
+            kwargs={"model": "fast-model", "thinking_level": "off"},
+        )
+
+        self.assertEqual("fast-model", options["model"])
+        self.assertNotIn("extra_body", options)
+
     def test_build_options_uses_per_model_generation_config(self):
         provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
         config.app.update(

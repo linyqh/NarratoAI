@@ -164,11 +164,13 @@ class LLMConfigValidator:
             config_prefix = f"text_{provider_name}"
             api_key = config.app.get(f'{config_prefix}_api_key')
             model_name = config.app.get(f'{config_prefix}_model_name')
+            fast_model_name = config.app.get(f'{config_prefix}_fast_model_name')
             base_url = config.app.get(f'{config_prefix}_base_url')
             
             result["config"] = {
                 "api_key": "***" if api_key else None,
                 "model_name": model_name,
+                "fast_model_name": fast_model_name,
                 "base_url": base_url
             }
             
@@ -241,7 +243,8 @@ class LLMConfigValidator:
                     f"text_{provider}_model_name"
                 ],
                 "optional_configs": [
-                    f"text_{provider}_base_url"
+                    f"text_{provider}_base_url",
+                    f"text_{provider}_fast_model_name",
                 ],
                 "example_models": LLMConfigValidator._get_example_models(provider, "text")
             }

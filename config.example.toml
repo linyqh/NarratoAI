@@ -53,7 +53,8 @@
     #   - Qwen: qwen/qwen-plus, qwen/qwen-turbo
     #   - SiliconFlow: siliconflow/deepseek-ai/DeepSeek-R1
     #   - Moonshot: moonshot/moonshot-v1-8k
-    text_openai_model_name = "Pro/zai-org/GLM-5"
+    text_openai_model_name = "Pro/zai-org/GLM-5"  # 高推理模型：剧情分析、文案生成、脚本匹配
+    text_openai_fast_model_name = ""  # 高效率模型：字幕翻译、字幕校准；留空时回退到高推理模型
     text_openai_api_key = ""  # 填入对应 provider 的 API key
     text_openai_base_url = "https://api.siliconflow.cn/v1"  # 可选：自定义 API base URL；界面会提示 API key 将发送到对应端点
     text_openai_temperature = 1.0

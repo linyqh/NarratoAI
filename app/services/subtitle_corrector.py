@@ -10,6 +10,8 @@ from typing import Any
 
 from loguru import logger
 
+from app.config import config
+from app.config.defaults import resolve_text_model_name
 from app.services.llm.manager import LLMServiceManager
 from app.services.llm.migration_adapter import _run_async_safely
 from app.services.llm.unified_service import UnifiedLLMService
@@ -174,12 +176,16 @@ def correct_srt_content(
     provider: str = "",
     api_key: str = "",
     base_url: str = "",
+    model_name: str = "",
     temperature: float = 0.1,
 ) -> str:
     blocks = parse_srt_blocks(srt_content)
     _ensure_llm_providers_registered()
 
-    logger.info(f"开始校准字幕，共 {len(blocks)} 条")
+    resolved_model_name = str(
+        model_name or resolve_text_model_name(config.app, provider, prefer_fast=True)
+    ).strip()
+    logger.info(f"开始使用高效率模型 {resolved_model_name} 校准字幕，共 {len(blocks)} 条")
     prompt = _build_correction_prompt(blocks)
     raw_output = _run_async_safely(
         UnifiedLLMService.generate_text,
@@ -190,6 +196,8 @@ def correct_srt_content(
         response_format="json",
         api_key=api_key,
         api_base=base_url,
+        model=resolved_model_name,
+        thinking_level="off",
     )
     corrections = _parse_corrections(raw_output, {block.order for block in blocks})
     corrected_srt = _render_srt(blocks, corrections)
@@ -215,6 +223,7 @@ def correct_subtitle_file(
     provider: str = "",
     api_key: str = "",
     base_url: str = "",
+    model_name: str = "",
     temperature: float = 0.1,
 ) -> str:
     if not subtitle_file or not os.path.isfile(subtitle_file):
@@ -226,6 +235,7 @@ def correct_subtitle_file(
         provider=provider,
         api_key=api_key,
         base_url=base_url,
+        model_name=model_name,
         temperature=temperature,
     )
     return write_srt_file(corrected_srt, output_file)
