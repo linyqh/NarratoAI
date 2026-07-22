@@ -24,11 +24,11 @@ NarratoAI is an automated video narration tool that provides an all-in-one solut
 <h2><a href="https://p9mf6rjv3c.feishu.cn/wiki/SP8swLLZki5WRWkhuFvc2CyInDg?from=from_copylink" target="_blank">🎉🎉🎉 Official Documentation 🎉🎉🎉</a> </h2>
 <h3>Home</h3>
 
-![](docs/index-en.png)
+![NarratoAI open-source AI video narration and automated editing interface](docs/index-en.png)
 
 <h3>Video Review Interface</h3>
 
-![](docs/check-en.png)
+![NarratoAI AI narration script review and video editing workflow](docs/check-en.png)
 
 </div>
 
@@ -118,8 +118,8 @@ This project was refactored based on the above projects with the addition of vid
 
 ## Buy the Author a Cup of Coffee ☕️
 <div style="display: flex; justify-content: space-between;">
-  <img src="https://github.com/user-attachments/assets/5038ccfb-addf-4db1-9966-99415989fd0c" alt="Image 1" style="width: 350px; height: 350px; margin: auto;"/>
-  <img src="https://github.com/user-attachments/assets/07d4fd58-02f0-425c-8b59-2ab94b4f09f8" alt="Image 2" style="width: 350px; height: 350px; margin: auto;"/>
+  <img src="https://github.com/user-attachments/assets/5038ccfb-addf-4db1-9966-99415989fd0c" alt="NarratoAI WeChat donation QR code" style="width: 350px; height: 350px; margin: auto;"/>
+  <img src="https://github.com/user-attachments/assets/07d4fd58-02f0-425c-8b59-2ab94b4f09f8" alt="NarratoAI project support QR code" style="width: 350px; height: 350px; margin: auto;"/>
 </div>
 
 ## License 📝
