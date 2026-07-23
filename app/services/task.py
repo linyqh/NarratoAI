@@ -236,6 +236,24 @@ def _resolve_bgm_path(task_id: str, params: VideoClipParams, combined_video_path
     )
 
 
+def _apply_sonilo_sfx(task_id: str, params: VideoClipParams, combined_video_path: str) -> str:
+    """为合并后的成片混入 Sonilo AI 音效（可选功能，默认关闭）。
+
+    仅当 params.sonilo_sfx_enabled 为 True 时启用：把合并后的成片上传到
+    Sonilo API 生成音效，再用 ffmpeg 混在现有音轨之下，返回新视频路径。
+    解说配音在后续 merge_materials 中单独混入，音量策略不受影响。任何
+    失败都只记录日志并沿用原视频，绝不中断成片任务。
+    """
+    if not getattr(params, "sonilo_sfx_enabled", False):
+        return combined_video_path
+    output_path = path.join(utils.task_dir(task_id), "merger_sfx.mp4")
+    sfx_video_path = sonilo.apply_sfx(combined_video_path, output_path)
+    if sfx_video_path:
+        return sfx_video_path
+    logger.warning("Sonilo 音效不可用，继续使用未加音效的成片")
+    return combined_video_path
+
+
 def _transcribe_final_video(task_id: str, video_path: str, params: VideoClipParams) -> str:
     """Transcribe the fully merged video into an SRT file."""
     from app.services import fun_asr_subtitle
@@ -541,6 +559,9 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
         else output_video_path
     )
     logger.info(f"\n\n## 6. 最后一步: 合并字幕/BGM/配音/视频 -> {merge_output_video_path}")
+
+    # 可选功能，默认关闭：混入 Sonilo AI 音效（失败时沿用原视频）
+    combined_video_path = _apply_sonilo_sfx(task_id, params, combined_video_path)
 
     # bgm_path = '/Users/apple/Desktop/home/NarratoAI/resource/songs/bgm.mp3'
     bgm_path = _resolve_bgm_path(task_id, params, combined_video_path)
@@ -868,6 +889,9 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
         step_current=6,
         ffmpeg_progress=0,
     )
+
+    # 可选功能，默认关闭：混入 Sonilo AI 音效（失败时沿用原视频）
+    combined_video_path = _apply_sonilo_sfx(task_id, params, combined_video_path)
 
     bgm_path = _resolve_bgm_path(task_id, params, combined_video_path)
 

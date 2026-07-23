@@ -68,14 +68,19 @@
     tavily_search_depth = "basic"  # basic / advanced / fast / ultra-fast
     tavily_max_results = 5
 
-    # ===== 可选：Sonilo AI 配乐（BGM）=====
-    # 在 WebUI 背景音乐来源中选择 "AI 生成配乐（Sonilo）" 即可启用（默认关闭，不影响现有 BGM 逻辑）。
+    # ===== 可选：Sonilo AI 配乐（BGM）/ AI 音效（SFX）=====
+    # 配乐：在 WebUI 背景音乐来源中选择 "AI 生成配乐（Sonilo）" 即可启用（默认关闭，不影响现有 BGM 逻辑）。
     # 启用后会将合成完成的视频（未加 BGM）上传到 Sonilo API，根据画面内容与剪辑节奏生成配乐；
     # 生成的音乐已获授权、可商用（以条款为准）。视频时长上限 6 分钟，生成失败时自动回退到随机背景音乐。
-    sonilo_api_key = ""  # 获取地址：https://sonilo.com
+    # 音效：在 WebUI 音频设置中勾选 "AI 音效（Sonilo）" 即可启用（默认关闭）。
+    # 启用后会将合成完成的视频上传到 Sonilo API，根据画面内容生成音效，并混在现有音轨之下（解说不受影响）；
+    # 生成的音效为免版税素材。视频时长上限 3 分钟，生成失败时自动跳过音效。
+    sonilo_api_key = ""  # 获取地址：https://sonilo.com（配乐与音效共用）
     # sonilo_base_url = "https://api.sonilo.com"
-    # sonilo_timeout_seconds = 600  # 生成接口读超时（秒）
+    # sonilo_timeout_seconds = 600  # 生成接口读超时 / 音效任务等待上限（秒）
     # sonilo_bgm_prompt = ""        # 可选：配乐风格提示，留空则完全根据画面生成
+    # sonilo_sfx_prompt = ""        # 可选：音效风格提示，留空则完全根据画面生成
+    # sonilo_sfx_volume = 0.6       # 音效混入原声之下的音量，范围 (0, 2]，默认 0.6
 
     # ===== API Keys 参考 =====
     # 主流 LLM Providers API Key 获取地址：

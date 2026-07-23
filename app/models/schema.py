@@ -183,6 +183,7 @@ class VideoClipParams(BaseModel):
     bgm_name: Optional[str] = Field(default="random", description="背景音乐名称")
     bgm_type: Optional[str] = Field(default="random", description="背景音乐类型")
     bgm_file: Optional[str] = Field(default="", description="背景音乐文件")
+    sonilo_sfx_enabled: Optional[bool] = Field(default=False, description="是否启用 Sonilo AI 音效（可选功能，默认关闭）")
 
     subtitle_enabled: bool = True
     subtitle_mask_enabled: bool = False
