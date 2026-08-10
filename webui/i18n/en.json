@@ -476,7 +476,7 @@
     "Vision model": "Vision model",
     "Text model": "Text model",
     "Model Name Input Help": "Enter the full model name.\n\nCommon examples:",
-    "OpenAI compatible providers help": "The vendor is not limited here; OpenAI, DeepSeek, OpenRouter, SiliconFlow, or a self-hosted gateway all work as long as the endpoint is OpenAI-compatible.",
+    "OpenAI compatible providers help": "The vendor is not limited here; OpenAI, DeepSeek, OpenRouter, OrcaRouter, SiliconFlow, or a self-hosted gateway all work as long as the endpoint is OpenAI-compatible.",
     "OpenAI compatible protocol": "OpenAI-compatible",
     "OpenAI compatible protocol help": "This does not require the official OpenAI model; any service that supports the OpenAI Chat Completions compatible API can be used.",
     "Provider API Key Help": "API key for the model service.\n\nCommon places to get one:",
