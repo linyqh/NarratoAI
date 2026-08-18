@@ -3,7 +3,7 @@
 <h3 align="center">An all-in-one AI-powered tool for film commentary and automated video editing.🎬🎞️ </h3>
 
 
-<h3>📖 English | <a href="README.md">简体中文</a> | <a href="README-ja.md">日本語</a> </h3>
+<h3>📖 English | <a href="README.md">简体中文</a> </h3>
 <div align="center">
 
 [//]: # (  <a href="https://trendshift.io/repositories/8731" target="_blank"><img src="https://trendshift.io/api/badge/repositories/8731" alt="harry0703%2FNarratoAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>)
