@@ -28,6 +28,7 @@ from app.services.llm.unified_service import UnifiedLLMService
 OPENAI_COMPATIBLE_GATEWAY_BASE_URLS = {
     "siliconflow": "https://api.siliconflow.cn/v1",
     "openrouter": "https://openrouter.ai/api/v1",
+    "orcarouter": "https://api.orcarouter.ai/v1",
     "moonshot": "https://api.moonshot.cn/v1",
     "gemini(openai)": "",
 }

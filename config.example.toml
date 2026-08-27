@@ -12,7 +12,7 @@
     # 🚀 LLM 配置 - 使用 OpenAI 兼容统一接口
     ##########################################
     # 统一使用 OpenAI 兼容协议（/v1/chat/completions）
-    # 支持接入 OpenAI、DeepSeek、Gemini 兼容网关、Qwen 网关、SiliconFlow、OpenRouter 等。
+    # 支持接入 OpenAI、DeepSeek、Gemini 兼容网关、Qwen 网关、SiliconFlow、OpenRouter、OrcaRouter 等。
 
     # ===== 视觉模型配置 =====
     vision_llm_provider = "openai"
@@ -91,6 +91,7 @@
     # Qwen (阿里):  https://bailian.console.aliyun.com/?tab=model#/api-key
     # SiliconFlow:  https://cloud.siliconflow.cn/account/ak (手机号注册)
     # Moonshot:     https://platform.moonshot.cn/console/api-keys
+    # OrcaRouter:   https://www.orcarouter.ai/console (API keys 以 sk-orca- 开头)
     # Anthropic:    https://console.anthropic.com/settings/keys
     # Cohere:       https://dashboard.cohere.com/api-keys
     # Together AI:  https://api.together.xyz/settings/api-keys

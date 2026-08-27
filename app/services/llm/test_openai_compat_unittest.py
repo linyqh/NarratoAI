@@ -204,6 +204,7 @@ class OpenAICompatBaseURLValidationTests(unittest.TestCase):
             "https://api.openai.com/v1",
             "https://api.siliconflow.cn/v1",
             "https://openrouter.ai/api/v1",
+            "https://api.orcarouter.ai/v1",
             "https://dashscope.aliyuncs.com/compatible-mode/v1",
             "https://example.openai.azure.com/openai/deployments/demo",
             "http://localhost:11434/v1",
