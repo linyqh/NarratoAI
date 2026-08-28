@@ -294,6 +294,7 @@ def _find_original_subtitle_paths_for_videos(video_paths: list[str]) -> list[str
     for video_path in video_paths:
         candidates = _video_stem_candidates(video_path)
         if not candidates:
+            resolved_paths.append("")
             continue
 
         matches = []
@@ -305,6 +306,7 @@ def _find_original_subtitle_paths_for_videos(video_paths: list[str]) -> list[str
                     break
 
         if not matches:
+            resolved_paths.append("")
             continue
 
         matches.sort(key=lambda item: path.getmtime(item), reverse=True)
@@ -312,10 +314,13 @@ def _find_original_subtitle_paths_for_videos(video_paths: list[str]) -> list[str
         if selected_path not in seen:
             resolved_paths.append(selected_path)
             seen.add(selected_path)
+        else:
+            resolved_paths.append("")
 
-    if resolved_paths:
+    if any(resolved_paths):
         logger.info(f"剪映导出未从参数获取原片字幕，已按视频文件名自动匹配: {resolved_paths}")
-    return resolved_paths
+        return resolved_paths
+    return []
 
 
 def _create_jianying_subtitle_file(
