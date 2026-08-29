@@ -59,10 +59,6 @@ JSON 必须包含以下键：
         vision_model_name: str | None = None,
         vision_base_url: str | None = None,
         max_concurrency: int | None = None,
-        completed_batches: list[FrameBatchResult] | None = None,
-        checkpoint_callback: Callable[[FrameBatchResult], None] | None = None,
-        is_cancelled: Callable[[], bool] | None = None,
-        retain_keyframes: bool = False,
     ) -> list[dict]:
         progress = progress_callback or (lambda _p, _m: None)
         analysis_result = await self.analyze_video(
@@ -123,6 +119,10 @@ JSON 必须包含以下键：
         vision_model_name: str | None = None,
         vision_base_url: str | None = None,
         max_concurrency: int | None = None,
+        completed_batches: list[FrameBatchResult] | None = None,
+        checkpoint_callback: Callable[[FrameBatchResult], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
+        retain_keyframes: bool = False,
     ) -> dict[str, Any]:
         progress = progress_callback or (lambda _p, _m: None)
 

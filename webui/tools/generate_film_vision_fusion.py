@@ -139,5 +139,10 @@ def local_visual_analysis_status(task_id: str) -> dict:
     return LocalAnalysisTaskStore(Path(utils.task_dir("visual_analysis"))).read(task_id)
 
 
+def find_local_visual_analysis(video_path: str) -> dict | None:
+    store = LocalAnalysisTaskStore(Path(utils.task_dir("visual_analysis")))
+    return store.find_latest_for_source(build_source_video_identity(video_path))
+
+
 def cancel_local_visual_analysis(task_id: str) -> None:
     LocalAnalysisTaskStore(Path(utils.task_dir("visual_analysis"))).request_cancel(task_id)

@@ -20,6 +20,7 @@ from webui.tools.generate_film_vision_fusion import (
     cancel_local_visual_analysis,
     collect_visual_evidence,
     estimate_local_visual_analysis,
+    find_local_visual_analysis,
     local_visual_analysis_status,
     resume_local_visual_analysis,
     start_local_visual_analysis,
@@ -1981,6 +1982,12 @@ def render_script_buttons(tr, params):
                 if task_id and st.session_state.get("fusion_visual_task_signature") != visual_signature:
                     task_id = ""
                     st.session_state.pop("fusion_visual_task_id", None)
+                if not task_id:
+                    persisted_task = find_local_visual_analysis(source_video)
+                    if persisted_task:
+                        task_id = str(persisted_task["task_id"])
+                        st.session_state["fusion_visual_task_id"] = task_id
+                        st.session_state["fusion_visual_task_signature"] = visual_signature
                 if st.session_state.get("fusion_visual_confirmation_signature") != visual_signature:
                     try:
                         estimate = estimate_local_visual_analysis(
@@ -1993,7 +2000,8 @@ def render_script_buttons(tr, params):
                             .format(frames=estimate.keyframe_count, requests=estimate.request_count, minutes=estimate.estimated_minutes)
                         )
                     except Exception as exc:
-                        st.warning(f"{tr('无法预估视觉分析工作量')}: {exc}")
+                        st.error(f"{tr('无法预估视觉分析工作量')}: {exc}")
+                        st.stop()
                     if st.button(tr("确认并开始全片视觉分析"), key="confirm_fusion_visual_analysis"):
                         st.session_state["fusion_visual_confirmation_signature"] = visual_signature
                     else:

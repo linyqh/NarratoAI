@@ -58,6 +58,19 @@ class LocalAnalysisTaskStore:
     def request_cancel(self, task_id: str) -> dict:
         return self.update(task_id, cancel_requested=True)
 
+    def find_latest_for_source(self, source_identity: dict) -> dict | None:
+        """Return the most recent non-completed task for exactly this source content."""
+        matches = []
+        for path in self._directory.glob("*.json"):
+            try:
+                with path.open(encoding="utf-8") as handle:
+                    task = json.load(handle)
+            except (OSError, json.JSONDecodeError):
+                continue
+            if task.get("source_video_identity") == source_identity and task.get("status") != "completed":
+                matches.append(task)
+        return max(matches, key=lambda task: str(task.get("updated_at") or ""), default=None)
+
     def _path(self, task_id: str) -> Path:
         if not task_id.isalnum():
             raise ValueError("invalid local analysis task id")
