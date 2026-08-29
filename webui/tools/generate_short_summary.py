@@ -13,6 +13,7 @@ import hashlib
 import time
 import traceback
 import html
+from threading import RLock
 from dataclasses import asdict
 from pathlib import Path
 import streamlit as st
@@ -326,15 +327,15 @@ def match_approved_fusion_segment_plan(
             repaired = analyzer.repair_fusion_segment_match(
                 short_name=short_name,
                 plot_analysis=str(segment.get("intent") or ""),
-                previous_script=json.dumps(repair_request.previous_response, ensure_ascii=False),
                 continuity_finding=(
                     f"{repair_request.previous_segment_id} -> {repair_request.next_segment_id}: "
-                    f"{repair_request.time_range}"
+                    f"{repair_request.core_window}"
                 ),
+                narration_copy=repair_request.narration,
                 subtitle_content=repair_request.subtitle_evidence,
                 visual_evidence=repair_request.visual_evidence,
                 highlight_candidates=repair_request.highlight_candidates,
-                core_window=str(segment.get("core_window") or ""),
+                core_window=str(repair_request.core_window),
                 temperature=temperature,
                 narration_language=narration_language,
                 drama_genre=drama_genre,
@@ -534,6 +535,9 @@ def resume_fusion_matching_task(task_id: str) -> None:
     store = _fusion_matching_task_store()
     task = store.read(task_id)
     request = dict(task["request"])
+    request["resume_snapshot"] = task.get("matching_snapshot") or request.get(
+        "resume_snapshot", {}
+    )
     completed = list(task.get("completed_batches") or [])
     store.update(task_id, status="queued", cancel_requested=False, error_message="")
     _start_fusion_matching_runner(store, task_id, request, completed)
@@ -587,36 +591,54 @@ def _start_fusion_matching_runner(
             prompt_category=FILM_TV_PROMPT_CATEGORY,
         )
         segment_count = max(1, len(request["plan_payload"].get("segments") or []))
+        task_state_lock = RLock()
+        attempts_by_segment = dict(persisted_snapshot.get("attempts_by_segment") or {})
+        repair_attempts_by_segment = dict(
+            persisted_snapshot.get("repair_attempts_by_segment") or {}
+        )
+
+        def persist_matching_snapshot():
+            with task_state_lock:
+                store.update(
+                    task_id,
+                    matching_snapshot={
+                        "plan_payload": request["plan_payload"],
+                        "completed_segment_results": dict(completed_responses),
+                        "attempts_by_segment": dict(attempts_by_segment),
+                        "repair_attempts_by_segment": dict(repair_attempts_by_segment),
+                    },
+                )
 
         def update_segment_status(
             segment_id, status, *, response=None, error_message="", attempts=None,
             repair_attempts=None,
         ):
-            task = store.read(task_id)
-            entries = list(task.get("segment_matches") or [])
-            updated = False
-            for entry in entries:
-                if str(entry.get("segment_id")) == str(segment_id):
-                    entry["status"] = status
-                    entry["error_message"] = error_message
-                    if response is not None:
-                        entry["response"] = response
-                    if attempts is not None:
-                        entry["attempts"] = attempts
-                    if repair_attempts is not None:
-                        entry["repair_attempts"] = repair_attempts
-                    updated = True
-                    break
-            if not updated:
-                entries.append({
-                    "segment_id": str(segment_id),
-                    "status": status,
-                    "error_message": error_message,
-                    **({"response": response} if response is not None else {}),
-                    **({"attempts": attempts} if attempts is not None else {}),
-                    **({"repair_attempts": repair_attempts} if repair_attempts is not None else {}),
-                })
-            store.update(task_id, segment_matches=entries)
+            with task_state_lock:
+                task = store.read(task_id)
+                entries = list(task.get("segment_matches") or [])
+                updated = False
+                for entry in entries:
+                    if str(entry.get("segment_id")) == str(segment_id):
+                        entry["status"] = status
+                        entry["error_message"] = error_message
+                        if response is not None:
+                            entry["response"] = response
+                        if attempts is not None:
+                            entry["attempts"] = attempts
+                        if repair_attempts is not None:
+                            entry["repair_attempts"] = repair_attempts
+                        updated = True
+                        break
+                if not updated:
+                    entries.append({
+                        "segment_id": str(segment_id),
+                        "status": status,
+                        "error_message": error_message,
+                        **({"response": response} if response is not None else {}),
+                        **({"attempts": attempts} if attempts is not None else {}),
+                        **({"repair_attempts": repair_attempts} if repair_attempts is not None else {}),
+                    })
+                store.update(task_id, segment_matches=entries)
 
         def mark_segment_started(segment_request):
             update_segment_status(segment_request.segment_id, "running")
@@ -630,6 +652,7 @@ def _start_fusion_matching_runner(
             })
             completed_responses[segment_request.segment_id] = response
             update_segment_status(segment_request.segment_id, "succeeded", response=response)
+            persist_matching_snapshot()
             progress(
                 15 + (len(completed_responses) / segment_count) * 75,
                 f"正在匹配剪辑段落 ({len(completed_responses)}/{segment_count})...",
@@ -644,6 +667,24 @@ def _start_fusion_matching_runner(
             })
             update_segment_status(segment_request.segment_id, "failed", error_message=str(error))
 
+        def checkpoint_attempt(segment_request, attempt_count):
+            with task_state_lock:
+                attempts_by_segment[segment_request.segment_id] = attempt_count
+                update_segment_status(
+                    segment_request.segment_id, "running", attempts=attempt_count
+                )
+                persist_matching_snapshot()
+
+        def checkpoint_repair_attempt(repair_request, attempt_count):
+            with task_state_lock:
+                repair_attempts_by_segment[repair_request.affected_segment_id] = attempt_count
+                update_segment_status(
+                    repair_request.affected_segment_id,
+                    "repairing",
+                    repair_attempts=attempt_count,
+                )
+                persist_matching_snapshot()
+
         matching_request = {
             key: value
             for key, value in request.items()
@@ -656,6 +697,8 @@ def _start_fusion_matching_runner(
             on_segment_started=mark_segment_started,
             on_segment_complete=checkpoint_segment,
             on_segment_failed=checkpoint_failure,
+            on_segment_attempt=checkpoint_attempt,
+            on_repair_attempt=checkpoint_repair_attempt,
             is_cancelled=cancelled,
             **matching_request,
         )

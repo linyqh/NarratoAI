@@ -33,11 +33,11 @@ class ContinuityRepairRequest:
     affected_segment_id: str
     previous_segment_id: str
     next_segment_id: str
-    time_range: str
+    core_window: TimeRange
+    narration: str
     subtitle_evidence: str
     visual_evidence: str
     highlight_candidates: str
-    previous_response: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +77,8 @@ class FusionMatchingWorkflow:
         on_segment_started=None,
         on_segment_complete=None,
         on_segment_failed=None,
+        on_segment_attempt=None,
+        on_repair_attempt=None,
         is_cancelled=None,
     ) -> FusionMatchingResult:
         pipeline = FusionScriptPipeline()
@@ -115,6 +117,10 @@ class FusionMatchingWorkflow:
             attempts_by_segment[segment_request.segment_id] = (
                 attempts_by_segment.get(segment_request.segment_id, 0) + 1
             )
+            if on_segment_attempt:
+                on_segment_attempt(
+                    segment_request, attempts_by_segment[segment_request.segment_id]
+                )
             response = self._with_segment_id(
                 text_adapter.match_segment(segment_request), segment_request.segment_id
             )
@@ -138,16 +144,16 @@ class FusionMatchingWorkflow:
         )
         report = self._evaluate_merged_continuity(matched)
         repaired_segment_ids: tuple[str, ...] = ()
-        gap = self._first_unbridged_large_gap(matched.items)
+        gap = next(iter(self._unbridged_large_gaps(matched.items)), None)
         repair_transition = getattr(text_adapter, "repair_transition", None)
         if gap and callable(repair_transition):
-            previous, current = gap
+            previous, current, _jump = gap
             affected_segment_id = str(previous.get("_segment_id") or "")
-            previous_end = str(previous.get("timestamp") or "").split("-", 1)[1]
-            current_start = str(current.get("timestamp") or "").split("-", 1)[0]
-            affected_window = TimeRange.parse(
-                f"{previous_end}-{current_start}"
+            affected_request = next(
+                item for item in matched.requests
+                if item.segment_id == affected_segment_id
             )
+            affected_window = TimeRange.parse(affected_request.core_window)
             subtitles, visuals, candidates = pipeline.select_evidence_window(
                 subtitle_evidence=request.subtitle_evidence,
                 visual_evidence=request.visual_evidence,
@@ -158,13 +164,15 @@ class FusionMatchingWorkflow:
                 affected_segment_id=affected_segment_id,
                 previous_segment_id=affected_segment_id,
                 next_segment_id=str(current.get("_segment_id") or ""),
-                time_range=str(affected_window),
+                core_window=affected_window,
+                narration=affected_request.narration,
                 subtitle_evidence=subtitles,
                 visual_evidence=visuals,
                 highlight_candidates=candidates,
-                previous_response=completed_responses[affected_segment_id],
             )
             repair_attempts_by_segment[affected_segment_id] = 1
+            if on_repair_attempt:
+                on_repair_attempt(repair_request, 1)
             try:
                 completed_responses[affected_segment_id] = self._with_segment_id(
                     repair_transition(repair_request), affected_segment_id
@@ -266,29 +274,21 @@ class FusionMatchingWorkflow:
 
     def _evaluate_merged_continuity(self, matched) -> ContinuityReport:
         findings = list(matched.continuity_report.findings)
-        for previous, current in zip(matched.items, matched.items[1:]):
-            previous_window = TimeRange.parse(str(previous.get("timestamp") or ""))
-            current_window = TimeRange.parse(str(current.get("timestamp") or ""))
-            jump = current_window.start_seconds - previous_window.end_seconds
-            if (
-                jump > FusionScriptPipeline.MAX_UNMARKED_FORWARD_JUMP_SECONDS
-                and not self._is_narrative_bridge(previous)
-                and not self._is_narrative_bridge(current)
-            ):
-                findings.append(
-                    ContinuityFinding(
-                        code="unbridged_merged_source_jump",
-                        segment_id=str(current.get("_segment_id") or ""),
-                        previous_segment_id=str(previous.get("_segment_id") or ""),
-                        message=(
-                            f"merged Segment Matches jump {round(jump, 3)} seconds "
-                            "without a Narrative Bridge"
-                        ),
-                    )
+        for previous, current, jump in self._unbridged_large_gaps(matched.items):
+            findings.append(
+                ContinuityFinding(
+                    code="unbridged_merged_source_jump",
+                    segment_id=str(current.get("_segment_id") or ""),
+                    previous_segment_id=str(previous.get("_segment_id") or ""),
+                    message=(
+                        f"merged Segment Matches jump {round(jump, 3)} seconds "
+                        "without a Narrative Bridge"
+                    ),
                 )
+            )
         return ContinuityReport(tuple(findings))
 
-    def _first_unbridged_large_gap(self, items):
+    def _unbridged_large_gaps(self, items):
         for previous, current in zip(items, items[1:]):
             previous_window = TimeRange.parse(str(previous.get("timestamp") or ""))
             current_window = TimeRange.parse(str(current.get("timestamp") or ""))
@@ -298,8 +298,7 @@ class FusionMatchingWorkflow:
                 and not self._is_narrative_bridge(previous)
                 and not self._is_narrative_bridge(current)
             ):
-                return previous, current
-        return None
+                yield previous, current, current_window.start_seconds - previous_window.end_seconds
 
     @staticmethod
     def _is_narrative_bridge(item: dict[str, Any]) -> bool:

@@ -17,12 +17,12 @@ class SegmentMatchRepairPrompt(ParameterizedPrompt):
             output_format=OutputFormat.JSON,
             tags=["影视", "叙事连续性", "定向修复"],
             parameters=[
-                "drama_name", "drama_genre", "plot_analysis", "previous_script",
+                "drama_name", "drama_genre", "plot_analysis", "narration_copy",
                 "continuity_finding", "subtitle_content", "visual_evidence",
                 "highlight_candidates", "core_window", "narration_language",
             ],
         )
-        super().__init__(metadata, required_parameters=["previous_script", "continuity_finding"])
+        super().__init__(metadata, required_parameters=["narration_copy", "continuity_finding"])
         self._system_prompt = (
             "你是影视解说剪辑的连续性修复师。仅输出严格 JSON，不能输出 Markdown 或说明。"
         )
@@ -30,11 +30,11 @@ class SegmentMatchRepairPrompt(ParameterizedPrompt):
     def get_template(self) -> str:
         return """# 单个 Segment Match 的一次定向修复
 
-只修复此受影响段，保留其他 Segment Match。不重写用户已审核的解说文案，也不要使用下面 Evidence Window 以外的事实。
+只修复此受影响段，保留其他 Segment Match。不重写用户已审核的解说文案，也不要使用下面 Evidence Window 以外的事实。不得假定、复述或依赖此前脚本的内容。
 
-<previous_script>
-${previous_script}
-</previous_script>
+<approved_narration>
+${narration_copy}
+</approved_narration>
 
 <continuity_finding>
 ${continuity_finding}

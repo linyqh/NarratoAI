@@ -309,8 +309,8 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
             result = adapter.repair_fusion_segment_match(
                 short_name="测试影片",
                 plot_analysis="这一段必须交代人物转移。",
-                previous_script='{"items": [{"_id": 1}]}',
                 continuity_finding="segment-1 -> segment-2: 00:01:00,000-00:01:10,000",
+                narration_copy="主角抵达封锁的出口。",
                 subtitle_content="00:01:00,000 --> 00:01:10,000\n字幕事实",
                 visual_evidence="## 00:01:00,000-00:01:10,000\n- 可见画面事实",
                 highlight_candidates="",

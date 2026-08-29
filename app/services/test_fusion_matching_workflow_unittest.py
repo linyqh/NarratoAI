@@ -154,21 +154,21 @@ class FusionMatchingWorkflowTests(unittest.TestCase):
         )
         self.assertEqual("segment-2", result.continuity_report.findings[0].segment_id)
 
-    def test_targeted_repair_uses_only_skipped_evidence_and_preserves_successful_matches(self):
+    def test_targeted_repair_uses_only_affected_core_evidence_and_preserves_other_matches(self):
         adapter = _BridgeRepairAdapter()
         request = FusionMatchingInput(
             narration_copy="第一句。第二句。",
             plan_payload=self._plan(),
             subtitle_evidence=(
-                "1\n00:02:00,000 --> 00:02:05,000\n相关字幕\n\n"
+                "1\n00:04:52,000 --> 00:04:55,000\n相关字幕\n\n"
                 "2\n00:10:00,000 --> 00:10:05,000\n无关字幕"
             ),
             visual_evidence=(
-                "## 00:02:00,000-00:02:05,000\n- 相关画面\n\n"
+                "## 00:04:52,000-00:04:55,000\n- 相关画面\n\n"
                 "## 00:10:00,000-00:10:05,000\n- 无关画面"
             ),
             highlight_candidates=(
-                "- 00:02:00,000-00:02:05,000｜动作场面｜价值 4/5：相关候选。\n"
+                "- 00:04:52,000-00:04:55,000｜动作场面｜价值 4/5：相关候选。\n"
                 "- 00:10:00,000-00:10:05,000｜动作场面｜价值 5/5：无关候选。"
             ),
         )
@@ -180,6 +180,8 @@ class FusionMatchingWorkflowTests(unittest.TestCase):
         self.assertEqual(["segment-1", "segment-2"], adapter.matched_segment_ids)
         self.assertEqual(1, len(adapter.repair_requests))
         repair_request = adapter.repair_requests[0]
+        self.assertEqual("00:00:00,000-00:05:00,000", str(repair_request.core_window))
+        self.assertEqual("第一句。", repair_request.narration)
         self.assertIn("相关字幕", repair_request.subtitle_evidence)
         self.assertNotIn("无关字幕", repair_request.subtitle_evidence)
         self.assertIn("相关画面", repair_request.visual_evidence)
@@ -202,6 +204,25 @@ class FusionMatchingWorkflowTests(unittest.TestCase):
         self.assertTrue(result.renderable)
         self.assertEqual({"segment-1": 1, "segment-2": 2}, result.attempts_by_segment)
         self.assertEqual({}, result.repair_attempts_by_segment)
+
+    def test_reports_each_attempt_before_a_permanent_failure_escapes(self):
+        attempts = []
+
+        class FailingAdapter:
+            def match_segment(self, _request):
+                raise RuntimeError("provider unavailable")
+
+        with self.assertRaisesRegex(RuntimeError, "failed after retry"):
+            FusionMatchingWorkflow().execute(
+                FusionMatchingInput("第一句。第二句。", self._plan(), "", "", ""),
+                FailingAdapter(),
+                on_segment_attempt=lambda segment, count: attempts.append(
+                    (segment.segment_id, count)
+                ),
+            )
+
+        self.assertIn(("segment-1", 1), attempts)
+        self.assertIn(("segment-1", 2), attempts)
 
     def test_semantic_state_handoff_failure_is_reviewable_without_matching(self):
         plan = self._plan()
