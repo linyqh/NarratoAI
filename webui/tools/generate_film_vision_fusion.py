@@ -1,6 +1,7 @@
 """UI orchestration for the independent film-vision fusion narration mode."""
 
 import asyncio
+import json
 from pathlib import Path
 
 import streamlit as st
@@ -146,3 +147,20 @@ def find_local_visual_analysis(video_path: str, analysis_signature: str = "") ->
 
 def cancel_local_visual_analysis(task_id: str) -> None:
     LocalAnalysisTaskStore(Path(utils.task_dir("visual_analysis"))).request_cancel(task_id)
+
+
+def list_local_visual_evidence_artifacts() -> list[Path]:
+    """Return saved visual-evidence artifacts newest first for local reuse."""
+    analysis_directory = Path(utils.storage_dir()) / "temp" / "analysis"
+    if not analysis_directory.is_dir():
+        return []
+    artifacts: list[Path] = []
+    for path in analysis_directory.glob("frame_analysis_*.json"):
+        try:
+            with path.open(encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict) and payload.get("artifact_version"):
+            artifacts.append(path)
+    return sorted(artifacts, key=lambda item: item.stat().st_mtime, reverse=True)

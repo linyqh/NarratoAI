@@ -22,6 +22,7 @@ from webui.tools.generate_film_vision_fusion import (
     collect_visual_evidence,
     estimate_local_visual_analysis,
     find_local_visual_analysis,
+    list_local_visual_evidence_artifacts,
     local_visual_analysis_status,
     resume_local_visual_analysis,
     start_local_visual_analysis,
@@ -848,31 +849,23 @@ def render_fusion_visual_settings(tr):
 
         st.divider()
         st.caption(tr("可导入历史视觉证据产物，跳过视觉模型调用以测试后续解说和剪辑流程。"))
-        uploaded_artifact = st.file_uploader(
-            tr("导入视觉证据 JSON"),
-            type=["json"],
-            accept_multiple_files=False,
-            key="fusion_visual_artifact_uploader",
-        )
         allow_unverified_source = st.checkbox(
             tr("允许导入未验证来源的历史产物（仅用于回归测试）"),
             key="fusion_allow_unverified_artifact",
             help=tr("旧版产物没有视频内容哈希；可测试后续流程，但不能保存为正式脚本或用于渲染。"),
         )
-        if st.button(tr("加载视觉证据产物"), key="fusion_load_visual_artifact"):
+
+        def load_artifact(artifact, artifact_path: str):
             selected_video_paths = _selected_video_paths()
-            if uploaded_artifact is None:
-                st.error(tr("请先选择视觉证据 JSON 文件。"))
-            elif len(selected_video_paths) != 1:
+            if len(selected_video_paths) != 1:
                 st.error(tr("导入视觉证据前，请选择一部完整电影。"))
             else:
                 try:
-                    artifact = json.loads(uploaded_artifact.getvalue().decode("utf-8"))
                     with st.spinner(tr("正在校验并加载视觉证据…")):
                         evidence = load_visual_evidence_artifact(
                             artifact,
                             source_video_path=selected_video_paths[0],
-                            artifact_path=f"导入：{uploaded_artifact.name}",
+                            artifact_path=artifact_path,
                             allow_unverified_source=allow_unverified_source,
                         )
                     _store_fusion_visual_evidence(evidence, reuse_active=True)
@@ -882,6 +875,42 @@ def render_fusion_visual_settings(tr):
                     )
                     st.session_state["fusion_visual_allow_unverified_source"] = allow_unverified_source
                     st.success(tr("历史视觉证据已加载；后续生成将复用它，不会重新调用视觉模型。"))
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError, OSError) as exc:
+                    st.error(f"{tr('视觉证据导入失败')}: {exc}")
+
+        local_artifacts = list_local_visual_evidence_artifacts()
+        if local_artifacts:
+            selected_local_artifact = st.selectbox(
+                tr("本地视觉产物"),
+                local_artifacts,
+                format_func=lambda path: path.name,
+                key="fusion_local_visual_artifact",
+                help=tr("默认显示最新产物；无需在文件选择器中逐层查找。"),
+            )
+            if st.button(tr("加载所选本地视觉产物"), key="fusion_load_local_visual_artifact"):
+                try:
+                    with selected_local_artifact.open(encoding="utf-8") as artifact_file:
+                        load_artifact(json.load(artifact_file), str(selected_local_artifact))
+                except (OSError, json.JSONDecodeError) as exc:
+                    st.error(f"{tr('视觉证据导入失败')}: {exc}")
+        else:
+            st.info(tr("尚未发现本地视觉产物；完成一次视觉分析后会自动显示在这里。"))
+
+        uploaded_artifact = st.file_uploader(
+            tr("或手动导入视觉证据 JSON"),
+            type=["json"],
+            accept_multiple_files=False,
+            key="fusion_visual_artifact_uploader",
+        )
+        if st.button(tr("加载手动选择的视觉证据产物"), key="fusion_load_visual_artifact"):
+            if uploaded_artifact is None:
+                st.error(tr("请先选择视觉证据 JSON 文件。"))
+            else:
+                try:
+                    load_artifact(
+                        json.loads(uploaded_artifact.getvalue().decode("utf-8")),
+                        f"导入：{uploaded_artifact.name}",
+                    )
                 except (UnicodeDecodeError, json.JSONDecodeError, ValueError, OSError) as exc:
                     st.error(f"{tr('视觉证据导入失败')}: {exc}")
 
