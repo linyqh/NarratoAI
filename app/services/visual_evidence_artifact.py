@@ -183,6 +183,32 @@ def usable_highlight_candidates(artifact: dict[str, Any]) -> list[HighlightCandi
     return normalized
 
 
+def highlight_candidate_rejections(artifact: dict[str, Any]) -> list[dict[str, str]]:
+    """Return one auditable rejection for every artifact candidate that cannot normalize."""
+    raw_candidates = artifact.get("highlight_candidates")
+    candidates = list(raw_candidates) if isinstance(raw_candidates, list) else []
+    if not isinstance(raw_candidates, list):
+        for batch_index, batch in enumerate(artifact.get("batches", [])):
+            if isinstance(batch, dict) and isinstance(batch.get("highlight_candidates"), list):
+                candidates.extend(
+                    {**item, "batch_index": batch.get("batch_index", batch_index)}
+                    if isinstance(item, dict) else item
+                    for item in batch["highlight_candidates"]
+                )
+    rejected = []
+    for index, candidate in enumerate(candidates):
+        probe = {**artifact, "highlight_candidates": [candidate]}
+        if usable_highlight_candidates(probe):
+            continue
+        payload = candidate if isinstance(candidate, dict) else {}
+        rejected.append({
+            "candidate_id": str(payload.get("candidate_id") or f"artifact-{index}"),
+            "time_range": str(payload.get("time_range") or ""),
+            "reason": "invalid_highlight_candidate",
+        })
+    return rejected
+
+
 def highlight_candidate_state(artifact: dict[str, Any]) -> str:
     """Classify whether this artifact actually ran highlighter inference."""
     if usable_highlight_candidates(artifact):

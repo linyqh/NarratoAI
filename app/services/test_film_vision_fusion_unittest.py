@@ -16,6 +16,7 @@ from app.services.visual_evidence_artifact import (
     build_source_video_identity,
     highlight_candidate_state,
     usable_highlight_candidates,
+    highlight_candidate_rejections,
 )
 
 
@@ -274,6 +275,7 @@ class VisualEvidenceArtifactImportTests(unittest.TestCase):
 
         self.assertEqual([], usable_highlight_candidates(artifact))
         self.assertEqual("analyzed_empty", highlight_candidate_state(artifact))
+        self.assertEqual("invalid_highlight_candidate", highlight_candidate_rejections(artifact)[0]["reason"])
 
     def test_rejects_artifact_candidate_outside_its_declared_batch(self):
         artifact = self._artifact(

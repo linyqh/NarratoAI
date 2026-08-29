@@ -5,6 +5,17 @@ from app.config.defaults import DEFAULT_VISION_MAX_CONCURRENCY
 
 
 class FusionScriptFinalizerTests(unittest.TestCase):
+    def test_records_artifact_rejections_even_when_ratio_is_zero(self):
+        result = FusionScriptFinalizer().finalize(
+            script=[{"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "开场", "narration": "开场", "OST": 0}],
+            requested_original_sound_ratio=0,
+            highlight_candidates=[],
+            candidate_rejections=[{"candidate_id": "bad-1", "time_range": "banana", "reason": "invalid_time_range"}],
+            evidence_conflicts=[],
+            source_durations={"film.mp4": 10.0},
+        )
+
+        self.assertIn({"candidate_id": "bad-1", "time_range": "banana", "reason": "invalid_time_range", "status": "rejected"}, result.report.candidate_decisions)
     def test_visual_analysis_defaults_to_two_concurrent_requests(self):
         self.assertEqual(2, DEFAULT_VISION_MAX_CONCURRENCY)
 
@@ -241,7 +252,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
                 self.assertEqual("compliant", result.report.ratio_status)
                 self.assertEqual(expected, result.report.achieved_ratio)
 
-    def test_normalizes_a_model_claimed_acknowledgement_back_to_unresolved(self):
+    def test_preserves_an_acknowledged_review_state(self):
         result = FusionScriptFinalizer().finalize(
             script=[
                 {"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "开场", "narration": "开场。", "OST": 0}
@@ -261,8 +272,8 @@ class FusionScriptFinalizerTests(unittest.TestCase):
             source_durations={"film.mp4": 10.0},
         )
 
-        self.assertEqual("unresolved", result.evidence_conflicts[0]["status"])
-        self.assertEqual(1, result.report.unresolved_conflict_count)
+        self.assertEqual("acknowledged", result.evidence_conflicts[0]["status"])
+        self.assertEqual(0, result.report.unresolved_conflict_count)
 
     def test_rejects_candidates_outside_source_at_opening_and_after_two_ost_items(self):
         script = [

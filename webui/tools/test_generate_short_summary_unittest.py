@@ -102,7 +102,22 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
 
         self.assertEqual("film.mp4", conflicts[0].video_name)
         self.assertEqual(source_identity, conflicts[0].source_video_identity)
-        self.assertEqual("unresolved", conflicts[0].status)
+        self.assertEqual("acknowledged", conflicts[0].status)
+
+    def test_acknowledged_conflict_survives_finalization_without_redacting_the_script(self):
+        result = FusionScriptFinalizer().finalize(
+            script=[
+                {"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "人物站立。", "narration": "人物站立。", "OST": 0}
+            ],
+            requested_original_sound_ratio=0,
+            highlight_candidates=[],
+            evidence_conflicts=[{"video_name": "film.mp4", "time_range": "00:00:02,000-00:00:03,000", "subtitle_claim": "字幕事实", "visual_observation": "画面事实", "severity": "medium", "status": "acknowledged"}],
+            source_durations={"film.mp4": 10.0},
+        )
+
+        self.assertEqual("acknowledged", result.evidence_conflicts[0]["status"])
+        self.assertEqual("人物站立。", result.script[0]["picture"])
+        self.assertEqual(0, result.report.unresolved_conflict_count)
 
     def test_malformed_conflict_cannot_cross_the_domain_boundary(self):
         with self.assertRaisesRegex(ValueError, "time range"):

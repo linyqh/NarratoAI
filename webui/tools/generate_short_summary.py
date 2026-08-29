@@ -109,7 +109,6 @@ def _normalize_fusion_evidence_conflicts(
                 {
                 **conflict,
                 "video_name": conflict_video_name,
-                "status": "unresolved",
                 "source_video_identity": identity_by_video.get(conflict_video_name)
                 or default_source_identity,
                 }
@@ -509,9 +508,11 @@ def generate_short_drama_narration_copy(
         )
     except Exception as e:
         logger.warning(f"使用新LLM服务生成文案失败，回退到旧实现: {str(e)}")
+        if visual_evidence:
+            raise RuntimeError("视觉融合文案生成失败，已拒绝混合视觉证据与剧情分析的旧版回退。") from e
         narration_result = generate_narration_copy_legacy(
             short_name=video_theme,
-            plot_analysis=f"{analysis_text}\n\n{visual_evidence}".strip(),
+            plot_analysis=analysis_text,
             subtitle_content=subtitle_content,
             api_key=text_api_key,
             model=text_model,
@@ -563,6 +564,7 @@ def generate_script_short_sunmmary(
     visual_evidence: str = "",
     highlight_candidates: str = "",
     highlight_candidate_items: list[dict] | None = None,
+    highlight_candidate_rejections: list[dict] | None = None,
     visual_source_identity: dict | None = None,
 ):
     """
@@ -751,10 +753,12 @@ def generate_script_short_sunmmary(
                     )
                 except Exception as e:
                     logger.warning(f"使用新LLM服务匹配画面失败，回退到旧实现: {str(e)}")
+                    if visual_evidence or highlight_candidates:
+                        raise RuntimeError("视觉融合脚本匹配失败，已拒绝混合视觉证据与剧情分析的旧版回退。") from e
                     stream_text.info(tr("Streaming unavailable fallback waiting..."))
                     narration_result = match_narration_copy_to_script_legacy(
                         short_name=video_theme,
-                        plot_analysis=f"{analysis_result['analysis']}\n\n{visual_evidence}\n\n{highlight_candidates}".strip(),
+                        plot_analysis=analysis_result["analysis"],
                         subtitle_content=subtitle_content,
                         narration_copy=narration_copy,
                         api_key=text_api_key,
@@ -839,6 +843,7 @@ def generate_script_short_sunmmary(
                         script=narration_items,
                         requested_original_sound_ratio=original_sound_ratio,
                         highlight_candidates=candidate_items,
+                        candidate_rejections=highlight_candidate_rejections,
                         evidence_conflicts=evidence_conflicts,
                         source_durations=source_durations,
                     )

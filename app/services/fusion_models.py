@@ -31,6 +31,7 @@ class EvidenceConflict:
         subtitle_claim = str(payload.get("subtitle_claim") or "").strip()
         visual_observation = str(payload.get("visual_observation") or "").strip()
         severity = str(payload.get("severity") or "").strip().lower()
+        status = str(payload.get("status") or "unresolved").strip().lower()
         if not video_name:
             raise ValueError("evidence conflict requires video_name")
         if not subtitle_claim:
@@ -39,6 +40,8 @@ class EvidenceConflict:
             raise ValueError("evidence conflict requires visual_observation")
         if severity not in {"low", "medium", "high"}:
             raise ValueError("evidence conflict severity must be low, medium, or high")
+        if status not in {"unresolved", "acknowledged"}:
+            raise ValueError("evidence conflict status must be unresolved or acknowledged")
         source_identity = payload.get("source_video_identity")
         verified_identity = source_identity if isinstance(source_identity, dict) else None
         return cls(
@@ -48,7 +51,7 @@ class EvidenceConflict:
             visual_observation=visual_observation,
             severity=severity,
             source_video_identity=verified_identity,
-            status="unresolved",
+            status=status,
             source_identity_status="verified" if verified_identity is not None else "unverified_legacy",
             related_script_item_ids=tuple(payload.get("related_script_item_ids") or ()),
             related_candidate_ids=tuple(

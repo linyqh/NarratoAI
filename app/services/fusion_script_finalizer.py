@@ -50,6 +50,7 @@ class FusionScriptFinalizer:
         highlight_candidates: list[HighlightCandidate | dict[str, Any]],
         evidence_conflicts: list[EvidenceConflict | dict[str, Any]],
         source_durations: dict[str, float],
+        candidate_rejections: list[dict[str, Any]] | None = None,
     ) -> FinalizationResult:
         original_script = deepcopy(script)
         finalized = deepcopy(script)
@@ -71,7 +72,7 @@ class FusionScriptFinalizer:
             ).to_dict()
             for item in evidence_conflicts
         ]
-        unresolved = list(conflicts)
+        unresolved = [conflict for conflict in conflicts if conflict["status"] == "unresolved"]
         for item in finalized:
             if any(self._item_conflicts(item, conflict) for conflict in unresolved):
                 item["picture"] = "证据冲突，具体画面事实待审阅。"
@@ -81,6 +82,12 @@ class FusionScriptFinalizer:
         skipped: list[dict[str, str]] = []
         rejected: list[dict[str, str]] = []
         candidate_decisions: list[dict[str, Any]] = []
+        for rejection in candidate_rejections or []:
+            if not isinstance(rejection, dict):
+                continue
+            record = {**rejection, "status": "rejected"}
+            candidate_decisions.append(record)
+            rejected.append({"time_range": str(record.get("time_range") or ""), "reason": str(record.get("reason") or "malformed_candidate")})
         eligible_candidate_count = 0
         defaulted_candidate_ranges = [
             str(candidate.get("time_range", ""))
