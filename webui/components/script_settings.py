@@ -13,6 +13,10 @@ from app.models.schema import VideoClipParams
 from app.services.subtitle_text import decode_subtitle_bytes, read_subtitle_text
 from app.utils import utils, check_script
 from webui.tools.generate_script_docu import generate_script_docu
+from app.services.film_vision_fusion import load_visual_evidence_artifact
+from app.services.visual_evidence_artifact import build_source_video_identity
+from app.services.visual_evidence_artifact import usable_highlight_candidates
+from webui.tools.generate_film_vision_fusion import collect_visual_evidence
 from webui.tools.generate_script_short import generate_script_short
 from webui.tools.generate_short_summary import (
     FILM_TV_PROMPT_CATEGORY,
@@ -22,6 +26,7 @@ from webui.tools.generate_short_summary import (
     analyze_short_drama_plot,
     generate_script_short_sunmmary,
     generate_short_drama_narration_copy,
+    acknowledge_fusion_audit,
 )
 
 
@@ -32,7 +37,8 @@ MODE_AUTO = "auto"
 MODE_SHORT = "short"
 MODE_SHORT_SUMMARY = "summary"
 MODE_FILM_SUMMARY = "film_summary"
-SUMMARY_SCRIPT_MODES = {MODE_SHORT_SUMMARY, MODE_FILM_SUMMARY}
+MODE_FILM_VISION_FUSION = "film_vision_fusion"
+SUMMARY_SCRIPT_MODES = {MODE_SHORT_SUMMARY, MODE_FILM_SUMMARY, MODE_FILM_VISION_FUSION}
 VIDEO_UPLOAD_TYPES = ["mp4", "mov", "avi", "flv", "mkv", "mpeg4"]
 VIDEO_GLOB_PATTERNS = [f"*.{suffix}" for suffix in VIDEO_UPLOAD_TYPES]
 SHORT_DRAMA_NARRATION_LANGUAGE_OPTIONS = [
@@ -119,6 +125,24 @@ SUMMARY_MODE_CONFIGS = {
         "default_type": "drama_emotion",
         "default_type_value": "剧情/情感",
     },
+    MODE_FILM_VISION_FUSION: {
+        "mode_label_key": "Film Vision Fusion Narration",
+        "session_prefix": "film_vision_fusion",
+        "prompt_category": FILM_TV_PROMPT_CATEGORY,
+        "search_keywords": FILM_TV_SEARCH_KEYWORDS,
+        "web_search_context_description": "影视作品名称、人物关系、剧情背景和公开剧情梗概",
+        "empty_title_message_key": "Please enter film/tv title before web search",
+        "title_label_key": "影视名称",
+        "type_label_key": "影视类型",
+        "custom_type_label_key": "自定义影视类型",
+        "custom_type_placeholder_key": "例如：悬疑犯罪",
+        "custom_type_empty_key": "请输入自定义影视类型",
+        "narration_copy_label_key": "影视解说文案",
+        "type_options": FILM_TV_TYPE_OPTIONS,
+        "type_values": FILM_TV_TYPE_VALUES,
+        "default_type": "drama_emotion",
+        "default_type_value": "剧情/情感",
+    },
     MODE_SHORT_SUMMARY: {
         "mode_label_key": "Short Drama Summary",
         "session_prefix": "short_drama",
@@ -174,6 +198,30 @@ def _selected_video_paths():
     if not video_paths:
         video_paths = _normalize_video_paths(st.session_state.get('video_origin_path', ''))
     return video_paths
+
+
+def _store_fusion_visual_evidence(evidence, *, reuse_active, visual_signature=None):
+    """Keep all session projections of one visual-evidence artifact in sync."""
+    st.session_state["fusion_visual_evidence"] = evidence.context
+    st.session_state["fusion_highlight_candidates"] = evidence.highlight_candidates
+    st.session_state["fusion_visual_artifact_path"] = evidence.artifact_path
+    st.session_state["fusion_visual_reuse_active"] = bool(reuse_active)
+    st.session_state["fusion_visual_source_verified"] = bool(evidence.source_verified)
+    st.session_state["fusion_visual_regression_only"] = not bool(evidence.source_verified)
+    st.session_state["fusion_visual_highlight_state"] = evidence.highlight_state
+    st.session_state["fusion_visual_source_identity"] = evidence.artifact.get(
+        "source_video_identity"
+    )
+    st.session_state["fusion_highlight_candidate_items"] = usable_highlight_candidates(
+        evidence.artifact
+    )
+    if visual_signature is not None:
+        st.session_state["fusion_visual_signature"] = visual_signature
+
+
+def is_unverified_fusion_regression() -> bool:
+    """Return whether the current draft is backed by an unverified legacy artifact."""
+    return bool(st.session_state.get("fusion_visual_regression_only"))
 
 
 def _uploaded_files_signature(uploaded_files):
@@ -348,6 +396,8 @@ def render_script_panel(tr):
         elif script_path in SUMMARY_SCRIPT_MODES:
             # 影视解说 / 短剧解说
             summary_narration_panel(tr, _summary_mode_config(script_path))
+            if script_path == MODE_FILM_VISION_FUSION:
+                render_fusion_visual_settings(tr)
         else:
             # 默认为空
             pass
@@ -361,6 +411,7 @@ def render_script_file(tr, params):
     # 模式选项映射，按工作流优先级展示
     mode_options = {
         tr("Film TV Narration"): MODE_FILM_SUMMARY,
+        tr("Film Vision Fusion Narration"): MODE_FILM_VISION_FUSION,
         tr("Short Drama Summary"): MODE_SHORT_SUMMARY,
         tr("Auto Generate"): MODE_AUTO,
         tr("Short Generate"): MODE_SHORT,
@@ -382,6 +433,8 @@ def render_script_file(tr, params):
         default_index = mode_keys.index(tr("Short Drama Summary"))
     elif current_path == "film_summary":
         default_index = mode_keys.index(tr("Film TV Narration"))
+    elif current_path == MODE_FILM_VISION_FUSION:
+        default_index = mode_keys.index(tr("Film Vision Fusion Narration"))
     elif current_path:
         default_index = mode_keys.index(tr("Select/Upload Script"))
     else:
@@ -460,7 +513,7 @@ def render_script_file(tr, params):
         # 如果当前path是特殊值(auto/short/summary/film_summary)，则重置为空
         saved_script_path = (
             current_path
-            if current_path not in [MODE_FILE, MODE_AUTO, MODE_SHORT, MODE_SHORT_SUMMARY, MODE_FILM_SUMMARY]
+            if current_path not in [MODE_FILE, MODE_AUTO, MODE_SHORT, MODE_SHORT_SUMMARY, MODE_FILM_SUMMARY, MODE_FILM_VISION_FUSION]
             else ""
         )
         
@@ -741,6 +794,148 @@ def render_video_details(tr):
     st.session_state['video_theme'] = video_theme
     st.session_state['custom_prompt'] = custom_prompt
     return video_theme, custom_prompt
+
+
+def render_fusion_visual_settings(tr):
+    """Render settings that belong only to the film-vision fusion mode."""
+    with st.expander(tr("视觉融合设置"), expanded=True):
+        st.caption(tr("字幕用于剧情和对白，视觉模型只确认实际画面；视觉失败不会静默退回纯字幕模式。"))
+        st.text_area(
+            tr("视觉分析提示词"),
+            key="fusion_visual_prompt",
+            value=st.session_state.get(
+                "fusion_visual_prompt",
+                "按时间顺序识别人物、丧尸、动作、场景、关键道具和场景切换；只描述画面可确认的事实。",
+            ),
+            height=100,
+        )
+        columns = st.columns(2)
+        with columns[0]:
+            st.number_input(
+                tr("视觉关键帧间隔（秒）"),
+                min_value=2,
+                max_value=30,
+                value=int(st.session_state.get("fusion_frame_interval", 6)),
+                key="fusion_frame_interval",
+                help=tr("两小时电影建议 6 秒；动作密集时可调为 3 秒。"),
+            )
+        with columns[1]:
+            st.number_input(
+                tr("视觉批次大小"),
+                min_value=1,
+                max_value=20,
+                value=int(st.session_state.get("fusion_vision_batch_size", 8)),
+                key="fusion_vision_batch_size",
+            )
+
+        st.divider()
+        st.caption(tr("可导入历史视觉证据产物，跳过视觉模型调用以测试后续解说和剪辑流程。"))
+        uploaded_artifact = st.file_uploader(
+            tr("导入视觉证据 JSON"),
+            type=["json"],
+            accept_multiple_files=False,
+            key="fusion_visual_artifact_uploader",
+        )
+        allow_unverified_source = st.checkbox(
+            tr("允许导入未验证来源的历史产物（仅用于回归测试）"),
+            key="fusion_allow_unverified_artifact",
+            help=tr("旧版产物没有视频内容哈希；可测试后续流程，但不能保存为正式脚本或用于渲染。"),
+        )
+        if st.button(tr("加载视觉证据产物"), key="fusion_load_visual_artifact"):
+            selected_video_paths = _selected_video_paths()
+            if uploaded_artifact is None:
+                st.error(tr("请先选择视觉证据 JSON 文件。"))
+            elif len(selected_video_paths) != 1:
+                st.error(tr("导入视觉证据前，请选择一部完整电影。"))
+            else:
+                try:
+                    artifact = json.loads(uploaded_artifact.getvalue().decode("utf-8"))
+                    with st.spinner(tr("正在校验并加载视觉证据…")):
+                        evidence = load_visual_evidence_artifact(
+                            artifact,
+                            source_video_path=selected_video_paths[0],
+                            artifact_path=f"导入：{uploaded_artifact.name}",
+                            allow_unverified_source=allow_unverified_source,
+                        )
+                    _store_fusion_visual_evidence(evidence, reuse_active=True)
+                    st.session_state["fusion_reused_visual_artifact"] = artifact
+                    st.session_state["fusion_reuse_source_identity"] = build_source_video_identity(
+                        selected_video_paths[0]
+                    )
+                    st.session_state["fusion_visual_allow_unverified_source"] = allow_unverified_source
+                    st.success(tr("历史视觉证据已加载；后续生成将复用它，不会重新调用视觉模型。"))
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError, OSError) as exc:
+                    st.error(f"{tr('视觉证据导入失败')}: {exc}")
+
+        if st.session_state.get("fusion_visual_reuse_active"):
+            source_verified = bool(st.session_state.get("fusion_visual_source_verified"))
+            highlight_state = st.session_state.get("fusion_visual_highlight_state", "unavailable_legacy")
+            if source_verified:
+                st.info(tr("当前使用已校验来源的历史视觉证据。"))
+            else:
+                st.warning(tr("当前使用未验证来源的历史视觉证据；请只用于已确认内容一致的视频。"))
+            if highlight_state == "unavailable_legacy":
+                st.warning(tr("该历史产物不含高光候选：剪辑脚本可生成，但不会使用高光候选推理。"))
+            elif highlight_state == "analyzed_empty":
+                st.info(tr("该历史产物已执行高光候选推理，但没有产出可用候选。"))
+            else:
+                st.success(tr("该历史产物包含高光候选，剪辑脚本将使用高光候选推理。"))
+            if st.button(tr("重新运行视觉分析"), key="fusion_clear_reused_visual_artifact"):
+                for state_key in (
+                    "fusion_visual_evidence",
+                    "fusion_highlight_candidates",
+                    "fusion_visual_artifact_path",
+                    "fusion_visual_signature",
+                    "fusion_visual_reuse_active",
+                    "fusion_visual_source_verified",
+                    "fusion_visual_highlight_state",
+                    "fusion_reused_visual_artifact",
+                    "fusion_reuse_source_identity",
+                    "fusion_visual_allow_unverified_source",
+                    "fusion_highlight_candidate_items",
+                    "fusion_finalization_report",
+                    "fusion_evidence_conflicts",
+                    "fusion_original_matched_script",
+                    "fusion_visual_regression_only",
+                    "fusion_visual_source_identity",
+                ):
+                    st.session_state.pop(state_key, None)
+                selected_video_paths = _selected_video_paths()
+                if len(selected_video_paths) != 1:
+                    st.error(tr("重新分析前，请选择一部完整电影。"))
+                else:
+                    try:
+                        with st.spinner(tr("正在重新逐帧分析画面…")):
+                            evidence = collect_visual_evidence(
+                                video_path=selected_video_paths[0],
+                                video_theme=str(st.session_state.get("video_theme", "")),
+                                custom_prompt=str(st.session_state.get("fusion_visual_prompt", "")),
+                                frame_interval_seconds=float(st.session_state.get("fusion_frame_interval", 6)),
+                                vision_batch_size=int(st.session_state.get("fusion_vision_batch_size", 8)),
+                            )
+                        try:
+                            video_mtime = os.path.getmtime(selected_video_paths[0])
+                        except OSError:
+                            video_mtime = 0
+                        visual_signature = "|".join(
+                            [
+                                selected_video_paths[0],
+                                str(video_mtime),
+                                str(st.session_state.get("fusion_frame_interval", 6)),
+                                str(st.session_state.get("fusion_vision_batch_size", 8)),
+                                str(st.session_state.get("fusion_visual_prompt", "")),
+                                str(st.session_state.get("video_theme", "")),
+                                "visual-context-summary-v2-highlights",
+                            ]
+                        )
+                        _store_fusion_visual_evidence(
+                            evidence,
+                            reuse_active=False,
+                            visual_signature=visual_signature,
+                        )
+                        st.success(tr("视觉分析已重新完成。"))
+                    except Exception as exc:
+                        st.error(f"{tr('视觉分析失败')}: {exc}")
 
 
 def summary_narration_panel(tr, summary_config):
@@ -1725,6 +1920,94 @@ def render_script_buttons(tr, params):
         ):
             plot_analysis = st.session_state.get(plot_analysis_key, '')
 
+        visual_evidence = ""
+        highlight_candidates = ""
+        if script_path == MODE_FILM_VISION_FUSION:
+            selected_video_paths = _selected_video_paths()
+            if len(selected_video_paths) != 1:
+                st.error(tr("影视视觉融合解说首版仅支持选择一部完整电影。"))
+                st.stop()
+
+            source_video = selected_video_paths[0]
+            if st.session_state.get("fusion_visual_reuse_active"):
+                try:
+                    artifact = st.session_state.get("fusion_reused_visual_artifact")
+                    imported_identity = st.session_state.get("fusion_reuse_source_identity")
+                    current_identity = build_source_video_identity(source_video)
+                    if not isinstance(artifact, dict) or current_identity != imported_identity:
+                        raise ValueError("当前视频已变化，不能继续复用之前导入的视觉证据。")
+                    evidence = load_visual_evidence_artifact(
+                        artifact,
+                        source_video_path=source_video,
+                        artifact_path=str(st.session_state.get("fusion_visual_artifact_path", "导入产物")),
+                        allow_unverified_source=bool(
+                            st.session_state.get("fusion_visual_allow_unverified_source")
+                        ),
+                    )
+                    _store_fusion_visual_evidence(evidence, reuse_active=True)
+                except (ValueError, OSError) as exc:
+                    st.error(f"{tr('视觉证据复用失败')}: {exc}")
+                    st.stop()
+            try:
+                video_mtime = os.path.getmtime(source_video)
+            except OSError:
+                video_mtime = 0
+            visual_signature = "|".join(
+                [
+                    source_video,
+                    str(video_mtime),
+                    str(st.session_state.get("fusion_frame_interval", 6)),
+                    str(st.session_state.get("fusion_vision_batch_size", 8)),
+                    str(st.session_state.get("fusion_visual_prompt", "")),
+                    str(video_theme or ""),
+                    "visual-context-summary-v2-highlights",
+                ]
+            )
+            if (
+                not st.session_state.get("fusion_visual_reuse_active")
+                and st.session_state.get("fusion_visual_signature") != visual_signature
+            ):
+                visual_progress_bar = st.progress(0)
+                visual_status_text = st.empty()
+
+                def update_visual_progress(progress: float, message: str = ""):
+                    try:
+                        normalized_progress = max(0, min(100, int(round(float(progress)))))
+                    except (TypeError, ValueError):
+                        normalized_progress = 0
+                    visual_progress_bar.progress(normalized_progress)
+                    visual_status_text.text(
+                        f"🎬 {message}" if message else f"📊 视觉分析进度：{normalized_progress}%"
+                    )
+
+                try:
+                    with st.spinner(tr("正在逐帧分析画面…")):
+                        evidence = collect_visual_evidence(
+                            video_path=source_video,
+                            video_theme=str(video_theme or ""),
+                            custom_prompt=str(st.session_state.get("fusion_visual_prompt", "")),
+                            frame_interval_seconds=float(st.session_state.get("fusion_frame_interval", 6)),
+                            vision_batch_size=int(st.session_state.get("fusion_vision_batch_size", 8)),
+                            progress_callback=update_visual_progress,
+                        )
+                    update_visual_progress(100, "视觉分析完成")
+                    _store_fusion_visual_evidence(
+                        evidence,
+                        reuse_active=False,
+                        visual_signature=visual_signature,
+                    )
+                except Exception as exc:
+                    st.error(f"{tr('视觉融合失败')}: {exc}")
+                    st.stop()
+                finally:
+                    visual_progress_bar.empty()
+                    visual_status_text.empty()
+            visual_evidence = str(st.session_state.get("fusion_visual_evidence", "")).strip()
+            highlight_candidates = str(st.session_state.get("fusion_highlight_candidates", "")).strip()
+            if not visual_evidence:
+                st.error(tr("视觉融合失败：没有可用的画面证据。"))
+                st.stop()
+
         if narration_copy_clicked:
             with st.spinner(tr("Generating narration copy...")):
                 copy_result = generate_short_drama_narration_copy(
@@ -1743,6 +2026,7 @@ def render_script_buttons(tr, params):
                     search_keywords=summary_config["search_keywords"],
                     empty_title_message_key=summary_config["empty_title_message_key"],
                     web_search_context_description=summary_config["web_search_context_description"],
+                    visual_evidence=visual_evidence,
             )
             if copy_result:
                 st.session_state[narration_copy_key] = copy_result["narration_copy"]
@@ -1771,6 +2055,10 @@ def render_script_buttons(tr, params):
                 search_keywords=summary_config["search_keywords"],
                 empty_title_message_key=summary_config["empty_title_message_key"],
                 web_search_context_description=summary_config["web_search_context_description"],
+                visual_evidence=visual_evidence,
+                highlight_candidates=highlight_candidates,
+                highlight_candidate_items=st.session_state.get("fusion_highlight_candidate_items", []),
+                visual_source_identity=st.session_state.get("fusion_visual_source_identity"),
             )
 
     if script_path in SUMMARY_SCRIPT_MODES:
@@ -1781,6 +2069,50 @@ def render_script_buttons(tr, params):
             height=220,
             help=tr("Narration Copy Help"),
         )
+        if script_path == MODE_FILM_VISION_FUSION and st.session_state.get("fusion_visual_evidence"):
+            with st.expander(tr("视觉证据摘要"), expanded=False):
+                st.caption(str(st.session_state.get("fusion_visual_artifact_path", "")))
+                st.text_area(
+                    tr("视觉证据摘要"),
+                    value=st.session_state["fusion_visual_evidence"],
+                    height=240,
+                    disabled=True,
+                    key="fusion_visual_evidence_preview",
+                )
+            if st.session_state.get("fusion_highlight_candidates"):
+                with st.expander(tr("原片高光候选"), expanded=False):
+                    st.text_area(
+                        tr("原片高光候选"),
+                        value=st.session_state["fusion_highlight_candidates"],
+                        height=180,
+                        disabled=True,
+                        key="fusion_highlight_candidates_preview",
+                    )
+            if st.session_state.get("fusion_finalization_report"):
+                with st.expander(tr("原片占比校验报告"), expanded=True):
+                    st.json(st.session_state["fusion_finalization_report"])
+                    if st.session_state.get("fusion_generation_audit_path"):
+                        st.caption(
+                            f"{tr('本地审计文件')}: {st.session_state['fusion_generation_audit_path']}"
+                        )
+            if st.session_state.get("fusion_evidence_conflicts"):
+                with st.expander(tr("证据冲突（待审阅）"), expanded=True):
+                    st.json(st.session_state["fusion_evidence_conflicts"])
+                    if st.button(tr("确认已审阅全部证据冲突"), key="fusion_acknowledge_conflicts"):
+                        st.session_state["fusion_evidence_conflicts"] = [
+                            {**item, "status": "acknowledged"}
+                            for item in st.session_state["fusion_evidence_conflicts"]
+                            if isinstance(item, dict)
+                        ]
+                        report = st.session_state.get("fusion_finalization_report")
+                        if isinstance(report, dict):
+                            report["unresolved_conflict_count"] = 0
+                        acknowledge_fusion_audit(
+                            str(st.session_state.get("fusion_generation_audit_path", "")),
+                            st.session_state["fusion_evidence_conflicts"],
+                        )
+                        st.success(tr("证据冲突已标记为已审阅；这不代表任一证据来源已被验证。"))
+                        st.rerun()
 
     if action_clicked and script_path not in SUMMARY_SCRIPT_MODES:
         if script_path == "auto":
@@ -1861,6 +2193,7 @@ def load_script(tr, script_path):
             script = f.read()
             script = utils.clean_model_output(script)
             st.session_state['video_clip_json'] = json.loads(script)
+            st.session_state["fusion_visual_regression_only"] = False
             st.success(tr("Script loaded successfully"))
             st.rerun()
     except Exception as e:
@@ -1870,6 +2203,9 @@ def load_script(tr, script_path):
 
 def save_script_with_validation(tr, video_clip_json_details):
     """保存视频脚本（包含格式验证）"""
+    if is_unverified_fusion_regression():
+        st.error(tr("未验证来源的旧视觉证据仅可用于回归测试，不能保存为正式脚本或用于渲染。"))
+        return
     if not video_clip_json_details:
         st.error(tr("请输入视频脚本"))
         st.stop()

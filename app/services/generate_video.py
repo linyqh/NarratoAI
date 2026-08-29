@@ -342,6 +342,18 @@ def _quote_filter_value(value: str) -> str:
     return f"'{escaped}'"
 
 
+def _quote_filter_path(value: str) -> str:
+    """Quote a filesystem path for an FFmpeg filtergraph option.
+
+    FFmpeg filtergraphs need Windows drive-colon escaping (``C\:/...``).
+    Keeping this separate from generic filter values preserves backslash
+    escapes used by drawtext text and expressions.
+    """
+    normalized = str(value).replace("\\", "/")
+    escaped = normalized.replace(":", "\\:").replace("'", "\\'")
+    return f"'{escaped}'"
+
+
 def _probe_video(video_path: str) -> Dict[str, Any]:
     ffmpeg_binary = _get_ffmpeg_binary()
     ffprobe_binary = _get_ffprobe_binary(ffmpeg_binary)
@@ -756,10 +768,10 @@ def _build_subtitle_filter(
         ]
     )
 
-    args = [f"filename={_quote_filter_value(subtitle_path)}"]
+    args = [f"filename={_quote_filter_path(subtitle_path)}"]
     args.append(f"original_size={video_width}x{video_height}")
     if font_path:
-        args.append(f"fontsdir={_quote_filter_value(os.path.dirname(font_path))}")
+        args.append(f"fontsdir={_quote_filter_path(os.path.dirname(font_path))}")
     args.append(f"force_style={_quote_filter_value(force_style)}")
     return f"subtitles={':'.join(args)}"
 
@@ -1170,24 +1182,9 @@ def _build_ffmpeg_merge_command(
             video_height,
             options,
         )
-        if has_drawtext_filter:
-            drawtext_filters = _build_drawtext_filters(
-                subtitle_path=subtitle_path,
-                font_path=font_path,
-                subtitle_font_size=subtitle_font_size,
-                subtitle_color=subtitle_color,
-                stroke_color=stroke_color,
-                stroke_width=stroke_width,
-                subtitle_position=subtitle_position,
-                custom_position=custom_position,
-                orientation_subtitle_y_percent=orientation_subtitle_y_percent,
-                video_width=video_width,
-            )
-            for index, drawtext_filter in enumerate(drawtext_filters):
-                next_label = f"[v_drawtext_{index}]"
-                video_filters.append(f"{current_video_label}{drawtext_filter}{next_label}")
-                current_video_label = next_label
-        elif has_subtitles_filter:
+        # 优先使用单个 subtitles/libass 滤镜读取整个 SRT，避免为每条字幕
+        # 生成一个 drawtext/overlay 节点，导致 Windows 命令行长度超限。
+        if has_subtitles_filter:
             subtitle_filter = _build_subtitle_filter(
                 subtitle_path=subtitle_path,
                 font_path=font_path,
@@ -1204,6 +1201,23 @@ def _build_ffmpeg_merge_command(
             )
             video_filters.append(f"{current_video_label}{subtitle_filter}[v_subtitled]")
             current_video_label = "[v_subtitled]"
+        elif has_drawtext_filter:
+            drawtext_filters = _build_drawtext_filters(
+                subtitle_path=subtitle_path,
+                font_path=font_path,
+                subtitle_font_size=subtitle_font_size,
+                subtitle_color=subtitle_color,
+                stroke_color=stroke_color,
+                stroke_width=stroke_width,
+                subtitle_position=subtitle_position,
+                custom_position=custom_position,
+                orientation_subtitle_y_percent=orientation_subtitle_y_percent,
+                video_width=video_width,
+            )
+            for index, drawtext_filter in enumerate(drawtext_filters):
+                next_label = f"[v_drawtext_{index}]"
+                video_filters.append(f"{current_video_label}{drawtext_filter}{next_label}")
+                current_video_label = next_label
         else:
             y_expr = _resolve_overlay_y_expression(
                 subtitle_position=subtitle_position,

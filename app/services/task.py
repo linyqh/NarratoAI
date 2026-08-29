@@ -28,6 +28,34 @@ from app.utils import utils
 VIDEO_GENERATION_TOTAL_STEPS = 6
 
 
+def _warn_on_source_timestamp_rewinds(list_script: list) -> None:
+    """报告脚本中按叙事顺序倒退的原片时间戳，便于排查画面错配。"""
+    previous = None
+    rewinds = []
+
+    for index, item in enumerate(list_script, start=1):
+        timestamp = str(item.get("timestamp", ""))
+        match = re.match(r"^(\d+):(\d+):(\d+(?:[,.]\d+)?)\s*-", timestamp)
+        if not match:
+            continue
+
+        hours, minutes, seconds = match.groups()
+        current_start = int(hours) * 3600 + int(minutes) * 60 + float(seconds.replace(",", "."))
+        if previous and current_start < previous[1]:
+            rewinds.append((previous, (index, current_start, timestamp)))
+        previous = (index, current_start, timestamp)
+
+    if rewinds:
+        examples = "; ".join(
+            f"第{before[0]}段 {before[2]} -> 第{after[0]}段 {after[2]}"
+            for before, after in rewinds[:3]
+        )
+        logger.warning(
+            f"剪辑脚本包含 {len(rewinds)} 处原片时间戳倒退；"
+            f"这可能使解说与画面语义不一致。示例: {examples}"
+        )
+
+
 def _update_video_generation_task(
     task_id: str,
     progress: int,
@@ -377,6 +405,7 @@ def start_subclip(task_id: str, params: VideoClipParams, subclip_path_videos: di
                 video_list = [i['narration'] for i in list_script]
                 video_ost = [i['OST'] for i in list_script]
                 time_list = [i['timestamp'] for i in list_script]
+                _warn_on_source_timestamp_rewinds(list_script)
 
                 video_script = " ".join(video_list)
                 logger.debug(f"解说完整脚本: \n{video_script}")
@@ -681,6 +710,7 @@ def start_subclip_unified(task_id: str, params: VideoClipParams):
                 video_list = [i['narration'] for i in list_script]
                 video_ost = [i['OST'] for i in list_script]
                 time_list = [i['timestamp'] for i in list_script]
+                _warn_on_source_timestamp_rewinds(list_script)
 
                 video_script = " ".join(video_list)
                 logger.debug(f"解说完整脚本: \n{video_script}")

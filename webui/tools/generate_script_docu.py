@@ -8,6 +8,7 @@ import streamlit as st
 from loguru import logger
 
 from app.config import config
+from app.config.defaults import DEFAULT_VISION_MAX_CONCURRENCY
 from app.services.documentary.frame_analysis_service import DocumentaryFrameAnalysisService
 
 
@@ -73,7 +74,7 @@ def generate_script_docu(params, tr=lambda key: key):
             )
             vision_batch_size = st.session_state.get("vision_batch_size") or config.frames.get("vision_batch_size", 10)
             vision_max_concurrency = st.session_state.get("vision_max_concurrency") or config.frames.get(
-                "vision_max_concurrency", 2
+                "vision_max_concurrency", DEFAULT_VISION_MAX_CONCURRENCY
             )
 
             update_progress(10, tr("Extracting keyframes..."))
@@ -100,6 +101,7 @@ def generate_script_docu(params, tr=lambda key: key):
                 st.session_state["video_clip_json"] = script
             elif isinstance(script, str):
                 st.session_state["video_clip_json"] = json.loads(script)
+            st.session_state["fusion_visual_regression_only"] = False
             update_progress(100, tr("Script generation completed"))
 
         time.sleep(0.1)

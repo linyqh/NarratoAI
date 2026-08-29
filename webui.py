@@ -218,6 +218,10 @@ def render_generate_button():
 
         config.save_config()
 
+        if script_settings.is_unverified_fusion_regression():
+            st.error(tr("未验证来源的旧视觉证据仅可用于回归测试，不能用于生成视频。"))
+            return
+
         # 移除task_id检查 - 现在使用统一裁剪策略，不再需要预裁剪
         # 直接检查必要的文件是否存在
         if not st.session_state.get('video_clip_json_path'):
@@ -624,6 +628,10 @@ def render_export_jianying_button():
     
     if st.button(tr("Export to Jianying Draft"), use_container_width=True, type="secondary"):
         config.save_config()
+
+        if script_settings.is_unverified_fusion_regression():
+            st.error(tr("未验证来源的旧视觉证据仅可用于回归测试，不能导出剪映草稿。"))
+            return
         
         if not st.session_state.get('video_clip_json_path'):
             st.error(tr("Script file cannot be empty"))
@@ -657,7 +665,11 @@ def main():
 
     # ===== 显式注册 LLM 提供商（最佳实践）=====
     # 在应用启动时立即注册，确保所有 LLM 功能可用
-    if 'llm_providers_registered' not in st.session_state:
+    from app.services.llm.manager import LLMServiceManager
+    if (
+        'llm_providers_registered' not in st.session_state
+        or not LLMServiceManager.is_registered()
+    ):
         try:
             from app.services.llm.providers import register_all_providers
             register_all_providers()

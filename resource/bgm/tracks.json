@@ -1,0 +1,182 @@
+[
+  {
+    "category": "Electronic",
+    "title": "Backbeat",
+    "fileName": "01-backbeat.mp3",
+    "style": "电子节拍 / 短视频律动",
+    "id": "456c656374726f6e69632f4261636b626561742e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/456c656374726f6e69632f4261636b626561742e6d7033",
+    "bytes": 1922353
+  },
+  {
+    "category": "Electronic",
+    "title": "Beat One",
+    "fileName": "02-beat-one.mp3",
+    "style": "电子鼓点 / 快剪节奏",
+    "id": "456c656374726f6e69632f42656174204f6e652e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/456c656374726f6e69632f42656174204f6e652e6d7033",
+    "bytes": 5835821
+  },
+  {
+    "category": "Electronic",
+    "title": "Fireworks",
+    "fileName": "03-fireworks.mp3",
+    "style": "明亮电子 / 高光转场",
+    "id": "456c656374726f6e69632f46697265776f726b732e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/456c656374726f6e69632f46697265776f726b732e6d7033",
+    "bytes": 6201834
+  },
+  {
+    "category": "Electronic",
+    "title": "Hippety Hop",
+    "fileName": "04-hippety-hop.mp3",
+    "style": "轻快嘻哈 / 活泼节奏",
+    "id": "456c656374726f6e69632f4869707065747920486f702e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/456c656374726f6e69632f4869707065747920486f702e6d7033",
+    "bytes": 4668638
+  },
+  {
+    "category": "Electronic",
+    "title": "Chronos",
+    "fileName": "05-chronos.mp3",
+    "style": "科技电子 / 悬念推进",
+    "id": "456c656374726f6e69632f4368726f6e6f732e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/456c656374726f6e69632f4368726f6e6f732e6d7033",
+    "bytes": 4387205
+  },
+  {
+    "category": "Epic",
+    "title": "Battle Ready",
+    "fileName": "06-battle-ready.mp3",
+    "style": "战斗史诗 / 冲突升级",
+    "id": "457069632f426174746c652052656164792e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/457069632f426174746c652052656164792e6d7033",
+    "bytes": 1556365
+  },
+  {
+    "category": "Epic",
+    "title": "Cornfield Chase",
+    "fileName": "07-cornfield-chase.mp3",
+    "style": "追逐推进 / 紧张叙事",
+    "id": "457069632f436f726e6669656c642043686173652e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/457069632f436f726e6669656c642043686173652e6d7033",
+    "bytes": 5512882
+  },
+  {
+    "category": "Epic",
+    "title": "Epic Boss Battle",
+    "fileName": "08-epic-boss-battle.mp3",
+    "style": "大场面战斗 / 高潮",
+    "id": "457069632f4570696320426f737320426174746c652e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/457069632f4570696320426f737320426174746c652e6d7033",
+    "bytes": 6811056
+  },
+  {
+    "category": "Epic",
+    "title": "Heroic Adventure",
+    "fileName": "09-heroic-adventure.mp3",
+    "style": "英雄冒险 / 正向燃点",
+    "id": "457069632f4865726f696320416476656e747572652e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/457069632f4865726f696320416476656e747572652e6d7033",
+    "bytes": 5721778
+  },
+  {
+    "category": "Epic",
+    "title": "Kings Trailer",
+    "fileName": "10-kings-trailer.mp3",
+    "style": "预告片感 / 宏大激动",
+    "id": "457069632f4b696e677320547261696c65722e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/457069632f4b696e677320547261696c65722e6d7033",
+    "bytes": 6523298
+  },
+  {
+    "category": "Epic",
+    "title": "Emotional Blockbuster 2",
+    "fileName": "11-emotional-blockbuster-2.mp3",
+    "style": "情绪大片 / 升华",
+    "id": "457069632f456d6f74696f6e616c20426c6f636b62757374657220322e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/457069632f456d6f74696f6e616c20426c6f636b62757374657220322e6d7033",
+    "bytes": 5598069
+  },
+  {
+    "category": "Horror",
+    "title": "Horror Suspense",
+    "fileName": "12-horror-suspense.mp3",
+    "style": "恐怖悬疑 / 氛围铺垫",
+    "id": "486f72726f722f486f72726f722053757370656e73652e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/486f72726f722f486f72726f722053757370656e73652e6d7033",
+    "bytes": 5600653
+  },
+  {
+    "category": "Horror",
+    "title": "Nightmare",
+    "fileName": "13-nightmare.mp3",
+    "style": "惊悚压迫 / 恐怖段落",
+    "id": "486f72726f722f4e696768746d6172652e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/486f72726f722f4e696768746d6172652e6d7033",
+    "bytes": 1741902
+  },
+  {
+    "category": "Horror",
+    "title": "The Abyss",
+    "fileName": "14-the-abyss.mp3",
+    "style": "深暗恐怖 / 阴沉氛围",
+    "id": "486f72726f722f5468652041627973732e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/486f72726f722f5468652041627973732e6d7033",
+    "bytes": 6986405
+  },
+  {
+    "category": "Horror",
+    "title": "Hidden Truth",
+    "fileName": "15-hidden-truth.mp3",
+    "style": "隐藏真相 / 悬疑解谜",
+    "id": "486f72726f722f48696464656e2054727574682e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/486f72726f722f48696464656e2054727574682e6d7033",
+    "bytes": 3954019
+  },
+  {
+    "category": "Comedy",
+    "title": "Going Bananas",
+    "fileName": "16-going-bananas.mp3",
+    "style": "喜剧兴奋 / 轻松夸张",
+    "id": "436f6d6564792f476f696e672042616e616e61732e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/436f6d6564792f476f696e672042616e616e61732e6d7033",
+    "bytes": 2814091
+  },
+  {
+    "category": "Comedy",
+    "title": "Rush",
+    "fileName": "17-rush.mp3",
+    "style": "喜剧快节奏 / 紧凑推进",
+    "id": "436f6d6564792f527573682e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/436f6d6564792f527573682e6d7033",
+    "bytes": 5345698
+  },
+  {
+    "category": "Comedy",
+    "title": "Vintage Party",
+    "fileName": "18-vintage-party.mp3",
+    "style": "复古派对 / 欢快",
+    "id": "436f6d6564792f56696e746167652050617274792e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/436f6d6564792f56696e746167652050617274792e6d7033",
+    "bytes": 3008262
+  },
+  {
+    "category": "Miscellaneous",
+    "title": "Energizing",
+    "fileName": "19-energizing.mp3",
+    "style": "活力积极 / 快节奏",
+    "id": "4d697363656c6c616e656f75732f456e657267697a696e672e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/4d697363656c6c616e656f75732f456e657267697a696e672e6d7033",
+    "bytes": 3040798
+  },
+  {
+    "category": "Miscellaneous",
+    "title": "Journey of Hope",
+    "fileName": "20-journey-of-hope.mp3",
+    "style": "希望旅程 / 情绪转好",
+    "id": "4d697363656c6c616e656f75732f4a6f75726e6579206f6620486f70652e6d7033",
+    "sourceUrl": "https://freepd.cn/api/music/4d697363656c6c616e656f75732f4a6f75726e6579206f6620486f70652e6d7033",
+    "bytes": 11374647
+  }
+]

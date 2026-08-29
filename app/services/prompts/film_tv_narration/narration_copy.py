@@ -29,6 +29,7 @@ class NarrationCopyPrompt(ParameterizedPrompt):
                 "subtitle_content",
                 "narration_language",
                 "narration_word_count",
+                "visual_evidence",
             ],
         )
         super().__init__(metadata, required_parameters=["drama_name", "plot_analysis", "subtitle_content"])
@@ -53,6 +54,11 @@ ${plot_analysis}
 <subtitles>
 ${subtitle_content}
 </subtitles>
+
+## 视觉证据
+<visual_evidence>
+${visual_evidence}
+</visual_evidence>
 
 ## 输出语言
 <narration_language>
@@ -89,12 +95,13 @@ ${narration_word_count}
 ## 写作规则
 1. 必须使用 ${narration_language}。
 2. 严格基于剧情理解和字幕事实，不编造核心情节、身份、结局。
-3. 先写清楚人物动机和因果链，再写情绪金句；不要只堆形容词。
-4. 每句话只表达一个信息点，适合后续按句匹配画面。
-5. 句子尽量短，单句优先 15-35 字；信息复杂时拆成多句。
-6. 每 2-3 句要有明确承接，让观众知道为什么从上一幕来到下一幕。
-7. 总长度以 ${narration_word_count} 字为目标，允许上下浮动 10%；中日韩语言按非空白字符计数，其他语言按单词计数。不得再套用固定长度区间。
-8. 不要使用编号、项目符号、章节标题或括号说明。
+3. 视觉证据只能确认画面中可见的人物、动作、场景和道具；不得把它当作对白或人物动机的依据。字幕与视觉证据不能同时支持某个细节时，删除该细节，不要猜测。
+4. 先写清楚人物动机和因果链，再写情绪金句；不要只堆形容词。
+5. 每句话只表达一个信息点，适合后续按句匹配画面。
+6. 句子尽量短，单句优先 15-35 字；信息复杂时拆成多句。
+7. 每 2-3 句要有明确承接，让观众知道为什么从上一幕来到下一幕。
+8. 总长度以 ${narration_word_count} 字为目标，允许上下浮动 10%；中日韩语言按非空白字符计数，其他语言按单词计数。不得再套用固定长度区间。
+9. 不要使用编号、项目符号、章节标题或括号说明。
 
 ## 输出要求
 只输出解说正文。不要输出 JSON、时间戳、代码块或任何解释。"""

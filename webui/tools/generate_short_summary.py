@@ -12,6 +12,7 @@ import json
 import time
 import traceback
 import html
+from dataclasses import asdict
 import streamlit as st
 from loguru import logger
 
@@ -22,6 +23,10 @@ from app.services.SDE.short_drama_explanation import (
     match_narration_copy_to_script as match_narration_copy_to_script_legacy,
 )
 from app.services.subtitle_text import read_subtitle_text
+from app.services.fusion_script_finalizer import FusionScriptFinalizer
+from app.services.fusion_models import EvidenceConflict
+from app.utils.video_processor import VideoProcessor
+from app.utils import utils
 from app.services.short_drama_narration_validation import (
     normalize_script_video_sources,
 )
@@ -37,6 +42,80 @@ SHORT_DRAMA_PROMPT_CATEGORY = "short_drama_narration"
 FILM_TV_PROMPT_CATEGORY = "film_tv_narration"
 SHORT_DRAMA_SEARCH_KEYWORDS = "短剧 剧情 介绍 人物 结局"
 FILM_TV_SEARCH_KEYWORDS = "影视 剧情 介绍 人物 结局 电影 电视剧"
+
+
+def _persist_fusion_generation_result(payload: dict) -> str:
+    audit_dir = utils.task_dir("fusion_audits")
+    audit_path = os.path.join(audit_dir, f"fusion_{time.strftime('%Y%m%d_%H%M%S')}_{time.time_ns()}.json")
+    with open(audit_path, "w", encoding="utf-8") as audit_file:
+        json.dump(payload, audit_file, ensure_ascii=False, indent=2)
+    return audit_path
+
+
+def acknowledge_fusion_audit(audit_path: str, conflicts: list[dict]) -> None:
+    if not audit_path or not os.path.isfile(audit_path):
+        return
+    with open(audit_path, "r", encoding="utf-8") as audit_file:
+        payload = json.load(audit_file)
+    payload["evidence_conflicts"] = conflicts
+    report = payload.get("finalization_report")
+    if isinstance(report, dict):
+        report["unresolved_conflict_count"] = 0
+    with open(audit_path, "w", encoding="utf-8") as audit_file:
+        json.dump(payload, audit_file, ensure_ascii=False, indent=2)
+
+
+def _store_fusion_finalization_result(
+    finalization,
+    *,
+    regression_only: bool = False,
+    source_verified: bool = True,
+) -> str:
+    """Place one complete finalization result into review state and its audit file."""
+    report = asdict(finalization.report)
+    payload = {
+        "status": "regression_only" if regression_only else "finalized",
+        "regression_only": bool(regression_only),
+        "source_verified": bool(source_verified),
+        "source_identity_waiver": bool(regression_only),
+        "original_script": finalization.original_script,
+        "finalized_script": finalization.script,
+        "finalization_report": report,
+        "evidence_conflicts": finalization.evidence_conflicts,
+    }
+    audit_path = _persist_fusion_generation_result(payload)
+    st.session_state["fusion_original_matched_script"] = finalization.original_script
+    st.session_state["fusion_evidence_conflicts"] = finalization.evidence_conflicts
+    st.session_state["fusion_finalization_report"] = report
+    st.session_state["fusion_generation_audit_path"] = audit_path
+    return audit_path
+
+
+def _normalize_fusion_evidence_conflicts(
+    conflicts,
+    *,
+    default_video_name: str,
+    identity_by_video: dict,
+    default_source_identity=None,
+) -> list[EvidenceConflict]:
+    """Normalize model conflict records before they cross into finalization."""
+    normalized = []
+    for conflict in conflicts or []:
+        if not isinstance(conflict, dict):
+            continue
+        conflict_video_name = str(conflict.get("video_name") or default_video_name)
+        normalized.append(
+            EvidenceConflict.from_mapping(
+                {
+                **conflict,
+                "video_name": conflict_video_name,
+                "status": "unresolved",
+                "source_video_identity": identity_by_video.get(conflict_video_name)
+                or default_source_identity,
+                }
+            )
+        )
+    return normalized
 
 
 def _normalize_paths(paths):
@@ -364,6 +443,8 @@ def generate_short_drama_narration_copy(
     empty_title_message_key: str = "Please enter short drama name before web search",
     web_search_context_description: str = "短剧名称、人物关系、剧情背景和公开剧情梗概",
     narration_word_count: int = 500,
+    visual_evidence: str = "",
+    highlight_candidates: str = "",
 ):
     """生成可由用户审核修改的短剧解说正文，不绑定时间戳。"""
     subtitle_paths = _normalize_paths(subtitle_path)
@@ -424,12 +505,13 @@ def generate_short_drama_narration_copy(
             narration_language=narration_language,
             drama_genre=drama_genre,
             narration_word_count=narration_word_count,
+            visual_evidence=visual_evidence,
         )
     except Exception as e:
         logger.warning(f"使用新LLM服务生成文案失败，回退到旧实现: {str(e)}")
         narration_result = generate_narration_copy_legacy(
             short_name=video_theme,
-            plot_analysis=analysis_text,
+            plot_analysis=f"{analysis_text}\n\n{visual_evidence}".strip(),
             subtitle_content=subtitle_content,
             api_key=text_api_key,
             model=text_model,
@@ -478,6 +560,10 @@ def generate_script_short_sunmmary(
     search_keywords: str = SHORT_DRAMA_SEARCH_KEYWORDS,
     empty_title_message_key: str = "Please enter short drama name before web search",
     web_search_context_description: str = "短剧名称、人物关系、剧情背景和公开剧情梗概",
+    visual_evidence: str = "",
+    highlight_candidates: str = "",
+    highlight_candidate_items: list[dict] | None = None,
+    visual_source_identity: dict | None = None,
 ):
     """
     生成 短剧解说 视频脚本
@@ -659,6 +745,8 @@ def generate_script_short_sunmmary(
                         narration_language=narration_language,
                         drama_genre=drama_genre,
                         original_sound_ratio=original_sound_ratio,
+                        visual_evidence=visual_evidence,
+                        highlight_candidates=highlight_candidates,
                         stream_callback=update_stream_window,
                     )
                 except Exception as e:
@@ -666,7 +754,7 @@ def generate_script_short_sunmmary(
                     stream_text.info(tr("Streaming unavailable fallback waiting..."))
                     narration_result = match_narration_copy_to_script_legacy(
                         short_name=video_theme,
-                        plot_analysis=analysis_result["analysis"],
+                        plot_analysis=f"{analysis_result['analysis']}\n\n{visual_evidence}\n\n{highlight_candidates}".strip(),
                         subtitle_content=subtitle_content,
                         narration_copy=narration_copy,
                         api_key=text_api_key,
@@ -718,6 +806,82 @@ def generate_script_short_sunmmary(
                 selected_video_paths,
             )
             narration_items = _strip_planner_only_fields(narration_items)
+            if visual_evidence:
+                st.session_state["fusion_original_matched_script"] = narration_items
+                source_durations = {
+                    os.path.basename(video_path): VideoProcessor(video_path).duration
+                    for video_path in selected_video_paths
+                }
+                candidate_items = highlight_candidate_items or []
+                candidate_payloads = [
+                    candidate.to_dict() if hasattr(candidate, "to_dict") else candidate
+                    for candidate in candidate_items
+                ]
+                default_video_name = str(narration_items[0].get("video_name", "")) if narration_items else ""
+                identity_by_video = {
+                    str(candidate.get("video_name") or default_video_name): candidate.get(
+                        "source_video_identity"
+                    )
+                    for candidate in candidate_payloads
+                    if isinstance(candidate, dict) and isinstance(candidate.get("source_video_identity"), dict)
+                }
+                if isinstance(visual_source_identity, dict) and default_video_name:
+                    identity_by_video.setdefault(default_video_name, visual_source_identity)
+                evidence_conflicts = []
+                try:
+                    evidence_conflicts = _normalize_fusion_evidence_conflicts(
+                        narration_dict.get("evidence_conflicts", []),
+                        default_video_name=default_video_name,
+                        identity_by_video=identity_by_video,
+                        default_source_identity=visual_source_identity,
+                    )
+                    finalization = FusionScriptFinalizer().finalize(
+                        script=narration_items,
+                        requested_original_sound_ratio=original_sound_ratio,
+                        highlight_candidates=candidate_items,
+                        evidence_conflicts=evidence_conflicts,
+                        source_durations=source_durations,
+                    )
+                except Exception as finalization_error:
+                    failure_payload = {
+                        "status": "failed",
+                        "regression_only": bool(
+                            st.session_state.get("fusion_visual_regression_only")
+                        ),
+                        "source_verified": bool(
+                            st.session_state.get("fusion_visual_source_verified")
+                        ),
+                        "source_identity_waiver": bool(
+                            st.session_state.get("fusion_visual_regression_only")
+                        ),
+                        "original_script": narration_items,
+                        "finalized_script": None,
+                        "finalization_report": None,
+                        "evidence_conflicts": (
+                            [conflict.to_dict() for conflict in evidence_conflicts]
+                            if evidence_conflicts
+                            else [
+                                conflict
+                                for conflict in narration_dict.get("evidence_conflicts", [])
+                                if isinstance(conflict, dict)
+                            ]
+                        ),
+                        "error": str(finalization_error),
+                    }
+                    st.session_state["fusion_generation_audit_path"] = _persist_fusion_generation_result(
+                        failure_payload
+                    )
+                    raise
+                narration_items = finalization.script
+                _store_fusion_finalization_result(
+                    finalization,
+                    regression_only=bool(
+                        st.session_state.get("fusion_visual_regression_only")
+                    ),
+                    source_verified=bool(
+                        st.session_state.get("fusion_visual_source_verified", True)
+                    ),
+                )
             script = json.dumps(narration_items, ensure_ascii=False, indent=2)
 
             if script is None:
@@ -728,6 +892,8 @@ def generate_script_short_sunmmary(
                 st.session_state['video_clip_json'] = script
             elif isinstance(script, str):
                 st.session_state['video_clip_json'] = json.loads(script)
+            if not visual_evidence:
+                st.session_state["fusion_visual_regression_only"] = False
             update_progress(90, tr("Preparing output..."))
 
         time.sleep(0.1)

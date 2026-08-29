@@ -293,6 +293,7 @@ class SubtitleAnalyzerAdapter:
         narration_language: str = "简体中文（中国）",
         drama_genre: str = "逆袭/复仇",
         narration_word_count: int = 500,
+        visual_evidence: str = "",
     ) -> Dict[str, Any]:
         """Generate editable narration copy before timeline matching."""
         try:
@@ -305,6 +306,7 @@ class SubtitleAnalyzerAdapter:
                     "subtitle_content": subtitle_content,
                     "narration_language": narration_language,
                     "narration_word_count": int(narration_word_count),
+                    "visual_evidence": visual_evidence,
                 },
             )
             narration_copy = self._generate_plain_text(prompt, system_prompt, temperature)
@@ -332,6 +334,8 @@ class SubtitleAnalyzerAdapter:
         narration_language: str = "简体中文（中国）",
         drama_genre: str = "逆袭/复仇",
         original_sound_ratio: int = 30,
+        visual_evidence: str = "",
+        highlight_candidates: str = "",
         stream_callback=None,
     ) -> Dict[str, Any]:
         """Match reviewed narration copy to source footage and return JSON script."""
@@ -346,6 +350,8 @@ class SubtitleAnalyzerAdapter:
                     "narration_copy": narration_copy,
                     "narration_language": narration_language,
                     "original_sound_ratio": int(original_sound_ratio),
+                    "visual_evidence": visual_evidence,
+                    "highlight_candidates": highlight_candidates,
                 },
             )
             narration_script = self._generate_json_text(

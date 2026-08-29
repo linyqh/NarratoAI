@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 
 TRUSTED_OPENAI_COMPATIBLE_BASE_HOSTS = {
     "api.openai.com",
+    "token-plan-cn.xiaomimimo.com",
     "openrouter.ai",
     "api.siliconflow.cn",
     "dashscope.aliyuncs.com",

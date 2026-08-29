@@ -192,6 +192,7 @@ def generate_script_short(
             logger.info(f"脚本生成完成 {json.dumps(script, ensure_ascii=False, indent=4)}")
 
             st.session_state['video_clip_json'] = _parse_generated_script_payload(script)
+            st.session_state["fusion_visual_regression_only"] = False
 
             update_progress(80, tr("Script generation completed"))
 

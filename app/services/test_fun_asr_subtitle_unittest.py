@@ -330,11 +330,13 @@ class FunAsrServiceTests(unittest.TestCase):
             oss_access_key_id="ak",
             max_file_size_mb=1,
         )
-        with tempfile.NamedTemporaryFile() as f:
-            f.write(b"audio")
-            f.flush()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            audio_path = Path(tmp_dir) / "audio.wav"
+            audio_path.write_bytes(b"audio")
             with self.assertRaises(fasr.FunAsrError):
-                fasr.upload_to_temporary_oss(f.name, policy, session=UploadFailureSession({}))
+                fasr.upload_to_temporary_oss(
+                    str(audio_path), policy, session=UploadFailureSession({})
+                )
 
     def test_submit_failure_raises(self):
         class SubmitFailureSession(FakeSession):

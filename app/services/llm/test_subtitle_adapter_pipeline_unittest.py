@@ -14,6 +14,7 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
             model="test-model",
             base_url="https://example.test/v1",
             provider="openai",
+            prompt_category="film_tv_narration",
         )
 
         with mock.patch.object(adapter, "_run_async_safely", return_value="她被家人逼到绝路，反击从这一刻开始。") as call:
@@ -62,6 +63,26 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
         self.assertNotIn("350-750", call.call_args.kwargs["prompt"])
         self.assertNotIn("短剧解说正文创作任务", call.call_args.kwargs["prompt"])
 
+    def test_film_tv_prompts_include_visual_evidence_when_requested(self):
+        adapter = SubtitleAnalyzerAdapter(
+            api_key="sk-test",
+            model="test-model",
+            base_url="https://example.test/v1",
+            provider="openai",
+            prompt_category="film_tv_narration",
+        )
+        visual_evidence = "# 视觉证据\n\n## 00:00:10,000-00:00:20,000\n- 丧尸撞击玻璃门。"
+
+        with mock.patch.object(adapter, "_run_async_safely", return_value="幸存者被堵在走廊。") as call:
+            adapter.generate_narration_copy(
+                short_name="群体",
+                plot_analysis="幸存者试图逃离感染区。",
+                subtitle_content="00:00:10,000 --> 00:00:20,000\n快跑！",
+                visual_evidence=visual_evidence,
+            )
+
+        self.assertIn("丧尸撞击玻璃门", call.call_args.kwargs["prompt"])
+
     def test_film_tv_script_prompts_exclude_intro_outro_and_ads(self):
         base_parameters = {
             "drama_name": "测试电影",
@@ -69,6 +90,8 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
             "plot_analysis": "主角发现证据疑点。",
             "subtitle_content": "# 视频 1: 1.mp4\n00:00:01,000 --> 00:00:04,000\n证据不对。",
             "narration_language": "简体中文（中国）",
+            "visual_evidence": "",
+            "highlight_candidates": "",
         }
         prompt_parameters = {
             "segment_planning": base_parameters,
@@ -106,6 +129,7 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
             model="test-model",
             base_url="https://example.test/v1",
             provider="openai",
+            prompt_category="film_tv_narration",
         )
         matched = json.dumps(
             {
@@ -134,12 +158,16 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
                 narration_language="简体中文（中国）",
                 drama_genre="家庭伦理",
                 original_sound_ratio=60,
+                highlight_candidates=(
+                    "# 原片高光候选\n- 00:00:01,000-00:00:04,000｜表演情绪｜价值 5/5：人物沉默后落泪。"
+                ),
             )
 
         self.assertEqual("success", result["status"])
         self.assertEqual(1, json.loads(result["narration_script"])["items"][0]["_id"])
         self.assertIn("家庭伦理", call.call_args.kwargs["prompt"])
         self.assertIn("60%", call.call_args.kwargs["prompt"])
+        self.assertIn("人物沉默后落泪", call.call_args.kwargs["prompt"])
         self.assertEqual("json", call.call_args.kwargs["response_format"])
 
     def test_match_narration_copy_to_script_uses_streaming_when_callback_exists(self):

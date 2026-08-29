@@ -30,6 +30,8 @@ class ScriptMatchingPrompt(ParameterizedPrompt):
                 "narration_copy",
                 "narration_language",
                 "original_sound_ratio",
+                "visual_evidence",
+                "highlight_candidates",
             ],
         )
         super().__init__(
@@ -66,6 +68,16 @@ ${narration_copy}
 ${subtitle_content}
 </subtitles>
 
+## 视觉证据（仅可用于确认画面事实）
+<visual_evidence>
+${visual_evidence}
+</visual_evidence>
+
+## 原片高光候选（仅作 OST=1 优先级依据）
+<highlight_candidates>
+${highlight_candidates}
+</highlight_candidates>
+
 ## 输出语言
 <narration_language>
 ${narration_language}
@@ -93,13 +105,19 @@ ${original_sound_ratio}%
 9. timestamp 必须使用对应 video_id 内部局部时间戳，不得换算为多个视频拼接后的累计时间。
 10. 同一 video_id 内时间段不得交叉或重叠。
 11. 第一段必须是 OST=0 解说钩子，不能直接播放原片。
-12. OST=1 原声片段的总时长占比要尽量接近用户选择的 ${original_sound_ratio}%。这里按最终 items 的 timestamp 总时长估算，不按片段数量估算。
+12. OST=1 原声片段的总时长占比要尽量接近用户选择的 ${original_sound_ratio}%。这里按最终 items 的 timestamp 总时长估算，不按片段数量估算。OST=0 在渲染时可能按 TTS 时长拉长，因此不要只用很短的 OST=1 片段凑比例。
 13. 不要自行判断或改写影视类型；画面匹配和 picture 描述要服务用户选择的 ${drama_genre} 叙事重点。
+14. 有视觉证据时，picture 必须优先使用同一时间范围内可见的动作、人物、场景和道具。视觉证据不能确认的细节不得写入 picture。
+15. 字幕与视觉证据冲突时，不得静默丢弃：把时间段、字幕主张、视觉观察和严重度写入 evidence_conflicts；相关具体断言不得写入 items。
 
 ## 原片占比规则
 - ${original_sound_ratio}% = 0% 时，不要输出 OST=1，全部使用解说承接。
-- ${original_sound_ratio}% 在 10%-30% 时，只保留关键对白、信息反转、情绪爆发或名场面原声。
-- ${original_sound_ratio}% 在 40%-60% 时，解说负责串联因果，原片负责承载关键场面和对白。
+- 原片高光候选是表演、画面或视觉节奏比继续解说更值得观众直接体验的时间段，可包括剧情反转、关键选择、动作/追逐、情绪表演、喜剧反应、悬疑线索、仪式画面和视觉奇观；无对白片段同样可以成为 OST=1。不得仅凭视觉证据声称存在音乐、环境音或音效。
+- 字幕中的关键对白可独立作为 OST=1 依据，但不能把字幕之外的声音价值归因给视觉高光候选。
+- 优先从“原片高光候选”中选择 OST=1。视觉证据可以独立支持无对白的动作、表演、反应和视觉奇观；只有涉及对白或声音的主张才必须有相应证据。候选不可靠、与叙事无关或与用户文案冲突时可以不选。
+- 当 ${original_sound_ratio}% 大于 0 且高光候选可用时，至少保留 3 段分散在故事不同节点的高光 OST=1（短成片可按时长减少），不要把原声全部集中在解释性对白。
+- ${original_sound_ratio}% 在 10%-30% 时，优先保留高价值高光及关键对白，而非仅按对白密度挑选。
+- ${original_sound_ratio}% 在 40%-60% 时，解说负责串联因果，原片负责承载高光场面、声音和对白。
 - ${original_sound_ratio}% 在 70%-90% 时，以原片对白和表演为主，解说只做开场钩子、转场桥和必要补充。
 - 如果原片占比与“第一段必须 OST=0”冲突，优先保证第一段是 OST=0，然后在后续片段提高 OST=1 时长占比。
 - 选择高原片占比时，可以把用户文案合并成更少的 OST=0 桥段，不要为了逐句使用文案而压低原片占比。
@@ -126,6 +144,18 @@ ${original_sound_ratio}%
       "picture": "主角站在走廊尽头，回头看向紧闭的房门",
       "narration": "他以为自己终于逃出了那间房，可真正的危险，其实才刚刚醒来。",
       "OST": 0
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "video_name": "1.mp4",
+      "time_range": "00:01:00,000-00:01:05,000",
+      "subtitle_claim": "字幕所支持的具体主张",
+      "visual_observation": "同一时段画面可确认的观察",
+      "severity": "low|medium|high",
+      "status": "unresolved",
+      "related_script_item_ids": [],
+      "related_candidate_ids": []
     }
   ]
 }

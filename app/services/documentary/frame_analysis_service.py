@@ -8,27 +8,37 @@ from typing import Any, Callable
 from loguru import logger
 
 from app.config import config
-from app.services.documentary.frame_analysis_models import FrameBatchResult
+from app.config.defaults import DEFAULT_VISION_MAX_CONCURRENCY
+from app.services.documentary.frame_analysis_models import FrameBatchResult, HighlightCandidate, TimeRange
+from app.services.visual_claims import contains_unsupported_audio_claim
 from app.services.generate_narration_script import generate_narration, parse_frame_analysis_to_markdown
 from app.services.llm.migration_adapter import create_vision_analyzer
+from app.services.visual_evidence_artifact import ARTIFACT_VERSION, build_source_video_identity
 from app.utils import utils, video_processor
 
 
 class DocumentaryFrameAnalysisService:
     PROMPT_TEMPLATE = """
-我提供了 {frame_count} 张视频帧，它们按时间顺序排列，代表一个连续的视频片段。
+我提供了 {frame_count} 张视频帧，它们按时间顺序排列，代表 {time_range} 的连续视频片段。
 首先，请详细描述每一帧的关键视觉信息（包含：主要内容、人物、动作和场景）。
 然后，基于所有帧的分析，请用简洁的语言总结整个视频片段中发生的主要活动或事件流程。
+所有输出字段都只能描述画面可确认的人物、动作、物体、文字和地点；不得推断对白、声音、音乐、音效、原声或画外事件。
 请务必使用 JSON 格式输出。
 JSON 必须包含以下键：
 - frame_observations: 数组，且长度必须为 {frame_count}
 - overall_activity_summary: 字符串，描述整个批次主要活动
+- highlight_candidates: 数组。仅列出 0-2 个值得观众直接体验原片画面或表演的高光候选；没有则返回 []。
+  每项必须含 time_range（位于 {time_range} 内的精确时间范围）、category（剧情转折/动作场面/表演情绪/喜剧反应/悬疑线索/视觉奇观/其他）、reason（只写画面可确认的事实及保留理由）、score、story_importance、visual_impact、performance_value（四项均为 1-5）。
+  高光适用于所有类型作品；无对白的动作、表演或视觉氛围场景也可以是高光。不得从画面推断对白、原声、音效或不可见剧情；不要把普通信息交代或重复画面列为高光。
 示例结构：
 {{
   "frame_observations": [
     {{"timestamp": "00:00:00,000", "observation": "画面描述"}}
   ],
-  "overall_activity_summary": "本批次主要活动总结"
+  "overall_activity_summary": "本批次主要活动总结",
+  "highlight_candidates": [
+    {{"time_range": "00:00:04,000-00:00:08,000", "category": "动作场面", "reason": "两人连续穿过狭窄走廊追逐，快速移动和近距离构图强化了危险感", "score": 5, "story_importance": 4, "visual_impact": 5, "performance_value": 3}}
+  ]
 }}
 请务必不要遗漏视频帧，我提供了 {frame_count} 张视频帧，frame_observations 必须包含 {frame_count} 个元素
 请只返回 JSON 字符串，不要附加解释文字。
@@ -114,6 +124,8 @@ JSON 必须包含以下键：
         if not video_path or not os.path.exists(video_path):
             raise FileNotFoundError(f"视频文件不存在: {video_path}")
 
+        source_video_identity = build_source_video_identity(video_path)
+
         frame_interval_seconds = self._resolve_frame_interval(frame_interval_input)
         batch_size = self._resolve_batch_size(vision_batch_size)
         concurrency = self._resolve_max_concurrency(max_concurrency)
@@ -166,6 +178,7 @@ JSON 必须包含以下键：
             vision_llm_provider=provider,
             vision_model_name=model_name,
             max_concurrency=concurrency,
+            source_video_identity=source_video_identity,
         )
         analysis_json_path = self._save_analysis_artifact(artifact)
         video_clip_json = self._build_video_clip_json(sorted_batches)
@@ -273,7 +286,9 @@ JSON 必须包含以下键：
         return value
 
     def _resolve_max_concurrency(self, max_concurrency: int | None) -> int:
-        value = max_concurrency if max_concurrency is not None else config.frames.get("vision_max_concurrency", 2)
+        value = max_concurrency if max_concurrency is not None else config.frames.get(
+            "vision_max_concurrency", DEFAULT_VISION_MAX_CONCURRENCY
+        )
         try:
             parsed = int(value)
         except (TypeError, ValueError):
@@ -363,6 +378,7 @@ JSON 必须包含以下键：
             nonlocal done
             prompt = self._build_batch_prompt(
                 frame_count=len(frame_paths),
+                time_range=time_range,
                 video_theme=video_theme,
                 custom_prompt=custom_prompt,
             )
@@ -409,8 +425,10 @@ JSON 必须包含以下键：
         ]
         return await asyncio.gather(*tasks)
 
-    def _build_batch_prompt(self, *, frame_count: int, video_theme: str, custom_prompt: str) -> str:
-        prompt = self._build_analysis_prompt(frame_count=frame_count)
+    def _build_batch_prompt(
+        self, *, frame_count: int, time_range: str, video_theme: str, custom_prompt: str
+    ) -> str:
+        prompt = self._build_analysis_prompt(frame_count=frame_count, time_range=time_range)
         extra_lines: list[str] = []
         if (video_theme or "").strip():
             extra_lines.append(f"视频主题：{video_theme.strip()}")
@@ -456,6 +474,7 @@ JSON 必须包含以下键：
         vision_llm_provider: str,
         vision_model_name: str,
         max_concurrency: int,
+        source_video_identity: dict[str, Any],
     ) -> dict[str, Any]:
         sorted_batches = self._sort_batch_results(batch_results)
 
@@ -472,6 +491,7 @@ JSON 必须包含以下键：
                 "frame_paths": list(batch.frame_paths),
                 "frame_observations": list(batch.frame_observations),
                 "overall_activity_summary": batch.overall_activity_summary,
+                "highlight_candidates": [candidate.to_dict() for candidate in batch.highlight_candidates],
                 "fallback_summary": batch.fallback_summary,
                 "error_message": batch.error_message,
             }
@@ -494,15 +514,25 @@ JSON 必须包含以下键：
                 )
 
         return {
-            "artifact_version": "documentary-frame-analysis-v2",
+            "artifact_version": ARTIFACT_VERSION,
             "generated_at": datetime.now().isoformat(),
             "video_path": video_path,
+            "source_video_identity": source_video_identity,
             "frame_interval_seconds": frame_interval_seconds,
             "vision_batch_size": vision_batch_size,
             "vision_llm_provider": vision_llm_provider,
             "vision_model_name": vision_model_name,
             "vision_max_concurrency": max_concurrency,
             "batches": batch_dicts,
+            "highlight_candidates": [
+                {
+                    "batch_index": batch.batch_index,
+                    **candidate.to_dict(),
+                }
+                for batch in sorted_batches
+                if batch.status == "success"
+                for candidate in batch.highlight_candidates
+            ],
             # 向后兼容旧解析器结构
             "frame_observations": frame_observations,
             "overall_activity_summaries": overall_activity_summaries,
@@ -565,27 +595,11 @@ JSON 必须包含以下键：
         return "该批次分析失败，未返回可用描述。"
 
     def _time_range_sort_key(self, time_range: str) -> tuple[int, str]:
-        start = (time_range or "").split("-", 1)[0].strip()
-        return self._timestamp_to_milliseconds(start), time_range
-
-    @staticmethod
-    def _timestamp_to_milliseconds(timestamp: str) -> int:
-        text = (timestamp or "").strip()
         try:
-            if "," in text:
-                time_part, ms_part = text.split(",", 1)
-                milliseconds = int(ms_part)
-            else:
-                time_part = text
-                milliseconds = 0
-
-            parts = [int(part) for part in time_part.split(":") if part]
-            while len(parts) < 3:
-                parts.insert(0, 0)
-            hours, minutes, seconds = parts[-3], parts[-2], parts[-1]
-            return ((hours * 3600 + minutes * 60 + seconds) * 1000) + milliseconds
-        except Exception:
-            return 0
+            start_milliseconds = int(TimeRange.parse(time_range).start_seconds * 1000)
+        except (TypeError, ValueError):
+            start_milliseconds = 0
+        return start_milliseconds, time_range
 
     def _get_batch_timestamps(
         self,
@@ -617,8 +631,8 @@ JSON 必须包含以下键：
         milliseconds = int(token[6:9])
         return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
 
-    def _build_analysis_prompt(self, frame_count: int) -> str:
-        return self.PROMPT_TEMPLATE.format(frame_count=frame_count)
+    def _build_analysis_prompt(self, *, frame_count: int, time_range: str) -> str:
+        return self.PROMPT_TEMPLATE.format(frame_count=frame_count, time_range=time_range)
 
     def _build_failed_batch_result(
         self,
@@ -719,6 +733,8 @@ JSON 必须包含以下键：
             else:
                 observation = str(entry or "")
                 timestamp = ""
+            if contains_unsupported_audio_claim(observation):
+                observation = ""
             frame_observations.append(
                 {
                     "frame_path": frame_path,
@@ -734,6 +750,42 @@ JSON 必须包含以下键：
             summary = ""
         else:
             summary = str(raw_summary)
+        if contains_unsupported_audio_claim(summary):
+            summary = ""
+
+        highlight_candidates: list[HighlightCandidate] = []
+        raw_candidates = payload.get("highlight_candidates", [])
+        if isinstance(raw_candidates, list):
+            for candidate in raw_candidates[:2]:
+                if not isinstance(candidate, dict):
+                    continue
+                category = str(candidate.get("category", "其他") or "其他").strip()
+                reason = str(candidate.get("reason", "") or "").strip()
+                candidate_time_range = str(candidate.get("time_range", "") or "").strip()
+                try:
+                    score = max(1, min(5, int(candidate.get("score", 3))))
+                except (TypeError, ValueError):
+                    score = 3
+                signal_scores: dict[str, int] = {}
+                for signal in ("story_importance", "visual_impact", "performance_value"):
+                    try:
+                        signal_scores[signal] = max(1, min(5, int(candidate.get(signal, 3))))
+                    except (TypeError, ValueError):
+                        signal_scores[signal] = 3
+                if (
+                    reason
+                    and not contains_unsupported_audio_claim(reason)
+                    and self._is_time_range_within(candidate_time_range, time_range)
+                ):
+                    highlight_candidates.append(
+                        HighlightCandidate(
+                            time_range=TimeRange.parse(candidate_time_range),
+                            category=category or "其他",
+                            reason=reason,
+                            score=score,
+                            **signal_scores,
+                        )
+                    )
 
         return FrameBatchResult(
             batch_index=batch_index,
@@ -743,7 +795,21 @@ JSON 必须包含以下键：
             frame_paths=list(frame_paths),
             frame_observations=frame_observations,
             overall_activity_summary=summary,
+            highlight_candidates=highlight_candidates,
         )
+
+    def _is_time_range_within(self, candidate_time_range: str, batch_time_range: str) -> bool:
+        try:
+            candidate = TimeRange.parse(candidate_time_range)
+            batch = TimeRange.parse(batch_time_range)
+            return (
+                batch.start_seconds
+                <= candidate.start_seconds
+                < candidate.end_seconds
+                <= batch.end_seconds
+            )
+        except (TypeError, ValueError):
+            return False
 
     def _validate_batch_payload_contract(self, payload: object, *, expected_frame_count: int) -> str:
         if not isinstance(payload, dict):

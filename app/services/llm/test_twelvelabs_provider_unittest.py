@@ -7,6 +7,8 @@
 
 import asyncio
 import os
+import sys
+from types import ModuleType
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -14,6 +16,7 @@ import PIL.Image
 
 from app.config import config
 from app.services.llm.manager import LLMServiceManager
+from app.services.llm.exceptions import ConfigurationError
 from app.services.llm.providers import register_all_providers
 from app.services.llm.twelvelabs_provider import TwelveLabsVisionProvider
 
@@ -22,6 +25,40 @@ def _make_provider() -> TwelveLabsVisionProvider:
     # _resolve_ffmpeg 在 _initialize 中执行，patch shutil.which 让其在无 ffmpeg 环境也可构建。
     with patch("app.services.llm.twelvelabs_provider.shutil.which", return_value="/usr/bin/ffmpeg"):
         return TwelveLabsVisionProvider(api_key="test-key", model_name="pegasus1.5")
+
+
+def _fake_twelvelabs_sdk_modules() -> dict[str, ModuleType]:
+    """Provide only the SDK symbols exercised by the offline provider test."""
+    root = ModuleType("twelvelabs")
+    root.__path__ = []
+    types_module = ModuleType("twelvelabs.types")
+    types_module.__path__ = []
+    video_context = ModuleType("twelvelabs.types.video_context")
+    errors = ModuleType("twelvelabs.errors")
+
+    class VideoContextAssetId:
+        def __init__(self, asset_id):
+            self.asset_id = asset_id
+
+    class BadRequestError(Exception):
+        pass
+
+    class ForbiddenError(Exception):
+        pass
+
+    class TooManyRequestsError(Exception):
+        pass
+
+    video_context.VideoContext_AssetId = VideoContextAssetId
+    errors.BadRequestError = BadRequestError
+    errors.ForbiddenError = ForbiddenError
+    errors.TooManyRequestsError = TooManyRequestsError
+    return {
+        "twelvelabs": root,
+        "twelvelabs.types": types_module,
+        "twelvelabs.types.video_context": video_context,
+        "twelvelabs.errors": errors,
+    }
 
 
 class TwelveLabsProviderUnitTests(unittest.TestCase):
@@ -48,7 +85,8 @@ class TwelveLabsProviderUnitTests(unittest.TestCase):
 
         img = PIL.Image.new("RGB", (64, 64), (200, 30, 30))
 
-        with patch.object(provider, "_build_client", return_value=fake_client), \
+        with patch.dict(sys.modules, _fake_twelvelabs_sdk_modules()), \
+             patch.object(provider, "_build_client", return_value=fake_client), \
              patch.object(provider, "_frames_to_clip", return_value="/tmp/clip.mp4"), \
              patch("app.services.llm.twelvelabs_provider.os.path.getsize", return_value=1234), \
              patch("builtins.open", MagicMock()):
@@ -62,6 +100,12 @@ class TwelveLabsProviderUnitTests(unittest.TestCase):
         self.assertGreaterEqual(kwargs["max_tokens"], 512)
         # 远端 Asset 被清理。
         fake_client.assets.delete.assert_called_once_with(asset_id="asset-1")
+
+    def test_missing_optional_sdk_reports_a_configuration_error(self):
+        provider = _make_provider()
+        with patch.dict(sys.modules, {"twelvelabs": None}):
+            with self.assertRaisesRegex(ConfigurationError, "未安装 twelvelabs SDK"):
+                provider._build_client()
 
     def test_analyze_images_degrades_on_batch_error(self):
         provider = _make_provider()

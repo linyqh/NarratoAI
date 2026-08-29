@@ -1839,6 +1839,7 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                              f"或者使用其他 tts 引擎")
                 continue
             else:
+                actual_audio_duration = get_audio_duration_from_file(audio_file)
                 # SoulVoice、Qwen3、IndexTTS、OmniVoice、豆包语音 引擎不生成精确字幕文件
                 if (
                     is_soulvoice_voice(voice_name)
@@ -1854,7 +1855,7 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                     or tts_engine == "doubaotts"
                 ):
                     # 获取实际音频文件的时长
-                    duration = get_audio_duration_from_file(audio_file)
+                    duration = actual_audio_duration
                     if duration <= 0:
                         # 如果无法获取文件时长，尝试从 SubMaker 获取
                         duration = get_audio_duration(sub_maker)
@@ -1885,6 +1886,17 @@ def tts_multiple(task_id: str, list_script: list, voice_name: str, voice_rate: f
                     subtitle_file = ""
                 else:
                     _, duration = create_subtitle(sub_maker=sub_maker, text=text, subtitle_file=subtitle_file)
+
+                # SubMaker 的时间戳是 TTS 事件时间，和最终编码出的音频时长可能不同。
+                # 后续视频裁剪、音频拼接和最终字幕都以这里的 duration 为准，因此必须以
+                # 实际媒体时长作为唯一时间源，否则下一段音频会提前开始并发生重叠。
+                if actual_audio_duration > 0:
+                    if abs(actual_audio_duration - duration) > 0.05:
+                        logger.warning(
+                            f"TTS 时长校正: {timestamp} 字幕事件时长={duration:.3f}秒，"
+                            f"实际音频时长={actual_audio_duration:.3f}秒"
+                        )
+                    duration = actual_audio_duration
 
             tts_results.append({
                 "_id": item['_id'],
