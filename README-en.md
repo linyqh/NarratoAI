@@ -74,15 +74,16 @@ Below is a screenshot of this person's x (Twitter) homepage
 - [x] Released version 0.3.5 integration package
 - [x] Support Alibaba Qwen2-VL large model for video understanding
 - [x] Support TwelveLabs Pegasus as an optional video-understanding backend (analyzes footage natively to drive highlight selection and commentary; opt-in, set `vision_llm_provider = "twelvelabs"`)
-- [x] Support short drama commentary
+- [x] Support short drama mixing
   - [x] One-click merge materials
   - [x] One-click transcription
   - [x] One-click clear cache
-- [ ] Support exporting to Jianying drafts
+- [x] Support exporting to Jianying drafts
 - [X] Support short drama commentary
 - [ ] Character face matching
 - [ ] Support automatic matching based on voiceover, script, and video materials
-- [ ] Support more TTS engines
+- [X] Support more TTS engines
+- [X] Support optional AI-generated background music
 - [ ] ...
 
 ## System Requirements 📦
