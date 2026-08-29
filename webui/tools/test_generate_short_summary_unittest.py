@@ -2,11 +2,32 @@ import unittest
 from unittest.mock import patch
 
 from app.services.fusion_script_finalizer import FusionScriptFinalizer
+from app.services.documentary.frame_analysis_models import HighlightCandidate, TimeRange
+from app.services.fusion_models import CandidateRejection, EvidenceConflict, FinalizationRequest, HighlightCandidateIntake
 from webui.tools import generate_short_summary
 from webui.tools.generate_short_summary import _format_progress_status, parse_and_fix_json
 
 
 class GenerateShortSummaryJsonTests(unittest.TestCase):
+    def _finalize(self, **kwargs):
+        candidates = tuple(
+            HighlightCandidate(
+                time_range=TimeRange.parse(item["time_range"]), category=item["category"],
+                reason=item["reason"], score=item["score"], video_id=item.get("video_id"),
+                video_name=item.get("video_name", ""), candidate_id=item.get("candidate_id", ""),
+            )
+            for item in kwargs.pop("highlight_candidates", [])
+        )
+        rejections = tuple(CandidateRejection(**item) for item in kwargs.pop("candidate_rejections", []))
+        conflicts = tuple(EvidenceConflict.from_mapping(item) for item in kwargs.pop("evidence_conflicts", []))
+        return FusionScriptFinalizer().finalize(FinalizationRequest(
+            script=tuple(kwargs.pop("script", [])),
+            requested_original_sound_ratio=kwargs.pop("requested_original_sound_ratio", 0),
+            candidate_intake=HighlightCandidateIntake(candidates, rejections, len(candidates) + len(rejections)),
+            evidence_conflicts=conflicts,
+            source_durations=kwargs.pop("source_durations", {}),
+        ))
+
     def test_progress_message_does_not_prefix_fake_percentage(self):
         status = _format_progress_status(60, "正在生成文案...")
 
@@ -39,7 +60,7 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("00:00:01,000-00:00:02,000", parsed["items"][0]["timestamp"])
 
     def test_finalization_result_enters_review_state_before_rendering(self):
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=[
                 {
                     "_id": 1,
@@ -105,7 +126,7 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("acknowledged", conflicts[0].status)
 
     def test_acknowledged_conflict_survives_finalization_without_redacting_the_script(self):
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=[
                 {"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "人物站立。", "narration": "人物站立。", "OST": 0}
             ],
@@ -118,6 +139,7 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("acknowledged", result.evidence_conflicts[0]["status"])
         self.assertEqual("人物站立。", result.script[0]["picture"])
         self.assertEqual(0, result.report.unresolved_conflict_count)
+        self.assertEqual(1, result.report.acknowledged_conflict_count)
 
     def test_malformed_conflict_cannot_cross_the_domain_boundary(self):
         with self.assertRaisesRegex(ValueError, "time range"):
@@ -134,7 +156,7 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
             )
 
     def test_regression_only_audit_persists_the_source_identity_waiver(self):
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=[],
             requested_original_sound_ratio=0,
             highlight_candidates=[],

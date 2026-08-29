@@ -9,6 +9,7 @@ from typing import Any
 
 from app.services.documentary.frame_analysis_models import HighlightCandidate, TimeRange
 from app.services.visual_claims import contains_unsupported_audio_claim
+from app.services.fusion_models import CandidateRejection, HighlightCandidateIntake
 
 
 ARTIFACT_VERSION = "documentary-frame-analysis-v4"
@@ -84,46 +85,36 @@ def validate_visual_evidence_artifact(
 
 
 def usable_highlight_candidates(artifact: dict[str, Any]) -> list[HighlightCandidate]:
-    """Return normalized, valid highlighter output from current and legacy artifacts."""
-    raw_candidates = artifact.get("highlight_candidates")
-    candidates: list[dict[str, Any]] = []
-    if isinstance(raw_candidates, list):
-        candidates.extend(item for item in raw_candidates if isinstance(item, dict))
-    else:
-        for batch_index, batch in enumerate(artifact.get("batches", [])):
-            if not isinstance(batch, dict) or not isinstance(batch.get("highlight_candidates"), list):
-                continue
-            for item in batch["highlight_candidates"]:
-                if isinstance(item, dict):
-                    candidates.append(
-                        {
-                            "batch_index": batch.get("batch_index", batch_index),
-                            "time_range": item.get("time_range") or batch.get("time_range"),
-                            "category": item.get("category"),
-                            "reason": item.get("reason"),
-                            "score": item.get("score"),
-                        }
-                    )
+    """Project the accepted candidates from the canonical artifact intake."""
+    return list(read_highlight_candidate_intake(artifact).candidates)
 
+
+def highlight_candidate_rejections(artifact: dict[str, Any]) -> list[dict[str, str]]:
+    """Project rejected candidates for legacy UI callers."""
+    return [rejection.to_dict() for rejection in read_highlight_candidate_intake(artifact).rejections]
+
+
+def read_highlight_candidate_intake(artifact: dict[str, Any]) -> HighlightCandidateIntake:
+    """Parse every submitted candidate once into one accepted or rejected outcome."""
+    raw_candidates = _submitted_highlight_candidates(artifact)
     normalized: list[HighlightCandidate] = []
+    rejections: list[CandidateRejection] = []
     source_identity = artifact.get("source_video_identity")
-    batch_ranges: dict[int, TimeRange] = {}
-    for fallback_index, batch in enumerate(artifact.get("batches", [])):
-        if not isinstance(batch, dict):
+    batch_ranges = _batch_ranges(artifact)
+    source_hash = str(source_identity.get("sha256") or "") if isinstance(source_identity, dict) else "legacy"
+    for index, candidate in enumerate(raw_candidates):
+        payload = candidate if isinstance(candidate, dict) else {}
+        candidate_id = _candidate_id(payload, source_hash, fallback=f"artifact-{index}")
+        if not isinstance(candidate, dict):
+            rejections.append(CandidateRejection(candidate_id, "", "malformed_candidate"))
             continue
-        try:
-            batch_index = int(batch.get("batch_index", fallback_index))
-            batch_ranges[batch_index] = TimeRange.parse(str(batch.get("time_range") or ""))
-        except (TypeError, ValueError):
-            continue
-    for candidate in candidates:
         time_range = str(candidate.get("time_range") or "").strip()
         category = str(candidate.get("category") or "").strip()
         reason = str(candidate.get("reason") or "").strip()
         try:
             score = int(candidate.get("score"))
         except (TypeError, ValueError):
-            continue
+            score = 0
         if (
             not _is_valid_time_range(time_range)
             or not category
@@ -131,6 +122,7 @@ def usable_highlight_candidates(artifact: dict[str, Any]) -> list[HighlightCandi
             or contains_unsupported_audio_claim(reason)
             or not 1 <= score <= 5
         ):
+            rejections.append(CandidateRejection(candidate_id, time_range, _highlight_candidate_rejection_reason(payload)))
             continue
         candidate_range = TimeRange.parse(time_range)
         try:
@@ -147,6 +139,7 @@ def usable_highlight_candidates(artifact: dict[str, Any]) -> list[HighlightCandi
             and candidate_range.end_seconds <= batch_range.end_seconds
             for batch_range in applicable_ranges
         ):
+            rejections.append(CandidateRejection(candidate_id, time_range, "outside_batch_range"))
             continue
         signal_scores: dict[str, int] = {}
         defaulted_signals: list[str] = []
@@ -161,10 +154,6 @@ def usable_highlight_candidates(artifact: dict[str, Any]) -> list[HighlightCandi
             video_id = int(candidate["video_id"]) if candidate.get("video_id") is not None else None
         except (TypeError, ValueError):
             video_id = None
-        source_hash = str(source_identity.get("sha256") or "") if isinstance(source_identity, dict) else "legacy"
-        candidate_id = str(candidate.get("candidate_id") or "").strip() or hashlib.sha256(
-            f"{source_hash}|{time_range}|{category}|{reason}".encode("utf-8")
-        ).hexdigest()[:16]
         normalized.append(
             HighlightCandidate(
                 time_range=TimeRange.parse(time_range),
@@ -180,33 +169,68 @@ def usable_highlight_candidates(artifact: dict[str, Any]) -> list[HighlightCandi
                 candidate_id=candidate_id,
             )
         )
-    return normalized
+    return HighlightCandidateIntake(
+        candidates=tuple(normalized),
+        rejections=tuple(rejections),
+        submitted_count=len(raw_candidates),
+    )
 
 
-def highlight_candidate_rejections(artifact: dict[str, Any]) -> list[dict[str, str]]:
-    """Return one auditable rejection for every artifact candidate that cannot normalize."""
+def _submitted_highlight_candidates(artifact: dict[str, Any]) -> list[Any]:
     raw_candidates = artifact.get("highlight_candidates")
-    candidates = list(raw_candidates) if isinstance(raw_candidates, list) else []
-    if not isinstance(raw_candidates, list):
-        for batch_index, batch in enumerate(artifact.get("batches", [])):
-            if isinstance(batch, dict) and isinstance(batch.get("highlight_candidates"), list):
-                candidates.extend(
-                    {**item, "batch_index": batch.get("batch_index", batch_index)}
-                    if isinstance(item, dict) else item
-                    for item in batch["highlight_candidates"]
-                )
-    rejected = []
-    for index, candidate in enumerate(candidates):
-        probe = {**artifact, "highlight_candidates": [candidate]}
-        if usable_highlight_candidates(probe):
+    if isinstance(raw_candidates, list):
+        return list(raw_candidates)
+    candidates: list[Any] = []
+    for fallback_index, batch in enumerate(artifact.get("batches", [])):
+        if not isinstance(batch, dict) or not isinstance(batch.get("highlight_candidates"), list):
             continue
-        payload = candidate if isinstance(candidate, dict) else {}
-        rejected.append({
-            "candidate_id": str(payload.get("candidate_id") or f"artifact-{index}"),
-            "time_range": str(payload.get("time_range") or ""),
-            "reason": "invalid_highlight_candidate",
-        })
-    return rejected
+        for item in batch["highlight_candidates"]:
+            candidates.append({
+                **item,
+                "batch_index": batch.get("batch_index", fallback_index),
+                "time_range": item.get("time_range") or batch.get("time_range"),
+            } if isinstance(item, dict) else item)
+    return candidates
+
+
+def _batch_ranges(artifact: dict[str, Any]) -> dict[int, TimeRange]:
+    ranges: dict[int, TimeRange] = {}
+    for fallback_index, batch in enumerate(artifact.get("batches", [])):
+        if not isinstance(batch, dict):
+            continue
+        try:
+            ranges[int(batch.get("batch_index", fallback_index))] = TimeRange.parse(str(batch.get("time_range") or ""))
+        except (TypeError, ValueError):
+            continue
+    return ranges
+
+
+def _candidate_id(candidate: dict[str, Any], source_hash: str, *, fallback: str) -> str:
+    candidate_id = str(candidate.get("candidate_id") or "").strip()
+    if candidate_id:
+        return candidate_id
+    identity = "|".join(str(candidate.get(field) or "") for field in ("time_range", "category", "reason"))
+    return hashlib.sha256(f"{source_hash}|{identity}".encode("utf-8")).hexdigest()[:16] if identity.strip("|") else fallback
+
+
+def _highlight_candidate_rejection_reason(candidate: dict[str, Any]) -> str:
+    if not candidate:
+        return "malformed_candidate"
+    if not _is_valid_time_range(str(candidate.get("time_range") or "")):
+        return "invalid_time_range"
+    if not str(candidate.get("category") or "").strip():
+        return "missing_category"
+    reason = str(candidate.get("reason") or "").strip()
+    if not reason:
+        return "missing_visual_reason"
+    if contains_unsupported_audio_claim(reason):
+        return "unsupported_audio_claim"
+    try:
+        if not 1 <= int(candidate.get("score")) <= 5:
+            return "invalid_score"
+    except (TypeError, ValueError):
+        return "invalid_score"
+    return "outside_batch_range"
 
 
 def highlight_candidate_state(artifact: dict[str, Any]) -> str:

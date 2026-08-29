@@ -1,12 +1,63 @@
+import hashlib
 import unittest
 
 from app.services.fusion_script_finalizer import FusionScriptFinalizer
+from app.services.documentary.frame_analysis_models import HighlightCandidate, TimeRange
+from app.services.fusion_models import CandidateRejection, EvidenceConflict, FinalizationRequest, HighlightCandidateIntake
 from app.config.defaults import DEFAULT_VISION_MAX_CONCURRENCY
 
 
 class FusionScriptFinalizerTests(unittest.TestCase):
+    def _finalize(self, request=None, **kwargs):
+        if request is not None:
+            return FusionScriptFinalizer().finalize(request)
+        candidates = []
+        rejections = [CandidateRejection(**item) for item in kwargs.pop("candidate_rejections", [])]
+        for item in kwargs.pop("highlight_candidates", []):
+            if isinstance(item, HighlightCandidate):
+                candidates.append(item)
+                continue
+            candidate_id = item.get("candidate_id") or hashlib.sha256(
+                "|".join(str(item.get(field) or "") for field in ("video_name", "time_range", "category", "reason")).encode()
+            ).hexdigest()[:16]
+            try:
+                candidates.append(HighlightCandidate(
+                    time_range=TimeRange.parse(item["time_range"]),
+                    category=item["category"], reason=item["reason"], score=item["score"],
+                    story_importance=item.get("story_importance", 3), visual_impact=item.get("visual_impact", 3),
+                    performance_value=item.get("performance_value", 3), video_id=item.get("video_id"),
+                    video_name=item.get("video_name", ""), source_video_identity=item.get("source_video_identity"),
+                    source_identity_status=item.get("source_identity_status", "unavailable"),
+                    defaulted_signals=tuple(item.get("defaulted_signals", ())), candidate_id=candidate_id,
+                ))
+            except (KeyError, TypeError, ValueError):
+                rejections.append(CandidateRejection(candidate_id, str(item.get("time_range") or ""), "invalid_time_range"))
+        conflicts = tuple(
+            item if isinstance(item, EvidenceConflict) else EvidenceConflict.from_mapping(item)
+            for item in kwargs.pop("evidence_conflicts", [])
+        )
+        return FusionScriptFinalizer().finalize(FinalizationRequest(
+            script=tuple(kwargs.pop("script", [])),
+            requested_original_sound_ratio=kwargs.pop("requested_original_sound_ratio", 0),
+            candidate_intake=HighlightCandidateIntake(tuple(candidates), tuple(rejections), len(candidates) + len(rejections)),
+            evidence_conflicts=conflicts,
+            source_durations=kwargs.pop("source_durations", {}),
+        ))
+
+    def test_finalizes_one_typed_request_and_decides_every_submission(self):
+        request = FinalizationRequest(
+            script=({"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "开场", "narration": "开场", "OST": 0},),
+            requested_original_sound_ratio=0,
+            candidate_intake=HighlightCandidateIntake(candidates=(), rejections=(), submitted_count=0),
+            evidence_conflicts=(),
+            source_durations={"film.mp4": 10.0},
+        )
+
+        result = self._finalize(request)
+
+        self.assertEqual([], result.report.candidate_decisions)
     def test_records_artifact_rejections_even_when_ratio_is_zero(self):
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=[{"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "开场", "narration": "开场", "OST": 0}],
             requested_original_sound_ratio=0,
             highlight_candidates=[],
@@ -49,7 +100,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
             }
         ]
 
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=30,
             highlight_candidates=candidates,
@@ -85,7 +136,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
             "status": "unresolved",
         }
 
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=30,
             highlight_candidates=[
@@ -127,7 +178,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
                 "OST": 0,
             }
         ]
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=20,
             highlight_candidates=[
@@ -159,7 +210,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
             {"time_range": "00:00:50,000-00:00:55,000", "category": "视觉奇观", "reason": "末段建筑坍塌。", "score": 5},
         ]
 
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=25,
             highlight_candidates=candidates,
@@ -177,7 +228,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
             {"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "开场", "narration": "开场", "OST": 0},
             {"_id": 2, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:10,000-00:00:20,000", "picture": "原片", "narration": "播放原片2", "OST": 1},
         ]
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=50,
             highlight_candidates=[
@@ -193,7 +244,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
         script = [
             {"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "开场", "narration": "开场。", "OST": 0}
         ]
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=0,
             highlight_candidates=[
@@ -211,7 +262,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
             {"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "开场", "narration": "开场。", "OST": 0},
             {"_id": 2, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:10,000-00:00:30,000", "picture": "原片", "narration": "播放原片2", "OST": 1},
         ]
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=30,
             highlight_candidates=[],
@@ -242,7 +293,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
         )
         for requested, script, expected in cases:
             with self.subTest(expected=expected):
-                result = FusionScriptFinalizer().finalize(
+                result = self._finalize(
                     script=script,
                     requested_original_sound_ratio=requested,
                     highlight_candidates=[],
@@ -253,7 +304,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
                 self.assertEqual(expected, result.report.achieved_ratio)
 
     def test_preserves_an_acknowledged_review_state(self):
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=[
                 {"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "开场", "narration": "开场。", "OST": 0}
             ],
@@ -281,7 +332,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
             {"_id": 2, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:10,000-00:00:15,000", "picture": "原片一", "narration": "播放原片2", "OST": 1},
             {"_id": 3, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:15,000-00:00:20,000", "picture": "原片二", "narration": "播放原片3", "OST": 1},
         ]
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=80,
             highlight_candidates=[
@@ -304,7 +355,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
         ]
         expected = [dict(script[0])]
 
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=30,
             highlight_candidates=[
@@ -319,7 +370,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
         self.assertEqual("invalid_time_range", result.report.rejected_candidates[0]["reason"])
 
     def test_does_not_create_an_ost_opening_for_an_empty_model_script(self):
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=[],
             requested_original_sound_ratio=100,
             highlight_candidates=[
@@ -333,7 +384,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
         self.assertEqual("opening_segment_must_remain_narration", result.report.rejected_candidates[0]["reason"])
 
     def test_rejects_audio_claim_and_unknown_source_candidates(self):
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=[
                 {"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "开场", "narration": "开场。", "OST": 0}
             ],
@@ -369,7 +420,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
         )
         for script in invalid_scripts:
             with self.subTest(script=script), self.assertRaises(ValueError):
-                FusionScriptFinalizer().finalize(
+                self._finalize(
                     script=script,
                     requested_original_sound_ratio=30,
                     highlight_candidates=[],
@@ -382,7 +433,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
             {"_id": 1, "video_id": 2, "video_name": "b.mp4", "timestamp": "00:00:20,000-00:00:30,000", "picture": "倒叙开场", "narration": "先看结果。", "OST": 0},
             {"_id": 2, "video_id": 1, "video_name": "a.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "回到之前", "narration": "故事回到之前。", "OST": 0},
         ]
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=30,
             highlight_candidates=[
@@ -398,7 +449,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
         script = [
             {"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:20,000", "picture": "开场", "narration": "开场。", "OST": 0}
         ]
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=40,
             highlight_candidates=[
@@ -419,14 +470,14 @@ class FusionScriptFinalizerTests(unittest.TestCase):
         candidates = [
             {"time_range": "00:00:20,000-00:00:30,000", "category": "表演情绪", "reason": "人物沉默落泪。", "score": 5}
         ]
-        first = FusionScriptFinalizer().finalize(
+        first = self._finalize(
             script=script,
             requested_original_sound_ratio=30,
             highlight_candidates=candidates,
             evidence_conflicts=[],
             source_durations={"film.mp4": 60.0},
         )
-        second = FusionScriptFinalizer().finalize(
+        second = self._finalize(
             script=first.script,
             requested_original_sound_ratio=30,
             highlight_candidates=candidates,
@@ -448,7 +499,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
             {"video_id": 2, "video_name": "b.mp4", "time_range": "00:00:10,000-00:00:15,000", "category": "表演情绪", "reason": "第二幕高光。", "score": 5},
             {"video_id": 3, "video_name": "c.mp4", "time_range": "00:00:10,000-00:00:15,000", "category": "视觉奇观", "reason": "第三幕高光。", "score": 5},
         ]
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=35,
             highlight_candidates=candidates,
@@ -464,7 +515,7 @@ class FusionScriptFinalizerTests(unittest.TestCase):
             {"_id": 1, "video_id": 1, "video_name": "a.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "桥接", "narration": "随后故事转向另一处。", "OST": 0},
             {"_id": 2, "video_id": 2, "video_name": "b.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "原片", "narration": "播放原片2", "OST": 1},
         ]
-        result = FusionScriptFinalizer().finalize(
+        result = self._finalize(
             script=script,
             requested_original_sound_ratio=70,
             highlight_candidates=[

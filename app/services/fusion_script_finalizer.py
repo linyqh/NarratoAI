@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from app.services.documentary.frame_analysis_models import HighlightCandidate, TimeRange
-from app.services.fusion_models import EvidenceConflict
+from app.services.fusion_models import EvidenceConflict, FinalizationRequest
 from app.services.visual_claims import contains_unsupported_audio_claim
 
 
@@ -25,6 +24,7 @@ class FinalizationReport:
     distribution_status: str = "unavailable"
     covered_story_thirds: list[str] = field(default_factory=list)
     unresolved_conflict_count: int = 0
+    acknowledged_conflict_count: int = 0
     defaulted_candidate_ranges: list[str] = field(default_factory=list)
     candidate_decisions: list[dict[str, Any]] = field(default_factory=list)
 
@@ -37,41 +37,139 @@ class FinalizationResult:
     evidence_conflicts: list[dict[str, Any]]
 
 
+class _CandidateEligibilityPolicy:
+    """Keep candidate admission decisions together, behind the finalizer seam."""
+
+    def normalize(self, candidate, script, source_durations, conflicts):
+        time_range = str(candidate.get("time_range") or "").strip()
+        try:
+            start, end = self._range(time_range)
+        except ValueError:
+            return None, "invalid_time_range"
+        if end <= start:
+            return None, "invalid_time_range"
+        if not script or self._insertion_index(script, candidate) == 0:
+            return None, "opening_segment_must_remain_narration"
+        source_name = str(candidate.get("video_name") or script[0].get("video_name") or "")
+        duration = source_durations.get(source_name)
+        if duration is None:
+            return None, "unknown_source_video"
+        if end > float(duration):
+            return None, "outside_source_duration"
+        if any(self._conflicts(candidate, conflict) for conflict in conflicts):
+            return None, "unresolved_evidence_conflict"
+        if any(self._overlaps(candidate, item) for item in script):
+            return None, "overlaps_existing_item"
+        reason = str(candidate.get("reason") or "")
+        if not reason.strip():
+            return None, "missing_visual_reason"
+        if contains_unsupported_audio_claim(reason):
+            return None, "unsupported_audio_claim"
+        return {**candidate, "time_range": time_range, "video_name": source_name}, ""
+
+    @staticmethod
+    def _range(value):
+        parsed = TimeRange.parse(str(value or ""))
+        return parsed.start_seconds, parsed.end_seconds
+
+    def _insertion_index(self, script, candidate):
+        source = str(candidate.get("video_name") or script[0].get("video_name") or "")
+        candidate_start, _ = self._range(candidate["time_range"])
+        matching = [index for index, item in enumerate(script) if str(item.get("video_name", "")) == source]
+        for index in matching:
+            if candidate_start < self._range(script[index]["timestamp"])[0]:
+                return index
+        return matching[-1] + 1 if matching else len(script)
+
+    def _overlaps(self, left, right):
+        if str(left.get("video_name", "")) != str(right.get("video_name", "")):
+            return False
+        left_start, left_end = self._range(left.get("time_range") or left.get("timestamp"))
+        right_start, right_end = self._range(right.get("time_range") or right.get("timestamp"))
+        return left_start < right_end and right_start < left_end
+
+    def _conflicts(self, candidate, conflict):
+        if not conflict.get("time_range") or (conflict.get("video_name") and conflict["video_name"] != candidate.get("video_name")):
+            return False
+        left_start, left_end = self._range(candidate["time_range"])
+        right_start, right_end = self._range(conflict["time_range"])
+        return left_start < right_end and right_start < left_end
+
+
+class _TimelinePolicy:
+    """Own timeline placement and distribution rules without becoming public API."""
+
+    def score(self, candidate) -> int:
+        values = [candidate.get(key, 3) for key in ("score", "story_importance", "visual_impact", "performance_value")]
+        return sum(max(1, min(5, int(value))) if str(value).lstrip("-").isdigit() else 3 for value in values)
+
+    def third(self, candidate, timeline) -> str:
+        total = sum(self._duration(item) for item in timeline)
+        if total <= 0:
+            return "beginning"
+        source = str(candidate.get("video_name", ""))
+        candidate_range = self._range(candidate.get("time_range") or candidate.get("timestamp"))
+        elapsed = 0.0
+        for item in timeline:
+            duration = self._duration(item)
+            if str(item.get("video_name", "")) == source and self._range(item.get("time_range") or item.get("timestamp")) == candidate_range:
+                elapsed += duration / 2
+                break
+            elapsed += duration
+        relative = min(elapsed, total) / total
+        return "beginning" if relative < 1 / 3 else "middle" if relative < 2 / 3 else "end"
+
+    @staticmethod
+    def _range(value):
+        parsed = TimeRange.parse(str(value or ""))
+        return parsed.start_seconds, parsed.end_seconds
+
+    def _duration(self, item):
+        start, end = self._range(item.get("time_range") or item.get("timestamp"))
+        return max(0.0, end - start)
+
+
 class FusionScriptFinalizer:
     """Finalize a model-produced Fusion Script without another model call."""
 
     TOLERANCE_PERCENTAGE_POINTS = 5.0
 
+    def __init__(self) -> None:
+        self._candidate_eligibility = _CandidateEligibilityPolicy()
+        self._timeline_policy = _TimelinePolicy()
+
     def finalize(
         self,
-        *,
-        script: list[dict[str, Any]],
-        requested_original_sound_ratio: float,
-        highlight_candidates: list[HighlightCandidate | dict[str, Any]],
-        evidence_conflicts: list[EvidenceConflict | dict[str, Any]],
-        source_durations: dict[str, float],
-        candidate_rejections: list[dict[str, Any]] | None = None,
+        request: FinalizationRequest,
     ) -> FinalizationResult:
+        script = list(request.script)
+        requested_original_sound_ratio = request.requested_original_sound_ratio
+        highlight_candidates = list(request.candidate_intake.candidates)
+        evidence_conflicts = list(request.evidence_conflicts)
+        source_durations = dict(request.source_durations)
+        candidate_rejections = list(request.candidate_intake.rejections)
         original_script = deepcopy(script)
         finalized = deepcopy(script)
         self._validate_authored_timeline(finalized)
-        candidate_payloads = [self._candidate_mapping(candidate) for candidate in highlight_candidates]
         if finalized:
             default_video_name = str(finalized[0].get("video_name") or "")
             default_video_id = finalized[0].get("video_id", 1)
+            highlight_candidates = [
+                replace(
+                    candidate,
+                    video_name=candidate.video_name or default_video_name,
+                    video_id=default_video_id if candidate.video_id is None else candidate.video_id,
+                ) if isinstance(candidate, HighlightCandidate) else candidate
+                for candidate in highlight_candidates
+            ]
+        candidate_payloads = [self._candidate_mapping(candidate) for candidate in highlight_candidates]
+        if finalized:
             for candidate in candidate_payloads:
                 candidate["video_name"] = str(candidate.get("video_name") or default_video_name)
                 if candidate.get("video_id") is None:
                     candidate["video_id"] = default_video_id
         requested = max(0.0, min(100.0, float(requested_original_sound_ratio)))
-        conflicts = [
-            (
-                item
-                if isinstance(item, EvidenceConflict)
-                else EvidenceConflict.from_mapping(deepcopy(item))
-            ).to_dict()
-            for item in evidence_conflicts
-        ]
+        conflicts = [item.to_dict() for item in evidence_conflicts]
         unresolved = [conflict for conflict in conflicts if conflict["status"] == "unresolved"]
         for item in finalized:
             if any(self._item_conflicts(item, conflict) for conflict in unresolved):
@@ -82,10 +180,8 @@ class FusionScriptFinalizer:
         skipped: list[dict[str, str]] = []
         rejected: list[dict[str, str]] = []
         candidate_decisions: list[dict[str, Any]] = []
-        for rejection in candidate_rejections or []:
-            if not isinstance(rejection, dict):
-                continue
-            record = {**rejection, "status": "rejected"}
+        for rejection in candidate_rejections:
+            record = {**rejection.to_dict(), "status": "rejected"}
             candidate_decisions.append(record)
             rejected.append({"time_range": str(record.get("time_range") or ""), "reason": str(record.get("reason") or "malformed_candidate")})
         eligible_candidate_count = 0
@@ -114,7 +210,7 @@ class FusionScriptFinalizer:
                             self._decision_record(existing_candidate, "retained")
                         )
                     continue
-                candidate, reason = self._normalize_candidate(raw_candidate, finalized, source_durations, unresolved)
+                candidate, reason = self._candidate_eligibility.normalize(raw_candidate, finalized, source_durations, unresolved)
                 if candidate is None:
                     rejected.append(
                         {"time_range": str(raw_candidate.get("time_range", "")), "reason": reason}
@@ -127,7 +223,7 @@ class FusionScriptFinalizer:
 
             eligible.sort(
                 key=lambda item: (
-                    -self._candidate_score(item),
+                    -self._timeline_policy.score(item),
                     self._range(item["time_range"])[0],
                 )
             )
@@ -135,7 +231,7 @@ class FusionScriptFinalizer:
             for candidate in eligible:
                 distribution_timeline = self._insert_candidate(distribution_timeline, candidate)
             covered: set[str] = {
-                self._story_third(candidate, distribution_timeline) for candidate in used_candidates
+                self._timeline_policy.third(candidate, distribution_timeline) for candidate in used_candidates
             }
             require_three_thirds = len(eligible) + len(used_candidates) >= 3
             eligible_candidate_count = len(eligible) + len(used_candidates)
@@ -145,8 +241,8 @@ class FusionScriptFinalizer:
             ):
                 eligible.sort(
                     key=lambda item: (
-                        self._story_third(item, distribution_timeline) in covered,
-                        -self._candidate_score(item),
+                        self._timeline_policy.third(item, distribution_timeline) in covered,
+                        -self._timeline_policy.score(item),
                         self._range(item["time_range"])[0],
                     )
                 )
@@ -182,7 +278,7 @@ class FusionScriptFinalizer:
                 inserted.append(candidate["time_range"])
                 candidate_decisions.append(self._decision_record(candidate, "inserted"))
                 used_candidates.append(candidate)
-                covered.add(self._story_third(candidate, distribution_timeline))
+                covered.add(self._timeline_policy.third(candidate, distribution_timeline))
             skipped.extend(
                 {"time_range": candidate["time_range"], "reason": "ratio_and_distribution_satisfied"}
                 for candidate in eligible
@@ -211,7 +307,7 @@ class FusionScriptFinalizer:
         ratio_status = self._ratio_status(achieved, requested)
         covered_thirds = sorted(
             {
-                self._story_third(candidate, finalized)
+                self._timeline_policy.third(candidate, finalized)
                 for candidate in (used_candidates if requested > 0 else [])
             },
             key=("beginning", "middle", "end").index,
@@ -243,6 +339,7 @@ class FusionScriptFinalizer:
                 distribution_status=distribution_status,
                 covered_story_thirds=covered_thirds,
                 unresolved_conflict_count=len(unresolved),
+                acknowledged_conflict_count=len(conflicts) - len(unresolved),
                 defaulted_candidate_ranges=defaulted_candidate_ranges,
                 candidate_decisions=candidate_decisions,
             ),
@@ -262,51 +359,24 @@ class FusionScriptFinalizer:
             record["reason"] = reason
         return record
 
-    def _normalize_candidate(self, raw: Any, script, source_durations, conflicts):
-        if not isinstance(raw, dict):
-            return None, "malformed_candidate"
-        candidate = deepcopy(raw)
-        time_range = str(candidate.get("time_range") or "").strip()
-        try:
-            start, end = self._range(time_range)
-        except ValueError:
-            return None, "invalid_time_range"
-        if end <= start:
-            return None, "invalid_time_range"
-        default_source = str(script[0].get("video_name", "")) if script else ""
-        source_name = str(candidate.get("video_name") or default_source)
-        candidate["video_name"] = source_name
-        candidate["video_id"] = candidate.get("video_id", script[0].get("video_id", 1) if script else 1)
-        if not script or self._insertion_index(script, candidate) == 0:
-            return None, "opening_segment_must_remain_narration"
-        duration = source_durations.get(source_name)
-        if duration is None:
-            return None, "unknown_source_video"
-        if end > float(duration):
-            return None, "outside_source_duration"
-        if any(self._conflicts(candidate, conflict) for conflict in conflicts):
-            return None, "unresolved_evidence_conflict"
-        if any(self._overlaps(candidate, item) for item in script):
-            return None, "overlaps_existing_item"
-        if not str(candidate.get("reason") or "").strip():
-            return None, "missing_visual_reason"
-        if contains_unsupported_audio_claim(str(candidate.get("reason") or "")):
-            return None, "unsupported_audio_claim"
-        candidate["time_range"] = time_range
-        return candidate, ""
-
     @staticmethod
-    def _candidate_mapping(candidate: HighlightCandidate | dict[str, Any]) -> dict[str, Any]:
-        if isinstance(candidate, HighlightCandidate):
-            return candidate.to_dict()
-        payload = deepcopy(candidate) if isinstance(candidate, dict) else {}
-        if payload and not payload.get("candidate_id"):
-            identity = "|".join(
-                str(payload.get(field) or "")
-                for field in ("video_name", "time_range", "category", "reason")
-            )
-            payload["candidate_id"] = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
-        return payload
+    def _candidate_mapping(candidate: HighlightCandidate) -> dict[str, Any]:
+        """Project a domain candidate only at the script-construction boundary."""
+        return {
+            "candidate_id": candidate.candidate_id,
+            "time_range": str(candidate.time_range),
+            "category": candidate.category,
+            "reason": candidate.reason,
+            "score": candidate.score,
+            "story_importance": candidate.story_importance,
+            "visual_impact": candidate.visual_impact,
+            "performance_value": candidate.performance_value,
+            "video_id": candidate.video_id,
+            "video_name": candidate.video_name,
+            "source_video_identity": candidate.source_video_identity,
+            "source_identity_status": candidate.source_identity_status,
+            "defaulted_signals": list(candidate.defaulted_signals),
+        }
 
     def _insert_candidate(self, script, candidate):
         item = {
@@ -434,38 +504,6 @@ class FusionScriptFinalizer:
         source = str(item.get("video_name", ""))
         start, _ = self._range(item.get("time_range") or item.get("timestamp"))
         return source, start
-
-    def _story_third(self, item, timeline):
-        total_duration = sum(self._duration(entry) for entry in timeline)
-        if total_duration <= 0:
-            return "beginning"
-        source_name = str(item.get("video_name", ""))
-        item_range = self._range(item.get("time_range") or item.get("timestamp"))
-        elapsed = 0.0
-        position = 0.0
-        for entry in timeline:
-            entry_duration = self._duration(entry)
-            entry_source = str(entry.get("video_name", ""))
-            entry_range = self._range(entry.get("time_range") or entry.get("timestamp"))
-            if entry_source == source_name and entry_range == item_range:
-                position = elapsed + entry_duration / 2
-                break
-            elapsed += entry_duration
-        else:
-            position = min(elapsed, total_duration)
-        relative = position / total_duration
-        return "beginning" if relative < 1 / 3 else "middle" if relative < 2 / 3 else "end"
-
-    @staticmethod
-    def _candidate_score(candidate):
-        values = [candidate.get("score", 3), candidate.get("story_importance", 3), candidate.get("visual_impact", 3), candidate.get("performance_value", 3)]
-        total = 0
-        for value in values:
-            try:
-                total += max(1, min(5, int(value)))
-            except (TypeError, ValueError):
-                total += 3
-        return total
 
     @staticmethod
     def _has_three_consecutive_original_sound(script):

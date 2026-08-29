@@ -24,7 +24,12 @@ from app.services.SDE.short_drama_explanation import (
 )
 from app.services.subtitle_text import read_subtitle_text
 from app.services.fusion_script_finalizer import FusionScriptFinalizer
-from app.services.fusion_models import EvidenceConflict
+from app.services.fusion_models import (
+    CandidateRejection,
+    EvidenceConflict,
+    FinalizationRequest,
+    HighlightCandidateIntake,
+)
 from app.utils.video_processor import VideoProcessor
 from app.utils import utils
 from app.services.short_drama_narration_validation import (
@@ -565,6 +570,7 @@ def generate_script_short_sunmmary(
     highlight_candidates: str = "",
     highlight_candidate_items: list[dict] | None = None,
     highlight_candidate_rejections: list[dict] | None = None,
+    highlight_candidate_intake: HighlightCandidateIntake | None = None,
     visual_source_identity: dict | None = None,
 ):
     """
@@ -839,13 +845,27 @@ def generate_script_short_sunmmary(
                         identity_by_video=identity_by_video,
                         default_source_identity=visual_source_identity,
                     )
+                    intake = highlight_candidate_intake or HighlightCandidateIntake(
+                        candidates=tuple(candidate_items),
+                        rejections=tuple(
+                            CandidateRejection(
+                                candidate_id=str(item.get("candidate_id") or ""),
+                                time_range=str(item.get("time_range") or ""),
+                                reason=str(item.get("reason") or "malformed_candidate"),
+                            )
+                            for item in (highlight_candidate_rejections or [])
+                            if isinstance(item, dict)
+                        ),
+                        submitted_count=len(candidate_items) + len(highlight_candidate_rejections or []),
+                    )
                     finalization = FusionScriptFinalizer().finalize(
-                        script=narration_items,
-                        requested_original_sound_ratio=original_sound_ratio,
-                        highlight_candidates=candidate_items,
-                        candidate_rejections=highlight_candidate_rejections,
-                        evidence_conflicts=evidence_conflicts,
-                        source_durations=source_durations,
+                        FinalizationRequest(
+                            script=tuple(narration_items),
+                            requested_original_sound_ratio=original_sound_ratio,
+                            candidate_intake=intake,
+                            evidence_conflicts=tuple(evidence_conflicts),
+                            source_durations=source_durations,
+                        )
                     )
                 except Exception as finalization_error:
                     failure_payload = {

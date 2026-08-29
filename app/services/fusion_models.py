@@ -3,9 +3,35 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 from app.services.documentary.frame_analysis_models import TimeRange
+from app.services.documentary.frame_analysis_models import HighlightCandidate
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateRejection:
+    candidate_id: str
+    time_range: str
+    reason: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "candidate_id": self.candidate_id,
+            "time_range": self.time_range,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class HighlightCandidateIntake:
+    candidates: tuple[HighlightCandidate, ...]
+    rejections: tuple[CandidateRejection, ...]
+    submitted_count: int
+
+    def __post_init__(self) -> None:
+        if self.submitted_count != len(self.candidates) + len(self.rejections):
+            raise ValueError("every submitted highlight candidate must be accepted or rejected")
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,3 +98,12 @@ class EvidenceConflict:
             "related_script_item_ids": list(self.related_script_item_ids),
             "related_candidate_ids": list(self.related_candidate_ids),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class FinalizationRequest:
+    script: tuple[dict[str, Any], ...]
+    requested_original_sound_ratio: float
+    candidate_intake: HighlightCandidateIntake
+    evidence_conflicts: tuple[EvidenceConflict, ...]
+    source_durations: Mapping[str, float]

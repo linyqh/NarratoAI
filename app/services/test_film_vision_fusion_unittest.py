@@ -17,6 +17,7 @@ from app.services.visual_evidence_artifact import (
     highlight_candidate_state,
     usable_highlight_candidates,
     highlight_candidate_rejections,
+    read_highlight_candidate_intake,
 )
 
 
@@ -158,6 +159,18 @@ class VisualEvidenceFormattingTests(unittest.TestCase):
 
 
 class VisualEvidenceArtifactImportTests(unittest.TestCase):
+    def test_highlight_candidate_intake_accounts_for_every_batch_submission_once(self):
+        artifact = self._artifact()
+        artifact["batches"][0]["highlight_candidates"] = [
+            {"category": "表演情绪", "reason": "人物沉默对视。", "score": 5},
+            {"time_range": "00:00:08,000-00:00:09,000", "category": "动作场面", "reason": "人物奔跑。", "score": 5},
+        ]
+
+        intake = read_highlight_candidate_intake(artifact)
+
+        self.assertEqual(2, intake.submitted_count)
+        self.assertEqual("00:00:00,000-00:00:06,000", str(intake.candidates[0].time_range))
+        self.assertEqual("outside_batch_range", intake.rejections[0].reason)
     def _artifact(self, *, version=ARTIFACT_VERSION, identity=None, highlights=None):
         artifact = {
             "artifact_version": version,
@@ -275,7 +288,7 @@ class VisualEvidenceArtifactImportTests(unittest.TestCase):
 
         self.assertEqual([], usable_highlight_candidates(artifact))
         self.assertEqual("analyzed_empty", highlight_candidate_state(artifact))
-        self.assertEqual("invalid_highlight_candidate", highlight_candidate_rejections(artifact)[0]["reason"])
+        self.assertEqual("invalid_time_range", highlight_candidate_rejections(artifact)[0]["reason"])
 
     def test_rejects_artifact_candidate_outside_its_declared_batch(self):
         artifact = self._artifact(

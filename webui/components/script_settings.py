@@ -15,7 +15,7 @@ from app.utils import utils, check_script
 from webui.tools.generate_script_docu import generate_script_docu
 from app.services.film_vision_fusion import load_visual_evidence_artifact
 from app.services.visual_evidence_artifact import build_source_video_identity
-from app.services.visual_evidence_artifact import highlight_candidate_rejections, usable_highlight_candidates
+from app.services.visual_evidence_artifact import read_highlight_candidate_intake
 from webui.tools.generate_film_vision_fusion import collect_visual_evidence
 from webui.tools.generate_script_short import generate_script_short
 from webui.tools.generate_short_summary import (
@@ -212,12 +212,12 @@ def _store_fusion_visual_evidence(evidence, *, reuse_active, visual_signature=No
     st.session_state["fusion_visual_source_identity"] = evidence.artifact.get(
         "source_video_identity"
     )
-    st.session_state["fusion_highlight_candidate_items"] = usable_highlight_candidates(
-        evidence.artifact
-    )
-    st.session_state["fusion_highlight_candidate_rejections"] = highlight_candidate_rejections(
-        evidence.artifact
-    )
+    candidate_intake = read_highlight_candidate_intake(evidence.artifact)
+    st.session_state["fusion_highlight_candidate_intake"] = candidate_intake
+    st.session_state["fusion_highlight_candidate_items"] = list(candidate_intake.candidates)
+    st.session_state["fusion_highlight_candidate_rejections"] = [
+        item.to_dict() for item in candidate_intake.rejections
+    ]
     if visual_signature is not None:
         st.session_state["fusion_visual_signature"] = visual_signature
 
@@ -2062,6 +2062,7 @@ def render_script_buttons(tr, params):
                 highlight_candidates=highlight_candidates,
                 highlight_candidate_items=st.session_state.get("fusion_highlight_candidate_items", []),
                 highlight_candidate_rejections=st.session_state.get("fusion_highlight_candidate_rejections", []),
+                highlight_candidate_intake=st.session_state.get("fusion_highlight_candidate_intake"),
                 visual_source_identity=st.session_state.get("fusion_visual_source_identity"),
             )
 
