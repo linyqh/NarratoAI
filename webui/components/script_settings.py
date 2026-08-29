@@ -610,12 +610,12 @@ def render_script_file(tr, params):
 def render_video_file(tr, params):
     """渲染视频文件选择"""
     source_options = {
-        tr("Upload Local Files"): "upload",
         tr("Select from resource directory"): "resource",
+        tr("Upload Local Files"): "upload",
     }
     source_labels = list(source_options.keys())
     default_source_label = source_labels[0]
-    source_default_version = "upload_first_v2"
+    source_default_version = "resource_first_v3"
 
     if st.session_state.get('_video_source_default_version') != source_default_version:
         if (
@@ -1983,7 +1983,7 @@ def render_script_buttons(tr, params):
                     task_id = ""
                     st.session_state.pop("fusion_visual_task_id", None)
                 if not task_id:
-                    persisted_task = find_local_visual_analysis(source_video)
+                    persisted_task = find_local_visual_analysis(source_video, visual_signature)
                     if persisted_task:
                         task_id = str(persisted_task["task_id"])
                         st.session_state["fusion_visual_task_id"] = task_id
@@ -2012,6 +2012,7 @@ def render_script_buttons(tr, params):
                         custom_prompt=str(st.session_state.get("fusion_visual_prompt", "")),
                         frame_interval_seconds=float(st.session_state.get("fusion_frame_interval", 6)),
                         vision_batch_size=int(st.session_state.get("fusion_vision_batch_size", 8)),
+                        analysis_signature=visual_signature,
                     )
                     st.session_state["fusion_visual_task_id"] = task_id
                     st.session_state["fusion_visual_task_signature"] = visual_signature
@@ -2030,7 +2031,7 @@ def render_script_buttons(tr, params):
                     st.progress(progress, text=f"🎬 {task.get('message') or '正在逐帧分析画面…'}")
                     if status in {"queued", "running"} and st.button(tr("取消视觉分析"), key="cancel_fusion_visual_task"):
                         cancel_local_visual_analysis(task_id)
-                    if status in {"failed", "cancelled"}:
+                    if status in {"failed", "cancelled", "interrupted"}:
                         st.error(f"{tr('视觉融合失败')}: {task.get('error_message') or status}")
                         if st.button(tr("恢复视觉分析"), key="resume_fusion_visual_task"):
                             resume_local_visual_analysis(task_id)

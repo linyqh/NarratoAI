@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import math
+import os
 from pathlib import Path
 import threading
 from typing import Any, Callable
@@ -58,7 +59,7 @@ class LocalAnalysisTaskStore:
     def request_cancel(self, task_id: str) -> dict:
         return self.update(task_id, cancel_requested=True)
 
-    def find_latest_for_source(self, source_identity: dict) -> dict | None:
+    def find_latest_for_source(self, source_identity: dict, analysis_signature: str = "") -> dict | None:
         """Return the most recent non-completed task for exactly this source content."""
         matches = []
         for path in self._directory.glob("*.json"):
@@ -67,7 +68,16 @@ class LocalAnalysisTaskStore:
                     task = json.load(handle)
             except (OSError, json.JSONDecodeError):
                 continue
-            if task.get("source_video_identity") == source_identity and task.get("status") != "completed":
+            if (
+                task.get("source_video_identity") == source_identity
+                and task.get("request", {}).get("analysis_signature", "") == analysis_signature
+                and task.get("status") != "completed"
+            ):
+                if task.get("status") in {"queued", "running"} and task.get("runner_process_id") != os.getpid():
+                    task["status"] = "interrupted"
+                    task["message"] = "应用已重启，请恢复视觉分析。"
+                    task["updated_at"] = self._now()
+                    self._write(task)
                 matches.append(task)
         return max(matches, key=lambda task: str(task.get("updated_at") or ""), default=None)
 
@@ -100,7 +110,7 @@ class LocalAnalysisTaskRunner:
         work: Callable[[Callable[[float, str], None], Callable[[dict], None], Callable[[], bool]], dict[str, Any]],
     ) -> threading.Thread:
         def run() -> None:
-            self._store.update(task_id, status="running")
+            self._store.update(task_id, status="running", runner_process_id=os.getpid())
 
             def cancelled() -> bool:
                 return bool(self._store.read(task_id).get("cancel_requested"))

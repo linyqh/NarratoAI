@@ -48,6 +48,19 @@ class FullFilmEstimateTests(unittest.TestCase):
         self.assertEqual("completed", restored["status"])
         self.assertEqual("result.json", restored["artifact_path"])
 
+    def test_find_latest_requires_matching_analysis_signature(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            task = store.create(
+                {"video_path": "film.mp4", "analysis_signature": "interval-6"},
+                {"sha256": "a" * 64},
+            )
+
+            self.assertIsNone(store.find_latest_for_source({"sha256": "a" * 64}, "interval-3"))
+            restored = store.find_latest_for_source({"sha256": "a" * 64}, "interval-6")
+
+        self.assertEqual(task["task_id"], restored["task_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

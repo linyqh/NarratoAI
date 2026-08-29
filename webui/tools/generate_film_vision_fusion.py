@@ -83,19 +83,7 @@ def start_local_visual_analysis(**request) -> str:
     video_path = str(request["video_path"])
     task_store = LocalAnalysisTaskStore(Path(utils.task_dir("visual_analysis")))
     task = task_store.create(request, build_source_video_identity(video_path))
-    vision_settings = _current_vision_settings()
-
-    def work(progress, checkpoint, cancelled):
-        evidence = collect_visual_evidence(
-            **request,
-            progress_callback=progress,
-            checkpoint_callback=lambda batch: checkpoint(batch_checkpoint_from_result(batch)),
-            is_cancelled=cancelled,
-            vision_settings=vision_settings,
-        )
-        return {"artifact_path": evidence.artifact_path, "visual_evidence": evidence.context}
-
-    LocalAnalysisTaskRunner(task_store).start(task["task_id"], work)
+    _start_task_runner(task_store, task["task_id"], request)
     return task["task_id"]
 
 
@@ -119,12 +107,24 @@ def resume_local_visual_analysis(task_id: str) -> None:
         raise ValueError("当前视频与可恢复视觉分析任务的来源不一致")
     recovered = [batch_result_from_checkpoint(item) for item in task.get("completed_batches", [])]
     task_store.update(task_id, status="queued", cancel_requested=False, error_message="")
+    _start_task_runner(task_store, task_id, request, recovered)
+
+
+def _start_task_runner(
+    task_store: LocalAnalysisTaskStore,
+    task_id: str,
+    persisted_request: dict,
+    completed_batches=None,
+) -> None:
+    """Start a task using current credentials without persisting those credentials."""
+    request = dict(persisted_request)
+    request.pop("analysis_signature", None)
     vision_settings = _current_vision_settings()
 
     def work(progress, checkpoint, cancelled):
         evidence = collect_visual_evidence(
             **request,
-            completed_batches=recovered,
+            completed_batches=completed_batches,
             progress_callback=progress,
             checkpoint_callback=lambda batch: checkpoint(batch_checkpoint_from_result(batch)),
             is_cancelled=cancelled,
@@ -139,9 +139,9 @@ def local_visual_analysis_status(task_id: str) -> dict:
     return LocalAnalysisTaskStore(Path(utils.task_dir("visual_analysis"))).read(task_id)
 
 
-def find_local_visual_analysis(video_path: str) -> dict | None:
+def find_local_visual_analysis(video_path: str, analysis_signature: str = "") -> dict | None:
     store = LocalAnalysisTaskStore(Path(utils.task_dir("visual_analysis")))
-    return store.find_latest_for_source(build_source_video_identity(video_path))
+    return store.find_latest_for_source(build_source_video_identity(video_path), analysis_signature)
 
 
 def cancel_local_visual_analysis(task_id: str) -> None:

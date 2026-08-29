@@ -18,6 +18,10 @@ from app.services.visual_evidence_artifact import ARTIFACT_VERSION, build_source
 from app.utils import utils, video_processor
 
 
+class _AnalysisCancelled(Exception):
+    """Stop queued provider calls once a durable task receives cancellation."""
+
+
 class DocumentaryFrameAnalysisService:
     PROMPT_TEMPLATE = """
 我提供了 {frame_count} 张视频帧，它们按时间顺序排列，代表 {time_range} 的连续视频片段。
@@ -394,7 +398,7 @@ JSON 必须包含以下键：
         async def run_single(batch_index: int, frame_paths: list[str], time_range: str) -> FrameBatchResult:
             nonlocal done
             if is_cancelled and is_cancelled():
-                raise RuntimeError("视觉分析已取消")
+                raise _AnalysisCancelled("视觉分析已取消")
             prompt = self._build_batch_prompt(
                 frame_count=len(frame_paths),
                 time_range=time_range,
@@ -403,6 +407,11 @@ JSON 必须包含以下键：
             )
             try:
                 async with semaphore:
+                    # A batch can wait here while earlier requests run. Check again
+                    # immediately before the provider call so cancellation never
+                    # launches queued work after the user presses cancel.
+                    if is_cancelled and is_cancelled():
+                        raise _AnalysisCancelled("视觉分析已取消")
                     raw_results = await analyzer.analyze_images(
                         images=frame_paths,
                         prompt=prompt,
@@ -428,6 +437,8 @@ JSON 必须包含以下键：
                 if checkpoint_callback and result.status == "success":
                     checkpoint_callback(result)
                 return result
+            except _AnalysisCancelled:
+                raise
             except Exception as exc:
                 return self._build_failed_batch_result(
                     batch_index=batch_index,
@@ -443,11 +454,17 @@ JSON 必须包含以下键：
                     progress_callback(progress, f"正在分析关键帧批次 ({done}/{total})...")
 
         tasks = [
-            run_single(batch_index=index, frame_paths=batch_files, time_range=batch_time_ranges[index])
+            asyncio.create_task(run_single(batch_index=index, frame_paths=batch_files, time_range=batch_time_ranges[index]))
             for index, batch_files in enumerate(batches)
             if index not in completed_batch_indexes
         ]
-        return await asyncio.gather(*tasks)
+        try:
+            return await asyncio.gather(*tasks)
+        except _AnalysisCancelled:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise RuntimeError("视觉分析已取消") from None
 
     def _build_batch_prompt(
         self, *, frame_count: int, time_range: str, video_theme: str, custom_prompt: str
