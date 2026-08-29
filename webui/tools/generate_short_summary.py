@@ -65,7 +65,12 @@ def acknowledge_fusion_audit(audit_path: str, conflicts: list[dict]) -> None:
     payload["evidence_conflicts"] = conflicts
     report = payload.get("finalization_report")
     if isinstance(report, dict):
-        report["unresolved_conflict_count"] = 0
+        report["unresolved_conflict_count"] = sum(
+            1 for conflict in conflicts if isinstance(conflict, dict) and conflict.get("status") == "unresolved"
+        )
+        report["acknowledged_conflict_count"] = sum(
+            1 for conflict in conflicts if isinstance(conflict, dict) and conflict.get("status") == "acknowledged"
+        )
     with open(audit_path, "w", encoding="utf-8") as audit_file:
         json.dump(payload, audit_file, ensure_ascii=False, indent=2)
 

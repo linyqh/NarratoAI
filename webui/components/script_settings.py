@@ -2112,6 +2112,9 @@ def render_script_buttons(tr, params):
                         report = st.session_state.get("fusion_finalization_report")
                         if isinstance(report, dict):
                             report["unresolved_conflict_count"] = 0
+                            report["acknowledged_conflict_count"] = len(
+                                st.session_state["fusion_evidence_conflicts"]
+                            )
                         acknowledge_fusion_audit(
                             str(st.session_state.get("fusion_generation_audit_path", "")),
                             st.session_state["fusion_evidence_conflicts"],

@@ -1,3 +1,6 @@
+import json
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -140,6 +143,19 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("人物站立。", result.script[0]["picture"])
         self.assertEqual(0, result.report.unresolved_conflict_count)
         self.assertEqual(1, result.report.acknowledged_conflict_count)
+
+    def test_acknowledging_an_audit_updates_both_conflict_counts(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", encoding="utf-8", delete=False) as audit_file:
+            json.dump({"evidence_conflicts": [], "finalization_report": {"unresolved_conflict_count": 1}}, audit_file)
+            audit_path = audit_file.name
+        try:
+            generate_short_summary.acknowledge_fusion_audit(audit_path, [{"status": "acknowledged"}])
+            with open(audit_path, encoding="utf-8") as audit_file:
+                report = json.load(audit_file)["finalization_report"]
+            self.assertEqual(0, report["unresolved_conflict_count"])
+            self.assertEqual(1, report["acknowledged_conflict_count"])
+        finally:
+            os.unlink(audit_path)
 
     def test_malformed_conflict_cannot_cross_the_domain_boundary(self):
         with self.assertRaisesRegex(ValueError, "time range"):
