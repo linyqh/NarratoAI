@@ -16,6 +16,10 @@ _Avoid_: inferred sound, visual audio guess
 Time-coded observations extracted from source-video frames; it establishes only on-screen actions, people, objects, and locations.
 _Avoid_: visual context, image facts
 
+**Visual Analysis Prompt**:
+The creator-provided instruction that directs frame observation and Highlight Candidate selection. It may prioritize visible subjects, actions, settings, objects, spatial relationships, and scene changes, but cannot request inferred audio, dialogue, motives, identities, or off-screen events.
+_Avoid_: plot prompt, audio-analysis prompt
+
 **Visual Evidence Artifact**:
 The persisted JSON record of Visual Evidence for one source video. It may be reused when its source identity is verified, or under a Source Identity Waiver.
 _Avoid_: visual fusion JSON, frame-analysis cache
