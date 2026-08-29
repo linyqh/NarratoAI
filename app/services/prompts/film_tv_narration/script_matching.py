@@ -120,6 +120,7 @@ ${original_sound_ratio}%
 14. 有视觉证据时，picture 必须优先使用同一时间范围内可见的动作、人物、场景和道具。视觉证据不能确认的细节不得写入 picture。
 15. 字幕与视觉证据冲突时，不得静默丢弃：把时间段、字幕主张、视觉观察和严重度写入 evidence_conflicts；相关具体断言不得写入 items。
 16. 当“核心可输出时间范围”为有效时间段时，只能使用其中的 timestamp 生成 items；上下文时间范围只用于理解承接，不能输出为剪辑片段。
+17. 每个 item 必须填写 narrative_role：承载普通剧情为 "story"；承担跨时间、地点、人物、目标或因果跳跃解释的 OST=0 解说片段为 "bridge"。桥接不能只靠原声或画面暗示。
 
 ## 原片占比规则
 - ${original_sound_ratio}% = 0% 时，不要输出 OST=1，全部使用解说承接。
@@ -141,6 +142,7 @@ ${original_sound_ratio}%
 - picture：描述匹配画面中人物、动作、情绪、场景和关键道具。
 - narration：OST=0 时填写用户文案片段；OST=1 时填写“播放原片+_id”。
 - OST：解说片段填 0，原声片段填 1。
+- narrative_role："story" 或 "bridge"。
 
 ## 输出格式
 只输出严格 JSON：
@@ -154,7 +156,8 @@ ${original_sound_ratio}%
       "timestamp": "00:00:01,000-00:00:06,000",
       "picture": "主角站在走廊尽头，回头看向紧闭的房门",
       "narration": "他以为自己终于逃出了那间房，可真正的危险，其实才刚刚醒来。",
-      "OST": 0
+      "OST": 0,
+      "narrative_role": "story"
     }
   ],
   "evidence_conflicts": [

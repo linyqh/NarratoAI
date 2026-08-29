@@ -15,6 +15,10 @@ class FusionScriptPipelineTests(unittest.TestCase):
             "entering_state": "面临当前危机",
             "trigger_event": "发生新的事件",
             "exiting_state": "必须做出下一步选择",
+            "handoff_from_previous": {
+                "actor": "continuous", "place": "continuous", "goal": "continuous",
+                "cause": "continuous", "state": "continuous",
+            },
             **extra,
         }
 
@@ -60,6 +64,42 @@ class FusionScriptPipelineTests(unittest.TestCase):
 
         self.assertFalse(report.is_renderable)
         self.assertEqual("unbridged_active_subject_change", report.findings[0].code)
+
+    def test_requires_every_semantic_handoff_dimension_after_the_first_segment(self):
+        plan = {
+            "segments": [
+                self._segment("segment-1", 1, 1, "00:00:00,000-00:00:20,000", exception_reason="测试"),
+                self._segment(
+                    "segment-2", 2, 2, "00:00:21,000-00:00:40,000",
+                    exception_reason="测试", handoff_from_previous={"actor": "continuous"},
+                ),
+            ]
+        }
+
+        report = FusionScriptPipeline().validate_continuity("第一句。第二句。", plan)
+
+        self.assertFalse(report.is_renderable)
+        self.assertEqual("unbridged_semantic_handoff", report.findings[0].code)
+        self.assertIn("place", report.findings[0].message)
+
+    def test_rejects_an_unrecognized_semantic_handoff_status(self):
+        plan = {
+            "segments": [
+                self._segment("segment-1", 1, 1, "00:00:00,000-00:00:20,000", exception_reason="测试"),
+                self._segment(
+                    "segment-2", 2, 2, "00:00:21,000-00:00:40,000",
+                    exception_reason="测试", handoff_from_previous={
+                        "actor": "continuous", "place": "continuous", "goal": "maybe",
+                        "cause": "continuous", "state": "continuous",
+                    },
+                ),
+            ]
+        }
+
+        report = FusionScriptPipeline().validate_continuity("第一句。第二句。", plan)
+
+        self.assertFalse(report.is_renderable)
+        self.assertIn("goal", report.findings[0].message)
 
     def test_rejects_reverse_time_order_without_nonlinear_cue(self):
         plan = {

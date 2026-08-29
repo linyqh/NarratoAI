@@ -1893,6 +1893,7 @@ def render_script_buttons(tr, params):
                 st.session_state.pop("fusion_segment_plan", None)
                 st.session_state.pop("fusion_segment_plan_approval", None)
                 st.session_state.pop("fusion_matching_task_id", None)
+                st.session_state.pop("fusion_matching_resume_snapshot", None)
                 approved_plan = None
                 st.warning(tr("解说文案已修改，请重新生成并确认分段计划。"))
             if pending_plan:
@@ -1935,6 +1936,34 @@ def render_script_buttons(tr, params):
                     st.json(approved_plan)
                     if st.button(tr("编辑分段计划"), key="edit_fusion_segment_plan"):
                         active_task_id = str(st.session_state.get("fusion_matching_task_id") or "")
+                        task = None
+                        if active_task_id:
+                            task = fusion_matching_task_status(active_task_id)
+                        else:
+                            task = find_fusion_matching_task(
+                                source_identity=st.session_state.get("fusion_visual_source_identity"),
+                                plan_payload=approved_plan,
+                                narration_copy=current_narration_copy,
+                            )
+                        if task:
+                            snapshot = task.get("matching_snapshot") or (
+                                task.get("matched_plan") or {}
+                            ).get("matching_snapshot")
+                            if not isinstance(snapshot, dict):
+                                completed = {
+                                    str(record.get("segment_id")): record["response"]
+                                    for record in task.get("completed_batches") or []
+                                    if isinstance(record, dict)
+                                    and record.get("status") == "succeeded"
+                                    and isinstance(record.get("response"), dict)
+                                }
+                                snapshot = {
+                                    "plan_payload": approved_plan,
+                                    "completed_segment_results": completed,
+                                    "attempts_by_segment": {},
+                                    "repair_attempts_by_segment": {},
+                            }
+                            st.session_state["fusion_matching_resume_snapshot"] = snapshot
                         if active_task_id:
                             cancel_fusion_matching_task(active_task_id)
                         st.session_state["fusion_segment_plan_pending"] = approved_plan
@@ -2152,6 +2181,7 @@ def render_script_buttons(tr, params):
                     "fusion_segment_plan_source_identity",
                     "fusion_segment_plan_approval",
                     "fusion_matching_task_id",
+                    "fusion_matching_resume_snapshot",
                 ):
                     st.session_state.pop(state_key, None)
                 st.session_state[narration_copy_key] = copy_result["narration_copy"]
@@ -2175,6 +2205,7 @@ def render_script_buttons(tr, params):
                 st.session_state.pop("fusion_segment_plan", None)
                 st.session_state.pop("fusion_segment_plan_approval", None)
                 st.session_state.pop("fusion_matching_task_id", None)
+                st.session_state.pop("fusion_matching_resume_snapshot", None)
                 approved_plan = None
                 st.warning(tr("视觉证据来源已变化，请重新生成并确认分段计划。"))
             if approved_plan:
@@ -2218,8 +2249,10 @@ def render_script_buttons(tr, params):
                         temperature=temperature,
                         source_identity=st.session_state.get("fusion_visual_source_identity"),
                         finalization_context=finalization_context,
+                        resume_snapshot=st.session_state.get("fusion_matching_resume_snapshot"),
                     )
                     st.session_state["fusion_matching_task_id"] = task_id
+                    st.session_state.pop("fusion_matching_resume_snapshot", None)
                 task = fusion_matching_task_status(task_id)
                 status = str(task.get("status") or "")
                 if status == "completed":
@@ -2236,8 +2269,16 @@ def render_script_buttons(tr, params):
                     st.session_state["fusion_finalization_report"] = finalization.get(
                         "finalization_report", {}
                     )
+                    st.session_state["fusion_continuity_report"] = finalization.get(
+                        "continuity_report", {}
+                    )
                     if not finalization.get("renderable"):
-                        st.error(tr("最终校验发现待审阅证据冲突，脚本未进入可渲染状态。"))
+                        continuity = finalization.get("continuity_report") or {}
+                        if not continuity.get("is_renderable", True):
+                            st.error(tr("分段匹配发现待审阅叙事连续性问题，脚本未进入最终校验或可渲染状态。"))
+                            st.json(continuity)
+                        else:
+                            st.error(tr("最终校验发现待审阅证据冲突，脚本未进入可渲染状态。"))
                         st.stop()
                     st.session_state["video_clip_json"] = finalization.get("finalized_script", [])
                     st.session_state.pop("fusion_matching_task_id", None)

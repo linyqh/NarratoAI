@@ -102,7 +102,8 @@ ${drama_genre}
 17. 每段必须覆盖 3-8 句；只有剧情转折等叙事边界确有必要时才可少于 3 句或多于 8 句，并在 exception_reason 中写明原因。core_window 是最终可输出剪辑的非重叠时间范围，通常约 30-90 秒（软目标）；相邻段不得重叠。
 18. 视觉证据仅能支持可见画面事实；高光候选只能在其时间范围所在的计划段关联，不得将不可见的声音、对白或动机归因给视觉证据。
 19. 每段都必须填写 active_subject、entering_state、trigger_event、exiting_state，分别描述当前跟随对象、进入段落时的压力或目标、造成变化的事件、离开段落时的新风险或选择。它们是叙事连续性校验字段，不得留空。
-20. 时间倒退或非线性结构只能使用 narrative_mode=flashback、flashforward、montage 或 recap，并填写 narration_cue，直接告诉观众发生了时间/叙事跳转；否则 narrative_mode 必须为 linear。
+20. 除第一段外，每段必须填写 handoff_from_previous，并逐项声明 actor、place、goal、cause、state 相对于上一段是 continuous 或 changed。只要任一项为 changed，上一段必须是明确的叙事桥段（bridge_to_next=true，给出 bridge_reason），使解说说明该变化；不可猜测未知事实。
+21. 时间倒退或非线性结构只能使用 narrative_mode=flashback、flashforward、montage 或 recap，并填写 narration_cue，直接告诉观众发生了时间/叙事跳转；否则 narrative_mode 必须为 linear。
 
 ## 输出格式
 只输出严格 JSON：
@@ -125,6 +126,7 @@ ${drama_genre}
       "bridge_reason": "",
       "narrative_mode": "linear",
       "narration_cue": "",
+      "handoff_from_previous": {},
       "exception_reason": ""
     }
   ]

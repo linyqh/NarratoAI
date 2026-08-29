@@ -27,6 +27,11 @@ from app.services.SDE.short_drama_explanation import (
 from app.services.subtitle_text import read_subtitle_text
 from app.services.fusion_script_finalizer import FusionScriptFinalizer
 from app.services.fusion_script_pipeline import FusionScriptPipeline
+from app.services.fusion_matching_workflow import (
+    FusionMatchingInput,
+    FusionMatchingSnapshot,
+    FusionMatchingWorkflow,
+)
 from app.services.documentary.local_analysis_tasks import LocalAnalysisTaskRunner, LocalAnalysisTaskStore
 from app.services.fusion_models import (
     CandidateRejection,
@@ -270,6 +275,7 @@ def match_approved_fusion_segment_plan(
     temperature: float,
     plan_approval: dict,
     completed_segment_results: dict | None = None,
+    resume_snapshot: dict | None = None,
     on_segment_started=None,
     on_segment_complete=None,
     on_segment_failed=None,
@@ -283,48 +289,111 @@ def match_approved_fusion_segment_plan(
         plan_approval, plan_payload, narration_copy, approval_source_identity
     ):
         raise ValueError("Fusion Segment Plan requires creator approval before matching")
-    def matcher(request):
-        response = analyzer.match_narration_copy_to_script(
-            short_name=short_name,
-            plot_analysis=request.intent,
-            subtitle_content=request.subtitle_evidence,
-            narration_copy=request.narration,
-            temperature=temperature,
-            narration_language=narration_language,
-            drama_genre=drama_genre,
-            original_sound_ratio=original_sound_ratio,
-            visual_evidence=request.visual_evidence,
-            highlight_candidates=request.highlight_candidates,
-            core_window=request.core_window,
-            context_window=request.context_window,
-            segment_role=request.story_role,
-        )
-        if response.get("status") != "success":
-            raise RuntimeError(str(response.get("message") or "segment matching failed"))
-        parsed = parse_and_fix_json(str(response.get("narration_script") or ""))
-        if not isinstance(parsed, dict):
-            raise ValueError("segment matching returned invalid JSON")
-        return parsed
+    class TextAdapter:
+        def match_segment(self, segment_request):
+            response = analyzer.match_narration_copy_to_script(
+                short_name=short_name,
+                plot_analysis=segment_request.intent,
+                subtitle_content=segment_request.subtitle_evidence,
+                narration_copy=segment_request.narration,
+                temperature=temperature,
+                narration_language=narration_language,
+                drama_genre=drama_genre,
+                original_sound_ratio=original_sound_ratio,
+                visual_evidence=segment_request.visual_evidence,
+                highlight_candidates=segment_request.highlight_candidates,
+                core_window=segment_request.core_window,
+                context_window=segment_request.context_window,
+                segment_role=segment_request.story_role,
+            )
+            if response.get("status") != "success":
+                raise RuntimeError(str(response.get("message") or "segment matching failed"))
+            parsed = parse_and_fix_json(str(response.get("narration_script") or ""))
+            if not isinstance(parsed, dict):
+                raise ValueError("segment matching returned invalid JSON")
+            return parsed
 
-    result = FusionScriptPipeline().match_approved_plan(
-        narration_copy=narration_copy,
-        plan_payload=plan_payload,
-        subtitle_evidence=subtitle_content,
-        visual_evidence=visual_evidence,
-        highlight_candidates=highlight_candidates,
-        matcher=matcher,
+        def repair_transition(self, repair_request):
+            segment = next(
+                (
+                    item
+                    for item in plan_payload.get("segments", [])
+                    if isinstance(item, dict)
+                    and item.get("segment_id") == repair_request.affected_segment_id
+                ),
+                {},
+            )
+            repaired = analyzer.repair_fusion_segment_match(
+                short_name=short_name,
+                plot_analysis=str(segment.get("intent") or ""),
+                previous_script=json.dumps(repair_request.previous_response, ensure_ascii=False),
+                continuity_finding=(
+                    f"{repair_request.previous_segment_id} -> {repair_request.next_segment_id}: "
+                    f"{repair_request.time_range}"
+                ),
+                subtitle_content=repair_request.subtitle_evidence,
+                visual_evidence=repair_request.visual_evidence,
+                highlight_candidates=repair_request.highlight_candidates,
+                core_window=str(segment.get("core_window") or ""),
+                temperature=temperature,
+                narration_language=narration_language,
+                drama_genre=drama_genre,
+            )
+            parsed = parse_and_fix_json(repaired)
+            if not isinstance(parsed, dict):
+                raise ValueError("targeted continuity repair returned invalid JSON")
+            return parsed
+
+    workflow = FusionMatchingWorkflow()
+    snapshot_payload = resume_snapshot if isinstance(resume_snapshot, dict) else {}
+    result = workflow.execute(
+        FusionMatchingInput(
+            narration_copy=narration_copy,
+            plan_payload=plan_payload,
+            subtitle_evidence=subtitle_content,
+            visual_evidence=visual_evidence,
+            highlight_candidates=highlight_candidates,
+        ),
+        TextAdapter(),
+        resume_from=FusionMatchingSnapshot(
+            plan_payload=snapshot_payload.get("plan_payload") or plan_payload,
+            completed_segment_results=(
+                snapshot_payload.get("completed_segment_results")
+                if isinstance(snapshot_payload.get("completed_segment_results"), dict)
+                else completed_segment_results or {}
+            ),
+            attempts_by_segment=(
+                snapshot_payload.get("attempts_by_segment")
+                if isinstance(snapshot_payload.get("attempts_by_segment"), dict)
+                else {}
+            ),
+            repair_attempts_by_segment=(
+                snapshot_payload.get("repair_attempts_by_segment")
+                if isinstance(snapshot_payload.get("repair_attempts_by_segment"), dict)
+                else {}
+            ),
+        ),
         retry_count=1,
         max_concurrency=2,
-        completed_segment_results=completed_segment_results,
         on_segment_started=on_segment_started,
         on_segment_complete=on_segment_complete,
         on_segment_failed=on_segment_failed,
         is_cancelled=is_cancelled,
     )
     return {
-        "items": result.items,
+        "items": [
+            {key: value for key, value in item.items() if key != "_segment_id"}
+            for item in result.items
+        ],
         "evidence_conflicts": result.evidence_conflicts,
         "continuity_report": result.continuity_report.to_dict(),
+        "matching_snapshot": {
+            "plan_payload": result.snapshot.plan_payload,
+            "completed_segment_results": result.snapshot.completed_segment_results,
+            "attempts_by_segment": result.attempts_by_segment,
+            "repair_attempts_by_segment": result.repair_attempts_by_segment,
+            "repaired_segment_ids": list(result.repaired_segment_ids),
+        },
     }
 
 
@@ -332,6 +401,17 @@ def finalize_fusion_matching_result(
     *, matched_plan: dict, finalization_context: dict
 ) -> dict:
     """Finalize a completed background match without depending on Streamlit state."""
+    continuity_report = matched_plan.get("continuity_report") or {}
+    if not bool(continuity_report.get("is_renderable")):
+        return {
+            "status": "blocked_for_continuity_review",
+            "original_script": list(matched_plan.get("items") or []),
+            "finalized_script": [],
+            "finalization_report": {},
+            "evidence_conflicts": matched_plan.get("evidence_conflicts", []),
+            "continuity_report": continuity_report,
+            "renderable": False,
+        }
     candidate_payloads = list(finalization_context.get("candidate_payloads") or [])
     candidates = tuple(
         HighlightCandidate(
@@ -389,7 +469,7 @@ def finalize_fusion_matching_result(
         "finalized_script": finalization.script,
         "finalization_report": asdict(finalization.report),
         "evidence_conflicts": finalization.evidence_conflicts,
-        "continuity_report": matched_plan.get("continuity_report") or {},
+        "continuity_report": continuity_report,
         "renderable": not finalization.report.unresolved_conflict_count,
     }
 
@@ -413,6 +493,7 @@ def start_fusion_matching_task(
     temperature: float,
     source_identity: dict | None,
     finalization_context: dict,
+    resume_snapshot: dict | None = None,
 ) -> str:
     """Persist and start the approved segment matches without storing credentials."""
     if not _has_valid_fusion_plan_approval(
@@ -432,6 +513,7 @@ def start_fusion_matching_task(
         "plan_approval": plan_approval,
         "temperature": float(temperature),
         "finalization_context": finalization_context,
+        "resume_snapshot": resume_snapshot or {},
     }
     request["analysis_signature"] = _fusion_matching_signature(request)
     store = _fusion_matching_task_store()
@@ -491,6 +573,9 @@ def _start_fusion_matching_runner(
             and isinstance(record.get("response"), dict)
         )
     }
+    persisted_snapshot = request.get("resume_snapshot")
+    if not isinstance(persisted_snapshot, dict):
+        persisted_snapshot = {}
 
     def work(progress, checkpoint, cancelled):
         provider = str(config.app.get("text_llm_provider", "gemini")).lower()
@@ -503,7 +588,10 @@ def _start_fusion_matching_runner(
         )
         segment_count = max(1, len(request["plan_payload"].get("segments") or []))
 
-        def update_segment_status(segment_id, status, *, response=None, error_message=""):
+        def update_segment_status(
+            segment_id, status, *, response=None, error_message="", attempts=None,
+            repair_attempts=None,
+        ):
             task = store.read(task_id)
             entries = list(task.get("segment_matches") or [])
             updated = False
@@ -513,6 +601,10 @@ def _start_fusion_matching_runner(
                     entry["error_message"] = error_message
                     if response is not None:
                         entry["response"] = response
+                    if attempts is not None:
+                        entry["attempts"] = attempts
+                    if repair_attempts is not None:
+                        entry["repair_attempts"] = repair_attempts
                     updated = True
                     break
             if not updated:
@@ -521,6 +613,8 @@ def _start_fusion_matching_runner(
                     "status": status,
                     "error_message": error_message,
                     **({"response": response} if response is not None else {}),
+                    **({"attempts": attempts} if attempts is not None else {}),
+                    **({"repair_attempts": repair_attempts} if repair_attempts is not None else {}),
                 })
             store.update(task_id, segment_matches=entries)
 
@@ -553,17 +647,28 @@ def _start_fusion_matching_runner(
         matching_request = {
             key: value
             for key, value in request.items()
-            if key not in {"analysis_signature", "finalization_context"}
+            if key not in {"analysis_signature", "finalization_context", "resume_snapshot"}
         }
         matched = match_approved_fusion_segment_plan(
             analyzer=analyzer,
             completed_segment_results=completed_responses,
+            resume_snapshot=persisted_snapshot,
             on_segment_started=mark_segment_started,
             on_segment_complete=checkpoint_segment,
             on_segment_failed=checkpoint_failure,
             is_cancelled=cancelled,
             **matching_request,
         )
+        snapshot = matched.get("matching_snapshot") or {}
+        repaired_segment_ids = set(snapshot.get("repaired_segment_ids") or [])
+        for segment_id, attempts in (snapshot.get("attempts_by_segment") or {}).items():
+            update_segment_status(
+                segment_id,
+                "repaired" if segment_id in repaired_segment_ids else "succeeded",
+                attempts=attempts,
+                repair_attempts=(snapshot.get("repair_attempts_by_segment") or {}).get(segment_id, 0),
+            )
+        store.update(task_id, matching_snapshot=snapshot)
         progress(92, "正在执行剪辑脚本最终校验...")
         finalization = finalize_fusion_matching_result(
             matched_plan=matched,

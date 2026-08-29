@@ -11,6 +11,7 @@ from .plot_analysis import PlotAnalysisPrompt
 from .narration_copy import NarrationCopyPrompt
 from .segment_planning import SegmentPlanningPrompt
 from .segment_plan_repair import SegmentPlanRepairPrompt
+from .segment_match_repair import SegmentMatchRepairPrompt
 from .script_generation import ScriptGenerationPrompt
 from .script_matching import ScriptMatchingPrompt
 from .script_repair import ScriptRepairPrompt
@@ -27,8 +28,10 @@ def register_prompts():
 
     segment_planning_prompt = SegmentPlanningPrompt()
     segment_plan_repair_prompt = SegmentPlanRepairPrompt()
+    segment_match_repair_prompt = SegmentMatchRepairPrompt()
     PromptManager.register_prompt(segment_planning_prompt, is_default=True)
     PromptManager.register_prompt(segment_plan_repair_prompt, is_default=True)
+    PromptManager.register_prompt(segment_match_repair_prompt, is_default=True)
 
     script_generation_prompt = ScriptGenerationPrompt()
     PromptManager.register_prompt(script_generation_prompt, is_default=True)
@@ -45,6 +48,7 @@ __all__ = [
     "NarrationCopyPrompt",
     "SegmentPlanningPrompt",
     "SegmentPlanRepairPrompt",
+    "SegmentMatchRepairPrompt",
     "ScriptGenerationPrompt",
     "ScriptMatchingPrompt",
     "ScriptRepairPrompt",

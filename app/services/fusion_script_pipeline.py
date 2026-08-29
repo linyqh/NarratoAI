@@ -31,6 +31,7 @@ class FusionPlanSegment:
     bridge_reason: str = ""
     narrative_mode: str = "linear"
     narration_cue: str = ""
+    handoff_from_previous: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +171,27 @@ class FusionScriptPipeline:
         """Validate a creator-edited plan before it can be approved."""
         return self._parse_plan(plan_payload, len(self._sentences(narration_copy)))
 
+    def select_evidence_window(
+        self,
+        *,
+        subtitle_evidence: str,
+        visual_evidence: str,
+        highlight_candidates: str,
+        time_range: TimeRange,
+    ) -> tuple[str, str, str]:
+        """Select only evidence overlapping one affected source-time range."""
+        return (
+            self._filter_subtitles(
+                subtitle_evidence, time_range.start_seconds, time_range.end_seconds
+            ),
+            self._filter_visual_evidence(
+                visual_evidence, time_range.start_seconds, time_range.end_seconds
+            ),
+            self._filter_candidates(
+                highlight_candidates, time_range.start_seconds, time_range.end_seconds
+            ),
+        )
+
     def validate_continuity(self, narration_copy: str, plan_payload: dict[str, Any]) -> ContinuityReport:
         """Return deterministic continuity findings for a creator-approved plan."""
         plan = self._parse_plan(plan_payload, len(self._sentences(narration_copy)))
@@ -194,6 +216,28 @@ class FusionScriptPipeline:
                     )
                 )
         for previous, current in zip(plan, plan[1:]):
+            required_handoff_dimensions = {"actor", "place", "goal", "cause", "state"}
+            supplied_handoff_dimensions = {
+                dimension for dimension, _status in current.handoff_from_previous
+            }
+            disconnected_dimensions = [
+                dimension
+                for dimension, status in current.handoff_from_previous
+                if status in {"changed", "disconnected", "missing", "unknown"}
+            ]
+            disconnected_dimensions.extend(
+                sorted(required_handoff_dimensions - supplied_handoff_dimensions)
+            )
+            if disconnected_dimensions and not self._has_narrative_bridge(previous):
+                findings.append(
+                    ContinuityFinding(
+                        "unbridged_semantic_handoff",
+                        current.segment_id,
+                        "Story Beat handoff is disconnected for: "
+                        + ", ".join(disconnected_dimensions),
+                        previous.segment_id,
+                    )
+                )
             if (
                 previous.active_subject.strip() != current.active_subject.strip()
                 and not self._has_narrative_bridge(previous)
@@ -280,6 +324,23 @@ class FusionScriptPipeline:
                     bridge_reason=str(item.get("bridge_reason") or ""),
                     narrative_mode=str(item.get("narrative_mode") or "linear").lower(),
                     narration_cue=str(item.get("narration_cue") or ""),
+                    handoff_from_previous=tuple(
+                        sorted(
+                            (
+                                str(key),
+                                (
+                                    str(value).strip().lower()
+                                    if str(value).strip().lower() in {"continuous", "changed"}
+                                    else "unknown"
+                                ),
+                            )
+                            for key, value in (
+                                item.get("handoff_from_previous", {}).items()
+                                if isinstance(item.get("handoff_from_previous"), dict)
+                                else ()
+                            )
+                        )
+                    ),
                 )
             )
             expected_sentence_start = sentence_end + 1

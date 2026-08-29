@@ -296,6 +296,31 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
         self.assertIn("incomplete_story_beat", call.call_args.kwargs["prompt"])
         self.assertEqual("json", call.call_args.kwargs["response_format"])
 
+    def test_repair_fusion_segment_match_uses_only_the_bounded_repair_inputs(self):
+        adapter = SubtitleAnalyzerAdapter(
+            api_key="sk-test",
+            model="test-model",
+            base_url="https://example.test/v1",
+            provider="openai",
+            prompt_category="film_tv_narration",
+        )
+
+        with mock.patch.object(adapter, "_run_async_safely", return_value='{"items": []}') as call:
+            result = adapter.repair_fusion_segment_match(
+                short_name="测试影片",
+                plot_analysis="这一段必须交代人物转移。",
+                previous_script='{"items": [{"_id": 1}]}',
+                continuity_finding="segment-1 -> segment-2: 00:01:00,000-00:01:10,000",
+                subtitle_content="00:01:00,000 --> 00:01:10,000\n字幕事实",
+                visual_evidence="## 00:01:00,000-00:01:10,000\n- 可见画面事实",
+                highlight_candidates="",
+                core_window="00:01:00,000-00:01:10,000",
+            )
+
+        self.assertEqual('{"items": []}', result)
+        self.assertIn("00:01:00,000-00:01:10,000", call.call_args.kwargs["prompt"])
+        self.assertEqual("json", call.call_args.kwargs["response_format"])
+
 
 if __name__ == "__main__":
     unittest.main()

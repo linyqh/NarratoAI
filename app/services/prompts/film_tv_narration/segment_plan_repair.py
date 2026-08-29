@@ -64,6 +64,7 @@ ${highlight_candidates}
 2. 为缺失的 Story Beat 字段补齐 active_subject、entering_state、trigger_event、exiting_state。
 3. 时间正向跳跃超过 150 秒时，在前一段写 bridge_to_next=true 和具体 bridge_reason，说明时间、地点、人物状态、目标或因果交接。
 4. 时间倒退必须在倒退段填写 narrative_mode=flashback、flashforward、montage 或 recap，并给出能让观众理解跳转的 narration_cue。
-5. 保留每段 3-8 句限制及已有 exception_reason；不要制造重叠 Core Window。
-6. 原样输出完整 {"segments":[...]} JSON，不包含其他键或文字。
+5. 除第一段外，补齐 handoff_from_previous 的 actor、place、goal、cause、state；每项只能是 continuous 或 changed。任一项 changed 时，上一段必须有明确 bridge_to_next=true 和 bridge_reason。
+6. 保留每段 3-8 句限制及已有 exception_reason；不要制造重叠 Core Window。
+7. 原样输出完整 {"segments":[...]} JSON，不包含其他键或文字。
 """

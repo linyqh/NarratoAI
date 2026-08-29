@@ -431,6 +431,39 @@ class SubtitleAnalyzerAdapter:
         )
         return self._generate_json_text(prompt, system_prompt, min(float(temperature), 0.3))
 
+    def repair_fusion_segment_match(
+        self,
+        *,
+        short_name: str,
+        plot_analysis: str,
+        previous_script: str,
+        continuity_finding: str,
+        subtitle_content: str,
+        visual_evidence: str,
+        highlight_candidates: str,
+        core_window: str,
+        temperature: float = 0.3,
+        narration_language: str = "简体中文（中国）",
+        drama_genre: str = "逆袭/复仇",
+    ) -> str:
+        """Repair one affected Segment Match using only its bounded evidence."""
+        prompt, system_prompt = self._render_prompt(
+            "segment_match_repair",
+            {
+                "drama_name": short_name,
+                "drama_genre": drama_genre,
+                "plot_analysis": plot_analysis,
+                "previous_script": previous_script,
+                "continuity_finding": continuity_finding,
+                "subtitle_content": subtitle_content,
+                "visual_evidence": visual_evidence,
+                "highlight_candidates": highlight_candidates,
+                "core_window": core_window,
+                "narration_language": narration_language,
+            },
+        )
+        return self._generate_json_text(prompt, system_prompt, min(float(temperature), 0.3))
+
     def generate_narration_script_from_plan(
         self,
         short_name: str,

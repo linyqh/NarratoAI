@@ -135,6 +135,23 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("人物在废墟中前进。", result["finalized_script"][0]["picture"])
         self.assertTrue(result["continuity_report"]["is_renderable"])
 
+    def test_background_match_stays_out_of_finalization_when_continuity_is_unreviewable(self):
+        result = generate_short_summary.finalize_fusion_matching_result(
+            matched_plan={
+                "items": [{"_id": 1, "timestamp": "00:00:00,000-00:00:10,000"}],
+                "evidence_conflicts": [],
+                "continuity_report": {
+                    "is_renderable": False,
+                    "findings": [{"code": "unbridged_merged_source_jump"}],
+                },
+            },
+            finalization_context={},
+        )
+
+        self.assertFalse(result["renderable"])
+        self.assertEqual("blocked_for_continuity_review", result["status"])
+        self.assertEqual([], result["finalized_script"])
+
     def test_planning_repairs_a_continuity_failure_once_before_creator_approval(self):
         base_segment = {
             "active_subject": "主角",
@@ -152,6 +169,10 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         repaired_plan = json.loads(json.dumps(invalid_plan))
         repaired_plan["segments"][0]["bridge_to_next"] = True
         repaired_plan["segments"][0]["bridge_reason"] = "解说交代主角转移到下一阶段。"
+        repaired_plan["segments"][1]["handoff_from_previous"] = {
+            "actor": "continuous", "place": "changed", "goal": "changed",
+            "cause": "changed", "state": "changed",
+        }
         analyzer = Mock()
         analyzer.plan_narration_segments.return_value = json.dumps(invalid_plan, ensure_ascii=False)
         analyzer.repair_fusion_segment_plan.return_value = json.dumps(repaired_plan, ensure_ascii=False)
