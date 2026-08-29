@@ -16,7 +16,10 @@ from app.services.llm.openai_compatible_provider import (
     validate_openai_compatible_base_url,
 )
 from app.services.llm.providers import register_all_providers
-from app.utils.openai_base_url_security import openai_compatible_base_url_warning
+from app.utils.openai_base_url_security import (
+    is_openai_compatible_base_url_confirmed_for_use,
+    openai_compatible_base_url_warning,
+)
 
 
 class DummyOpenAITextProvider(TextModelProvider):
@@ -250,6 +253,11 @@ class OpenAICompatBaseURLValidationTests(unittest.TestCase):
         self.assertIn("custom.example", warning)
         self.assertEqual("", openai_compatible_base_url_warning("https://api.openai.com/v1"))
         self.assertEqual("", openai_compatible_base_url_warning(""))
+
+    def test_custom_base_url_requires_explicit_confirmation_for_use(self):
+        self.assertTrue(is_openai_compatible_base_url_confirmed_for_use("https://api.openai.com/v1", False))
+        self.assertFalse(is_openai_compatible_base_url_confirmed_for_use("https://custom.example/v1", False))
+        self.assertTrue(is_openai_compatible_base_url_confirmed_for_use("https://custom.example/v1", True))
 
     def test_custom_base_url_validation_rejects_malformed_urls(self):
         provider = OpenAICompatibleTextProvider(

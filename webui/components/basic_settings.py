@@ -17,6 +17,7 @@ from app.config.defaults import (
     normalize_openai_compatible_model_name as normalize_openai_compatible_model_id,
 )
 from app.utils.openai_base_url_security import (
+    is_openai_compatible_base_url_confirmed_for_use,
     openai_compatible_base_url_warning,
     validate_openai_compatible_base_url,
 )
@@ -90,6 +91,20 @@ def show_base_url_security_warning(base_url: str) -> None:
     warning = openai_compatible_base_url_warning(base_url)
     if warning:
         st.warning(warning)
+
+
+def render_base_url_security_confirmation(base_url: str, key: str, tr=lambda text: text) -> bool:
+    warning = openai_compatible_base_url_warning(base_url)
+    if not warning:
+        return True
+
+    st.warning(warning)
+    return st.checkbox(
+        tr("Trust custom OpenAI compatible endpoint"),
+        value=False,
+        key=key,
+        help=tr("Trust custom OpenAI compatible endpoint help"),
+    )
 
 
 def validate_model_name(model_name: str, provider: str) -> tuple[bool, str]:
@@ -673,7 +688,11 @@ def render_vision_llm_settings(tr):
     if vision_base_required and not st_vision_base_url:
         info_example = vision_placeholder or "https://your-openai-compatible-endpoint/v1"
         st.info(tr("Please fill OpenAI compatible gateway").format(example=info_example))
-    show_base_url_security_warning(st_vision_base_url)
+    vision_base_url_confirmed = render_base_url_security_confirmation(
+        st_vision_base_url,
+        "vision_openai_base_url_trust_confirmation",
+        tr,
+    )
 
     vision_generation_params = render_llm_generation_settings(tr, "vision")
 
@@ -684,6 +703,8 @@ def render_vision_llm_settings(tr):
             test_errors.append(tr("Please enter API key"))
         if not model_name_input:
             test_errors.append(tr("Please enter model name"))
+        if not is_openai_compatible_base_url_confirmed_for_use(st_vision_base_url, vision_base_url_confirmed):
+            test_errors.append(tr("Please confirm custom OpenAI compatible endpoint"))
 
         if test_errors:
             for error in test_errors:
@@ -738,12 +759,17 @@ def render_vision_llm_settings(tr):
     # 验证 Base URL（可选）
     if st_vision_base_url:
         is_valid, error_msg = validate_base_url(st_vision_base_url, "视觉分析")
-        if is_valid:
+        if is_valid and is_openai_compatible_base_url_confirmed_for_use(
+            st_vision_base_url,
+            vision_base_url_confirmed,
+        ):
             config_changed |= update_app_config_if_changed(
                 "vision_openai_base_url",
                 st_vision_base_url
             )
             st.session_state["vision_openai_base_url"] = st_vision_base_url
+        elif is_valid:
+            validation_errors.append(tr("Please confirm custom OpenAI compatible endpoint"))
         else:
             validation_errors.append(error_msg)
 
@@ -970,7 +996,11 @@ def render_text_llm_settings(tr):
     if text_base_required and not st_text_base_url:
         info_example = text_placeholder or "https://your-openai-compatible-endpoint/v1"
         st.info(tr("Please fill OpenAI compatible gateway").format(example=info_example))
-    show_base_url_security_warning(st_text_base_url)
+    text_base_url_confirmed = render_base_url_security_confirmation(
+        st_text_base_url,
+        "text_openai_base_url_trust_confirmation",
+        tr,
+    )
 
     text_generation_params = render_llm_generation_settings(tr, "text")
 
@@ -981,6 +1011,8 @@ def render_text_llm_settings(tr):
             test_errors.append(tr("Please enter API key"))
         if not reasoning_model_name_input:
             test_errors.append(tr("Please enter model name"))
+        if not is_openai_compatible_base_url_confirmed_for_use(st_text_base_url, text_base_url_confirmed):
+            test_errors.append(tr("Please confirm custom OpenAI compatible endpoint"))
 
         if test_errors:
             for error in test_errors:
@@ -1061,12 +1093,17 @@ def render_text_llm_settings(tr):
     # 验证 Base URL（可选）
     if st_text_base_url:
         is_valid, error_msg = validate_base_url(st_text_base_url, "文案生成")
-        if is_valid:
+        if is_valid and is_openai_compatible_base_url_confirmed_for_use(
+            st_text_base_url,
+            text_base_url_confirmed,
+        ):
             text_config_changed |= update_app_config_if_changed(
                 "text_openai_base_url",
                 st_text_base_url
             )
             st.session_state["text_openai_base_url"] = st_text_base_url
+        elif is_valid:
+            text_validation_errors.append(tr("Please confirm custom OpenAI compatible endpoint"))
         else:
             text_validation_errors.append(error_msg)
 
