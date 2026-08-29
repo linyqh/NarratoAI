@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import re
+import time
 from typing import Any, Callable
 
 from app.services.documentary.frame_analysis_models import TimeRange
@@ -383,6 +384,36 @@ class FusionScriptPipeline:
         )
 
     @staticmethod
+    def _is_retryable_match_error(error: Exception) -> bool:
+        message = str(error).lower()
+        nonrecoverable_markers = (
+            "authentication",
+            "api key",
+            "configuration",
+            "invalid parameter",
+            "请求错误",
+            "content filter",
+        )
+        if any(marker in message for marker in nonrecoverable_markers):
+            return False
+        return any(
+            marker in message
+            for marker in (
+                "timeout",
+                "timed out",
+                "connection",
+                "temporary",
+                "unavailable",
+                "rate limit",
+                "429",
+                "500",
+                "502",
+                "503",
+                "504",
+            )
+        )
+
+    @staticmethod
     def _sentences(narration_copy: str) -> list[str]:
         sentences = [sentence.strip() for sentence in re.findall(r"[^。！？!?…]+[。！？!?…]*", str(narration_copy or ""))]
         sentences = [sentence for sentence in sentences if sentence]
@@ -392,11 +423,19 @@ class FusionScriptPipeline:
 
     def _call_with_retry(self, request, matcher, retry_count):
         last_error: Exception | None = None
-        for _ in range(max(0, int(retry_count)) + 1):
+        attempts = max(0, int(retry_count)) + 1
+        for attempt_index in range(attempts):
             try:
                 return matcher(request)
             except Exception as exc:  # Provider failures are retried at the segment boundary.
                 last_error = exc
+                if (
+                    attempt_index < attempts - 1
+                    and self._is_retryable_match_error(exc)
+                ):
+                    time.sleep(1.0)
+                    continue
+                break
         raise RuntimeError(f"segment {request.segment_id} failed after retry: {last_error}") from last_error
 
     def _match_pending_requests(

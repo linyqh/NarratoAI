@@ -252,6 +252,9 @@ class SubtitleAnalyzerAdapter:
         system_prompt: Optional[str],
         temperature: float,
         stream_callback=None,
+        request_timeout_seconds: float | None = None,
+        total_timeout_seconds: float | None = None,
+        max_retries: int | None = None,
     ) -> str:
         generate_func = (
             UnifiedLLMService.generate_text_stream
@@ -269,6 +272,12 @@ class SubtitleAnalyzerAdapter:
         }
         if stream_callback:
             kwargs["on_chunk"] = stream_callback
+        if request_timeout_seconds is not None:
+            kwargs["request_timeout_seconds"] = request_timeout_seconds
+        if total_timeout_seconds is not None:
+            kwargs["total_timeout_seconds"] = total_timeout_seconds
+        if max_retries is not None:
+            kwargs["max_retries"] = max_retries
         result = self._run_async_safely(generate_func, **kwargs)
         return self._clean_json_output(result)
 
@@ -340,6 +349,7 @@ class SubtitleAnalyzerAdapter:
         context_window: str = "",
         segment_role: str = "",
         stream_callback=None,
+        fusion_request: bool = False,
     ) -> Dict[str, Any]:
         """Match reviewed narration copy to source footage and return JSON script."""
         try:
@@ -360,11 +370,19 @@ class SubtitleAnalyzerAdapter:
                     "segment_role": segment_role,
                 },
             )
+            generation_kwargs = {}
+            if fusion_request:
+                generation_kwargs = {
+                    "request_timeout_seconds": 120,
+                    "total_timeout_seconds": 600,
+                    "max_retries": 0,
+                }
             narration_script = self._generate_json_text(
                 prompt,
                 system_prompt,
                 min(float(temperature), 0.3),
                 stream_callback=stream_callback,
+                **generation_kwargs,
             )
             return {
                 "status": "success",
@@ -391,6 +409,7 @@ class SubtitleAnalyzerAdapter:
         narration_copy: str = "",
         visual_evidence: str = "",
         highlight_candidates: str = "",
+        stream_callback=None,
     ) -> str:
         """Plan source segments before generating final copy."""
         prompt, system_prompt = self._render_prompt(
@@ -406,7 +425,15 @@ class SubtitleAnalyzerAdapter:
                 "narration_language": narration_language,
             },
         )
-        return self._generate_json_text(prompt, system_prompt, min(float(temperature), 0.3))
+        return self._generate_json_text(
+            prompt,
+            system_prompt,
+            min(float(temperature), 0.3),
+            stream_callback=stream_callback,
+            request_timeout_seconds=120,
+            total_timeout_seconds=600,
+            max_retries=0,
+        )
 
     def repair_fusion_segment_plan(
         self,
@@ -417,6 +444,7 @@ class SubtitleAnalyzerAdapter:
         visual_evidence: str,
         highlight_candidates: str,
         temperature: float = 0.3,
+        stream_callback=None,
     ) -> str:
         """Repair one rejected Fusion Segment Plan with the configured text model."""
         prompt, system_prompt = self._render_prompt(
@@ -429,7 +457,15 @@ class SubtitleAnalyzerAdapter:
                 "highlight_candidates": highlight_candidates,
             },
         )
-        return self._generate_json_text(prompt, system_prompt, min(float(temperature), 0.3))
+        return self._generate_json_text(
+            prompt,
+            system_prompt,
+            min(float(temperature), 0.3),
+            stream_callback=stream_callback,
+            request_timeout_seconds=120,
+            total_timeout_seconds=600,
+            max_retries=0,
+        )
 
     def repair_fusion_segment_match(
         self,
@@ -445,6 +481,7 @@ class SubtitleAnalyzerAdapter:
         temperature: float = 0.3,
         narration_language: str = "简体中文（中国）",
         drama_genre: str = "逆袭/复仇",
+        stream_callback=None,
     ) -> str:
         """Repair one affected Segment Match using only its bounded evidence."""
         prompt, system_prompt = self._render_prompt(
@@ -462,7 +499,15 @@ class SubtitleAnalyzerAdapter:
                 "narration_language": narration_language,
             },
         )
-        return self._generate_json_text(prompt, system_prompt, min(float(temperature), 0.3))
+        return self._generate_json_text(
+            prompt,
+            system_prompt,
+            min(float(temperature), 0.3),
+            stream_callback=stream_callback,
+            request_timeout_seconds=120,
+            total_timeout_seconds=600,
+            max_retries=0,
+        )
 
     def generate_narration_script_from_plan(
         self,

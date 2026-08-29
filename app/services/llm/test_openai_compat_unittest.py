@@ -2,11 +2,12 @@
 
 import asyncio
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.config import config
 from app.services.llm.base import TextModelProvider
-from app.services.llm.exceptions import ConfigurationError
+from app.services.llm.exceptions import APICallError, ConfigurationError
 from app.services.llm.manager import LLMServiceManager
 from app.services.llm.migration_adapter import LegacyLLMAdapter, VisionAnalyzerAdapter
 from app.services.llm.openai_compatible_provider import (
@@ -189,6 +190,96 @@ class OpenAICompatGenerationOptionTests(unittest.TestCase):
 
         self.assertEqual(0.9, options["temperature"])
         self.assertEqual(512, options["max_tokens"])
+
+
+class OpenAICompatFusionStreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_fusion_stream_uses_explicit_first_chunk_timeout_without_sdk_retries(self):
+        class FakeStream:
+            def __init__(self):
+                self._chunks = iter(
+                    [
+                        SimpleNamespace(
+                            choices=[
+                                SimpleNamespace(
+                                    delta=SimpleNamespace(
+                                        reasoning_content="reasoning", content="content"
+                                    )
+                                )
+                            ]
+                        )
+                    ]
+                )
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                try:
+                    return next(self._chunks)
+                except StopIteration:
+                    raise StopAsyncIteration
+
+        class FakeCompletions:
+            async def create(self, **kwargs):
+                self.kwargs = kwargs
+                return FakeStream()
+
+        class FakeOpenAI:
+            constructor_kwargs = None
+            completions = FakeCompletions()
+
+            def __init__(self, **kwargs):
+                type(self).constructor_kwargs = kwargs
+                self.chat = SimpleNamespace(completions=type(self).completions)
+
+        chunks = []
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
+        with patch("app.services.llm.openai_compatible_provider.AsyncOpenAI", FakeOpenAI):
+            result = await provider.generate_text_stream(
+                "prompt",
+                request_timeout_seconds=120,
+                max_retries=0,
+                on_chunk=chunks.append,
+            )
+
+        self.assertEqual("content", result)
+        self.assertEqual(120, FakeOpenAI.constructor_kwargs["timeout"])
+        self.assertEqual(0, FakeOpenAI.constructor_kwargs["max_retries"])
+        self.assertEqual(
+            [
+                {"type": "reasoning", "text": "reasoning"},
+                {"type": "content", "text": "content"},
+                {"type": "done", "text": ""},
+            ],
+            chunks,
+        )
+
+    async def test_fusion_stream_reports_a_total_request_timeout(self):
+        class HangingStream:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                await asyncio.sleep(0.2)
+                raise StopAsyncIteration
+
+        class FakeCompletions:
+            async def create(self, **_kwargs):
+                return HangingStream()
+
+        class FakeOpenAI:
+            def __init__(self, **_kwargs):
+                self.chat = SimpleNamespace(completions=FakeCompletions())
+
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
+        with patch("app.services.llm.openai_compatible_provider.AsyncOpenAI", FakeOpenAI):
+            with self.assertRaisesRegex(APICallError, "请求总时限"):
+                await provider.generate_text_stream(
+                    "prompt",
+                    request_timeout_seconds=120,
+                    max_retries=0,
+                    total_timeout_seconds=0.01,
+                )
 
 
 class OpenAICompatBaseURLValidationTests(unittest.TestCase):

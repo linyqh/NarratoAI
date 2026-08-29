@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from app.services.fusion_matching_workflow import (
     FusionMatchingInput,
@@ -190,20 +191,22 @@ class FusionMatchingWorkflowTests(unittest.TestCase):
         self.assertNotIn("无关候选", repair_request.highlight_candidates)
 
     def test_matching_attempts_are_reported_per_segment_after_retry(self):
-        result = FusionMatchingWorkflow().execute(
-            FusionMatchingInput(
-                narration_copy="第一句。第二句。",
-                plan_payload=self._plan(),
-                subtitle_evidence="",
-                visual_evidence="",
-                highlight_candidates="",
-            ),
-            _TransientFailureAdapter(),
-        )
+        with patch("app.services.fusion_script_pipeline.time.sleep") as sleep:
+            result = FusionMatchingWorkflow().execute(
+                FusionMatchingInput(
+                    narration_copy="第一句。第二句。",
+                    plan_payload=self._plan(),
+                    subtitle_evidence="",
+                    visual_evidence="",
+                    highlight_candidates="",
+                ),
+                _TransientFailureAdapter(),
+            )
 
         self.assertTrue(result.renderable)
         self.assertEqual({"segment-1": 1, "segment-2": 2}, result.attempts_by_segment)
         self.assertEqual({}, result.repair_attempts_by_segment)
+        sleep.assert_called_once_with(1.0)
 
     def test_reports_each_attempt_before_a_permanent_failure_escapes(self):
         attempts = []
@@ -223,6 +226,28 @@ class FusionMatchingWorkflowTests(unittest.TestCase):
 
         self.assertIn(("segment-1", 1), attempts)
         self.assertIn(("segment-1", 2), attempts)
+
+    def test_does_not_retry_a_nonrecoverable_matching_error(self):
+        class InvalidRequestAdapter:
+            def __init__(self):
+                self.calls = 0
+
+            def match_segment(self, _request):
+                self.calls += 1
+                raise RuntimeError("请求错误: invalid parameter")
+
+        adapter = InvalidRequestAdapter()
+        with patch("app.services.fusion_script_pipeline.time.sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "failed after retry"):
+                FusionMatchingWorkflow().execute(
+                    FusionMatchingInput(
+                        "第一句。", {"segments": [self._plan()["segments"][0]]}, "", "", ""
+                    ),
+                    adapter,
+                )
+
+        self.assertEqual(1, adapter.calls)
+        sleep.assert_not_called()
 
     def test_semantic_state_handoff_failure_is_reviewable_without_matching(self):
         plan = self._plan()

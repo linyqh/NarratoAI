@@ -196,6 +196,37 @@ def _format_progress_status(progress, message: str = "", tr=lambda key: key):
     return f"{tr('Progress')}: {progress}%"
 
 
+def _is_retryable_fusion_request_error(error: Exception) -> bool:
+    message = str(error).lower()
+    if any(
+        marker in message
+        for marker in (
+            "authentication", "api key", "configuration", "invalid parameter",
+            "请求错误", "content filter",
+        )
+    ):
+        return False
+    return any(
+        marker in message
+        for marker in (
+            "timeout", "timed out", "connection", "temporary", "unavailable",
+            "rate limit", "429", "500", "502", "503", "504",
+        )
+    )
+
+
+def _call_fusion_request_with_retry(call, on_retry=None):
+    try:
+        return call()
+    except Exception as first_error:
+        if not _is_retryable_fusion_request_error(first_error):
+            raise
+        if on_retry:
+            on_retry(first_error)
+        time.sleep(1.0)
+        return call()
+
+
 def create_fusion_segment_plan(
     *,
     analyzer: SubtitleAnalyzerAdapter,
@@ -208,18 +239,24 @@ def create_fusion_segment_plan(
     visual_evidence: str,
     highlight_candidates: str,
     temperature: float,
+    stream_callback=None,
+    on_retry=None,
 ) -> dict:
     """Generate and validate a creator-approvable Fusion Segment Plan."""
-    plan_raw = analyzer.plan_narration_segments(
-        short_name=short_name,
-        plot_analysis=plot_analysis,
-        subtitle_content=subtitle_content,
-        narration_copy=narration_copy,
-        narration_language=narration_language,
-        drama_genre=drama_genre,
-        visual_evidence=visual_evidence,
-        highlight_candidates=highlight_candidates,
-        temperature=temperature,
+    plan_raw = _call_fusion_request_with_retry(
+        lambda: analyzer.plan_narration_segments(
+            short_name=short_name,
+            plot_analysis=plot_analysis,
+            subtitle_content=subtitle_content,
+            narration_copy=narration_copy,
+            narration_language=narration_language,
+            drama_genre=drama_genre,
+            visual_evidence=visual_evidence,
+            highlight_candidates=highlight_candidates,
+            temperature=temperature,
+            stream_callback=stream_callback,
+        ),
+        on_retry=on_retry,
     )
     plan = parse_and_fix_json(plan_raw)
     if not isinstance(plan, dict):
@@ -280,6 +317,9 @@ def match_approved_fusion_segment_plan(
     on_segment_started=None,
     on_segment_complete=None,
     on_segment_failed=None,
+    on_segment_attempt=None,
+    on_repair_attempt=None,
+    on_stream_chunk=None,
     is_cancelled=None,
 ) -> dict:
     """Match each approved plan entry against a bounded Evidence Window."""
@@ -306,6 +346,12 @@ def match_approved_fusion_segment_plan(
                 core_window=segment_request.core_window,
                 context_window=segment_request.context_window,
                 segment_role=segment_request.story_role,
+                fusion_request=True,
+                stream_callback=(
+                    (lambda event: on_stream_chunk(segment_request, event))
+                    if on_stream_chunk
+                    else None
+                ),
             )
             if response.get("status") != "success":
                 raise RuntimeError(str(response.get("message") or "segment matching failed"))
@@ -315,6 +361,9 @@ def match_approved_fusion_segment_plan(
             return parsed
 
         def repair_transition(self, repair_request):
+            repair_segment = type(
+                "RepairSegment", (), {"segment_id": repair_request.affected_segment_id}
+            )()
             segment = next(
                 (
                     item
@@ -339,6 +388,11 @@ def match_approved_fusion_segment_plan(
                 temperature=temperature,
                 narration_language=narration_language,
                 drama_genre=drama_genre,
+                stream_callback=(
+                    (lambda event: on_stream_chunk(repair_segment, event))
+                    if on_stream_chunk
+                    else None
+                ),
             )
             parsed = parse_and_fix_json(repaired)
             if not isinstance(parsed, dict):
@@ -379,6 +433,8 @@ def match_approved_fusion_segment_plan(
         on_segment_started=on_segment_started,
         on_segment_complete=on_segment_complete,
         on_segment_failed=on_segment_failed,
+        on_segment_attempt=on_segment_attempt,
+        on_repair_attempt=on_repair_attempt,
         is_cancelled=is_cancelled,
     )
     return {
@@ -596,6 +652,44 @@ def _start_fusion_matching_runner(
         repair_attempts_by_segment = dict(
             persisted_snapshot.get("repair_attempts_by_segment") or {}
         )
+        stream_revision = 0
+
+        def checkpoint_stream(segment_request, event):
+            nonlocal stream_revision
+            event = event if isinstance(event, dict) else {}
+            chunk_type = str(event.get("type") or "content")
+            chunk_text = str(event.get("text") or "")
+            now = time.time()
+            with task_state_lock:
+                current = store.read(task_id).get("stream_snapshot") or {}
+                segment_id = str(segment_request.segment_id)
+                attempt = int(attempts_by_segment.get(segment_id) or 1)
+                if (
+                    current.get("phase") != "matching"
+                    or current.get("segment_id") != segment_id
+                    or current.get("attempt") != attempt
+                ):
+                    current = {
+                        "phase": "matching",
+                        "segment_id": segment_id,
+                        "attempt": attempt,
+                        "reasoning_text": "",
+                        "content_text": "",
+                        "first_chunk_at": now,
+                    }
+                bucket = "reasoning_text" if chunk_type == "reasoning" else "content_text"
+                if chunk_type in {"reasoning", "content"} and chunk_text:
+                    current[bucket] = str(current.get(bucket) or "") + chunk_text
+                stream_revision += 1
+                current.update(
+                    {
+                        "revision": stream_revision,
+                        "state": "completed" if chunk_type == "done" else "streaming",
+                        "updated_at": now,
+                        "last_chunk_at": now,
+                    }
+                )
+                store.update(task_id, stream_snapshot=current)
 
         def persist_matching_snapshot():
             with task_state_lock:
@@ -642,6 +736,23 @@ def _start_fusion_matching_runner(
 
         def mark_segment_started(segment_request):
             update_segment_status(segment_request.segment_id, "running")
+            with task_state_lock:
+                current = store.read(task_id).get("stream_snapshot") or {}
+                stream_id = str(segment_request.segment_id)
+                if current.get("segment_id") != stream_id:
+                    store.update(
+                        task_id,
+                        stream_snapshot={
+                            "revision": stream_revision,
+                            "phase": "matching",
+                            "segment_id": stream_id,
+                            "attempt": int(attempts_by_segment.get(stream_id) or 1),
+                            "state": "waiting_first_chunk",
+                            "reasoning_text": "",
+                            "content_text": "",
+                            "updated_at": time.time(),
+                        },
+                    )
 
         def checkpoint_segment(segment_request, response):
             checkpoint({
@@ -668,11 +779,29 @@ def _start_fusion_matching_runner(
             update_segment_status(segment_request.segment_id, "failed", error_message=str(error))
 
         def checkpoint_attempt(segment_request, attempt_count):
+            nonlocal stream_revision
             with task_state_lock:
                 attempts_by_segment[segment_request.segment_id] = attempt_count
                 update_segment_status(
-                    segment_request.segment_id, "running", attempts=attempt_count
+                    segment_request.segment_id,
+                    "retrying" if attempt_count > 1 else "running",
+                    attempts=attempt_count,
                 )
+                if attempt_count > 1:
+                    stream_revision += 1
+                    store.update(
+                        task_id,
+                        stream_snapshot={
+                            "revision": stream_revision,
+                            "phase": "matching",
+                            "segment_id": str(segment_request.segment_id),
+                            "attempt": attempt_count,
+                            "state": "retrying",
+                            "reasoning_text": "",
+                            "content_text": "",
+                            "updated_at": time.time(),
+                        },
+                    )
                 persist_matching_snapshot()
 
         def checkpoint_repair_attempt(repair_request, attempt_count):
@@ -699,6 +828,7 @@ def _start_fusion_matching_runner(
             on_segment_failed=checkpoint_failure,
             on_segment_attempt=checkpoint_attempt,
             on_repair_attempt=checkpoint_repair_attempt,
+            on_stream_chunk=checkpoint_stream,
             is_cancelled=cancelled,
             **matching_request,
         )
@@ -711,7 +841,7 @@ def _start_fusion_matching_runner(
                 attempts=attempts,
                 repair_attempts=(snapshot.get("repair_attempts_by_segment") or {}).get(segment_id, 0),
             )
-        store.update(task_id, matching_snapshot=snapshot)
+        store.update(task_id, matching_snapshot=snapshot, stream_snapshot=None)
         progress(92, "正在执行剪辑脚本最终校验...")
         finalization = finalize_fusion_matching_result(
             matched_plan=matched,
@@ -1321,6 +1451,10 @@ def generate_script_short_sunmmary(
                     visual_evidence=visual_evidence,
                     highlight_candidates=highlight_candidates,
                     temperature=temperature,
+                    stream_callback=update_stream_window,
+                    on_retry=lambda _error: update_waiting(
+                        tr("分段计划请求超时，正在进行第 2 次尝试…")
+                    ),
                 )
                 st.session_state["fusion_segment_plan_pending"] = plan
                 st.session_state["fusion_segment_plan_editor"] = json.dumps(

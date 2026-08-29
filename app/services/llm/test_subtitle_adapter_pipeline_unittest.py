@@ -189,11 +189,41 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
                 subtitle_content="# 视频 1: 1.mp4",
                 narration_copy="她被家人逼到绝路，反击从这一刻开始。",
                 stream_callback=lambda _event: None,
+                fusion_request=True,
             )
 
         self.assertEqual("success", result["status"])
         self.assertIs(UnifiedLLMService.generate_text_stream, call.call_args.args[0])
         self.assertIn("on_chunk", call.call_args.kwargs)
+        self.assertEqual(120, call.call_args.kwargs["request_timeout_seconds"])
+        self.assertEqual(600, call.call_args.kwargs["total_timeout_seconds"])
+        self.assertEqual(0, call.call_args.kwargs["max_retries"])
+
+    def test_plan_narration_segments_uses_streaming_when_callback_exists(self):
+        adapter = SubtitleAnalyzerAdapter(
+            api_key="sk-test",
+            model="test-model",
+            base_url="https://example.test/v1",
+            provider="openai",
+            prompt_category="film_tv_narration",
+        )
+        callback = lambda _event: None
+
+        with mock.patch.object(adapter, "_run_async_safely", return_value='{"segments": []}') as call:
+            result = adapter.plan_narration_segments(
+                short_name="测试电影",
+                plot_analysis="主角发现线索。",
+                subtitle_content="00:00:01,000 --> 00:00:04,000\n线索出现。",
+                narration_copy="他发现线索，决定追查下去。",
+                stream_callback=callback,
+            )
+
+        self.assertEqual('{"segments": []}', result)
+        self.assertIs(UnifiedLLMService.generate_text_stream, call.call_args.args[0])
+        self.assertIs(callback, call.call_args.kwargs["on_chunk"])
+        self.assertEqual(120, call.call_args.kwargs["request_timeout_seconds"])
+        self.assertEqual(600, call.call_args.kwargs["total_timeout_seconds"])
+        self.assertEqual(0, call.call_args.kwargs["max_retries"])
 
     def test_generate_narration_script_plans_segments_before_copywriting(self):
         adapter = SubtitleAnalyzerAdapter(

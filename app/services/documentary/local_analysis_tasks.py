@@ -132,9 +132,19 @@ class LocalAnalysisTaskRunner:
 
             try:
                 result = work(progress, checkpoint, cancelled)
-                self._store.update(task_id, status="cancelled" if cancelled() else "completed", **result)
+                self._store.update(
+                    task_id,
+                    status="cancelled" if cancelled() else "completed",
+                    stream_snapshot=None,
+                    **result,
+                )
             except Exception as exc:
-                self._store.update(task_id, status="cancelled" if cancelled() else "failed", error_message=str(exc))
+                self._store.update(
+                    task_id,
+                    status="cancelled" if cancelled() else "failed",
+                    error_message=str(exc),
+                    stream_snapshot=None,
+                )
 
         thread = threading.Thread(target=run, name=f"local-analysis-{task_id}", daemon=True)
         thread.start()

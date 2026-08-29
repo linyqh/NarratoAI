@@ -1,11 +1,14 @@
 import json
 import os
 import tempfile
+import time
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from app.services.fusion_script_finalizer import FusionScriptFinalizer
 from app.services.documentary.frame_analysis_models import HighlightCandidate, TimeRange
+from app.services.documentary.local_analysis_tasks import LocalAnalysisTaskStore
 from app.services.fusion_models import CandidateRejection, EvidenceConflict, FinalizationRequest, HighlightCandidateIntake
 from webui.tools import generate_short_summary
 from webui.tools.generate_short_summary import _format_progress_status, parse_and_fix_json
@@ -192,6 +195,187 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
 
         self.assertTrue(result["segments"][0]["bridge_to_next"])
         analyzer.repair_fusion_segment_plan.assert_called_once()
+
+    def test_fusion_segment_plan_forwards_the_live_stream_callback(self):
+        valid_plan = {
+            "segments": [
+                {
+                    "segment_id": "segment-1", "sentence_start": 1, "sentence_end": 1,
+                    "core_window": "00:00:00,000-00:00:20,000", "active_subject": "主角",
+                    "entering_state": "危机", "trigger_event": "事件", "exiting_state": "选择",
+                    "exception_reason": "测试单句边界",
+                }
+            ]
+        }
+        analyzer = Mock()
+        analyzer.plan_narration_segments.return_value = json.dumps(valid_plan, ensure_ascii=False)
+        callback = Mock()
+
+        generate_short_summary.create_fusion_segment_plan(
+            analyzer=analyzer,
+            short_name="测试影片",
+            plot_analysis="剧情概要",
+            subtitle_content="字幕事实",
+            narration_copy="第一句。",
+            narration_language="简体中文（中国）",
+            drama_genre="剧情",
+            visual_evidence="视觉事实",
+            highlight_candidates="",
+            temperature=0.3,
+            stream_callback=callback,
+        )
+
+        self.assertIs(callback, analyzer.plan_narration_segments.call_args.kwargs["stream_callback"])
+
+    def test_fusion_segment_plan_retries_one_timeout_after_backoff(self):
+        valid_plan = {
+            "segments": [
+                {
+                    "segment_id": "segment-1", "sentence_start": 1, "sentence_end": 1,
+                    "core_window": "00:00:00,000-00:00:20,000", "active_subject": "主角",
+                    "entering_state": "危机", "trigger_event": "事件", "exiting_state": "选择",
+                    "exception_reason": "测试单句边界",
+                }
+            ]
+        }
+        analyzer = Mock()
+        analyzer.plan_narration_segments.side_effect = [
+            RuntimeError("Request timed out."),
+            json.dumps(valid_plan, ensure_ascii=False),
+        ]
+
+        with patch.object(generate_short_summary.time, "sleep") as sleep:
+            result = generate_short_summary.create_fusion_segment_plan(
+                analyzer=analyzer,
+                short_name="测试影片",
+                plot_analysis="剧情概要",
+                subtitle_content="字幕事实",
+                narration_copy="第一句。",
+                narration_language="简体中文（中国）",
+                drama_genre="剧情",
+                visual_evidence="视觉事实",
+                highlight_candidates="",
+                temperature=0.3,
+            )
+
+        self.assertEqual("segment-1", result["segments"][0]["segment_id"])
+        self.assertEqual(2, analyzer.plan_narration_segments.call_count)
+        sleep.assert_called_once_with(1.0)
+
+    def test_fusion_match_forwards_segment_stream_and_attempt_callbacks(self):
+        plan = {
+            "segments": [
+                {
+                    "segment_id": "segment-1", "sentence_start": 1, "sentence_end": 1,
+                    "core_window": "00:00:00,000-00:00:20,000", "active_subject": "主角",
+                    "entering_state": "危机", "trigger_event": "事件", "exiting_state": "选择",
+                    "exception_reason": "测试单句边界",
+                }
+            ]
+        }
+        approval = generate_short_summary.approve_fusion_segment_plan(
+            plan_payload=plan, narration_copy="第一句。", source_identity={}
+        )
+
+        class StreamingAnalyzer:
+            def match_narration_copy_to_script(self, **kwargs):
+                kwargs["stream_callback"]({"type": "content", "text": "partial"})
+                return {
+                    "status": "success",
+                    "narration_script": json.dumps(
+                        {
+                            "items": [
+                                {
+                                    "_id": 1, "video_id": 1, "video_name": "film.mp4",
+                                    "timestamp": "00:00:00,000-00:00:05,000",
+                                    "picture": "主角行动。", "narration": "第一句。", "OST": 0,
+                                }
+                            ]
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+
+        stream_events = []
+        attempts = []
+        result = generate_short_summary.match_approved_fusion_segment_plan(
+            analyzer=StreamingAnalyzer(),
+            short_name="测试影片",
+            narration_copy="第一句。",
+            narration_language="简体中文（中国）",
+            drama_genre="剧情",
+            original_sound_ratio=0,
+            subtitle_content="字幕事实",
+            visual_evidence="视觉事实",
+            highlight_candidates="",
+            plan_payload=plan,
+            temperature=0.3,
+            plan_approval=approval,
+            on_segment_attempt=lambda segment, count: attempts.append((segment.segment_id, count)),
+            on_stream_chunk=lambda segment, event: stream_events.append((segment.segment_id, event)),
+        )
+
+        self.assertEqual([("segment-1", 1)], attempts)
+        self.assertEqual(
+            [("segment-1", {"type": "content", "text": "partial"})], stream_events
+        )
+        self.assertEqual("第一句。", result["items"][0]["narration"])
+
+    def test_fusion_matching_task_exposes_transient_stream_snapshot_then_clears_it(self):
+        plan = {
+            "segments": [
+                {
+                    "segment_id": "segment-1", "sentence_start": 1, "sentence_end": 1,
+                    "core_window": "00:00:00,000-00:00:20,000", "active_subject": "主角",
+                    "entering_state": "危机", "trigger_event": "事件", "exiting_state": "选择",
+                    "exception_reason": "测试单句边界",
+                }
+            ]
+        }
+        approval = generate_short_summary.approve_fusion_segment_plan(
+            plan_payload=plan, narration_copy="第一句。", source_identity={}
+        )
+
+        def fake_match(**kwargs):
+            segment = type("Segment", (), {"segment_id": "segment-1"})()
+            kwargs["on_stream_chunk"](segment, {"type": "content", "text": "partial"})
+            time.sleep(0.1)
+            return {"items": [], "matching_snapshot": {}}
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            with (
+                patch.object(generate_short_summary, "_fusion_matching_task_store", return_value=store),
+                patch.object(generate_short_summary, "match_approved_fusion_segment_plan", side_effect=fake_match),
+                patch.object(
+                    generate_short_summary,
+                    "finalize_fusion_matching_result",
+                    return_value={"renderable": True, "finalized_script": []},
+                ),
+            ):
+                task_id = generate_short_summary.start_fusion_matching_task(
+                    short_name="测试影片", narration_copy="第一句。",
+                    narration_language="简体中文（中国）", drama_genre="剧情",
+                    original_sound_ratio=0, subtitle_content="字幕事实", visual_evidence="视觉事实",
+                    highlight_candidates="", plan_payload=plan, plan_approval=approval,
+                    temperature=0.3, source_identity={}, finalization_context={},
+                )
+                deadline = time.monotonic() + 2
+                observed = None
+                while time.monotonic() < deadline:
+                    task = generate_short_summary.fusion_matching_task_status(task_id)
+                    snapshot = task.get("stream_snapshot") or {}
+                    if snapshot.get("content_text") == "partial":
+                        observed = snapshot
+                    if task.get("status") in {"completed", "failed", "cancelled"}:
+                        break
+                    time.sleep(0.01)
+                final_task = generate_short_summary.fusion_matching_task_status(task_id)
+
+        self.assertEqual("matching", observed["phase"])
+        self.assertEqual("segment-1", observed["segment_id"])
+        self.assertEqual("completed", final_task["status"])
+        self.assertIsNone(final_task.get("stream_snapshot"))
 
     def test_conflict_without_video_name_receives_the_selected_source_identity(self):
         source_identity = {"algorithm": "sha256", "sha256": "a" * 64, "size_bytes": 12}

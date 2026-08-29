@@ -80,6 +80,10 @@ _Avoid_: automatic plan continuation, script approval
 A resumable local background task that persists an approved Fusion Segment Plan and the status and output of each Segment Match.
 _Avoid_: foreground matching, browser-bound script generation
 
+**Fusion Stream Snapshot**:
+The transient, current-attempt progress of a Fusion planning or Segment Match request, including its phase and received model text; it is not an approved plan, Segment Match, or renderable output.
+_Avoid_: streaming result, resumable script, final response
+
 **Core Window**:
 The non-overlapping source-time range assigned to one Fusion Segment Plan entry; its Segment Match may emit clips only inside this range.
 _Avoid_: match range, segment context

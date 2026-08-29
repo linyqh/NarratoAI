@@ -136,8 +136,16 @@ class _OpenAICompatibleBase:
         base_url = base_url_override or self.base_url or None
         base_url = validate_openai_compatible_base_url(base_url)
 
-        timeout_seconds: float = timeout_override or config.app.get("llm_text_timeout", 180)
-        max_retries: int = max_retries_override or config.app.get("llm_max_retries", 3)
+        timeout_seconds: float = (
+            timeout_override
+            if timeout_override is not None
+            else config.app.get("llm_text_timeout", 180)
+        )
+        max_retries: int = (
+            max_retries_override
+            if max_retries_override is not None
+            else config.app.get("llm_max_retries", 3)
+        )
 
         return AsyncOpenAI(
             api_key=api_key,
@@ -283,7 +291,7 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
 
     @staticmethod
     def _emit_stream_chunk(on_chunk, chunk_type: str, text: str):
-        if not on_chunk or not text:
+        if not on_chunk or (not text and chunk_type != "done"):
             return
         try:
             on_chunk({"type": chunk_type, "text": text})
@@ -320,7 +328,10 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
         client = self._build_client(
             api_key_override=kwargs.get("api_key"),
             base_url_override=kwargs.get("api_base"),
-            timeout_override=config.app.get("llm_text_timeout", 180),
+            timeout_override=kwargs.get(
+                "request_timeout_seconds", config.app.get("llm_text_timeout", 180)
+            ),
+            max_retries_override=kwargs.get("max_retries"),
         )
 
         completion_kwargs = self._build_text_completion_kwargs(
@@ -381,7 +392,10 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
         client = self._build_client(
             api_key_override=kwargs.get("api_key"),
             base_url_override=kwargs.get("api_base"),
-            timeout_override=config.app.get("llm_text_timeout", 180),
+            timeout_override=kwargs.get(
+                "request_timeout_seconds", config.app.get("llm_text_timeout", 180)
+            ),
+            max_retries_override=kwargs.get("max_retries"),
         )
         completion_kwargs = self._build_text_completion_kwargs(
             messages,
@@ -415,7 +429,15 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
             raise APICallError("OpenAI 兼容接口返回空响应")
 
         try:
+            total_timeout_seconds = kwargs.get("total_timeout_seconds")
+            if total_timeout_seconds is not None:
+                return await asyncio.wait_for(
+                    collect_stream(), timeout=float(total_timeout_seconds)
+                )
             return await collect_stream()
+
+        except asyncio.TimeoutError:
+            raise APICallError("请求总时限已到，未能完成流式生成")
 
         except OpenAIBadRequestError as exc:
             error_msg = str(exc)

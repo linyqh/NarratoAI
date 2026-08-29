@@ -2316,6 +2316,35 @@ def render_script_buttons(tr, params):
                 else:
                     progress = max(0, min(100, int(round(float(task.get("progress", 0))))))
                     st.progress(progress, text=f"✂️ {task.get('message') or '正在分段匹配剪辑脚本…'}")
+                    stream_snapshot = task.get("stream_snapshot") or {}
+                    if isinstance(stream_snapshot, dict) and stream_snapshot.get("phase") == "matching":
+                        stream_state = str(stream_snapshot.get("state") or "waiting_first_chunk")
+                        segment_id = str(stream_snapshot.get("segment_id") or "")
+                        attempt = int(stream_snapshot.get("attempt") or 1)
+                        state_label = {
+                            "waiting_first_chunk": "正在等待模型首个分片",
+                            "streaming": "模型正在流式生成",
+                            "completed": "当前段落流式生成完成",
+                        }.get(stream_state, "正在同步模型进度")
+                        st.caption(f"{state_label} · {segment_id} · 第 {attempt} 次尝试")
+                        reasoning_text = str(stream_snapshot.get("reasoning_text") or "")
+                        content_text = str(stream_snapshot.get("content_text") or "")
+                        if reasoning_text:
+                            st.text_area(
+                                tr("模型推理过程"),
+                                value=reasoning_text[-1800:],
+                                height=120,
+                                disabled=True,
+                                key=f"fusion_reasoning_preview_{task_id}_{stream_snapshot.get('revision', 0)}",
+                            )
+                        if content_text:
+                            st.text_area(
+                                tr("模型输出预览"),
+                                value=content_text[-1800:],
+                                height=120,
+                                disabled=True,
+                                key=f"fusion_content_preview_{task_id}_{stream_snapshot.get('revision', 0)}",
+                            )
                     if status in {"queued", "running"} and st.button(
                         tr("取消分段匹配"), key="cancel_fusion_matching_task"
                     ):
@@ -2327,6 +2356,9 @@ def render_script_buttons(tr, params):
                         if st.button(tr("恢复分段匹配"), key="resume_fusion_matching_task"):
                             resume_fusion_matching_task(task_id)
                     st.info(tr("分段匹配正在后台运行；完成后会自动进入最终校验。"))
+                    if status in {"queued", "running"}:
+                        time.sleep(1)
+                        st.rerun()
                     st.stop()
 
         if action_clicked or automatic_finalization:
