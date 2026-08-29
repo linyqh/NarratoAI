@@ -20,6 +20,26 @@ _Avoid_: visual context, image facts
 The creator-provided instruction that directs frame observation and Highlight Candidate selection. It may prioritize visible subjects, actions, settings, objects, spatial relationships, and scene changes, but cannot request inferred audio, dialogue, motives, identities, or off-screen events.
 _Avoid_: plot prompt, audio-analysis prompt
 
+**Local Source Video**:
+A source video stored on the same machine that runs NarratoAI and referenced by its filesystem path. It bypasses browser-upload size limits, while still requiring sufficient local disk space and decoding capacity.
+_Avoid_: uploaded video, remote asset
+
+**Full-Film Analysis**:
+The default visual-analysis scope for a Local Source Video. It examines the complete source timeline; a creator may narrow the range only as an explicit override.
+_Avoid_: preview-only analysis, implicit sample
+
+**Analysis Estimate**:
+The pre-run projection of Full-Film Analysis duration, extracted-keyframe count, and visual-model request volume. A creator confirms this estimate before the task starts.
+_Avoid_: guaranteed cost, hidden usage
+
+**Resumable Visual Analysis**:
+A Full-Film Analysis that persists completed batches against the Local Source Video identity and resumes only missing or failed batches after interruption.
+_Avoid_: restart-only analysis, cross-video cache reuse
+
+**Background Analysis Task**:
+A Resumable Visual Analysis that continues on the local machine after a browser session refreshes or closes. Its state is persistently observable when the creator returns and it ends only when completed, failed, or explicitly cancelled.
+_Avoid_: browser-bound job, abandoned request
+
 **Visual Evidence Artifact**:
 The persisted JSON record of Visual Evidence for one source video. It may be reused when its source identity is verified, or under a Source Identity Waiver.
 _Avoid_: visual fusion JSON, frame-analysis cache

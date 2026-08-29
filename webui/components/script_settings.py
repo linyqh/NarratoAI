@@ -16,7 +16,14 @@ from webui.tools.generate_script_docu import generate_script_docu
 from app.services.film_vision_fusion import load_visual_evidence_artifact
 from app.services.visual_evidence_artifact import build_source_video_identity
 from app.services.visual_evidence_artifact import read_highlight_candidate_intake
-from webui.tools.generate_film_vision_fusion import collect_visual_evidence
+from webui.tools.generate_film_vision_fusion import (
+    cancel_local_visual_analysis,
+    collect_visual_evidence,
+    estimate_local_visual_analysis,
+    local_visual_analysis_status,
+    resume_local_visual_analysis,
+    start_local_visual_analysis,
+)
 from webui.tools.generate_script_short import generate_script_short
 from webui.tools.generate_short_summary import (
     FILM_TV_PROMPT_CATEGORY,
@@ -1970,41 +1977,57 @@ def render_script_buttons(tr, params):
                 not st.session_state.get("fusion_visual_reuse_active")
                 and st.session_state.get("fusion_visual_signature") != visual_signature
             ):
-                visual_progress_bar = st.progress(0)
-                visual_status_text = st.empty()
-
-                def update_visual_progress(progress: float, message: str = ""):
+                task_id = str(st.session_state.get("fusion_visual_task_id", ""))
+                if task_id and st.session_state.get("fusion_visual_task_signature") != visual_signature:
+                    task_id = ""
+                    st.session_state.pop("fusion_visual_task_id", None)
+                if st.session_state.get("fusion_visual_confirmation_signature") != visual_signature:
                     try:
-                        normalized_progress = max(0, min(100, int(round(float(progress)))))
-                    except (TypeError, ValueError):
-                        normalized_progress = 0
-                    visual_progress_bar.progress(normalized_progress)
-                    visual_status_text.text(
-                        f"🎬 {message}" if message else f"📊 视觉分析进度：{normalized_progress}%"
-                    )
-
-                try:
-                    with st.spinner(tr("正在逐帧分析画面…")):
-                        evidence = collect_visual_evidence(
-                            video_path=source_video,
-                            video_theme=str(video_theme or ""),
-                            custom_prompt=str(st.session_state.get("fusion_visual_prompt", "")),
-                            frame_interval_seconds=float(st.session_state.get("fusion_frame_interval", 6)),
-                            vision_batch_size=int(st.session_state.get("fusion_vision_batch_size", 8)),
-                            progress_callback=update_visual_progress,
+                        estimate = estimate_local_visual_analysis(
+                            source_video,
+                            float(st.session_state.get("fusion_frame_interval", 6)),
+                            int(st.session_state.get("fusion_vision_batch_size", 8)),
                         )
-                    update_visual_progress(100, "视觉分析完成")
-                    _store_fusion_visual_evidence(
-                        evidence,
-                        reuse_active=False,
-                        visual_signature=visual_signature,
+                        st.warning(
+                            tr("将分析完整影片：预计提取 {frames} 帧、发送 {requests} 次视觉请求，预计至少 {minutes} 分钟。")
+                            .format(frames=estimate.keyframe_count, requests=estimate.request_count, minutes=estimate.estimated_minutes)
+                        )
+                    except Exception as exc:
+                        st.warning(f"{tr('无法预估视觉分析工作量')}: {exc}")
+                    if st.button(tr("确认并开始全片视觉分析"), key="confirm_fusion_visual_analysis"):
+                        st.session_state["fusion_visual_confirmation_signature"] = visual_signature
+                    else:
+                        st.stop()
+                if not task_id:
+                    task_id = start_local_visual_analysis(
+                        video_path=source_video, video_theme=str(video_theme or ""),
+                        custom_prompt=str(st.session_state.get("fusion_visual_prompt", "")),
+                        frame_interval_seconds=float(st.session_state.get("fusion_frame_interval", 6)),
+                        vision_batch_size=int(st.session_state.get("fusion_vision_batch_size", 8)),
                     )
-                except Exception as exc:
-                    st.error(f"{tr('视觉融合失败')}: {exc}")
+                    st.session_state["fusion_visual_task_id"] = task_id
+                    st.session_state["fusion_visual_task_signature"] = visual_signature
+                task = local_visual_analysis_status(task_id)
+                status = task.get("status")
+                if status == "completed":
+                    with open(str(task["artifact_path"]), encoding="utf-8") as artifact_file:
+                        artifact = json.load(artifact_file)
+                    evidence = load_visual_evidence_artifact(
+                        artifact, source_video_path=source_video, artifact_path=str(task["artifact_path"])
+                    )
+                    _store_fusion_visual_evidence(evidence, reuse_active=False, visual_signature=visual_signature)
+                    st.session_state.pop("fusion_visual_task_id", None)
+                else:
+                    progress = max(0, min(100, int(round(float(task.get("progress", 0))))))
+                    st.progress(progress, text=f"🎬 {task.get('message') or '正在逐帧分析画面…'}")
+                    if status in {"queued", "running"} and st.button(tr("取消视觉分析"), key="cancel_fusion_visual_task"):
+                        cancel_local_visual_analysis(task_id)
+                    if status in {"failed", "cancelled"}:
+                        st.error(f"{tr('视觉融合失败')}: {task.get('error_message') or status}")
+                        if st.button(tr("恢复视觉分析"), key="resume_fusion_visual_task"):
+                            resume_local_visual_analysis(task_id)
+                    st.info(tr("视觉分析正在后台运行。完成后再次点击生成即可继续。"))
                     st.stop()
-                finally:
-                    visual_progress_bar.empty()
-                    visual_status_text.empty()
             visual_evidence = str(st.session_state.get("fusion_visual_evidence", "")).strip()
             highlight_candidates = str(st.session_state.get("fusion_highlight_candidates", "")).strip()
             if not visual_evidence:

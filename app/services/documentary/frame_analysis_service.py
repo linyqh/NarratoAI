@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import shutil
 from datetime import datetime
 from typing import Any, Callable
 
@@ -58,6 +59,10 @@ JSON 必须包含以下键：
         vision_model_name: str | None = None,
         vision_base_url: str | None = None,
         max_concurrency: int | None = None,
+        completed_batches: list[FrameBatchResult] | None = None,
+        checkpoint_callback: Callable[[FrameBatchResult], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
+        retain_keyframes: bool = False,
     ) -> list[dict]:
         progress = progress_callback or (lambda _p, _m: None)
         analysis_result = await self.analyze_video(
@@ -159,13 +164,17 @@ JSON 必须包含以下键：
             raise RuntimeError("未能构建任何关键帧批次")
 
         progress(40, f"正在分析关键帧，共 {len(batches)} 个批次...")
-        batch_results = await self._analyze_batches(
+        recovered_batches = list(completed_batches or [])
+        batch_results = recovered_batches + await self._analyze_batches(
             analyzer=analyzer,
             batches=batches,
             custom_prompt=custom_prompt,
             video_theme=video_theme,
             max_concurrency=concurrency,
             progress_callback=progress,
+            completed_batch_indexes={item.batch_index for item in recovered_batches if item.status == "success"},
+            checkpoint_callback=checkpoint_callback,
+            is_cancelled=is_cancelled,
         )
 
         progress(65, "正在整理分析结果...")
@@ -182,6 +191,10 @@ JSON 必须包含以下键：
         )
         analysis_json_path = self._save_analysis_artifact(artifact)
         video_clip_json = self._build_video_clip_json(sorted_batches)
+        if not retain_keyframes and keyframe_files:
+            keyframe_directory = os.path.dirname(keyframe_files[0])
+            shutil.rmtree(keyframe_directory, ignore_errors=True)
+            keyframe_files = []
 
         progress(75, "逐帧分析完成")
         return {
@@ -361,10 +374,14 @@ JSON 必须包含以下键：
         video_theme: str,
         max_concurrency: int,
         progress_callback: Callable[[float, str], None],
+        completed_batch_indexes: set[int] | None = None,
+        checkpoint_callback: Callable[[FrameBatchResult], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
     ) -> list[FrameBatchResult]:
         semaphore = asyncio.Semaphore(max(1, max_concurrency))
         total = len(batches)
-        done = 0
+        completed_batch_indexes = completed_batch_indexes or set()
+        done = len(completed_batch_indexes)
         done_lock = asyncio.Lock()
 
         batch_time_ranges: list[str] = []
@@ -376,6 +393,8 @@ JSON 必须包含以下键：
 
         async def run_single(batch_index: int, frame_paths: list[str], time_range: str) -> FrameBatchResult:
             nonlocal done
+            if is_cancelled and is_cancelled():
+                raise RuntimeError("视觉分析已取消")
             prompt = self._build_batch_prompt(
                 frame_count=len(frame_paths),
                 time_range=time_range,
@@ -392,19 +411,23 @@ JSON 必须包含以下键：
                     )
                 raw_response, error_message = self._extract_batch_response(raw_results)
                 if error_message:
-                    return self._build_failed_batch_result(
+                    result = self._build_failed_batch_result(
                         batch_index=batch_index,
                         raw_response=raw_response,
                         error_message=error_message,
                         frame_paths=frame_paths,
                         time_range=time_range,
                     )
-                return self._parse_batch_response(
+                else:
+                    result = self._parse_batch_response(
                     batch_index=batch_index,
                     raw_response=raw_response,
                     frame_paths=frame_paths,
                     time_range=time_range,
-                )
+                    )
+                if checkpoint_callback and result.status == "success":
+                    checkpoint_callback(result)
+                return result
             except Exception as exc:
                 return self._build_failed_batch_result(
                     batch_index=batch_index,
@@ -422,6 +445,7 @@ JSON 必须包含以下键：
         tasks = [
             run_single(batch_index=index, frame_paths=batch_files, time_range=batch_time_ranges[index])
             for index, batch_files in enumerate(batches)
+            if index not in completed_batch_indexes
         ]
         return await asyncio.gather(*tasks)
 

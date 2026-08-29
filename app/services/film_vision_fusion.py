@@ -158,6 +158,9 @@ class FilmVisionFusion:
         vision_base_url: str,
         max_concurrency: int,
         progress_callback=None,
+        completed_batches=None,
+        checkpoint_callback=None,
+        is_cancelled=None,
     ) -> VisualEvidence:
         analysis = await self._frame_analysis_factory().analyze_video(
             video_path=video_path,
@@ -171,6 +174,9 @@ class FilmVisionFusion:
             vision_base_url=vision_base_url,
             max_concurrency=max_concurrency,
             progress_callback=progress_callback,
+            completed_batches=completed_batches,
+            checkpoint_callback=checkpoint_callback,
+            is_cancelled=is_cancelled,
         )
         artifact = analysis["analysis_artifact"]
         # Keep the full per-frame observations in the JSON artifact, but send
