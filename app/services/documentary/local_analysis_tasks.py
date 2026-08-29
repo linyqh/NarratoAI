@@ -59,7 +59,13 @@ class LocalAnalysisTaskStore:
     def request_cancel(self, task_id: str) -> dict:
         return self.update(task_id, cancel_requested=True)
 
-    def find_latest_for_source(self, source_identity: dict, analysis_signature: str = "") -> dict | None:
+    def find_latest_for_source(
+        self,
+        source_identity: dict,
+        analysis_signature: str = "",
+        *,
+        include_completed: bool = False,
+    ) -> dict | None:
         """Return the most recent non-completed task for exactly this source content."""
         matches = []
         for path in self._directory.glob("*.json"):
@@ -71,7 +77,7 @@ class LocalAnalysisTaskStore:
             if (
                 task.get("source_video_identity") == source_identity
                 and task.get("request", {}).get("analysis_signature", "") == analysis_signature
-                and task.get("status") != "completed"
+                and (include_completed or task.get("status") != "completed")
             ):
                 if task.get("status") in {"queued", "running"} and task.get("runner_process_id") != os.getpid():
                     task["status"] = "interrupted"

@@ -2,7 +2,7 @@ import json
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from app.services.fusion_script_finalizer import FusionScriptFinalizer
 from app.services.documentary.frame_analysis_models import HighlightCandidate, TimeRange
@@ -105,6 +105,72 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual(1, review_state["fusion_finalization_report"]["unresolved_conflict_count"])
         self.assertEqual("audit.json", review_state["fusion_generation_audit_path"])
         self.assertEqual(result.script, persist.call_args.args[0]["finalized_script"])
+
+    def test_background_match_finalization_returns_a_renderable_script(self):
+        result = generate_short_summary.finalize_fusion_matching_result(
+            matched_plan={
+                "items": [
+                    {
+                        "_id": 1,
+                        "video_id": 1,
+                        "video_name": "film.mp4",
+                        "timestamp": "00:00:00,000-00:00:10,000",
+                        "picture": "人物在废墟中前进。",
+                        "narration": "人物在废墟中前进。",
+                        "OST": 0,
+                    }
+                ],
+                "evidence_conflicts": [],
+                "continuity_report": {"is_renderable": True, "findings": []},
+            },
+            finalization_context={
+                "candidate_payloads": [],
+                "candidate_rejections": [],
+                "original_sound_ratio": 0,
+                "source_durations": {"film.mp4": 10.0},
+            },
+        )
+
+        self.assertTrue(result["renderable"])
+        self.assertEqual("人物在废墟中前进。", result["finalized_script"][0]["picture"])
+        self.assertTrue(result["continuity_report"]["is_renderable"])
+
+    def test_planning_repairs_a_continuity_failure_once_before_creator_approval(self):
+        base_segment = {
+            "active_subject": "主角",
+            "entering_state": "面临当前危机",
+            "trigger_event": "发生新的事件",
+            "exiting_state": "必须做出下一步选择",
+            "exception_reason": "测试单句边界",
+        }
+        invalid_plan = {
+            "segments": [
+                {**base_segment, "segment_id": "segment-1", "sentence_start": 1, "sentence_end": 1, "core_window": "00:00:00,000-00:00:20,000"},
+                {**base_segment, "segment_id": "segment-2", "sentence_start": 2, "sentence_end": 2, "core_window": "00:03:00,001-00:03:20,000"},
+            ]
+        }
+        repaired_plan = json.loads(json.dumps(invalid_plan))
+        repaired_plan["segments"][0]["bridge_to_next"] = True
+        repaired_plan["segments"][0]["bridge_reason"] = "解说交代主角转移到下一阶段。"
+        analyzer = Mock()
+        analyzer.plan_narration_segments.return_value = json.dumps(invalid_plan, ensure_ascii=False)
+        analyzer.repair_fusion_segment_plan.return_value = json.dumps(repaired_plan, ensure_ascii=False)
+
+        result = generate_short_summary.create_fusion_segment_plan(
+            analyzer=analyzer,
+            short_name="测试影片",
+            plot_analysis="剧情概要",
+            subtitle_content="字幕事实",
+            narration_copy="第一句。第二句。",
+            narration_language="简体中文（中国）",
+            drama_genre="剧情",
+            visual_evidence="",
+            highlight_candidates="",
+            temperature=0.3,
+        )
+
+        self.assertTrue(result["segments"][0]["bridge_to_next"])
+        analyzer.repair_fusion_segment_plan.assert_called_once()
 
     def test_conflict_without_video_name_receives_the_selected_source_identity(self):
         source_identity = {"algorithm": "sha256", "sha256": "a" * 64, "size_bytes": 12}

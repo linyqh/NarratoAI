@@ -14,6 +14,7 @@ from app.services.subtitle_text import decode_subtitle_bytes, read_subtitle_text
 from app.utils import utils, check_script
 from webui.tools.generate_script_docu import generate_script_docu
 from app.services.film_vision_fusion import load_visual_evidence_artifact
+from app.services.fusion_script_pipeline import FusionScriptPipeline
 from app.services.visual_evidence_artifact import build_source_video_identity
 from app.services.visual_evidence_artifact import read_highlight_candidate_intake
 from webui.tools.generate_film_vision_fusion import (
@@ -34,7 +35,13 @@ from webui.tools.generate_short_summary import (
     analyze_short_drama_plot,
     generate_script_short_sunmmary,
     generate_short_drama_narration_copy,
+    approve_fusion_segment_plan,
     acknowledge_fusion_audit,
+    start_fusion_matching_task,
+    find_fusion_matching_task,
+    fusion_matching_task_status,
+    cancel_fusion_matching_task,
+    resume_fusion_matching_task,
 )
 
 
@@ -1874,11 +1881,81 @@ def render_script_buttons(tr, params):
                 disabled=not script_path,
                 use_container_width=True,
             )
+
+        if script_path == MODE_FILM_VISION_FUSION:
+            pending_plan = st.session_state.get("fusion_segment_plan_pending")
+            approved_plan = st.session_state.get("fusion_segment_plan")
+            current_narration_copy = str(st.session_state.get(narration_copy_key, "")).strip()
+            if approved_plan and st.session_state.get("fusion_segment_plan_narration") != current_narration_copy:
+                active_task_id = str(st.session_state.get("fusion_matching_task_id") or "")
+                if active_task_id:
+                    cancel_fusion_matching_task(active_task_id)
+                st.session_state.pop("fusion_segment_plan", None)
+                st.session_state.pop("fusion_segment_plan_approval", None)
+                st.session_state.pop("fusion_matching_task_id", None)
+                approved_plan = None
+                st.warning(tr("解说文案已修改，请重新生成并确认分段计划。"))
+            if pending_plan:
+                with st.expander(tr("Fusion Segment Plan（待确认）"), expanded=True):
+                    st.caption(tr("可直接编辑计划 JSON；确认后才会开始分段匹配。"))
+                    st.text_area(
+                        tr("Fusion Segment Plan"),
+                        key="fusion_segment_plan_editor",
+                        height=300,
+                    )
+                    if st.button(tr("确认分段计划"), key="approve_fusion_segment_plan"):
+                        try:
+                            edited_plan = json.loads(st.session_state["fusion_segment_plan_editor"])
+                            FusionScriptPipeline().validate_plan(current_narration_copy, edited_plan)
+                            continuity_report = FusionScriptPipeline().validate_continuity(
+                                current_narration_copy, edited_plan
+                            )
+                            if not continuity_report.is_renderable:
+                                finding_messages = "; ".join(
+                                    finding.message for finding in continuity_report.findings
+                                )
+                                raise ValueError(f"叙事连续性未通过：{finding_messages}")
+                            st.session_state["fusion_segment_plan"] = edited_plan
+                            st.session_state["fusion_segment_plan_narration"] = current_narration_copy
+                            st.session_state["fusion_segment_plan_source_identity"] = st.session_state.get(
+                                "fusion_visual_source_identity"
+                            )
+                            st.session_state["fusion_segment_plan_approval"] = approve_fusion_segment_plan(
+                                plan_payload=edited_plan,
+                                narration_copy=current_narration_copy,
+                                source_identity=st.session_state.get("fusion_visual_source_identity"),
+                            )
+                            st.session_state.pop("fusion_segment_plan_pending", None)
+                            st.success(tr("分段计划已确认；点击生成剪辑脚本即可开始分段匹配。"))
+                            st.rerun()
+                        except (ValueError, json.JSONDecodeError) as exc:
+                            st.error(f"{tr('分段计划无效')}: {exc}")
+            elif approved_plan:
+                with st.expander(tr("Fusion Segment Plan（已确认）"), expanded=False):
+                    st.json(approved_plan)
+                    if st.button(tr("编辑分段计划"), key="edit_fusion_segment_plan"):
+                        active_task_id = str(st.session_state.get("fusion_matching_task_id") or "")
+                        if active_task_id:
+                            cancel_fusion_matching_task(active_task_id)
+                        st.session_state["fusion_segment_plan_pending"] = approved_plan
+                        st.session_state["fusion_segment_plan_editor"] = json.dumps(
+                            approved_plan, ensure_ascii=False, indent=2
+                        )
+                        st.session_state.pop("fusion_segment_plan", None)
+                        st.session_state.pop("fusion_segment_plan_approval", None)
+                        st.session_state.pop("fusion_matching_task_id", None)
+                        st.rerun()
     else:
         narration_copy_clicked = False
         action_clicked = st.button(button_name, key="script_action", disabled=not script_path)
 
-    if script_path in SUMMARY_SCRIPT_MODES and (narration_copy_clicked or action_clicked):
+    matching_task_needs_polling = bool(
+        script_path == MODE_FILM_VISION_FUSION
+        and st.session_state.get("fusion_matching_task_id")
+    )
+    if script_path in SUMMARY_SCRIPT_MODES and (
+        narration_copy_clicked or action_clicked or matching_task_needs_polling
+    ):
         summary_config = _summary_mode_config(script_path)
         type_option_key = _summary_state_key(summary_config, "type_option")
         custom_type_key = _summary_state_key(summary_config, "custom_type")
@@ -2064,6 +2141,19 @@ def render_script_buttons(tr, params):
                     visual_evidence=visual_evidence,
             )
             if copy_result:
+                active_task_id = str(st.session_state.get("fusion_matching_task_id") or "")
+                if active_task_id:
+                    cancel_fusion_matching_task(active_task_id)
+                for state_key in (
+                    "fusion_segment_plan",
+                    "fusion_segment_plan_pending",
+                    "fusion_segment_plan_narration",
+                    "fusion_segment_plan_editor",
+                    "fusion_segment_plan_source_identity",
+                    "fusion_segment_plan_approval",
+                    "fusion_matching_task_id",
+                ):
+                    st.session_state.pop(state_key, None)
                 st.session_state[narration_copy_key] = copy_result["narration_copy"]
                 if not plot_analysis:
                     st.session_state[plot_analysis_key] = copy_result["plot_analysis"]
@@ -2071,7 +2161,105 @@ def render_script_buttons(tr, params):
                 st.session_state[plot_signature_key] = current_signature
                 st.success(tr("Narration copy generated successfully"))
 
-        if action_clicked:
+        pre_matched_fusion_result = None
+        automatic_finalization = False
+        if (action_clicked or matching_task_needs_polling) and script_path == MODE_FILM_VISION_FUSION:
+            approved_plan = st.session_state.get("fusion_segment_plan")
+            if approved_plan and (
+                st.session_state.get("fusion_segment_plan_source_identity")
+                != st.session_state.get("fusion_visual_source_identity")
+            ):
+                active_task_id = str(st.session_state.get("fusion_matching_task_id") or "")
+                if active_task_id:
+                    cancel_fusion_matching_task(active_task_id)
+                st.session_state.pop("fusion_segment_plan", None)
+                st.session_state.pop("fusion_segment_plan_approval", None)
+                st.session_state.pop("fusion_matching_task_id", None)
+                approved_plan = None
+                st.warning(tr("视觉证据来源已变化，请重新生成并确认分段计划。"))
+            if approved_plan:
+                task_id = str(st.session_state.get("fusion_matching_task_id") or "")
+                if not task_id:
+                    persisted_task = find_fusion_matching_task(
+                        source_identity=st.session_state.get("fusion_visual_source_identity"),
+                        plan_payload=approved_plan,
+                        narration_copy=str(st.session_state.get(narration_copy_key, "")),
+                    )
+                    if persisted_task:
+                        task_id = str(persisted_task["task_id"])
+                        st.session_state["fusion_matching_task_id"] = task_id
+                if not task_id:
+                    candidate_payloads = [
+                        candidate.to_dict() if hasattr(candidate, "to_dict") else candidate
+                        for candidate in st.session_state.get("fusion_highlight_candidate_items", [])
+                    ]
+                    finalization_context = {
+                        "candidate_payloads": candidate_payloads,
+                        "candidate_rejections": st.session_state.get(
+                            "fusion_highlight_candidate_rejections", []
+                        ),
+                        "original_sound_ratio": original_sound_ratio,
+                        "source_identity": st.session_state.get("fusion_visual_source_identity"),
+                        "source_durations": {
+                            os.path.basename(source_video): VideoProcessor(source_video).duration
+                        },
+                    }
+                    task_id = start_fusion_matching_task(
+                        short_name=video_theme,
+                        narration_copy=str(st.session_state.get(narration_copy_key, "")),
+                        narration_language=narration_language,
+                        drama_genre=drama_genre,
+                        original_sound_ratio=original_sound_ratio,
+                        subtitle_content=str(st.session_state.get("subtitle_content", "")),
+                        visual_evidence=visual_evidence,
+                        highlight_candidates=highlight_candidates,
+                        plan_payload=approved_plan,
+                        plan_approval=st.session_state.get("fusion_segment_plan_approval") or {},
+                        temperature=temperature,
+                        source_identity=st.session_state.get("fusion_visual_source_identity"),
+                        finalization_context=finalization_context,
+                    )
+                    st.session_state["fusion_matching_task_id"] = task_id
+                task = fusion_matching_task_status(task_id)
+                status = str(task.get("status") or "")
+                if status == "completed":
+                    finalization = task.get("finalization")
+                    if not isinstance(finalization, dict):
+                        st.error(tr("分段匹配完成，但最终校验结果缺失。"))
+                        st.stop()
+                    st.session_state["fusion_original_matched_script"] = finalization.get(
+                        "original_script", []
+                    )
+                    st.session_state["fusion_evidence_conflicts"] = finalization.get(
+                        "evidence_conflicts", []
+                    )
+                    st.session_state["fusion_finalization_report"] = finalization.get(
+                        "finalization_report", {}
+                    )
+                    if not finalization.get("renderable"):
+                        st.error(tr("最终校验发现待审阅证据冲突，脚本未进入可渲染状态。"))
+                        st.stop()
+                    st.session_state["video_clip_json"] = finalization.get("finalized_script", [])
+                    st.session_state.pop("fusion_matching_task_id", None)
+                    action_clicked = False
+                    st.success(tr("分段匹配与最终校验已完成。"))
+                else:
+                    progress = max(0, min(100, int(round(float(task.get("progress", 0))))))
+                    st.progress(progress, text=f"✂️ {task.get('message') or '正在分段匹配剪辑脚本…'}")
+                    if status in {"queued", "running"} and st.button(
+                        tr("取消分段匹配"), key="cancel_fusion_matching_task"
+                    ):
+                        cancel_fusion_matching_task(task_id)
+                    if status in {"failed", "cancelled", "interrupted"}:
+                        st.error(f"{tr('分段匹配失败')}: {task.get('error_message') or status}")
+                        if task.get("segment_matches"):
+                            st.json(task["segment_matches"])
+                        if st.button(tr("恢复分段匹配"), key="resume_fusion_matching_task"):
+                            resume_fusion_matching_task(task_id)
+                    st.info(tr("分段匹配正在后台运行；完成后会自动进入最终校验。"))
+                    st.stop()
+
+        if action_clicked or automatic_finalization:
             generate_script_short_sunmmary(
                 params,
                 subtitle_paths,
@@ -2096,6 +2284,9 @@ def render_script_buttons(tr, params):
                 highlight_candidate_rejections=st.session_state.get("fusion_highlight_candidate_rejections", []),
                 highlight_candidate_intake=st.session_state.get("fusion_highlight_candidate_intake"),
                 visual_source_identity=st.session_state.get("fusion_visual_source_identity"),
+                fusion_segment_plan=st.session_state.get("fusion_segment_plan"),
+                fusion_plan_approval=st.session_state.get("fusion_segment_plan_approval"),
+                pre_matched_fusion_result=pre_matched_fusion_result,
             )
 
     if script_path in SUMMARY_SCRIPT_MODES:
@@ -2151,6 +2342,11 @@ def render_script_buttons(tr, params):
                             str(st.session_state.get("fusion_generation_audit_path", "")),
                             st.session_state["fusion_evidence_conflicts"],
                         )
+                        pending_script = st.session_state.pop(
+                            "fusion_finalized_script_pending_review", None
+                        )
+                        if isinstance(pending_script, list):
+                            st.session_state["video_clip_json"] = pending_script
                         st.success(tr("证据冲突已标记为已审阅；这不代表任一证据来源已被验证。"))
                         st.rerun()
 

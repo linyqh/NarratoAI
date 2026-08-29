@@ -32,6 +32,9 @@ class ScriptMatchingPrompt(ParameterizedPrompt):
                 "original_sound_ratio",
                 "visual_evidence",
                 "highlight_candidates",
+                "core_window",
+                "context_window",
+                "segment_role",
             ],
         )
         super().__init__(
@@ -78,6 +81,13 @@ ${visual_evidence}
 ${highlight_candidates}
 </highlight_candidates>
 
+## 当前计划段（必须遵守）
+<segment>
+核心可输出时间范围：${core_window}
+上下文时间范围：${context_window}
+叙事职责：${segment_role}
+</segment>
+
 ## 输出语言
 <narration_language>
 ${narration_language}
@@ -109,6 +119,7 @@ ${original_sound_ratio}%
 13. 不要自行判断或改写影视类型；画面匹配和 picture 描述要服务用户选择的 ${drama_genre} 叙事重点。
 14. 有视觉证据时，picture 必须优先使用同一时间范围内可见的动作、人物、场景和道具。视觉证据不能确认的细节不得写入 picture。
 15. 字幕与视觉证据冲突时，不得静默丢弃：把时间段、字幕主张、视觉观察和严重度写入 evidence_conflicts；相关具体断言不得写入 items。
+16. 当“核心可输出时间范围”为有效时间段时，只能使用其中的 timestamp 生成 items；上下文时间范围只用于理解承接，不能输出为剪辑片段。
 
 ## 原片占比规则
 - ${original_sound_ratio}% = 0% 时，不要输出 OST=1，全部使用解说承接。

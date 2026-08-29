@@ -61,6 +61,21 @@ class FullFilmEstimateTests(unittest.TestCase):
 
         self.assertEqual(task["task_id"], restored["task_id"])
 
+    def test_find_latest_can_restore_a_completed_task_when_requested(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            task = store.create(
+                {"video_path": "film.mp4", "analysis_signature": "plan-a"},
+                {"sha256": "a" * 64},
+            )
+            store.update(task["task_id"], status="completed")
+
+            restored = store.find_latest_for_source(
+                {"sha256": "a" * 64}, "plan-a", include_completed=True
+            )
+
+        self.assertEqual(task["task_id"], restored["task_id"])
+
 
 if __name__ == "__main__":
     unittest.main()

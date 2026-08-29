@@ -92,12 +92,15 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
             "narration_language": "简体中文（中国）",
             "visual_evidence": "",
             "highlight_candidates": "",
+            "narration_copy": "他发现证据不对，真正的凶手另有其人。",
+            "core_window": "00:00:01,000-00:00:04,000",
+            "context_window": "00:00:00,000-00:00:19,000",
+            "segment_role": "开场钩子",
         }
         prompt_parameters = {
             "segment_planning": base_parameters,
             "script_matching": {
                 **base_parameters,
-                "narration_copy": "他发现证据不对，真正的凶手另有其人。",
                 "original_sound_ratio": 30,
             },
             "script_generation": {
@@ -269,6 +272,29 @@ class SubtitleAnalyzerAdapterPipelineTests(unittest.TestCase):
 
         self.assertEqual("success", result["status"])
         self.assertEqual(repaired, result["narration_script"])
+
+    def test_repair_fusion_segment_plan_uses_the_same_adapter_configuration(self):
+        adapter = SubtitleAnalyzerAdapter(
+            api_key="sk-test",
+            model="test-model",
+            base_url="https://example.test/v1",
+            provider="openai",
+            prompt_category="film_tv_narration",
+        )
+        repaired = json.dumps({"segments": []}, ensure_ascii=False)
+
+        with mock.patch.object(adapter, "_run_async_safely", return_value=repaired) as call:
+            result = adapter.repair_fusion_segment_plan(
+                plan_payload='{"segments": [{"segment_id": "segment-1"}]}',
+                continuity_findings='{"findings": [{"code": "incomplete_story_beat"}]}',
+                subtitle_content="00:00:00,000 --> 00:00:10,000\n字幕事实",
+                visual_evidence="## 00:00:00,000-00:00:10,000\n- 画面事实",
+                highlight_candidates="",
+            )
+
+        self.assertEqual(repaired, result)
+        self.assertIn("incomplete_story_beat", call.call_args.kwargs["prompt"])
+        self.assertEqual("json", call.call_args.kwargs["response_format"])
 
 
 if __name__ == "__main__":

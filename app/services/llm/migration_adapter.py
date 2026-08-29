@@ -336,6 +336,9 @@ class SubtitleAnalyzerAdapter:
         original_sound_ratio: int = 30,
         visual_evidence: str = "",
         highlight_candidates: str = "",
+        core_window: str = "",
+        context_window: str = "",
+        segment_role: str = "",
         stream_callback=None,
     ) -> Dict[str, Any]:
         """Match reviewed narration copy to source footage and return JSON script."""
@@ -352,6 +355,9 @@ class SubtitleAnalyzerAdapter:
                     "original_sound_ratio": int(original_sound_ratio),
                     "visual_evidence": visual_evidence,
                     "highlight_candidates": highlight_candidates,
+                    "core_window": core_window,
+                    "context_window": context_window,
+                    "segment_role": segment_role,
                 },
             )
             narration_script = self._generate_json_text(
@@ -382,6 +388,9 @@ class SubtitleAnalyzerAdapter:
         temperature: float = 0.3,
         narration_language: str = "简体中文（中国）",
         drama_genre: str = "逆袭/复仇",
+        narration_copy: str = "",
+        visual_evidence: str = "",
+        highlight_candidates: str = "",
     ) -> str:
         """Plan source segments before generating final copy."""
         prompt, system_prompt = self._render_prompt(
@@ -391,7 +400,33 @@ class SubtitleAnalyzerAdapter:
                 "drama_genre": drama_genre,
                 "plot_analysis": plot_analysis,
                 "subtitle_content": subtitle_content,
+                "narration_copy": narration_copy,
+                "visual_evidence": visual_evidence,
+                "highlight_candidates": highlight_candidates,
                 "narration_language": narration_language,
+            },
+        )
+        return self._generate_json_text(prompt, system_prompt, min(float(temperature), 0.3))
+
+    def repair_fusion_segment_plan(
+        self,
+        *,
+        plan_payload: str,
+        continuity_findings: str,
+        subtitle_content: str,
+        visual_evidence: str,
+        highlight_candidates: str,
+        temperature: float = 0.3,
+    ) -> str:
+        """Repair one rejected Fusion Segment Plan with the configured text model."""
+        prompt, system_prompt = self._render_prompt(
+            "segment_plan_repair",
+            {
+                "plan_payload": plan_payload,
+                "continuity_findings": continuity_findings,
+                "subtitle_content": subtitle_content,
+                "visual_evidence": visual_evidence,
+                "highlight_candidates": highlight_candidates,
             },
         )
         return self._generate_json_text(prompt, system_prompt, min(float(temperature), 0.3))

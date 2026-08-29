@@ -60,6 +60,34 @@ _Avoid_: dialogue ratio, model-estimated OST ratio
 A timed narration script generated from Subtitle Evidence and Visual Evidence, with conflicts withheld for review.
 _Avoid_: hybrid script, combined script
 
+**Fusion Segment Plan**:
+An ordered, reviewable plan that assigns contiguous portions of an approved narration to bounded source-time windows and narrative roles before a Fusion Script is matched.
+_Avoid_: full-script plan, shot list
+
+**Evidence Window**:
+The time-bounded subset of Subtitle Evidence, Visual Evidence, and Highlight Candidates available to one Fusion Segment Plan entry.
+_Avoid_: global context, evidence chunk
+
+**Segment Match**:
+A timed local-script result generated for one Fusion Segment Plan entry from its Evidence Window.
+_Avoid_: partial script, match fragment
+
+**Plan Approval**:
+The creator's explicit confirmation of a Fusion Segment Plan before its Segment Matches may consume model requests.
+_Avoid_: automatic plan continuation, script approval
+
+**Fusion Matching Task**:
+A resumable local background task that persists an approved Fusion Segment Plan and the status and output of each Segment Match.
+_Avoid_: foreground matching, browser-bound script generation
+
+**Core Window**:
+The non-overlapping source-time range assigned to one Fusion Segment Plan entry; its Segment Match may emit clips only inside this range.
+_Avoid_: match range, segment context
+
+**Context Window**:
+The small source-time margin adjacent to a Core Window that supplies narrative context but cannot contribute emitted clips.
+_Avoid_: overlap range, extra clip range
+
 **Evidence Conflict**:
 A validated record of a time window in which Subtitle Evidence and Visual Evidence cannot safely support the same narration claim; it carries source identity, both evidence statements, severity, and review status.
 _Avoid_: model disagreement, mismatch
@@ -67,3 +95,15 @@ _Avoid_: model disagreement, mismatch
 **Finalization Report**:
 An audit of a Fusion Script's Original Sound Ratio, Highlight Candidate decisions, distribution, and unresolved Evidence Conflicts before rendering.
 _Avoid_: render report, model explanation
+
+**Story Beat**:
+A causally complete unit of a Fusion Script that states the active character or group, its immediate goal or pressure, the event that changes that state, and the resulting next risk or choice.
+_Avoid_: highlight, arbitrary clip group
+
+**Narrative Bridge**:
+A narration-led source-video segment that makes an otherwise discontinuous change of time, place, character state, goal, or causal relationship understandable before the next Story Beat or Highlight Candidate.
+_Avoid_: filler, transition effect
+
+**Continuity Gate**:
+A local validation that prevents a Fusion Script from entering the renderable state when an unmarked large source-time jump or Story Beat lacks the required Narrative Bridge.
+_Avoid_: pacing preference, highlight quota

@@ -9,10 +9,12 @@
 '''
 import os
 import json
+import hashlib
 import time
 import traceback
 import html
 from dataclasses import asdict
+from pathlib import Path
 import streamlit as st
 from loguru import logger
 
@@ -24,12 +26,15 @@ from app.services.SDE.short_drama_explanation import (
 )
 from app.services.subtitle_text import read_subtitle_text
 from app.services.fusion_script_finalizer import FusionScriptFinalizer
+from app.services.fusion_script_pipeline import FusionScriptPipeline
+from app.services.documentary.local_analysis_tasks import LocalAnalysisTaskRunner, LocalAnalysisTaskStore
 from app.services.fusion_models import (
     CandidateRejection,
     EvidenceConflict,
     FinalizationRequest,
     HighlightCandidateIntake,
 )
+from app.services.documentary.frame_analysis_models import HighlightCandidate, TimeRange
 from app.utils.video_processor import VideoProcessor
 from app.utils import utils
 from app.services.short_drama_narration_validation import (
@@ -183,6 +188,421 @@ def _format_progress_status(progress, message: str = "", tr=lambda key: key):
     if message:
         return message
     return f"{tr('Progress')}: {progress}%"
+
+
+def create_fusion_segment_plan(
+    *,
+    analyzer: SubtitleAnalyzerAdapter,
+    short_name: str,
+    plot_analysis: str,
+    subtitle_content: str,
+    narration_copy: str,
+    narration_language: str,
+    drama_genre: str,
+    visual_evidence: str,
+    highlight_candidates: str,
+    temperature: float,
+) -> dict:
+    """Generate and validate a creator-approvable Fusion Segment Plan."""
+    plan_raw = analyzer.plan_narration_segments(
+        short_name=short_name,
+        plot_analysis=plot_analysis,
+        subtitle_content=subtitle_content,
+        narration_copy=narration_copy,
+        narration_language=narration_language,
+        drama_genre=drama_genre,
+        visual_evidence=visual_evidence,
+        highlight_candidates=highlight_candidates,
+        temperature=temperature,
+    )
+    plan = parse_and_fix_json(plan_raw)
+    if not isinstance(plan, dict):
+        raise ValueError("Fusion Segment Plan is not valid JSON")
+    pipeline = FusionScriptPipeline()
+    pipeline.validate_plan(narration_copy, plan)
+    continuity_report = pipeline.validate_continuity(narration_copy, plan)
+    if not continuity_report.is_renderable:
+        repaired_raw = analyzer.repair_fusion_segment_plan(
+            plan_payload=json.dumps(plan, ensure_ascii=False),
+            continuity_findings=json.dumps(continuity_report.to_dict(), ensure_ascii=False),
+            subtitle_content=subtitle_content,
+            visual_evidence=visual_evidence,
+            highlight_candidates=highlight_candidates,
+            temperature=temperature,
+        )
+        repaired_plan = parse_and_fix_json(repaired_raw)
+        if not isinstance(repaired_plan, dict):
+            raise ValueError("Fusion Segment Plan repair is not valid JSON")
+        pipeline.validate_plan(narration_copy, repaired_plan)
+        continuity_report = pipeline.validate_continuity(narration_copy, repaired_plan)
+        if not continuity_report.is_renderable:
+            messages = "; ".join(finding.message for finding in continuity_report.findings)
+            raise ValueError(f"Fusion Segment Plan lacks narrative continuity after repair: {messages}")
+        plan = repaired_plan
+    return plan
+
+
+def approve_fusion_segment_plan(
+    *, plan_payload: dict, narration_copy: str, source_identity: dict | None
+) -> dict:
+    """Create the durable approval proof required before matching can start."""
+    return {
+        "approval_signature": _fusion_plan_approval_signature(
+            plan_payload, narration_copy, source_identity
+        ),
+        "approved_at": time.time(),
+        "source_video_identity": source_identity or {},
+    }
+
+
+def match_approved_fusion_segment_plan(
+    *,
+    analyzer: SubtitleAnalyzerAdapter,
+    short_name: str,
+    narration_copy: str,
+    narration_language: str,
+    drama_genre: str,
+    original_sound_ratio: int,
+    subtitle_content: str,
+    visual_evidence: str,
+    highlight_candidates: str,
+    plan_payload: dict,
+    temperature: float,
+    plan_approval: dict,
+    completed_segment_results: dict | None = None,
+    on_segment_started=None,
+    on_segment_complete=None,
+    on_segment_failed=None,
+    is_cancelled=None,
+) -> dict:
+    """Match each approved plan entry against a bounded Evidence Window."""
+    approval_source_identity = (
+        plan_approval.get("source_video_identity") if isinstance(plan_approval, dict) else None
+    )
+    if not _has_valid_fusion_plan_approval(
+        plan_approval, plan_payload, narration_copy, approval_source_identity
+    ):
+        raise ValueError("Fusion Segment Plan requires creator approval before matching")
+    def matcher(request):
+        response = analyzer.match_narration_copy_to_script(
+            short_name=short_name,
+            plot_analysis=request.intent,
+            subtitle_content=request.subtitle_evidence,
+            narration_copy=request.narration,
+            temperature=temperature,
+            narration_language=narration_language,
+            drama_genre=drama_genre,
+            original_sound_ratio=original_sound_ratio,
+            visual_evidence=request.visual_evidence,
+            highlight_candidates=request.highlight_candidates,
+            core_window=request.core_window,
+            context_window=request.context_window,
+            segment_role=request.story_role,
+        )
+        if response.get("status") != "success":
+            raise RuntimeError(str(response.get("message") or "segment matching failed"))
+        parsed = parse_and_fix_json(str(response.get("narration_script") or ""))
+        if not isinstance(parsed, dict):
+            raise ValueError("segment matching returned invalid JSON")
+        return parsed
+
+    result = FusionScriptPipeline().match_approved_plan(
+        narration_copy=narration_copy,
+        plan_payload=plan_payload,
+        subtitle_evidence=subtitle_content,
+        visual_evidence=visual_evidence,
+        highlight_candidates=highlight_candidates,
+        matcher=matcher,
+        retry_count=1,
+        max_concurrency=2,
+        completed_segment_results=completed_segment_results,
+        on_segment_started=on_segment_started,
+        on_segment_complete=on_segment_complete,
+        on_segment_failed=on_segment_failed,
+        is_cancelled=is_cancelled,
+    )
+    return {
+        "items": result.items,
+        "evidence_conflicts": result.evidence_conflicts,
+        "continuity_report": result.continuity_report.to_dict(),
+    }
+
+
+def finalize_fusion_matching_result(
+    *, matched_plan: dict, finalization_context: dict
+) -> dict:
+    """Finalize a completed background match without depending on Streamlit state."""
+    candidate_payloads = list(finalization_context.get("candidate_payloads") or [])
+    candidates = tuple(
+        HighlightCandidate(
+            time_range=TimeRange.parse(str(payload.get("time_range") or "")),
+            category=str(payload.get("category") or ""),
+            reason=str(payload.get("reason") or ""),
+            score=int(payload.get("score") or 0),
+            story_importance=int(payload.get("story_importance") or 3),
+            visual_impact=int(payload.get("visual_impact") or 3),
+            performance_value=int(payload.get("performance_value") or 3),
+            video_id=payload.get("video_id"),
+            video_name=str(payload.get("video_name") or ""),
+            source_video_identity=payload.get("source_video_identity"),
+            source_identity_status=str(payload.get("source_identity_status") or "unavailable"),
+            defaulted_signals=tuple(payload.get("defaulted_signals") or ()),
+            candidate_id=str(payload.get("candidate_id") or ""),
+        )
+        for payload in candidate_payloads
+        if isinstance(payload, dict)
+    )
+    rejections = tuple(
+        CandidateRejection(
+            candidate_id=str(payload.get("candidate_id") or ""),
+            time_range=str(payload.get("time_range") or ""),
+            reason=str(payload.get("reason") or "malformed_candidate"),
+        )
+        for payload in (finalization_context.get("candidate_rejections") or [])
+        if isinstance(payload, dict)
+    )
+    intake = HighlightCandidateIntake(
+        candidates=candidates,
+        rejections=rejections,
+        submitted_count=len(candidates) + len(rejections),
+    )
+    default_video_name = str(
+        next(iter(matched_plan.get("items") or []), {}).get("video_name") or ""
+    )
+    conflicts = _normalize_fusion_evidence_conflicts(
+        matched_plan.get("evidence_conflicts", []),
+        default_video_name=default_video_name,
+        identity_by_video={},
+        default_source_identity=finalization_context.get("source_identity"),
+    )
+    finalization = FusionScriptFinalizer().finalize(
+        FinalizationRequest(
+            script=tuple(matched_plan.get("items") or []),
+            requested_original_sound_ratio=float(finalization_context.get("original_sound_ratio") or 0),
+            candidate_intake=intake,
+            evidence_conflicts=tuple(conflicts),
+            source_durations=dict(finalization_context.get("source_durations") or {}),
+        )
+    )
+    return {
+        "original_script": finalization.original_script,
+        "finalized_script": finalization.script,
+        "finalization_report": asdict(finalization.report),
+        "evidence_conflicts": finalization.evidence_conflicts,
+        "continuity_report": matched_plan.get("continuity_report") or {},
+        "renderable": not finalization.report.unresolved_conflict_count,
+    }
+
+
+def _fusion_matching_task_store() -> LocalAnalysisTaskStore:
+    return LocalAnalysisTaskStore(Path(utils.task_dir("fusion_matching")))
+
+
+def start_fusion_matching_task(
+    *,
+    short_name: str,
+    narration_copy: str,
+    narration_language: str,
+    drama_genre: str,
+    original_sound_ratio: int,
+    subtitle_content: str,
+    visual_evidence: str,
+    highlight_candidates: str,
+    plan_payload: dict,
+    plan_approval: dict,
+    temperature: float,
+    source_identity: dict | None,
+    finalization_context: dict,
+) -> str:
+    """Persist and start the approved segment matches without storing credentials."""
+    if not _has_valid_fusion_plan_approval(
+        plan_approval, plan_payload, narration_copy, source_identity
+    ):
+        raise ValueError("Fusion Segment Plan requires creator approval before matching")
+    request = {
+        "short_name": short_name,
+        "narration_copy": narration_copy,
+        "narration_language": narration_language,
+        "drama_genre": drama_genre,
+        "original_sound_ratio": int(original_sound_ratio),
+        "subtitle_content": subtitle_content,
+        "visual_evidence": visual_evidence,
+        "highlight_candidates": highlight_candidates,
+        "plan_payload": plan_payload,
+        "plan_approval": plan_approval,
+        "temperature": float(temperature),
+        "finalization_context": finalization_context,
+    }
+    request["analysis_signature"] = _fusion_matching_signature(request)
+    store = _fusion_matching_task_store()
+    task = store.create(request, source_identity or {})
+    store.update(
+        str(task["task_id"]),
+        segment_matches=[
+            {"segment_id": str(segment.get("segment_id") or f"segment-{index}"), "status": "pending"}
+            for index, segment in enumerate(plan_payload.get("segments") or [], start=1)
+            if isinstance(segment, dict)
+        ],
+    )
+    _start_fusion_matching_runner(store, task["task_id"], request, [])
+    return str(task["task_id"])
+
+
+def resume_fusion_matching_task(task_id: str) -> None:
+    store = _fusion_matching_task_store()
+    task = store.read(task_id)
+    request = dict(task["request"])
+    completed = list(task.get("completed_batches") or [])
+    store.update(task_id, status="queued", cancel_requested=False, error_message="")
+    _start_fusion_matching_runner(store, task_id, request, completed)
+
+
+def fusion_matching_task_status(task_id: str) -> dict:
+    return _fusion_matching_task_store().read(task_id)
+
+
+def find_fusion_matching_task(
+    *, source_identity: dict | None, plan_payload: dict, narration_copy: str
+) -> dict | None:
+    request = {"plan_payload": plan_payload, "narration_copy": narration_copy}
+    return _fusion_matching_task_store().find_latest_for_source(
+        source_identity or {},
+        _fusion_matching_signature(request),
+        include_completed=True,
+    )
+
+
+def cancel_fusion_matching_task(task_id: str) -> None:
+    _fusion_matching_task_store().request_cancel(task_id)
+
+
+def _start_fusion_matching_runner(
+    store: LocalAnalysisTaskStore,
+    task_id: str,
+    request: dict,
+    completed_records: list[dict],
+) -> None:
+    completed_responses = {
+        str(record.get("segment_id")): record["response"]
+        for record in completed_records
+        if (
+            isinstance(record, dict)
+            and record.get("status") == "succeeded"
+            and isinstance(record.get("response"), dict)
+        )
+    }
+
+    def work(progress, checkpoint, cancelled):
+        provider = str(config.app.get("text_llm_provider", "gemini")).lower()
+        analyzer = SubtitleAnalyzerAdapter(
+            config.app.get(f"text_{provider}_api_key"),
+            config.app.get(f"text_{provider}_model_name"),
+            config.app.get(f"text_{provider}_base_url"),
+            provider,
+            prompt_category=FILM_TV_PROMPT_CATEGORY,
+        )
+        segment_count = max(1, len(request["plan_payload"].get("segments") or []))
+
+        def update_segment_status(segment_id, status, *, response=None, error_message=""):
+            task = store.read(task_id)
+            entries = list(task.get("segment_matches") or [])
+            updated = False
+            for entry in entries:
+                if str(entry.get("segment_id")) == str(segment_id):
+                    entry["status"] = status
+                    entry["error_message"] = error_message
+                    if response is not None:
+                        entry["response"] = response
+                    updated = True
+                    break
+            if not updated:
+                entries.append({
+                    "segment_id": str(segment_id),
+                    "status": status,
+                    "error_message": error_message,
+                    **({"response": response} if response is not None else {}),
+                })
+            store.update(task_id, segment_matches=entries)
+
+        def mark_segment_started(segment_request):
+            update_segment_status(segment_request.segment_id, "running")
+
+        def checkpoint_segment(segment_request, response):
+            checkpoint({
+                "batch_index": segment_request.segment_id,
+                "segment_id": segment_request.segment_id,
+                "status": "succeeded",
+                "response": response,
+            })
+            completed_responses[segment_request.segment_id] = response
+            update_segment_status(segment_request.segment_id, "succeeded", response=response)
+            progress(
+                15 + (len(completed_responses) / segment_count) * 75,
+                f"正在匹配剪辑段落 ({len(completed_responses)}/{segment_count})...",
+            )
+
+        def checkpoint_failure(segment_request, error):
+            checkpoint({
+                "batch_index": segment_request.segment_id,
+                "segment_id": segment_request.segment_id,
+                "status": "failed",
+                "error_message": str(error),
+            })
+            update_segment_status(segment_request.segment_id, "failed", error_message=str(error))
+
+        matching_request = {
+            key: value
+            for key, value in request.items()
+            if key not in {"analysis_signature", "finalization_context"}
+        }
+        matched = match_approved_fusion_segment_plan(
+            analyzer=analyzer,
+            completed_segment_results=completed_responses,
+            on_segment_started=mark_segment_started,
+            on_segment_complete=checkpoint_segment,
+            on_segment_failed=checkpoint_failure,
+            is_cancelled=cancelled,
+            **matching_request,
+        )
+        progress(92, "正在执行剪辑脚本最终校验...")
+        finalization = finalize_fusion_matching_result(
+            matched_plan=matched,
+            finalization_context=request["finalization_context"],
+        )
+        return {"matched_plan": matched, "finalization": finalization, "renderable": finalization["renderable"]}
+
+    LocalAnalysisTaskRunner(store).start(task_id, work)
+
+
+def _fusion_matching_signature(request: dict) -> str:
+    payload = {
+        "plan_payload": request.get("plan_payload"),
+        "narration_copy": request.get("narration_copy"),
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _fusion_plan_approval_signature(
+    plan_payload: dict, narration_copy: str, source_identity: dict | None
+) -> str:
+    payload = {
+        "plan_payload": plan_payload,
+        "narration_copy": narration_copy,
+        "source_video_identity": source_identity or {},
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _has_valid_fusion_plan_approval(
+    approval: dict | None, plan_payload: dict, narration_copy: str, source_identity: dict | None
+) -> bool:
+    return bool(
+        isinstance(approval, dict)
+        and approval.get("approval_signature")
+        == _fusion_plan_approval_signature(plan_payload, narration_copy, source_identity)
+    )
 
 
 def parse_and_fix_json(json_string):
@@ -577,6 +997,9 @@ def generate_script_short_sunmmary(
     highlight_candidate_rejections: list[dict] | None = None,
     highlight_candidate_intake: HighlightCandidateIntake | None = None,
     visual_source_identity: dict | None = None,
+    fusion_segment_plan: dict | None = None,
+    fusion_plan_approval: dict | None = None,
+    pre_matched_fusion_result: dict | None = None,
 ):
     """
     生成 短剧解说 视频脚本
@@ -738,6 +1161,26 @@ def generate_script_short_sunmmary(
                         provider=text_provider,
                         prompt_category=prompt_category,
                     )
+            if visual_evidence and fusion_segment_plan is None:
+                plan = create_fusion_segment_plan(
+                    analyzer=analyzer,
+                    short_name=video_theme,
+                    plot_analysis=str(analysis_result.get("analysis") or ""),
+                    subtitle_content=subtitle_content,
+                    narration_copy=narration_copy,
+                    narration_language=narration_language,
+                    drama_genre=drama_genre,
+                    visual_evidence=visual_evidence,
+                    highlight_candidates=highlight_candidates,
+                    temperature=temperature,
+                )
+                st.session_state["fusion_segment_plan_pending"] = plan
+                st.session_state["fusion_segment_plan_editor"] = json.dumps(
+                    plan, ensure_ascii=False, indent=2
+                )
+                st.info("分段计划已生成。请审核并确认计划后再生成剪辑脚本。")
+                st.rerun()
+                return
             """
             3. 根据用户审核后的文案匹配画面与时间戳
             """
@@ -749,19 +1192,44 @@ def generate_script_short_sunmmary(
                     logger.info("使用新的LLM服务架构将审核文案匹配到字幕画面")
                     update_waiting(tr("Matching narration copy to footage..."))
                     stream_text.info(tr("Waiting for model stream..."))
-                    narration_result = analyzer.match_narration_copy_to_script(
-                        short_name=video_theme,
-                        plot_analysis=analysis_result["analysis"],
-                        subtitle_content=subtitle_content,
-                        narration_copy=narration_copy,
-                        temperature=temperature,
-                        narration_language=narration_language,
-                        drama_genre=drama_genre,
-                        original_sound_ratio=original_sound_ratio,
-                        visual_evidence=visual_evidence,
-                        highlight_candidates=highlight_candidates,
-                        stream_callback=update_stream_window,
-                    )
+                    if visual_evidence and pre_matched_fusion_result:
+                        narration_result = {
+                            "status": "success",
+                            "narration_script": json.dumps(pre_matched_fusion_result, ensure_ascii=False),
+                        }
+                    elif visual_evidence and fusion_segment_plan:
+                        matched_plan = match_approved_fusion_segment_plan(
+                            analyzer=analyzer,
+                            short_name=video_theme,
+                            narration_copy=narration_copy,
+                            narration_language=narration_language,
+                            drama_genre=drama_genre,
+                            original_sound_ratio=original_sound_ratio,
+                            subtitle_content=subtitle_content,
+                            visual_evidence=visual_evidence,
+                            highlight_candidates=highlight_candidates,
+                            plan_payload=fusion_segment_plan,
+                            plan_approval=fusion_plan_approval,
+                            temperature=temperature,
+                        )
+                        narration_result = {
+                            "status": "success",
+                            "narration_script": json.dumps(matched_plan, ensure_ascii=False),
+                        }
+                    else:
+                        narration_result = analyzer.match_narration_copy_to_script(
+                            short_name=video_theme,
+                            plot_analysis=analysis_result["analysis"],
+                            subtitle_content=subtitle_content,
+                            narration_copy=narration_copy,
+                            temperature=temperature,
+                            narration_language=narration_language,
+                            drama_genre=drama_genre,
+                            original_sound_ratio=original_sound_ratio,
+                            visual_evidence=visual_evidence,
+                            highlight_candidates=highlight_candidates,
+                            stream_callback=update_stream_window,
+                        )
                 except Exception as e:
                     logger.warning(f"使用新LLM服务匹配画面失败，回退到旧实现: {str(e)}")
                     if visual_evidence or highlight_candidates:
@@ -912,6 +1380,11 @@ def generate_script_short_sunmmary(
                         st.session_state.get("fusion_visual_source_verified", True)
                     ),
                 )
+                if finalization.report.unresolved_conflict_count:
+                    st.session_state["fusion_finalized_script_pending_review"] = finalization.script
+                    st.session_state.pop("video_clip_json", None)
+                    st.error("存在待审阅的证据冲突，剪辑脚本不会进入可渲染状态。")
+                    st.stop()
             script = json.dumps(narration_items, ensure_ascii=False, indent=2)
 
             if script is None:

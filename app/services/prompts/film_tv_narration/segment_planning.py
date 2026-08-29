@@ -22,7 +22,7 @@ class SegmentPlanningPrompt(ParameterizedPrompt):
             model_type=ModelType.TEXT,
             output_format=OutputFormat.JSON,
             tags=["影视", "解说脚本", "片段规划", "时间戳", "多视频", "原声"],
-            parameters=["drama_name", "drama_genre", "plot_analysis", "subtitle_content", "narration_language"],
+            parameters=["drama_name", "drama_genre", "plot_analysis", "subtitle_content", "narration_copy", "visual_evidence", "highlight_candidates", "narration_language"],
         )
         super().__init__(metadata, required_parameters=["drama_name", "plot_analysis", "subtitle_content"])
 
@@ -35,7 +35,7 @@ class SegmentPlanningPrompt(ParameterizedPrompt):
         return """# 影视解说片段规划任务
 
 ## 目标
-为影视作品《${drama_name}》规划一组可直接剪辑的视频片段。你只负责选片段和标注用途，不写最终解说台词。
+为影视作品《${drama_name}》规划一组可分段匹配的视频片段。你不写最终解说台词；必须把用户已审核文案按句子范围完整、有序地分配给计划段。
 
 ## 剧情理解材料
 <plot>
@@ -46,6 +46,21 @@ ${plot_analysis}
 <subtitles>
 ${subtitle_content}
 </subtitles>
+
+## 用户审核后的解说文案
+<narration_copy>
+${narration_copy}
+</narration_copy>
+
+## 视觉证据（仅可用于确认画面事实）
+<visual_evidence>
+${visual_evidence}
+</visual_evidence>
+
+## 原片高光候选（仅作 OST=1 优先级依据）
+<highlight_candidates>
+${highlight_candidates}
+</highlight_candidates>
 
 ## 解说台词目标语言
 <narration_language>
@@ -80,9 +95,14 @@ ${drama_genre}
 10. 禁止连续 3 个或更多 OST=1；每 1-2 个原声片段后必须安排 OST=0 解说片段承接剧情。
 11. 跨 video_id 切换前后必须至少有一个 OST=0 片段作为剧情桥段，解释为什么从上一场转到下一场。
 12. 每个 OST=0 片段必须承担明确叙事功能：开场钩子、人物介绍、因果过渡、信息解释、情绪转折、冲突升级、结尾悬念。
-13. 不要跳过关键因果；关系变化、线索发现、危机升级必须有画面或解说桥段承接。
+13. 不要跳过关键因果；关系变化、线索发现、危机升级必须有画面或解说桥段承接。相邻 core_window 前进跳跃超过 150 秒时，前一段必须将 bridge_to_next 设为 true，并用 bridge_reason 明确交代观众需要理解的时间、地点、人物状态、目标或因果变化。
 14. 结尾优先选择能留下新问题、新危险或人物选择的片段，不要只停在原声对白堆叠上。
 15. 解说画面必须给足时长：按“解说字数 / 5 = 所需视频秒数”预估，短画面不要承载长解说。
+16. 先按句号、问号、感叹号、省略号将用户解说文案从 1 开始编号。每段的 sentence_start 与 sentence_end 必须覆盖连续句子；所有段合起来必须覆盖每一句，不能重复或遗漏。
+17. 每段必须覆盖 3-8 句；只有剧情转折等叙事边界确有必要时才可少于 3 句或多于 8 句，并在 exception_reason 中写明原因。core_window 是最终可输出剪辑的非重叠时间范围，通常约 30-90 秒（软目标）；相邻段不得重叠。
+18. 视觉证据仅能支持可见画面事实；高光候选只能在其时间范围所在的计划段关联，不得将不可见的声音、对白或动机归因给视觉证据。
+19. 每段都必须填写 active_subject、entering_state、trigger_event、exiting_state，分别描述当前跟随对象、进入段落时的压力或目标、造成变化的事件、离开段落时的新风险或选择。它们是叙事连续性校验字段，不得留空。
+20. 时间倒退或非线性结构只能使用 narrative_mode=flashback、flashforward、montage 或 recap，并填写 narration_cue，直接告诉观众发生了时间/叙事跳转；否则 narrative_mode 必须为 linear。
 
 ## 输出格式
 只输出严格 JSON：
@@ -90,14 +110,22 @@ ${drama_genre}
 {
   "segments": [
     {
-      "_id": 1,
-      "video_id": 1,
-      "video_name": "1.mp4",
-      "timestamp": "00:00:01,000-00:00:05,500",
-      "OST": 0,
+      "segment_id": "segment-1",
+      "sentence_start": 1,
+      "sentence_end": 4,
+      "core_window": "00:00:01,000-00:00:45,000",
       "story_role": "开场钩子",
       "intent": "点出主角困境和反常线索，制造继续观看的疑问",
-      "transition": "从当前场景切入人物压力，引出下一段关键对白"
+      "transition": "从当前场景切入人物压力，引出下一段关键对白",
+      "active_subject": "权世正",
+      "entering_state": "受邀参加会议，对邀请人的意图毫无准备",
+      "trigger_event": "收到写有不完美沟通的邀请函",
+      "exiting_state": "必须弄清邀请人与自己旧案的关系",
+      "bridge_to_next": false,
+      "bridge_reason": "",
+      "narrative_mode": "linear",
+      "narration_cue": "",
+      "exception_reason": ""
     }
   ]
 }
