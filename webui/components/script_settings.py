@@ -504,6 +504,10 @@ def render_script_file(tr, params):
             new_mode = mode_options[selected_label]
             st.session_state.video_clip_json_path = new_mode
             params.video_clip_json_path = new_mode
+            if new_mode == MODE_FILM_VISION_FUSION:
+                from webui.fusion_navigation import route_for_legacy_mode
+
+                route_for_legacy_mode(new_mode, st.session_state)
         else:
             st.session_state.video_clip_json_path = default_mode
             params.video_clip_json_path = default_mode

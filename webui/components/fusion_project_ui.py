@@ -1,0 +1,526 @@
+"""Project-centered Streamlit surface for Film Vision Fusion."""
+
+from __future__ import annotations
+
+from html import escape
+from pathlib import Path
+import json
+
+import streamlit as st
+
+from app.services.fusion_projects import FusionProjectStore, STAGES, project_projection
+from app.utils import utils
+from webui.fusion_navigation import (
+    LEGACY_MODES_ROUTE,
+    NEW_PROJECT_ROUTE,
+    PROJECT_LIBRARY_ROUTE,
+    PROJECT_WORKSPACE_ROUTE,
+    TASK_CENTER_ROUTE,
+    navigate,
+)
+
+
+STAGE_LABELS = {
+    "setup": "项目设置",
+    "evidence": "媒体与证据",
+    "narration": "解说词与叙事地图",
+    "matching": "画面匹配",
+    "review": "审核",
+    "output": "输出",
+}
+
+
+def project_store() -> FusionProjectStore:
+    return FusionProjectStore(Path(utils.storage_dir("fusion_projects", create=True)))
+
+
+def _theme() -> None:
+    st.markdown(
+        """
+        <style>
+        .stApp { background:#07090d; color:#f5f7fb; }
+        [data-testid="stHeader"] { background:#0d1117; border-bottom:1px solid #2a3038; }
+        .fusion-shell { max-width:1540px; margin:0 auto; padding:8px 4px 28px; }
+        .fusion-card { background:#14171c; border:1px solid #303640; border-radius:14px;
+                       padding:18px; min-height:178px; margin-bottom:12px; }
+        .fusion-kicker { color:#69a0ff; font-weight:700; font-size:12px; letter-spacing:.08em; }
+        .fusion-title { color:#f7f8fb; font-size:22px; font-weight:760; margin:8px 0; }
+        .fusion-meta { color:#9aa3af; font-size:13px; line-height:1.65; }
+        .fusion-status { display:inline-block; background:#172744; color:#70a5ff;
+                         padding:4px 9px; border-radius:999px; font-size:12px; }
+        div[data-testid="stForm"], div[data-testid="stExpander"] {
+            background:#14171c; border-color:#303640; border-radius:12px;
+        }
+        .stButton > button { background:#171b22; color:#eef2f8; border:1px solid #353d48; }
+        .stButton > button p { color:inherit; }
+        .stButton > button:hover { border-color:#5d8ff4; color:#8bb2ff; }
+        .stButton > button:disabled { background:#11151a; color:#697381; border-color:#252b33; }
+        .stButton > button[kind="primary"] { background:#4f83f1; color:white; border-color:#4f83f1; }
+        [data-testid="stTextInput"] input, [data-testid="stNumberInput"] input,
+        [data-baseweb="select"] > div { background:#11151a; color:#eef2f8; border-color:#353d48; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_project_app(tr=lambda key: key) -> None:
+    _theme()
+    if st.session_state.pop("fusion_legacy_redirect_notice", False):
+        st.info("Film Vision Fusion 已迁移到项目工作区；旧设置页不再承载新的 Fusion 流程。")
+    route = st.session_state.get("fusion_ui_route", PROJECT_LIBRARY_ROUTE)
+    if route == NEW_PROJECT_ROUTE:
+        _render_new_project()
+    elif route == PROJECT_WORKSPACE_ROUTE:
+        _render_workspace()
+    elif route == TASK_CENTER_ROUTE:
+        _render_task_center()
+    else:
+        _render_library()
+
+
+def _top_bar(*, project: dict | None = None) -> None:
+    left, middle, tasks, legacy = st.columns([4, 2, 1.2, 1.4], vertical_alignment="center")
+    with left:
+        st.markdown(
+            f"### Narrato<span style='color:#61d68b'>AI</span>"
+            + (f" · {project['name']}" if project else ""),
+            unsafe_allow_html=True,
+        )
+    with middle:
+        if project:
+            st.caption("已自动保存 · 本地项目")
+    with tasks:
+        if st.button("任务中心", use_container_width=True):
+            navigate(st.session_state, TASK_CENTER_ROUTE)
+            st.rerun()
+    with legacy:
+        if st.button("传统模式", use_container_width=True):
+            navigate(st.session_state, LEGACY_MODES_ROUTE)
+            st.rerun()
+    st.divider()
+
+
+def _render_library() -> None:
+    _top_bar()
+    store = project_store()
+    header, create = st.columns([5, 1.2], vertical_alignment="center")
+    with header:
+        st.title("项目库")
+        st.caption("创建、继续和审核 Film Vision Fusion 电影解说项目")
+    with create:
+        if st.button("＋ 新建项目", type="primary", use_container_width=True):
+            project = store.create("未命名电影解说")
+            navigate(st.session_state, NEW_PROJECT_ROUTE, project_id=project["project_id"])
+            st.rerun()
+
+    search_col, filter_col, sort_col = st.columns([3, 1.2, 1.2])
+    search = search_col.text_input("搜索项目", placeholder="输入项目名称…", label_visibility="collapsed")
+    status_filter = filter_col.selectbox(
+        "状态", ["全部", "进行中", "等待审核", "已完成", "已归档", "回收站"], label_visibility="collapsed"
+    )
+    sort = sort_col.selectbox(
+        "排序", ["最近更新", "最早创建", "名称"], label_visibility="collapsed"
+    )
+
+    projects = store.list_projects(include_trashed=status_filter == "回收站")
+    cards = []
+    for project in projects:
+        projection = project_projection(project)
+        if search and search.lower() not in str(project.get("name") or "").lower():
+            continue
+        if status_filter == "回收站" and projection["status"] != "trashed":
+            continue
+        if status_filter == "进行中" and projection["status"] not in {"running", "draft"}:
+            continue
+        if status_filter == "等待审核" and projection["status"] not in {"waiting_for_review", "blocked"}:
+            continue
+        if status_filter == "已完成" and projection["status"] != "completed":
+            continue
+        if status_filter == "已归档" and projection["status"] != "archived":
+            continue
+        cards.append((project, projection))
+    if sort == "最早创建":
+        cards.sort(key=lambda item: str(item[0].get("created_at") or ""))
+    elif sort == "名称":
+        cards.sort(key=lambda item: str(item[0].get("name") or "").lower())
+
+    if not cards:
+        st.info("还没有符合条件的项目。点击“新建项目”开始第一条电影解说。")
+        return
+    columns = st.columns(3)
+    for index, (project, projection) in enumerate(cards):
+        with columns[index % 3]:
+            st.markdown(
+                "<div class='fusion-card'>"
+                f"<div class='fusion-kicker'>FILM VISION FUSION</div>"
+                f"<div class='fusion-title'>{escape(str(project['name']))}</div>"
+                f"<span class='fusion-status'>{escape(str(projection['status']))}</span>"
+                f"<div class='fusion-meta'>阶段：{escape(str(STAGE_LABELS.get(projection['active_stage'], projection['active_stage'])))}<br>"
+                f"待审核：{projection['review_count']} · 运行任务：{projection['running_task_count']}<br>"
+                f"下一步：{escape(str(projection['next_action']))}</div></div>",
+                unsafe_allow_html=True,
+            )
+            if st.button("打开项目", key=f"open-{project['project_id']}", use_container_width=True):
+                navigate(st.session_state, PROJECT_WORKSPACE_ROUTE, project_id=project["project_id"])
+                st.rerun()
+            with st.expander("项目操作"):
+                renamed = st.text_input("重命名", value=project["name"], key=f"rename-{project['project_id']}")
+                actions = st.columns(3)
+                if actions[0].button("保存名称", key=f"save-name-{project['project_id']}"):
+                    store.rename(project["project_id"], renamed)
+                    st.rerun()
+                if projection["status"] == "trashed":
+                    if actions[1].button("恢复", key=f"restore-{project['project_id']}"):
+                        store.restore(project["project_id"])
+                        st.rerun()
+                elif projection["status"] == "archived":
+                    if actions[1].button("取消归档", key=f"unarchive-{project['project_id']}"):
+                        store.unarchive(project["project_id"])
+                        st.rerun()
+                elif actions[1].button("归档", key=f"archive-{project['project_id']}"):
+                    store.archive(project["project_id"])
+                    st.rerun()
+                if projection["status"] != "trashed" and actions[2].button("移到回收站", key=f"trash-{project['project_id']}"):
+                    store.trash(project["project_id"])
+                    st.rerun()
+
+
+def _render_new_project() -> None:
+    store = project_store()
+    project_id = str(st.session_state.get("fusion_project_id") or "")
+    if not project_id:
+        navigate(st.session_state, PROJECT_LIBRARY_ROUTE)
+        st.rerun()
+    project = store.read(project_id)
+    _top_bar(project=project)
+    if st.button("← 返回项目库"):
+        navigate(st.session_state, PROJECT_LIBRARY_ROUTE)
+        st.rerun()
+    st.title("新建 Film Vision Fusion 项目")
+    left, right = st.columns([0.85, 1.6], gap="large")
+    with left:
+        st.subheader("剪辑配置")
+        name = st.text_input("项目名称", value=project["name"])
+        settings = dict(project.get("project_settings") or {})
+        language = st.selectbox("输出语言", ["简体中文（中国）", "繁體中文", "English"], index=0)
+        style = st.selectbox("解说风格", ["剧情解说", "悬疑推进", "人物成长", "冷静分析"])
+        target = st.number_input("目标文案字数", min_value=300, max_value=10000, value=int(settings.get("target_narration_length") or 1200), step=100)
+        ratio = st.slider("原片声音比例", 0, 100, int(settings.get("original_sound_ratio") or 30), 5)
+        subtitle_policy = st.selectbox("字幕策略", ["source_or_asr", "source_only", "asr_if_missing"])
+        voice_profile = st.text_input("TTS 音色", value=str(settings.get("voice_profile") or ""))
+        background_music = st.text_input("背景音乐路径（可选）", value=str(settings.get("background_music") or ""))
+        output_format = st.selectbox("输出格式", ["mp4", "mkv"], index=0)
+        if st.button("保存配置", use_container_width=True):
+            settings.update(
+                output_language=language,
+                commentary_style=style,
+                target_narration_length=int(target),
+                original_sound_ratio=int(ratio),
+                subtitle_policy=subtitle_policy,
+                voice_profile=voice_profile,
+                background_music=background_music,
+                output_format=output_format,
+            )
+            project = store.update(project_id, name=name, project_settings=settings)
+            st.success("配置已保存")
+    with right:
+        st.subheader("源视频")
+        st.caption("可引用本机文件，也可上传为项目托管素材；删除项目不会触碰本机引用文件。")
+        local_path = st.text_input("本机视频路径", placeholder="D:\\Movies\\example.mp4")
+        subtitle_path = st.text_input("字幕路径（SRT，可稍后补充）", placeholder="D:\\Movies\\example.srt")
+        if st.button("添加本机视频", disabled=not local_path, use_container_width=True):
+            store.add_local_reference(project_id, path=local_path, subtitle_path=subtitle_path)
+            st.rerun()
+        upload = st.file_uploader("上传视频为项目托管素材", type=["mp4", "mkv", "mpeg", "mpg", "3gp"])
+        if st.button("保存上传素材", disabled=upload is None, use_container_width=True):
+            store.add_managed_asset(
+                project_id,
+                filename=upload.name,
+                content=upload.getvalue(),
+                subtitle_path=subtitle_path,
+            )
+            st.rerun()
+        if st.button("重新检测素材状态", use_container_width=True):
+            store.refresh_source_availability(project_id)
+            st.rerun()
+        for source in project.get("source_video_sequence") or []:
+            state = "可用" if source.get("available") else "离线 / 路径不可用"
+            st.markdown(
+                f"<div class='fusion-card'><b>{escape(str(source.get('title') or source.get('path')))}</b>"
+                f"<div class='fusion-meta'>{escape(state)}<br>{escape(str(source.get('path')))}</div></div>",
+                unsafe_allow_html=True,
+            )
+    st.divider()
+    ready = bool(project.get("source_video_sequence"))
+    if st.button("继续到媒体与证据 →", type="primary", disabled=not ready, use_container_width=True):
+        store.update(project_id, active_stage="evidence")
+        navigate(st.session_state, PROJECT_WORKSPACE_ROUTE, project_id=project_id)
+        st.rerun()
+
+
+def _render_workspace() -> None:
+    store = project_store()
+    project_id = str(st.session_state.get("fusion_project_id") or "")
+    if not project_id:
+        navigate(st.session_state, PROJECT_LIBRARY_ROUTE)
+        st.rerun()
+    project = store.read(project_id)
+    projection = project_projection(project)
+    _top_bar(project=project)
+    back, status = st.columns([1, 5], vertical_alignment="center")
+    if back.button("← 项目库", use_container_width=True):
+        navigate(st.session_state, PROJECT_LIBRARY_ROUTE)
+        st.rerun()
+    status.markdown(f"状态：`{projection['status']}` · 下一步：{projection['next_action']}")
+    current = project.get("active_stage") if project.get("active_stage") in STAGES else "setup"
+    stage = st.radio(
+        "项目阶段",
+        STAGES,
+        index=STAGES.index(current),
+        format_func=lambda value: STAGE_LABELS[value],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    if stage != current:
+        project = store.update(project_id, active_stage=stage)
+    renderers = {
+        "setup": _stage_setup,
+        "evidence": _stage_evidence,
+        "narration": _stage_narration,
+        "matching": _stage_matching,
+        "review": _stage_review,
+        "output": _stage_output,
+    }
+    renderers[stage](project, store)
+
+
+def _stage_setup(project, store) -> None:
+    st.header("项目设置")
+    st.json(project.get("project_settings") or {}, expanded=False)
+    if st.button("编辑项目配置"):
+        navigate(st.session_state, NEW_PROJECT_ROUTE, project_id=project["project_id"])
+        st.rerun()
+
+
+def _stage_evidence(project, store) -> None:
+    st.header("媒体与证据")
+    sources = project.get("source_video_sequence") or []
+    if not sources:
+        st.warning("请先添加至少一个源视频。")
+        return
+    for source in sources:
+        st.markdown(f"#### {source.get('title') or source.get('path')}")
+        a, b, c = st.columns(3)
+        a.metric("文件状态", "可用" if source.get("available") else "离线")
+        b.metric("字幕", source.get("subtitle_status", "missing"))
+        c.metric("视觉证据", source.get("visual_evidence_status", "not_started"))
+        if source.get("available"):
+            interval = st.number_input(
+                "关键帧间隔（秒）", min_value=2.0, max_value=60.0, value=6.0,
+                key=f"interval-{source['source_id']}",
+            )
+            batch = st.number_input(
+                "每批帧数", min_value=1, max_value=20, value=8,
+                key=f"batch-{source['source_id']}",
+            )
+            custom_prompt = st.text_area(
+                "视觉分析提示词",
+                value="按时间顺序记录画面中可见的人物、动作、地点、物体和场景变化；不要推断声音、对白或动机。",
+                key=f"prompt-{source['source_id']}",
+            )
+            estimate_col, start_col = st.columns(2)
+            if estimate_col.button("估算完整分析", key=f"estimate-{source['source_id']}"):
+                try:
+                    from webui.tools.generate_film_vision_fusion import estimate_local_visual_analysis
+
+                    estimate = estimate_local_visual_analysis(source["path"], interval, int(batch))
+                    st.session_state[f"estimate-result-{source['source_id']}"] = {
+                        "关键帧": estimate.keyframe_count,
+                        "请求数": estimate.request_count,
+                        "预计分钟": estimate.estimated_minutes,
+                    }
+                except Exception as error:
+                    st.error(f"无法估算：{error}")
+            estimate_result = st.session_state.get(f"estimate-result-{source['source_id']}")
+            if estimate_result:
+                st.json(estimate_result, expanded=False)
+            if start_col.button("开始视觉分析", type="primary", key=f"start-{source['source_id']}"):
+                try:
+                    from webui.tools.generate_film_vision_fusion import start_local_visual_analysis
+
+                    task_id = start_local_visual_analysis(
+                        video_path=source["path"],
+                        video_theme=project["name"],
+                        custom_prompt=custom_prompt,
+                        frame_interval_seconds=float(interval),
+                        vision_batch_size=int(batch),
+                    )
+                    store.attach_task(
+                        project["project_id"], task_id=task_id,
+                        kind="visual_analysis", source_id=source["source_id"],
+                        input_version_id=project.get("active_version_id") or "setup",
+                    )
+                    st.rerun()
+                except Exception as error:
+                    st.error(f"无法开始视觉分析：{error}")
+
+    visual_tasks = [task for task in project.get("task_refs") or [] if task.get("kind") == "visual_analysis"]
+    for task_ref in visual_tasks:
+        try:
+            from webui.tools.generate_film_vision_fusion import (
+                cancel_local_visual_analysis,
+                local_visual_analysis_status,
+                resume_local_visual_analysis,
+            )
+
+            task = local_visual_analysis_status(task_ref["task_id"])
+            store.update_task_summary(
+                project["project_id"], task_ref["task_id"],
+                status=task.get("status"), progress=task.get("progress"),
+                message=task.get("message"), error_message=task.get("error_message", ""),
+            )
+            st.progress(float(task.get("progress") or 0) / 100.0, text=str(task.get("message") or task.get("status")))
+            actions = st.columns(3)
+            if actions[0].button("继续", key=f"resume-visual-{task_ref['task_id']}", disabled=task.get("status") not in {"failed", "interrupted"}):
+                resume_local_visual_analysis(task_ref["task_id"])
+                st.rerun()
+            if actions[1].button("取消", key=f"cancel-visual-{task_ref['task_id']}", disabled=task.get("status") not in {"queued", "running"}):
+                cancel_local_visual_analysis(task_ref["task_id"])
+                st.rerun()
+            if actions[2].button("查看诊断", key=f"diag-visual-{task_ref['task_id']}"):
+                st.json({key: task.get(key) for key in ("status", "progress", "message", "error_message")})
+            if task.get("status") == "completed" and task.get("visual_evidence"):
+                artifacts = dict(project.get("artifact_refs") or {})
+                artifacts["visual_evidence"] = task["visual_evidence"]
+                artifacts["visual_evidence_path"] = task.get("artifact_path")
+                project = store.update(project["project_id"], artifact_refs=artifacts)
+        except Exception as error:
+            st.warning(f"任务状态不可用：{error}")
+
+
+def _stage_narration(project, store) -> None:
+    st.header("解说词与 Narrative Map")
+    artifacts = project.get("artifact_refs") or {}
+    if not artifacts.get("visual_evidence"):
+        st.warning("需要先完成或导入视觉证据。现有证据不会因页面切换而丢失。")
+    sources = project.get("source_video_sequence") or []
+    subtitle_paths = [source.get("subtitle_path") for source in sources if source.get("subtitle_path")]
+    if st.button("生成解说词", type="primary", disabled=not subtitle_paths):
+        try:
+            from webui.tools.generate_short_summary import (
+                FILM_TV_PROMPT_CATEGORY,
+                generate_short_drama_narration_copy,
+            )
+
+            result = generate_short_drama_narration_copy(
+                subtitle_path=subtitle_paths,
+                video_theme=project["name"],
+                temperature=0.3,
+                video_paths=[source.get("path") for source in sources],
+                narration_language=(project.get("project_settings") or {}).get("output_language", "简体中文（中国）"),
+                drama_genre=(project.get("project_settings") or {}).get("commentary_style", "剧情解说"),
+                prompt_category=FILM_TV_PROMPT_CATEGORY,
+                narration_word_count=int((project.get("project_settings") or {}).get("target_narration_length", 1200)),
+                visual_evidence=str(artifacts.get("visual_evidence") or ""),
+            )
+            if result:
+                artifacts = dict(artifacts)
+                artifacts.update(
+                    narration_draft=result["narration_copy"],
+                    plot_analysis=result["plot_analysis"],
+                    subtitle_content=result["subtitle_content"],
+                )
+                project = store.update(project["project_id"], artifact_refs=artifacts)
+                st.rerun()
+        except Exception as error:
+            st.error(f"解说词生成未完成：{error}")
+    draft = st.text_area("解说词草稿", value=str(artifacts.get("narration_draft") or artifacts.get("narration") or ""), height=280)
+    if st.button("保存为 Content Draft", use_container_width=True):
+        saved = store.save_content_draft(project["project_id"], kind="narration", content=draft)
+        st.session_state["fusion_pending_draft_id"] = saved["draft_id"]
+        st.success("草稿已保存；尚未影响下游版本。")
+    pending_id = st.session_state.get("fusion_pending_draft_id")
+    if pending_id:
+        try:
+            impact = store.preview_draft_impact(project["project_id"], pending_id)
+            st.warning(f"应用后将失效：{', '.join(impact['invalidated_artifacts']) or '无下游产物'}")
+            if st.button("确认影响并应用草稿", type="primary"):
+                store.apply_content_draft(project["project_id"], pending_id, impact_confirmed=True)
+                st.session_state.pop("fusion_pending_draft_id", None)
+                st.rerun()
+        except ValueError:
+            st.session_state.pop("fusion_pending_draft_id", None)
+
+
+def _stage_matching(project, store) -> None:
+    st.header("画面匹配")
+    attempts = (project.get("artifact_refs") or {}).get("fusion_plan_attempts") or []
+    if attempts:
+        st.dataframe(attempts, use_container_width=True, hide_index=True)
+    else:
+        st.info("生成 Fusion Segment Plan 后，将在这里完成审核、批准和分段匹配。")
+    st.caption("未经验证和 Plan Approval 的计划不能开始匹配。")
+
+
+def _stage_review(project, store) -> None:
+    st.header("审核工作区")
+    left, center, right = st.columns([0.85, 1.6, 1.05], gap="medium")
+    findings = project.get("review_findings") or []
+    with left:
+        st.subheader("审核队列")
+        if findings:
+            st.dataframe(findings, use_container_width=True, hide_index=True)
+            finding_ids = [str(item.get("finding_id") or item.get("code") or index) for index, item in enumerate(findings)]
+            selected = st.selectbox("选择审核项", finding_ids)
+            action = st.selectbox("审核决定", ["acknowledge", "adopt", "ignore", "override"])
+            reason = st.text_input("决定原因（覆盖警告时必填）")
+            if st.button("保存审核决定", disabled=action == "override" and not reason):
+                store.record_review_decision(project["project_id"], finding_id=selected, action=action, reason=reason)
+                st.rerun()
+        else:
+            st.success("当前没有待处理审核项")
+    with center:
+        st.subheader("视频与时间线")
+        st.info("选择审核项后，视频、时间线和 Story Beat 将同步定位。")
+    with right:
+        st.subheader("证据与版本")
+        st.json(
+            {
+                "active_version_id": project.get("active_version_id"),
+                "review_decisions": project.get("review_decisions") or [],
+            },
+            expanded=False,
+        )
+
+
+def _stage_output(project, store) -> None:
+    st.header("输出")
+    blockers = [
+        item
+        for item in project.get("review_findings") or []
+        if item.get("severity") == "blocker" and item.get("status", "open") == "open"
+    ]
+    if blockers:
+        st.error(f"Render Preflight：存在 {len(blockers)} 个必须修复的问题。")
+    elif not project.get("active_version_id"):
+        st.warning("Render Preflight：尚无可渲染的活动版本。")
+    else:
+        st.success("Render Preflight：通过。可以创建新的 Render Outcome。")
+    st.button("开始渲染", type="primary", disabled=bool(blockers) or not project.get("active_version_id"))
+
+
+def _render_task_center() -> None:
+    _top_bar()
+    if st.button("← 返回项目库"):
+        navigate(st.session_state, PROJECT_LIBRARY_ROUTE)
+        st.rerun()
+    st.title("任务中心")
+    rows = []
+    for project in project_store().list_projects():
+        for task in project.get("task_refs") or []:
+            rows.append({"项目": project["name"], **task})
+    if rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+    else:
+        st.info("当前没有项目任务。")

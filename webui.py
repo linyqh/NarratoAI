@@ -12,6 +12,8 @@ from app.utils import utils
 from app.utils import ffmpeg_utils
 from app.models import const
 from app.models.schema import VideoClipParams, VideoAspect
+from webui.fusion_navigation import LEGACY_MODES_ROUTE, selected_route
+from webui.components.fusion_project_ui import render_project_app
 
 
 # 初始化配置 - 必须是第一个 Streamlit 命令
@@ -700,6 +702,10 @@ def main():
         utils.init_resources()
     except Exception as e:
         logger.warning(f"资源初始化时出现警告: {e}")
+
+    if selected_route(st.session_state) != LEGACY_MODES_ROUTE:
+        render_project_app(tr)
+        return
 
     st.title(f"Narrato:blue[AI]:sunglasses: 📽️")
     st.write(get_help_text())
