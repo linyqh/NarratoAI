@@ -35,3 +35,11 @@ def route_for_legacy_mode(mode: str, state) -> str:
         return PROJECT_LIBRARY_ROUTE
     state["fusion_ui_route"] = LEGACY_MODES_ROUTE
     return LEGACY_MODES_ROUTE
+
+
+def enter_legacy_modes(state) -> str:
+    """Open traditional modes without allowing stale Fusion controls to render."""
+    if str(state.get("video_clip_json_path") or "") == "film_vision_fusion":
+        state["video_clip_json_path"] = ""
+    state["fusion_ui_route"] = LEGACY_MODES_ROUTE
+    return LEGACY_MODES_ROUTE

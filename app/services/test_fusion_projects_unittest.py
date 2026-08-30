@@ -315,6 +315,65 @@ class FusionProjectStoreTests(unittest.TestCase):
         self.assertEqual("narrative-map-2", synced["active_version_id"])
         self.assertEqual("approved", synced["artifact_refs"]["narrative_map"]["approval_status"])
 
+    def test_migration_is_explicit_and_creates_a_normal_durable_project(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory))
+
+            migrated = store.migrate_legacy_project(
+                name="旧 Fusion 工作",
+                source_paths=["D:/movie.mp4"],
+                finalized_script=[{"_id": 1, "timestamp": "00:00:00,000-00:00:05,000"}],
+                preflight={"blockers": [], "warnings": [], "renderable": True},
+            )
+            reopened = store.read(migrated["project_id"])
+
+        self.assertEqual("legacy_fusion_import", reopened["migration_state"]["kind"])
+        self.assertEqual("review", reopened["active_stage"])
+        self.assertTrue(reopened["active_version_id"])
+
+    def test_render_outcome_freezes_configuration_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory))
+            project = store.create("输出")
+            store.update(project["project_id"], active_version_id="version-1")
+            configuration = {"voice": "voice-a", "subtitle_enabled": True}
+
+            outcome = store.add_render_outcome(
+                project["project_id"], media_path="movie.mp4",
+                preflight={"blockers": []}, configuration_snapshot=configuration,
+            )
+            configuration["voice"] = "changed"
+
+        self.assertEqual("voice-a", outcome["configuration_snapshot"]["voice"])
+
+    def test_warning_override_requires_reason_and_blockers_remain_unoverridable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory))
+            project = store.create("Preflight")
+            store.update(
+                project["project_id"], active_version_id="v1",
+                artifact_refs={
+                    "finalization": {
+                        "active_version_id": "v1", "version_history": [],
+                        "preflight": {"blockers": [], "warnings": [{"code": "warning"}]},
+                    }
+                },
+            )
+            with self.assertRaisesRegex(ValueError, "reason"):
+                store.override_render_warnings(project["project_id"], reason="")
+            overridden = store.override_render_warnings(
+                project["project_id"], reason="人工确认画面与旁白一致"
+            )
+            blocked_finalization = dict(overridden["artifact_refs"]["finalization"])
+            blocked_finalization["preflight"] = {
+                "blockers": [{"code": "gap"}], "warnings": []
+            }
+            store.update(project["project_id"], artifact_refs={"finalization": blocked_finalization})
+            with self.assertRaisesRegex(ValueError, "blockers"):
+                store.override_render_warnings(project["project_id"], reason="不能覆盖")
+
+        self.assertTrue(overridden["artifact_refs"]["finalization"]["preflight"]["renderable"])
+
 
 if __name__ == "__main__":
     unittest.main()

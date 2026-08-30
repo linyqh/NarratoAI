@@ -12,11 +12,11 @@ import streamlit as st
 from app.services.fusion_projects import FusionProjectStore, STAGES, project_projection
 from app.utils import utils
 from webui.fusion_navigation import (
-    LEGACY_MODES_ROUTE,
     NEW_PROJECT_ROUTE,
     PROJECT_LIBRARY_ROUTE,
     PROJECT_WORKSPACE_ROUTE,
     TASK_CENTER_ROUTE,
+    enter_legacy_modes,
     navigate,
 )
 
@@ -97,7 +97,7 @@ def _top_bar(*, project: dict | None = None) -> None:
             st.rerun()
     with legacy:
         if st.button("传统模式", use_container_width=True):
-            navigate(st.session_state, LEGACY_MODES_ROUTE)
+            enter_legacy_modes(st.session_state)
             st.rerun()
     st.divider()
 
@@ -114,6 +114,44 @@ def _render_library() -> None:
             project = store.create("未命名电影解说")
             navigate(st.session_state, NEW_PROJECT_ROUTE, project_id=project["project_id"])
             st.rerun()
+
+    with st.expander("迁移现有 Fusion 工作"):
+        st.caption("仅在你明确提交脚本和源视频路径后创建迁移项目；系统不会自动扫描旧会话。")
+        migration_name = st.text_input("迁移项目名称", value="迁移的 Film Vision Fusion 项目")
+        migration_sources = st.text_area("源视频路径（每行一个）")
+        migration_file = st.file_uploader(
+            "最终 Fusion Script / Finalization JSON", type=["json"], key="fusion-migration-json"
+        )
+        if st.button("创建迁移项目", disabled=migration_file is None):
+            try:
+                payload = json.loads(migration_file.getvalue().decode("utf-8-sig"))
+                if isinstance(payload, list):
+                    script = payload
+                    preflight = {
+                        "blockers": [{"code": "migrated_work_requires_review", "message": "迁移脚本需要重新审核"}],
+                        "warnings": [], "renderable": False,
+                    }
+                elif isinstance(payload, dict):
+                    script = payload.get("finalized_script") or payload.get("items") or []
+                    preflight = payload.get("preflight") or {
+                        "blockers": [{"code": "migrated_work_requires_review", "message": "迁移脚本需要重新审核"}],
+                        "warnings": [], "renderable": False,
+                    }
+                else:
+                    raise ValueError("迁移 JSON 必须是脚本数组或 Finalization 对象")
+                migrated = store.migrate_legacy_project(
+                    name=migration_name,
+                    source_paths=[line.strip() for line in migration_sources.splitlines() if line.strip()],
+                    finalized_script=script,
+                    preflight=preflight,
+                )
+                navigate(
+                    st.session_state, PROJECT_WORKSPACE_ROUTE,
+                    project_id=migrated["project_id"],
+                )
+                st.rerun()
+            except Exception as error:
+                st.error(f"迁移失败：{error}")
 
     search_col, filter_col, sort_col = st.columns([3, 1.2, 1.2])
     search = search_col.text_input("搜索项目", placeholder="输入项目名称…", label_visibility="collapsed")
@@ -212,6 +250,13 @@ def _render_new_project() -> None:
         voice_profile = st.text_input("TTS 音色", value=str(settings.get("voice_profile") or ""))
         background_music = st.text_input("背景音乐路径（可选）", value=str(settings.get("background_music") or ""))
         output_format = st.selectbox("输出格式", ["mp4", "mkv"], index=0)
+        video_aspect = st.selectbox(
+            "视频比例", ["9:16", "16:9", "1:1", "3:4", "4:3"],
+            index=["9:16", "16:9", "1:1", "3:4", "4:3"].index(str(settings.get("video_aspect") or "9:16")),
+        )
+        subtitle_enabled = st.toggle(
+            "启用字幕", value=bool(settings.get("subtitle_enabled", True))
+        )
         if st.button("保存配置", use_container_width=True):
             settings.update(
                 output_language=language,
@@ -222,6 +267,8 @@ def _render_new_project() -> None:
                 voice_profile=voice_profile,
                 background_music=background_music,
                 output_format=output_format,
+                video_aspect=video_aspect,
+                subtitle_enabled=subtitle_enabled,
             )
             project = store.update(project_id, name=name, project_settings=settings)
             st.success("配置已保存")
@@ -1035,18 +1082,64 @@ def _render_version_controls(
 
 def _stage_output(project, store) -> None:
     st.header("输出")
-    blockers = [
-        item
-        for item in project.get("review_findings") or []
-        if item.get("severity") == "blocker" and item.get("status", "open") == "open"
-    ]
+    artifacts = project.get("artifact_refs") or {}
+    finalization = artifacts.get("finalization") if isinstance(artifacts.get("finalization"), dict) else {}
+    preflight = finalization.get("preflight") if isinstance(finalization.get("preflight"), dict) else {}
+    blockers = list(preflight.get("blockers") or [])
+    warnings = list(preflight.get("warnings") or [])
     if blockers:
         st.error(f"Render Preflight：存在 {len(blockers)} 个必须修复的问题。")
+        st.dataframe(blockers, use_container_width=True, hide_index=True)
     elif not project.get("active_version_id"):
         st.warning("Render Preflight：尚无可渲染的活动版本。")
+    elif warnings and not str(preflight.get("warning_override_reason") or "").strip():
+        st.warning(f"Render Preflight：存在 {len(warnings)} 个警告，需要填写人工覆盖原因。")
+        st.dataframe(warnings, use_container_width=True, hide_index=True)
+        reason = st.text_area("警告覆盖原因（必填）")
+        if st.button("记录原因并重新检查", disabled=not reason.strip()):
+            store.override_render_warnings(project["project_id"], reason=reason)
+            st.rerun()
+    elif not finalization.get("renderable") and not preflight.get("renderable"):
+        st.warning("Render Preflight：Narrative Map 或审核状态尚未允许渲染。")
     else:
         st.success("Render Preflight：通过。可以创建新的 Render Outcome。")
-    st.button("开始渲染", type="primary", disabled=bool(blockers) or not project.get("active_version_id"))
+    renderable = bool(
+        project.get("active_version_id")
+        and not blockers
+        and (finalization.get("renderable") or preflight.get("renderable"))
+        and (not warnings or str(preflight.get("warning_override_reason") or "").strip())
+    )
+    script = finalization.get("finalized_script") or []
+    sources = [source for source in project.get("source_video_sequence") or [] if source.get("available")]
+    active_render = next(
+        (
+            task for task in reversed(project.get("task_refs") or [])
+            if task.get("kind") == "render" and task.get("status") in {"queued", "running", "rendering"}
+        ),
+        None,
+    )
+    if st.button(
+        "开始渲染", type="primary",
+        disabled=not renderable or not script or not sources or active_render is not None,
+    ):
+        try:
+            _start_project_render(project, store, finalization)
+            st.rerun()
+        except Exception as error:
+            st.error(f"无法开始渲染：{error}")
+    if active_render:
+        _poll_project_render(project, store, active_render, preflight)
+    outcomes = project.get("render_outcomes") or []
+    if outcomes:
+        st.subheader("Render Outcomes")
+        for outcome in reversed(outcomes):
+            st.caption(
+                f"版本 {outcome.get('version_id')} · {outcome.get('created_at')}"
+            )
+            if Path(str(outcome.get("media_path") or "")).is_file():
+                st.video(outcome["media_path"])
+            else:
+                st.warning("该历史成片当前离线；记录仍保留。")
 
 
 def _failure_category(error: Exception) -> str:
@@ -1058,6 +1151,139 @@ def _failure_category(error: Exception) -> str:
     if "validation" in text or "校验" in text or "plan" in text:
         return "validation_failed"
     return "generation_failed"
+
+
+def _start_project_render(
+    project: dict, store: FusionProjectStore, finalization: dict
+) -> None:
+    import threading
+
+    from app.config import config
+    from app.models.schema import VideoClipParams
+    from app.services import state as state_service
+    from app.services import task as task_service
+    from app.models import const
+
+    version_id = str(project.get("active_version_id") or "")
+    if not version_id:
+        raise ValueError("Render requires an active version")
+    script = list(finalization.get("finalized_script") or [])
+    if not script:
+        raise ValueError("Render requires a finalized Fusion Script")
+    sources = [
+        source for source in project.get("source_video_sequence") or []
+        if source.get("available")
+    ]
+    if not sources:
+        raise ValueError("Render requires at least one available source video")
+    settings = dict(project.get("project_settings") or {})
+    script_path = store.save_json_artifact(
+        project["project_id"], name=f"render-{version_id}.json", payload=script
+    )
+    source_paths = [str(source["path"]) for source in sources]
+    subtitle_paths = [
+        str(source.get("subtitle_path") or "") for source in sources
+        if source.get("subtitle_path")
+    ]
+    params = VideoClipParams(
+        video_clip_json_path=script_path,
+        video_origin_path=source_paths[0],
+        video_origin_paths=source_paths,
+        original_subtitle_path=subtitle_paths[0] if subtitle_paths else "",
+        original_subtitle_paths=subtitle_paths,
+        video_aspect=str(settings.get("video_aspect") or "9:16"),
+        video_language=str(settings.get("output_language") or "zh-CN"),
+        voice_name=str(settings.get("voice_profile") or config.ui.get("voice_name", "zh-CN-YunjianNeural")),
+        tts_engine=str(settings.get("tts_engine") or config.INDEXTTS_ENGINE),
+        bgm_type="local" if settings.get("background_music") else "none",
+        bgm_file=str(settings.get("background_music") or ""),
+        subtitle_enabled=bool(settings.get("subtitle_enabled", True)),
+    )
+    task_id = f"render{uuid4().hex}"
+    configuration_snapshot = {
+        "active_version_id": version_id,
+        "project_settings": settings,
+        "source_identities": [
+            {"source_id": source.get("source_id"), "identity": source.get("identity") or {}}
+            for source in sources
+        ],
+        "script_path": script_path,
+    }
+    store.attach_task(
+        project["project_id"], task_id=task_id, kind="render",
+        input_version_id=version_id, status="queued",
+    )
+    store.update_task_summary(
+        project["project_id"], task_id,
+        configuration_snapshot=configuration_snapshot,
+        message="渲染已排队",
+    )
+
+    def run() -> None:
+        try:
+            task_service.start_subclip_unified(task_id=task_id, params=params)
+        except Exception as error:
+            state_service.state.update_task(
+                task_id,
+                state=const.TASK_STATE_FAILED,
+                progress=0,
+                message=str(error),
+            )
+
+    threading.Thread(
+        target=run, name=f"fusion-project-render-{task_id}", daemon=True
+    ).start()
+
+
+def _poll_project_render(
+    project: dict, store: FusionProjectStore, task_ref: dict, preflight: dict
+) -> None:
+    from app.models import const
+    from app.services import state as state_service
+
+    task = state_service.state.get_task(task_ref["task_id"])
+    if not task:
+        st.info("等待渲染进程报告状态…")
+        if st.button("刷新渲染状态"):
+            st.rerun()
+        return
+    progress = max(0, min(100, int(task.get("progress") or 0)))
+    state = task.get("state")
+    status = (
+        "completed" if state == const.TASK_STATE_COMPLETE
+        else "failed" if state == const.TASK_STATE_FAILED
+        else "rendering"
+    )
+    store.update_task_summary(
+        project["project_id"], task_ref["task_id"],
+        status=status, progress=progress, message=str(task.get("message") or ""),
+        error_message=str(task.get("message") or "") if status == "failed" else "",
+        recoverable=status == "failed",
+    )
+    st.progress(progress / 100.0, text=str(task.get("message") or "正在渲染"))
+    if status == "completed":
+        existing = {
+            str(item.get("render_task_id") or "")
+            for item in project.get("render_outcomes") or []
+        }
+        if task_ref["task_id"] not in existing:
+            videos = [str(path) for path in task.get("videos") or [] if str(path)]
+            if not videos:
+                st.error("渲染任务已结束，但没有返回可播放成片。")
+                return
+            for media_path in videos:
+                store.add_render_outcome(
+                    project["project_id"],
+                    media_path=media_path,
+                    preflight=preflight,
+                    configuration_snapshot=task_ref.get("configuration_snapshot") or {},
+                    render_task_id=task_ref["task_id"],
+                )
+            st.rerun()
+    elif status == "failed":
+        st.error(f"渲染失败：{task.get('message') or '请查看诊断后重新渲染'}")
+    elif st.button("刷新渲染状态"):
+        st.rerun()
 
 
 def _plan_attempt_store(project_id: str):

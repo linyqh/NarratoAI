@@ -66,6 +66,7 @@ class FusionProjectStore:
             "trash_state": None,
             "archive_state": None,
             "last_runtime_id": RUNTIME_ID,
+            "migration_state": None,
         }
         self._project_directory(project_id).mkdir(parents=True, exist_ok=False)
         self._write(project)
@@ -606,7 +607,13 @@ class FusionProjectStore:
         return self.update(project_id, review_decisions=decisions)
 
     def add_render_outcome(
-        self, project_id: str, *, media_path: str, preflight: dict[str, Any]
+        self,
+        project_id: str,
+        *,
+        media_path: str,
+        preflight: dict[str, Any],
+        configuration_snapshot: dict[str, Any] | None = None,
+        render_task_id: str = "",
     ) -> dict[str, Any]:
         project = self.read(project_id)
         blockers = list(preflight.get("blockers") or [])
@@ -619,12 +626,127 @@ class FusionProjectStore:
             "media_path": str(media_path),
             "version_id": project["active_version_id"],
             "preflight": preflight,
+            "configuration_snapshot": json.loads(
+                json.dumps(configuration_snapshot or {}, ensure_ascii=False)
+            ),
+            "render_task_id": str(render_task_id or ""),
             "created_at": _now(),
         }
         outcomes = list(project.get("render_outcomes") or [])
         outcomes.append(outcome)
         updated = self.update(project_id, render_outcomes=outcomes)
         return {**outcome, "project": updated}
+
+    def override_render_warnings(self, project_id: str, *, reason: str) -> dict[str, Any]:
+        reason = str(reason or "").strip()
+        if not reason:
+            raise ValueError("Render Preflight warning override requires a reason")
+        project = self.read(project_id)
+        artifacts = dict(project.get("artifact_refs") or {})
+        finalization = dict(artifacts.get("finalization") or {})
+        preflight = dict(finalization.get("preflight") or {})
+        if preflight.get("blockers"):
+            raise ValueError("Render Preflight blockers cannot be overridden")
+        if not preflight.get("warnings"):
+            raise ValueError("Render Preflight has no warnings to override")
+        preflight["warning_override_reason"] = reason
+        preflight["renderable"] = True
+        finalization["preflight"] = preflight
+        finalization["renderable"] = True
+        versions = list(finalization.get("version_history") or [])
+        version_id = f"preflight-override-{len(versions) + 1}"
+        finalization["active_version_id"] = version_id
+        versions.append(
+            {
+                "version_id": version_id,
+                "kind": "preflight_warning_override",
+                "created_at": _now(),
+                "snapshot": json.loads(json.dumps(finalization, ensure_ascii=False)),
+            }
+        )
+        finalization["version_history"] = versions
+        artifacts["finalization"] = finalization
+        decisions = list(project.get("review_decisions") or [])
+        decisions.append(
+            {
+                "decision_id": uuid4().hex,
+                "kind": "preflight",
+                "action": "warning_overridden",
+                "reason": reason,
+                "status": "active",
+                "created_at": _now(),
+            }
+        )
+        return self.update(
+            project_id,
+            artifact_refs=artifacts,
+            active_version_id=version_id,
+            review_decisions=decisions,
+        )
+
+    def save_json_artifact(
+        self, project_id: str, *, name: str, payload: Any
+    ) -> str:
+        safe_name = Path(str(name or "artifact.json")).name
+        if not safe_name.endswith(".json"):
+            safe_name += ".json"
+        directory = self._project_directory(project_id) / "artifacts"
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / safe_name
+        temporary = target.with_name(f".{target.name}.{uuid4().hex}.tmp")
+        try:
+            with temporary.open("w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return str(target)
+
+    def migrate_legacy_project(
+        self,
+        *,
+        name: str,
+        source_paths: list[str],
+        finalized_script: list[dict[str, Any]],
+        preflight: dict[str, Any],
+        project_settings: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        project = self.create(name or "Migrated Fusion Project")
+        for source_path in source_paths:
+            if str(source_path or "").strip():
+                self.add_local_reference(project["project_id"], path=str(source_path).strip())
+        version_id = f"migrated-{uuid4().hex}"
+        finalization = {
+            "finalized_script": list(finalized_script or []),
+            "preflight": dict(preflight or {}),
+            "renderable": bool((preflight or {}).get("renderable")),
+            "active_version_id": version_id,
+            "version_history": [
+                {
+                    "version_id": version_id,
+                    "kind": "legacy_fusion_import",
+                    "created_at": _now(),
+                    "snapshot": {
+                        "finalized_script": list(finalized_script or []),
+                        "preflight": dict(preflight or {}),
+                        "renderable": bool((preflight or {}).get("renderable")),
+                        "active_version_id": version_id,
+                    },
+                }
+            ],
+        }
+        current = self.read(project["project_id"])
+        settings = dict(current.get("project_settings") or {})
+        settings.update(project_settings or {})
+        return self.update(
+            project["project_id"],
+            project_settings=settings,
+            artifact_refs={"finalization": finalization, "fusion_script": list(finalized_script or [])},
+            active_version_id=version_id,
+            active_stage="review",
+            migration_state={"kind": "legacy_fusion_import", "migrated_at": _now()},
+            review_findings=self._review_findings(finalization),
+        )
 
     def _append_source(self, project_id: str, source: dict[str, Any]) -> None:
         project = self.read(project_id)
