@@ -52,6 +52,7 @@ Deliver three ordered improvements for Film Vision Fusion only:
 28. As a maintainer, I want UI state projected through one focused workspace seam, so that Streamlit rendering does not duplicate orchestration and persistence policy.
 29. As a maintainer, I want deterministic fixture tests and a small real-media acceptance set, so that reliability and viewing-quality regressions can be caught repeatedly.
 30. As a maintainer, I want manual scorecards and structured feedback attached to sample outcomes, so that future quality work is based on observed creator and viewer experience.
+31. As a creator, I want a structurally invalid Fusion Segment Plan preserved and repaired or made editable, so that a successful long-running model response does not end as a generic generation failure.
 
 ## Implementation Decisions
 
@@ -60,6 +61,8 @@ Deliver three ordered improvements for Film Vision Fusion only:
 - Expand authored-timeline validation to reject same-source overlapping ranges, invalid or non-positive ranges, and ranges outside known source durations. Existing opening, consecutive-OST, bridge, and conflict safeguards remain in force.
 - Treat a failed, missing, malformed, or Core-Window-invalid Segment Match as non-renderable. Preserve completed Segment Matches and expose a targeted retry path.
 - Classify stream failures by first-chunk wait, post-progress inactivity, total-budget expiry, provider response-format fallback, cancellation, and non-retryable provider error. Keep request first-chunk, inactivity, and total-budget controls separate.
+- Treat every completed Fusion Segment Plan response as a durable Fusion Plan Attempt before parsing. Convert parser, structural, and continuity rejection into structured Plan Validation Findings; perform at most one targeted repair per attempt and require normal validation plus Plan Approval before matching.
+- Close provider streams explicitly and complete asynchronous-generator and pending-task cleanup before closing bridge-owned event loops. A cleanup issue is diagnostic data and cannot turn an otherwise completed model response into a lost result.
 - Retain partial stream output only as diagnostic data. It is never parsed as a successful Segment Match or included in a Fusion Script.
 - Re-attempt a timed-out request only at the affected request or Segment Match, at most once automatically. A retry receives an independent request budget; the system does not silently restart a full film, silently rewrite approved narration, or consume completed work.
 - Record structured stream diagnostics without API keys, full prompts, or other sensitive credentials. Include the generation phase, elapsed time, first-chunk latency, last-chunk age, received character counts, provider/model identity, segment identity, and attempt.
@@ -86,6 +89,7 @@ Deliver three ordered improvements for Film Vision Fusion only:
 - Test externally observable safety and creator workflow behaviour at the authored-timeline validation, stream-generation result, Fusion Matching Task, workspace projection, and Render Preflight seams. Do not assert private helper structure or prompt wording.
 - Add table-driven tests for overlapping same-source authored items, invalid ranges, source-duration overflow, failed or missing Segment Matches, and all non-renderable transitions.
 - Use controlled async stream fakes to cover no-first-chunk timeout, stalled-after-progress timeout, total-budget timeout with emitted chunks, response-format fallback, cancellation, targeted retry, retained diagnostics, and rejection of partial output as script input.
+- Include a regression test for a 9-sentence Fusion Segment Plan without `exception_reason`, proving it enters one targeted repair rather than raising before recovery; include an async-generator cleanup regression that asserts no pending-task warning.
 - Test that stream retries receive a fresh budget and only the affected request retries. Verify completed Segment Matches and valid artifacts remain intact.
 - Test Narrative Map caching, source/evidence identity compatibility, invalidation impact calculation, approval/skip state persistence, and evidence-bound output validation.
 - Test quality findings against synthetic Story Beats and timelines: missing bridge, subject handoff, temporal jump, repeated narration, narration density warning, and story-irrelevant highlight suggestion.
@@ -109,7 +113,10 @@ Deliver three ordered improvements for Film Vision Fusion only:
 
 ## Further Notes
 
+- The P0 planning-reliability implementation is specified in `ready-for-agent-film-vision-fusion-script-planning-reliability.md`; it is the source of truth for Fusion Plan Attempt persistence, structured findings, bounded repair, and asynchronous cleanup.
+- The project-centered production UI required to complete Phase 3 is specified separately in `ready-for-agent-film-vision-fusion-project-workspace-ui.md`. Existing Workspace projection and review services are reusable foundations, but their conditional embedding in the legacy script-settings page is not considered Phase 3 UI completion.
 - This specification preserves the existing meaning of Subtitle Evidence, Visual Evidence, Evidence Conflict, Fusion Segment Plan, Fusion Matching Task, Original Sound Ratio, Finalization Report, and Narrative Bridge.
 - Narrative Map, Fusion Project Workspace, Task Center, and Render Preflight are defined in the project glossary and should use those exact terms in implementation and user-facing documentation where appropriate.
 - The existing three-variant review prototype is a design input only. Its winning decisions are a queue-first workspace, compact quality summary, and evidence-rich issue inspection; prototype code must be rewritten to production standards before adoption.
 - Phase 1 establishes safe, reproducible execution; Phase 2 establishes evidence-bounded narrative quality; Phase 3 exposes both safely to creators. A later phase may separately address mobile and vertical-video experience after the desktop acceptance set is stable.
+- The P0 Script Planning Reliability Gate in `ready-for-agent-film-vision-fusion-project-workspace-ui.md` is a release blocker for all three phases, because valid long-running planner output must be recoverable before the project workflow can safely progress.

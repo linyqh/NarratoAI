@@ -24,6 +24,10 @@ _Avoid_: plot prompt, audio-analysis prompt
 A source video stored on the same machine that runs NarratoAI and referenced by its filesystem path. It bypasses browser-upload size limits, while still requiring sufficient local disk space and decoding capacity.
 _Avoid_: uploaded video, remote asset
 
+**Managed Project Asset**:
+A creator-uploaded source file copied into a Fusion Project's managed local storage. It belongs to the project lifecycle, unlike a Local Source Video that remains at its original path.
+_Avoid_: local source reference, temporary upload
+
 **Full-Film Analysis**:
 The default visual-analysis scope for a Local Source Video. It examines the complete source timeline; a creator may narrow the range only as an explicit override.
 _Avoid_: preview-only analysis, implicit sample
@@ -64,6 +68,14 @@ _Avoid_: hybrid script, combined script
 An ordered, reviewable plan that assigns contiguous portions of an approved narration to bounded source-time windows and narrative roles before a Fusion Script is matched.
 _Avoid_: full-script plan, shot list
 
+**Fusion Plan Attempt**:
+A durable record of one completed plan-generation response and its parsing, validation, and bounded-repair outcome. It is recovery evidence, not an approved Fusion Segment Plan and cannot be used for matching or rendering.
+_Avoid_: pending plan, failed prompt
+
+**Plan Validation Finding**:
+A deterministic, structured reason that a proposed Fusion Segment Plan is not admissible, including the affected segment where known and its available recovery action.
+_Avoid_: generic exception, model error
+
 **Narrative Map**:
 A creator-reviewable, cached, evidence-bounded map of Story Beats, active subjects, goals, trigger events, risks, and time or location changes. It is created before narration-to-picture matching to improve continuity, but never establishes facts beyond Subtitle Evidence, Visual Evidence, and approved narration.
 _Avoid_: plot invention, external synopsis, final script
@@ -84,8 +96,48 @@ _Avoid_: automatic plan continuation, script approval
 A resumable local background task that persists an approved Fusion Segment Plan and the status and output of each Segment Match.
 _Avoid_: foreground matching, browser-bound script generation
 
+**Fusion Project**:
+The durable container for one intended commentary-video output, including one or more source videos, configuration, evidence artifacts, background tasks, review decisions, script versions, and rendered outcomes.
+_Avoid_: task, browser session, folder
+
+**Project Library**:
+The creator-facing collection of Fusion Projects and migrated legacy work, organised by status and recent activity.
+_Avoid_: task list, file browser
+
+**Migrated Fusion Project**:
+A Fusion Project created explicitly from compatible legacy tasks or evidence artifacts without guessing relationships between unrelated legacy records.
+_Avoid_: automatic migration, legacy task
+
+**Fusion Workflow Stage**:
+One navigable area of a Fusion Project—setup, evidence, narration and Narrative Map, matching, review, or output. A stage may be inspected freely, while actions inside it remain gated by durable prerequisites.
+_Avoid_: project status, rigid wizard step
+
+**Fusion Project Status**:
+The current overall condition of a Fusion Project, such as running, waiting for review, blocked, ready to render, completed, or archived.
+_Avoid_: workflow stage, selected page
+
+**Source Video Sequence**:
+The creator-defined ordered set of source videos belonging to a Fusion Project. Evidence windows and timestamps remain scoped to one member of the sequence.
+_Avoid_: upload list, global timeline
+
+**Content Draft**:
+An autosaved but unapplied edit to approved narration, a Narrative Map, or a Fusion Script timeline. Applying it requires an impact preview and creates a new version.
+_Avoid_: live edit, approved version
+
+**Stale Task Result**:
+The completed output of a background task whose input version is no longer active. It remains inspectable but cannot replace the current project state without an explicit creator decision.
+_Avoid_: latest result, failed task
+
+**Review Checkpoint**:
+A creator decision boundary that must be satisfied before dependent work can continue, such as an analysis estimate, Narrative Map, Fusion Segment Plan, Evidence Conflict, or Render Preflight.
+_Avoid_: modal, background task
+
+**Render Outcome**:
+An immutable rendered-video result bound to one Fusion Script version, output-settings snapshot, and Render Preflight record.
+_Avoid_: current video, overwritten export
+
 **Fusion Project Workspace**:
-The creator's persistent review surface for one source-video generation, showing its current version, active background work, required reviews, evidence, timeline, and render readiness.
+The creator's persistent primary surface for one Fusion Project, showing its current version, active background work, required reviews, evidence, timeline, and render readiness.
 _Avoid_: one-shot wizard, transient session page
 
 **Task Center**:
