@@ -571,21 +571,7 @@ def finalize_fusion_matching_result(
             }
         )
         preflight["renderable"] = False
-    version_history = [
-        {
-            "version_id": "original-match",
-            "kind": "original_match",
-            "created_at": time.time(),
-            "item_count": len(finalization.original_script),
-        },
-        {
-            "version_id": "finalized-script",
-            "kind": "finalized_script",
-            "created_at": time.time(),
-            "item_count": len(finalization.script),
-        },
-    ]
-    return {
+    result = {
         "original_script": finalization.original_script,
         "finalized_script": finalization.script,
         "finalization_report": asdict(finalization.report),
@@ -595,9 +581,61 @@ def finalize_fusion_matching_result(
         "narrative_quality_findings": list(
             matched_plan.get("narrative_quality_findings") or []
         ),
-        "version_history": version_history,
         "preflight": preflight,
         "renderable": preflight["renderable"],
+    }
+    result["version_history"] = [
+        _fusion_version_entry(
+            version_id="original-match",
+            kind="original_match",
+            item_count=len(finalization.original_script),
+            snapshot={
+                **_fusion_version_snapshot(result),
+                "finalized_script": list(finalization.original_script),
+            },
+        ),
+        _fusion_version_entry(
+            version_id="finalized-script",
+            kind="finalized_script",
+            item_count=len(finalization.script),
+            snapshot=_fusion_version_snapshot(result),
+        ),
+    ]
+    return result
+
+
+def _fusion_version_snapshot(finalization: dict) -> dict:
+    """Keep a JSON-safe, credential-free review context for explicit version restore."""
+    fields = (
+        "original_script",
+        "finalized_script",
+        "finalization_report",
+        "evidence_conflicts",
+        "continuity_report",
+        "narrative_map",
+        "narrative_quality_findings",
+        "review_decisions",
+        "preflight",
+        "renderable",
+    )
+    payload = {
+        field: finalization.get(field, [] if field == "review_decisions" else None)
+        for field in fields
+        if field in finalization or field == "review_decisions"
+    }
+    return json.loads(json.dumps(payload, ensure_ascii=False))
+
+
+def _fusion_version_entry(
+    *, version_id: str, kind: str, item_count: int, snapshot: dict, **extra
+) -> dict:
+    return {
+        "version_id": version_id,
+        "kind": kind,
+        "created_at": time.time(),
+        "item_count": item_count,
+        "snapshot": snapshot,
+        **extra,
     }
 
 
@@ -814,13 +852,14 @@ def approve_fusion_quality_repair(
         matches.append(entry)
     versions = list(finalization.get("version_history") or [])
     versions.append(
-        {
-            "version_id": f"quality-repair-{len(versions) + 1}",
-            "kind": "quality_repair",
-            "segment_id": str(segment_id),
-            "finding_code": str(finding_code),
-            "created_at": time.time(),
-        }
+        _fusion_version_entry(
+            version_id=f"quality-repair-{len(versions) + 1}",
+            kind="quality_repair",
+            item_count=len(finalization.get("finalized_script") or []),
+            snapshot=_fusion_version_snapshot(finalization),
+            segment_id=str(segment_id),
+            finding_code=str(finding_code),
+        )
     )
     preflight = dict(finalization.get("preflight") or {})
     blockers = list(preflight.get("blockers") or [])
@@ -832,7 +871,25 @@ def approve_fusion_quality_repair(
         }
     )
     preflight.update({"blockers": blockers, "renderable": False})
-    finalization.update({"version_history": versions, "preflight": preflight, "renderable": False})
+    decisions = list(finalization.get("review_decisions") or [])
+    decisions.append(
+        {
+            "decision_id": f"quality-adopted-{len(decisions) + 1}",
+            "kind": "quality",
+            "action": "adopted",
+            "segment_id": str(segment_id),
+            "code": str(finding_code),
+            "created_at": time.time(),
+        }
+    )
+    finalization.update(
+        {
+            "version_history": versions,
+            "review_decisions": decisions,
+            "preflight": preflight,
+            "renderable": False,
+        }
+    )
     batches = [
         batch for batch in task.get("completed_batches") or []
         if str(batch.get("segment_id") or batch.get("batch_index") or "") != str(segment_id)
@@ -862,6 +919,124 @@ def find_fusion_matching_task(
         source_identity or {},
         _fusion_matching_signature(request),
         include_completed=True,
+    )
+
+
+def ignore_fusion_quality_finding(
+    task_id: str, *, segment_id: str, finding_code: str
+) -> dict:
+    """Persist a creator's ignore decision for one non-blocking quality suggestion."""
+    store = _fusion_matching_task_store()
+    task = store.read(task_id)
+    finalization = dict(task.get("finalization") or {})
+    finding = next(
+        (
+            item for item in finalization.get("narrative_quality_findings") or []
+            if isinstance(item, dict)
+            and str(item.get("segment_id") or "") == str(segment_id)
+            and str(item.get("code") or "") == str(finding_code)
+        ),
+        None,
+    )
+    if finding is None:
+        raise ValueError("The selected quality finding is not available to ignore")
+    decisions = list(finalization.get("review_decisions") or [])
+    if any(
+        isinstance(item, dict)
+        and item.get("action") == "ignored"
+        and item.get("kind") == "quality"
+        and str(item.get("segment_id") or "") == str(segment_id)
+        and str(item.get("code") or "") == str(finding_code)
+        for item in decisions
+    ):
+        raise ValueError("The selected quality finding has already been ignored")
+    decisions.append(
+        {
+            "decision_id": f"quality-ignored-{len(decisions) + 1}",
+            "kind": "quality",
+            "action": "ignored",
+            "segment_id": str(segment_id),
+            "code": str(finding_code),
+            "finding": finding,
+            "created_at": time.time(),
+        }
+    )
+    finalization["review_decisions"] = decisions
+    return store.update(task_id, finalization=finalization)
+
+
+def undo_fusion_quality_ignore(task_id: str, *, decision_id: str) -> dict:
+    """Undo one persisted quality-ignore decision without touching blockers or warnings."""
+    store = _fusion_matching_task_store()
+    task = store.read(task_id)
+    finalization = dict(task.get("finalization") or {})
+    decisions = list(finalization.get("review_decisions") or [])
+    index = next(
+        (
+            current_index
+            for current_index, item in enumerate(decisions)
+            if isinstance(item, dict)
+            and str(item.get("decision_id") or "") == str(decision_id)
+            and item.get("kind") == "quality"
+            and item.get("action") == "ignored"
+        ),
+        None,
+    )
+    if index is None:
+        raise ValueError("The selected quality-ignore decision cannot be undone")
+    decisions.pop(index)
+    finalization["review_decisions"] = decisions
+    return store.update(task_id, finalization=finalization)
+
+
+def compare_fusion_matching_versions(
+    task_id: str, *, baseline_version_id: str, candidate_version_id: str
+) -> dict:
+    """Compare two durable review-context versions for one Fusion Matching Task."""
+    from app.services.fusion_workspace import compare_fusion_versions
+
+    task = _fusion_matching_task_store().read(task_id)
+    return compare_fusion_versions(
+        versions=list((task.get("finalization") or {}).get("version_history") or []),
+        baseline_version_id=baseline_version_id,
+        candidate_version_id=candidate_version_id,
+    )
+
+
+def restore_fusion_matching_version(task_id: str, *, version_id: str) -> dict:
+    """Restore an explicit saved review context without bypassing its Preflight state."""
+    store = _fusion_matching_task_store()
+    task = store.read(task_id)
+    if str(task.get("status") or "") in {"queued", "running"}:
+        raise ValueError("A running Fusion Matching Task cannot restore a saved version")
+    finalization = dict(task.get("finalization") or {})
+    versions = list(finalization.get("version_history") or [])
+    selected = next(
+        (
+            item for item in versions
+            if isinstance(item, dict) and str(item.get("version_id") or "") == str(version_id)
+        ),
+        None,
+    )
+    snapshot = selected.get("snapshot") if isinstance(selected, dict) else None
+    if not isinstance(snapshot, dict):
+        raise ValueError("The selected Fusion version has no restorable review context")
+    restored = {**finalization, **_fusion_version_snapshot(snapshot)}
+    restored["review_decisions"] = list(snapshot.get("review_decisions") or [])
+    restore_entry = _fusion_version_entry(
+        version_id=f"restore-{len(versions) + 1}",
+        kind="restored_context",
+        item_count=len(restored.get("finalized_script") or []),
+        snapshot=_fusion_version_snapshot(restored),
+        restored_from=str(version_id),
+    )
+    restored["version_history"] = versions + [restore_entry]
+    return store.update(
+        task_id,
+        finalization=restored,
+        status="completed",
+        renderable=bool(restored.get("renderable")),
+        error_message="",
     )
 
 
@@ -1127,17 +1302,28 @@ def _start_fusion_matching_runner(
         )
         prior_finalization = store.read(task_id).get("finalization") or {}
         prior_versions = list(prior_finalization.get("version_history") or [])
+        prior_decisions = list(prior_finalization.get("review_decisions") or [])
         quality_repair = request.get("quality_repair_request")
         if prior_versions and isinstance(quality_repair, dict):
+            finalization["review_decisions"] = prior_decisions
             finalization["version_history"] = prior_versions + [
-                {
-                    "version_id": f"quality-repair-output-{len(prior_versions) + 1}",
-                    "kind": "quality_repair_output",
-                    "segment_id": str(quality_repair.get("segment_id") or ""),
-                    "created_at": time.time(),
-                }
+                _fusion_version_entry(
+                    version_id=f"quality-repair-output-{len(prior_versions) + 1}",
+                    kind="quality_repair_output",
+                    item_count=len(finalization.get("finalized_script") or []),
+                    snapshot=_fusion_version_snapshot(finalization),
+                    segment_id=str(quality_repair.get("segment_id") or ""),
+                )
             ]
-        return {"matched_plan": matched, "finalization": finalization, "renderable": finalization["renderable"]}
+        return {
+            "matched_plan": matched,
+            "finalization": finalization,
+            "renderable": finalization["renderable"],
+            "request": {
+                key: value for key, value in request.items()
+                if key != "quality_repair_request"
+            },
+        }
 
     LocalAnalysisTaskRunner(store).start(task_id, work)
 

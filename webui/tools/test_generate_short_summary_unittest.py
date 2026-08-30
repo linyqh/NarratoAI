@@ -205,6 +205,46 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("人物在废墟中前进。", result["finalized_script"][0]["picture"])
         self.assertTrue(result["continuity_report"]["is_renderable"])
         self.assertTrue(result["preflight"]["renderable"])
+        self.assertTrue(result["version_history"][1]["snapshot"]["renderable"])
+
+    def test_restore_fusion_version_restores_saved_preflight_and_script(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            task = store.create({}, {})
+            store.update(
+                task["task_id"],
+                status="failed",
+                error_message="repair failed",
+                finalization={
+                    "renderable": False,
+                    "finalized_script": [{"_id": 2, "narration": "失败版本"}],
+                    "preflight": {"blockers": [{"code": "repair_failed"}]},
+                    "review_decisions": [{"decision_id": "later-ignore", "action": "ignored"}],
+                    "version_history": [
+                        {
+                            "version_id": "before-repair",
+                            "kind": "finalized_script",
+                            "snapshot": {
+                                "renderable": True,
+                                "finalized_script": [{"_id": 1, "narration": "可恢复版本"}],
+                                "preflight": {"blockers": [], "warnings": []},
+                                "narrative_quality_findings": [],
+                                "review_decisions": [],
+                            },
+                        }
+                    ],
+                },
+            )
+            with patch.object(generate_short_summary, "_fusion_matching_task_store", return_value=store):
+                restored = generate_short_summary.restore_fusion_matching_version(
+                    task["task_id"], version_id="before-repair"
+                )
+
+        self.assertEqual("completed", restored["status"])
+        self.assertTrue(restored["renderable"])
+        self.assertEqual("可恢复版本", restored["finalization"]["finalized_script"][0]["narration"])
+        self.assertEqual([], restored["finalization"]["review_decisions"])
+        self.assertEqual("restored_context", restored["finalization"]["version_history"][-1]["kind"])
 
     def test_background_finalization_requires_a_reason_to_render_with_a_warning(self):
         result = generate_short_summary.finalize_fusion_matching_result(
@@ -294,6 +334,32 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("interrupted", updated["status"])
         self.assertEqual("quality_repair", updated["finalization"]["version_history"][-1]["kind"])
 
+    def test_creator_can_ignore_and_undo_a_non_blocking_quality_finding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            task = store.create({}, {})
+            store.update(
+                task["task_id"],
+                finalization={
+                    "narrative_quality_findings": [
+                        {"code": "repetitive_narration", "segment_id": "segment-2"}
+                    ],
+                    "preflight": {"blockers": [], "warnings": [{"code": "evidence_conflict"}]},
+                },
+            )
+            with patch.object(generate_short_summary, "_fusion_matching_task_store", return_value=store):
+                ignored = generate_short_summary.ignore_fusion_quality_finding(
+                    task["task_id"], segment_id="segment-2", finding_code="repetitive_narration"
+                )
+                restored = generate_short_summary.undo_fusion_quality_ignore(
+                    task["task_id"],
+                    decision_id=ignored["finalization"]["review_decisions"][-1]["decision_id"],
+                )
+
+        self.assertEqual("ignored", ignored["finalization"]["review_decisions"][-1]["action"])
+        self.assertEqual([], restored["finalization"]["review_decisions"])
+        self.assertEqual("evidence_conflict", restored["finalization"]["preflight"]["warnings"][0]["code"])
+
     def test_creator_approved_quality_repair_resumes_one_segment_and_refinalizes(self):
         plan = {
             "segments": [
@@ -373,6 +439,10 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertNotIn("quality_repair_request", match_calls[1])
         self.assertEqual("quality_repair", task["finalization"]["version_history"][-2]["kind"])
         self.assertEqual("quality_repair_output", task["finalization"]["version_history"][-1]["kind"])
+        self.assertEqual(
+            "adopted",
+            task["finalization"]["version_history"][-1]["snapshot"]["review_decisions"][-1]["action"],
+        )
 
     def test_background_match_stays_out_of_finalization_when_continuity_is_unreviewable(self):
         result = generate_short_summary.finalize_fusion_matching_result(

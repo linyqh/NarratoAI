@@ -15,6 +15,7 @@ from app.utils import utils, check_script
 from webui.tools.generate_script_docu import generate_script_docu
 from app.services.film_vision_fusion import load_visual_evidence_artifact
 from app.services.fusion_script_pipeline import FusionScriptPipeline
+from app.services.documentary.frame_analysis_models import TimeRange
 from app.services.fusion_workspace import locate_fusion_review_item, project_fusion_workspace
 from app.services.visual_evidence_artifact import build_source_video_identity
 from app.services.visual_evidence_artifact import read_highlight_candidate_intake
@@ -46,8 +47,12 @@ from webui.tools.generate_short_summary import (
     override_fusion_matching_render_warning,
     review_fusion_narrative_map,
     approve_fusion_quality_repair,
+    compare_fusion_matching_versions,
     cancel_fusion_matching_task,
+    ignore_fusion_quality_finding,
+    restore_fusion_matching_version,
     resume_fusion_matching_task,
+    undo_fusion_quality_ignore,
 )
 
 
@@ -2511,8 +2516,31 @@ def render_script_buttons(tr, params):
                             )
                             if location.get("time_range"):
                                 st.caption(f"{tr('源视频定位')}: {location['time_range']} · {location['active_subject']}")
+                                selected_beat = next(
+                                    (
+                                        beat for beat in workspace.get("inspector", {}).get("narrative_map", {}).get("beats", [])
+                                        if isinstance(beat, dict)
+                                        and str(beat.get("segment_id") or "") == str(selected.get("segment_id") or "")
+                                    ),
+                                    {},
+                                )
+                                preview_columns = st.columns((3, 2))
+                                source_videos = _selected_video_paths()
+                                with preview_columns[0]:
+                                    if source_videos and os.path.isfile(source_videos[0]):
+                                        try:
+                                            start_seconds = TimeRange.parse(location["time_range"]).start_seconds
+                                            st.video(source_videos[0], start_time=start_seconds)
+                                        except ValueError:
+                                            st.caption(tr("该审阅项的时间范围无法用于视频预览。"))
+                                    else:
+                                        st.caption(tr("未找到可用于审阅的源视频。"))
+                                with preview_columns[1]:
+                                    st.caption(tr("对应 Story Beat"))
+                                    st.json(selected_beat)
                             if selected.get("kind") == "quality":
-                                if st.button(tr("批准并定向修复此分段"), key="fusion_approve_quality_repair"):
+                                quality_actions = st.columns(2)
+                                if quality_actions[0].button(tr("批准并定向修复此分段"), key="fusion_approve_quality_repair"):
                                     try:
                                         workspace_task_id = str(
                                             workspace.get("task_center", {}).get("task_id")
@@ -2530,10 +2558,100 @@ def render_script_buttons(tr, params):
                                         st.rerun()
                                     except ValueError as exc:
                                         st.error(str(exc))
+                                if quality_actions[1].button(tr("忽略此质量建议"), key="fusion_ignore_quality_finding"):
+                                    try:
+                                        workspace_task_id = str(
+                                            workspace.get("task_center", {}).get("task_id")
+                                            or st.session_state.get("fusion_matching_task_id")
+                                            or ""
+                                        )
+                                        if not workspace_task_id:
+                                            raise ValueError("Fusion Matching Task is unavailable for this review decision")
+                                        updated_task = ignore_fusion_quality_finding(
+                                            workspace_task_id,
+                                            segment_id=str(selected.get("segment_id") or ""),
+                                            finding_code=str(selected.get("code") or ""),
+                                        )
+                                        st.session_state["fusion_workspace"] = project_fusion_workspace(
+                                            task=updated_task,
+                                            finalization=updated_task.get("finalization") or {},
+                                        )
+                                        st.rerun()
+                                    except ValueError as exc:
+                                        st.error(str(exc))
                     else:
                         st.caption(tr("当前没有待处理的审阅项。"))
                     with st.expander(tr("Task Center"), expanded=False):
                         st.json(list_fusion_matching_tasks())
+                    workspace_task_id = str(
+                        workspace.get("task_center", {}).get("task_id")
+                        or st.session_state.get("fusion_matching_task_id")
+                        or ""
+                    )
+                    ignored_decisions = [
+                        item for item in workspace.get("inspector", {}).get("review_decisions", [])
+                        if isinstance(item, dict) and item.get("kind") == "quality" and item.get("action") == "ignored"
+                    ]
+                    if workspace_task_id and ignored_decisions:
+                        latest_ignore = ignored_decisions[-1]
+                        if st.button(tr("撤销最近一次忽略质量建议"), key="fusion_undo_quality_ignore"):
+                            try:
+                                updated_task = undo_fusion_quality_ignore(
+                                    workspace_task_id,
+                                    decision_id=str(latest_ignore.get("decision_id") or ""),
+                                )
+                                st.session_state["fusion_workspace"] = project_fusion_workspace(
+                                    task=updated_task,
+                                    finalization=updated_task.get("finalization") or {},
+                                )
+                                st.rerun()
+                            except ValueError as exc:
+                                st.error(str(exc))
+                    restorable_versions = [
+                        item for item in workspace.get("versions", [])
+                        if isinstance(item, dict) and isinstance(item.get("snapshot"), dict)
+                    ]
+                    if workspace_task_id and restorable_versions:
+                        with st.expander(tr("版本比较与恢复"), expanded=False):
+                            version_ids = [str(item.get("version_id") or "") for item in restorable_versions]
+                            if len(version_ids) > 1:
+                                baseline_id = st.selectbox(
+                                    tr("比较基准版本"), version_ids, key="fusion_version_baseline"
+                                )
+                                candidate_id = st.selectbox(
+                                    tr("比较目标版本"), version_ids,
+                                    index=len(version_ids) - 1,
+                                    key="fusion_version_candidate",
+                                )
+                                if st.button(tr("比较版本"), key="fusion_compare_versions"):
+                                    try:
+                                        st.session_state["fusion_version_comparison"] = compare_fusion_matching_versions(
+                                            workspace_task_id,
+                                            baseline_version_id=baseline_id,
+                                            candidate_version_id=candidate_id,
+                                        )
+                                    except ValueError as exc:
+                                        st.error(str(exc))
+                                if st.session_state.get("fusion_version_comparison"):
+                                    st.json(st.session_state["fusion_version_comparison"])
+                            restore_id = st.selectbox(
+                                tr("恢复保存的审阅上下文"), version_ids,
+                                key="fusion_restore_version",
+                            )
+                            if st.button(tr("恢复该版本"), key="fusion_restore_version_apply"):
+                                try:
+                                    updated_task = restore_fusion_matching_version(
+                                        workspace_task_id, version_id=restore_id
+                                    )
+                                    restored_finalization = updated_task.get("finalization") or {}
+                                    st.session_state["fusion_workspace"] = project_fusion_workspace(
+                                        task=updated_task, finalization=restored_finalization
+                                    )
+                                    st.session_state["fusion_render_preflight"] = restored_finalization.get("preflight") or {}
+                                    st.session_state["video_clip_json"] = restored_finalization.get("finalized_script") or []
+                                    st.rerun()
+                                except ValueError as exc:
+                                    st.error(str(exc))
             if st.session_state.get("fusion_narrative_map"):
                 with st.expander(tr("Narrative Map"), expanded=False):
                     st.json(st.session_state["fusion_narrative_map"])
