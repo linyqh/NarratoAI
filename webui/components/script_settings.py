@@ -45,6 +45,7 @@ from webui.tools.generate_short_summary import (
     list_fusion_matching_tasks,
     override_fusion_matching_render_warning,
     review_fusion_narrative_map,
+    approve_fusion_quality_repair,
     cancel_fusion_matching_task,
     resume_fusion_matching_task,
 )
@@ -2510,6 +2511,25 @@ def render_script_buttons(tr, params):
                             )
                             if location.get("time_range"):
                                 st.caption(f"{tr('源视频定位')}: {location['time_range']} · {location['active_subject']}")
+                            if selected.get("kind") == "quality":
+                                if st.button(tr("批准并定向修复此分段"), key="fusion_approve_quality_repair"):
+                                    try:
+                                        workspace_task_id = str(
+                                            workspace.get("task_center", {}).get("task_id")
+                                            or st.session_state.get("fusion_matching_task_id")
+                                            or ""
+                                        )
+                                        if not workspace_task_id:
+                                            raise ValueError("Fusion Matching Task is unavailable for targeted repair")
+                                        approve_fusion_quality_repair(
+                                            workspace_task_id,
+                                            segment_id=str(selected.get("segment_id") or ""),
+                                            finding_code=str(selected.get("code") or ""),
+                                        )
+                                        resume_fusion_matching_task(workspace_task_id)
+                                        st.rerun()
+                                    except ValueError as exc:
+                                        st.error(str(exc))
                     else:
                         st.caption(tr("当前没有待处理的审阅项。"))
                     with st.expander(tr("Task Center"), expanded=False):

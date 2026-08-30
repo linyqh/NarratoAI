@@ -779,6 +779,81 @@ def review_fusion_narrative_map(
     return store.update(task_id, **changes)
 
 
+def approve_fusion_quality_repair(
+    task_id: str, *, segment_id: str, finding_code: str
+) -> dict:
+    """Let a creator approve one evidence-bounded Segment Match repair."""
+    store = _fusion_matching_task_store()
+    task = store.read(task_id)
+    finalization = dict(task.get("finalization") or {})
+    finding = next(
+        (
+            item for item in finalization.get("narrative_quality_findings") or []
+            if isinstance(item, dict)
+            and str(item.get("segment_id") or "") == str(segment_id)
+            and str(item.get("code") or "") == str(finding_code)
+        ),
+        None,
+    )
+    if finding is None:
+        raise ValueError("The selected quality finding is not available for this Segment Match")
+    matching_snapshot = dict(task.get("matching_snapshot") or {})
+    completed = dict(matching_snapshot.get("completed_segment_results") or {})
+    if str(segment_id) not in completed:
+        raise ValueError("The selected Segment Match is not available for targeted repair")
+    matching_snapshot["completed_segment_results"] = {
+        current_id: response
+        for current_id, response in completed.items()
+        if current_id != str(segment_id)
+    }
+    matches = []
+    for match in task.get("segment_matches") or []:
+        entry = dict(match)
+        if str(entry.get("segment_id") or "") == str(segment_id):
+            entry.update({"status": "repairing", "error_message": f"Creator approved quality repair: {finding_code}"})
+        matches.append(entry)
+    versions = list(finalization.get("version_history") or [])
+    versions.append(
+        {
+            "version_id": f"quality-repair-{len(versions) + 1}",
+            "kind": "quality_repair",
+            "segment_id": str(segment_id),
+            "finding_code": str(finding_code),
+            "created_at": time.time(),
+        }
+    )
+    preflight = dict(finalization.get("preflight") or {})
+    blockers = list(preflight.get("blockers") or [])
+    blockers.append(
+        {
+            "code": "quality_repair_requires_rematch",
+            "message": "Creator-approved quality repair must finish matching before rendering.",
+            "segment_id": str(segment_id),
+        }
+    )
+    preflight.update({"blockers": blockers, "renderable": False})
+    finalization.update({"version_history": versions, "preflight": preflight, "renderable": False})
+    batches = [
+        batch for batch in task.get("completed_batches") or []
+        if str(batch.get("segment_id") or batch.get("batch_index") or "") != str(segment_id)
+    ]
+    request = {
+        **task.get("request", {}),
+        "quality_repair_request": {"segment_id": str(segment_id), "finding_code": str(finding_code)},
+    }
+    return store.update(
+        task_id,
+        finalization=finalization,
+        matching_snapshot=matching_snapshot,
+        segment_matches=matches,
+        completed_batches=batches,
+        request=request,
+        status="interrupted",
+        error_message="Creator-approved quality repair is ready to resume.",
+        renderable=False,
+    )
+
+
 def find_fusion_matching_task(
     *, source_identity: dict | None, plan_payload: dict, narration_copy: str
 ) -> dict | None:
@@ -1013,7 +1088,14 @@ def _start_fusion_matching_runner(
         matching_request = {
             key: value
             for key, value in request.items()
-            if key not in {"analysis_signature", "finalization_context", "resume_snapshot"}
+            if key not in {
+                "analysis_signature",
+                "finalization_context",
+                "resume_snapshot",
+                # Durable workflow metadata is consumed by this runner after
+                # matching; it is not part of the matcher contract.
+                "quality_repair_request",
+            }
         }
         matched = match_approved_fusion_segment_plan(
             analyzer=analyzer,
@@ -1043,6 +1125,18 @@ def _start_fusion_matching_runner(
             matched_plan=matched,
             finalization_context=request["finalization_context"],
         )
+        prior_finalization = store.read(task_id).get("finalization") or {}
+        prior_versions = list(prior_finalization.get("version_history") or [])
+        quality_repair = request.get("quality_repair_request")
+        if prior_versions and isinstance(quality_repair, dict):
+            finalization["version_history"] = prior_versions + [
+                {
+                    "version_id": f"quality-repair-output-{len(prior_versions) + 1}",
+                    "kind": "quality_repair_output",
+                    "segment_id": str(quality_repair.get("segment_id") or ""),
+                    "created_at": time.time(),
+                }
+            ]
         return {"matched_plan": matched, "finalization": finalization, "renderable": finalization["renderable"]}
 
     LocalAnalysisTaskRunner(store).start(task_id, work)

@@ -267,6 +267,113 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("interrupted", updated["status"])
         self.assertFalse(updated["finalization"]["renderable"])
 
+    def test_creator_approved_quality_repair_invalidates_only_its_segment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            task = store.create({}, {})
+            store.update(
+                task["task_id"],
+                finalization={
+                    "renderable": True,
+                    "narrative_quality_findings": [{"code": "repetitive_narration", "segment_id": "segment-2"}],
+                    "preflight": {"blockers": []},
+                    "version_history": [],
+                },
+                matching_snapshot={"completed_segment_results": {"segment-1": {"items": []}, "segment-2": {"items": []}}},
+                completed_batches=[{"segment_id": "segment-1", "status": "succeeded"}, {"segment_id": "segment-2", "status": "succeeded"}],
+                segment_matches=[{"segment_id": "segment-1", "status": "succeeded"}, {"segment_id": "segment-2", "status": "succeeded"}],
+            )
+            with patch.object(generate_short_summary, "_fusion_matching_task_store", return_value=store):
+                updated = generate_short_summary.approve_fusion_quality_repair(
+                    task["task_id"], segment_id="segment-2", finding_code="repetitive_narration"
+                )
+
+        self.assertEqual("succeeded", updated["segment_matches"][0]["status"])
+        self.assertEqual("repairing", updated["segment_matches"][1]["status"])
+        self.assertNotIn("segment-2", updated["matching_snapshot"]["completed_segment_results"])
+        self.assertEqual("interrupted", updated["status"])
+        self.assertEqual("quality_repair", updated["finalization"]["version_history"][-1]["kind"])
+
+    def test_creator_approved_quality_repair_resumes_one_segment_and_refinalizes(self):
+        plan = {
+            "segments": [
+                {"segment_id": "segment-1"},
+                {"segment_id": "segment-2"},
+            ]
+        }
+        approval = generate_short_summary.approve_fusion_segment_plan(
+            plan_payload=plan, narration_copy="第一句。第二句。", source_identity={}
+        )
+        match_calls = []
+        finalization_calls = []
+
+        def matched(**kwargs):
+            match_calls.append(kwargs)
+            return {
+                "items": [],
+                "evidence_conflicts": [],
+                "continuity_report": {"is_renderable": True, "findings": []},
+                "matching_snapshot": {
+                    "plan_payload": plan,
+                    "completed_segment_results": {
+                        "segment-1": {"items": []},
+                        "segment-2": {"items": []},
+                    },
+                    "attempts_by_segment": {"segment-1": 1, "segment-2": 1},
+                    "repair_attempts_by_segment": {},
+                    "repaired_segment_ids": [],
+                },
+            }
+
+        def finalized(**kwargs):
+            finalization_calls.append(kwargs)
+            return {
+                "renderable": True,
+                "preflight": {"blockers": []},
+                "narrative_quality_findings": (
+                    [{"code": "repetitive_narration", "segment_id": "segment-2"}]
+                    if len(finalization_calls) == 1
+                    else []
+                ),
+                "version_history": [],
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            with (
+                patch.object(generate_short_summary, "_fusion_matching_task_store", return_value=store),
+                patch.object(generate_short_summary, "match_approved_fusion_segment_plan", side_effect=matched),
+                patch.object(generate_short_summary, "finalize_fusion_matching_result", side_effect=finalized),
+            ):
+                task_id = generate_short_summary.start_fusion_matching_task(
+                    short_name="测试影片", narration_copy="第一句。第二句。",
+                    narration_language="简体中文（中国）", drama_genre="剧情",
+                    original_sound_ratio=0, subtitle_content="字幕", visual_evidence="视觉",
+                    highlight_candidates="", plan_payload=plan, plan_approval=approval,
+                    temperature=0.3, source_identity={}, finalization_context={},
+                )
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline and store.read(task_id).get("status") != "completed":
+                    time.sleep(0.01)
+                generate_short_summary.approve_fusion_quality_repair(
+                    task_id, segment_id="segment-2", finding_code="repetitive_narration"
+                )
+                generate_short_summary.resume_fusion_matching_task(task_id)
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline and store.read(task_id).get("status") != "completed":
+                    time.sleep(0.01)
+                task = store.read(task_id)
+
+        self.assertEqual("completed", task["status"])
+        self.assertEqual(2, len(match_calls))
+        self.assertEqual(
+            {"segment-1"},
+            set(match_calls[1]["resume_snapshot"]["completed_segment_results"]),
+        )
+        self.assertNotIn("quality_repair_request", match_calls[1])
+        self.assertEqual("quality_repair", task["finalization"]["version_history"][-2]["kind"])
+        self.assertEqual("quality_repair_output", task["finalization"]["version_history"][-1]["kind"])
+
     def test_background_match_stays_out_of_finalization_when_continuity_is_unreviewable(self):
         result = generate_short_summary.finalize_fusion_matching_result(
             matched_plan={
