@@ -14,6 +14,11 @@ from uuid import uuid4
 
 PROJECT_SCHEMA_VERSION = 1
 STAGES = ("setup", "evidence", "narration", "matching", "review", "output")
+ACTIVE_TASK_STATUSES = {"queued", "running", "rendering"}
+CONTENT_MUTATING_TASK_KINDS = {
+    "narration_generation", "fusion_plan", "fusion_matching", "segment_repair", "render"
+}
+RUNTIME_ID = uuid4().hex
 
 
 def _now() -> str:
@@ -60,6 +65,7 @@ class FusionProjectStore:
             "stale_task_results": [],
             "trash_state": None,
             "archive_state": None,
+            "last_runtime_id": RUNTIME_ID,
         }
         self._project_directory(project_id).mkdir(parents=True, exist_ok=False)
         self._write(project)
@@ -203,6 +209,41 @@ class FusionProjectStore:
             "output": output,
         }
 
+    def attach_source_visual_evidence(
+        self,
+        project_id: str,
+        *,
+        source_id: str,
+        evidence: str,
+        artifact_path: str,
+    ) -> dict[str, Any]:
+        project = self.read(project_id)
+        sources = list(project.get("source_video_sequence") or [])
+        source = next(
+            (item for item in sources if str(item.get("source_id") or "") == str(source_id)),
+            None,
+        )
+        if source is None:
+            raise ValueError("Fusion source video not found")
+        source["visual_evidence_status"] = "completed"
+        source["visual_evidence_artifact"] = str(artifact_path or "")
+        artifacts = dict(project.get("artifact_refs") or {})
+        by_source = dict(artifacts.get("visual_evidence_by_source") or {})
+        by_source[str(source_id)] = {
+            "source_id": str(source_id),
+            "title": str(source.get("title") or ""),
+            "path": str(artifact_path or ""),
+            "evidence": str(evidence or ""),
+        }
+        artifacts["visual_evidence_by_source"] = by_source
+        artifacts["visual_evidence"] = "\n\n".join(
+            f"[Source: {item.get('title') or key}]\n{item.get('evidence') or ''}"
+            for key, item in by_source.items()
+        )
+        return self.update(
+            project_id, source_video_sequence=sources, artifact_refs=artifacts
+        )
+
     def permanent_delete_plan(self, project_id: str) -> dict[str, Any]:
         project = self.read(project_id)
         managed = [
@@ -293,6 +334,74 @@ class FusionProjectStore:
         if not matched:
             raise ValueError("Fusion Project task not found")
         return self.update(project_id, task_refs=tasks)
+
+    def task_start_projection(
+        self, project_id: str, *, kind: str, source_id: str = ""
+    ) -> dict[str, Any]:
+        project = self.read(project_id)
+        active = [
+            task for task in project.get("task_refs") or []
+            if task.get("status") in ACTIVE_TASK_STATUSES
+        ]
+        if kind == "visual_analysis":
+            conflict = next(
+                (
+                    task for task in active
+                    if task.get("kind") == "visual_analysis"
+                    and str(task.get("source_id") or "") == str(source_id or "")
+                ),
+                None,
+            )
+            reason = "该素材已有视觉分析任务正在运行" if conflict else ""
+        elif kind in CONTENT_MUTATING_TASK_KINDS:
+            conflict = next(
+                (task for task in active if task.get("kind") in CONTENT_MUTATING_TASK_KINDS),
+                None,
+            )
+            reason = "项目已有内容变更任务正在运行" if conflict else ""
+        else:
+            conflict = None
+            reason = ""
+        return {"allowed": conflict is None, "reason": reason}
+
+    def reconcile_unfinished_tasks(self, project_id: str) -> dict[str, Any]:
+        project = self.read(project_id)
+        tasks = list(project.get("task_refs") or [])
+        changed = False
+        for task in tasks:
+            if task.get("status") in ACTIVE_TASK_STATUSES:
+                task["status"] = "interrupted"
+                task["recoverable"] = True
+                task["message"] = "应用重启后任务已暂停，可继续或查看诊断"
+                task["updated_at"] = _now()
+                changed = True
+        return self.update(project_id, task_refs=tasks) if changed else project
+
+    def reconcile_for_runtime(self, project_id: str) -> dict[str, Any]:
+        project = self.read(project_id)
+        if project.get("last_runtime_id") == RUNTIME_ID:
+            return project
+        project = self.reconcile_unfinished_tasks(project_id)
+        return self.update(project_id, last_runtime_id=RUNTIME_ID)
+
+    def task_diagnostic_projection(self, project_id: str, task_id: str) -> dict[str, Any]:
+        project = self.read(project_id)
+        task = next(
+            (item for item in project.get("task_refs") or [] if item.get("task_id") == task_id),
+            None,
+        )
+        if task is None:
+            raise ValueError("Fusion Project task not found")
+        return {
+            "kind": str(task.get("kind") or ""),
+            "status": str(task.get("status") or ""),
+            "progress": task.get("progress"),
+            "message": str(task.get("message") or "")[:1000],
+            "error_message": str(task.get("error_message") or "")[:1000],
+            "failure_category": str(task.get("failure_category") or ""),
+            "recoverable": bool(task.get("recoverable"))
+            or task.get("status") in {"failed", "interrupted", "cancelled"},
+        }
 
     def save_content_draft(
         self, project_id: str, *, kind: str, content: Any

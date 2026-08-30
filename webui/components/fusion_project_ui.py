@@ -192,7 +192,7 @@ def _render_new_project() -> None:
     if not project_id:
         navigate(st.session_state, PROJECT_LIBRARY_ROUTE)
         st.rerun()
-    project = store.read(project_id)
+    project = store.reconcile_for_runtime(project_id)
     _top_bar(project=project)
     if st.button("← 返回项目库"):
         navigate(st.session_state, PROJECT_LIBRARY_ROUTE)
@@ -265,7 +265,7 @@ def _render_workspace() -> None:
     if not project_id:
         navigate(st.session_state, PROJECT_LIBRARY_ROUTE)
         st.rerun()
-    project = store.read(project_id)
+    project = store.reconcile_for_runtime(project_id)
     projection = project_projection(project)
     _top_bar(project=project)
     back, status = st.columns([1, 5], vertical_alignment="center")
@@ -345,7 +345,15 @@ def _stage_evidence(project, store) -> None:
             estimate_result = st.session_state.get(f"estimate-result-{source['source_id']}")
             if estimate_result:
                 st.json(estimate_result, expanded=False)
-            if start_col.button("开始视觉分析", type="primary", key=f"start-{source['source_id']}"):
+            start_projection = store.task_start_projection(
+                project["project_id"], kind="visual_analysis", source_id=source["source_id"]
+            )
+            if start_projection["reason"]:
+                st.caption(start_projection["reason"])
+            if start_col.button(
+                "开始视觉分析", type="primary", key=f"start-{source['source_id']}",
+                disabled=not start_projection["allowed"],
+            ):
                 try:
                     from webui.tools.generate_film_vision_fusion import start_local_visual_analysis
 
@@ -391,10 +399,20 @@ def _stage_evidence(project, store) -> None:
             if actions[2].button("查看诊断", key=f"diag-visual-{task_ref['task_id']}"):
                 st.json({key: task.get(key) for key in ("status", "progress", "message", "error_message")})
             if task.get("status") == "completed" and task.get("visual_evidence"):
-                artifacts = dict(project.get("artifact_refs") or {})
-                artifacts["visual_evidence"] = task["visual_evidence"]
-                artifacts["visual_evidence_path"] = task.get("artifact_path")
-                project = store.update(project["project_id"], artifact_refs=artifacts)
+                source_state = next(
+                    (
+                        source for source in project.get("source_video_sequence") or []
+                        if source.get("source_id") == task_ref.get("source_id")
+                    ),
+                    {},
+                )
+                if source_state.get("visual_evidence_status") != "completed":
+                    project = store.attach_source_visual_evidence(
+                        project["project_id"],
+                        source_id=task_ref.get("source_id"),
+                        evidence=task["visual_evidence"],
+                        artifact_path=task.get("artifact_path") or "",
+                    )
         except Exception as error:
             st.warning(f"任务状态不可用：{error}")
 
@@ -517,10 +535,71 @@ def _render_task_center() -> None:
         st.rerun()
     st.title("任务中心")
     rows = []
+    task_entries = []
     for project in project_store().list_projects():
         for task in project.get("task_refs") or []:
-            rows.append({"项目": project["name"], **task})
+            rows.append(
+                {
+                    "项目": project["name"],
+                    "类型": task.get("kind"),
+                    "状态": task.get("status"),
+                    "进度": task.get("progress"),
+                    "说明": task.get("message"),
+                    "更新时间": task.get("updated_at"),
+                }
+            )
+            task_entries.append((project, task))
     if rows:
         st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.subheader("任务操作")
+        for project, task in task_entries:
+            label = f"{project['name']} · {task.get('kind')} · {task.get('status')}"
+            with st.expander(label):
+                controls = st.columns(3)
+                can_resume = task.get("status") in {"failed", "interrupted", "cancelled"}
+                can_cancel = task.get("status") in {"queued", "running"}
+                if controls[0].button(
+                    "继续", key=f"task-resume-{task['task_id']}", disabled=not can_resume
+                ):
+                    _resume_project_task(task)
+                    st.rerun()
+                if controls[1].button(
+                    "取消", key=f"task-cancel-{task['task_id']}", disabled=not can_cancel
+                ):
+                    _cancel_project_task(task)
+                    st.rerun()
+                if controls[2].button("查看诊断", key=f"task-diag-{task['task_id']}"):
+                    diagnostic = project_store().task_diagnostic_projection(
+                        project["project_id"], task["task_id"]
+                    )
+                    st.json(diagnostic)
     else:
         st.info("当前没有项目任务。")
+
+
+def _resume_project_task(task: dict) -> None:
+    kind = str(task.get("kind") or "")
+    if kind == "visual_analysis":
+        from webui.tools.generate_film_vision_fusion import resume_local_visual_analysis
+
+        resume_local_visual_analysis(task["task_id"])
+    elif kind == "fusion_matching":
+        from webui.tools.generate_short_summary import resume_fusion_matching_task
+
+        resume_fusion_matching_task(task["task_id"])
+    else:
+        raise ValueError(f"该任务类型暂不支持继续：{kind}")
+
+
+def _cancel_project_task(task: dict) -> None:
+    kind = str(task.get("kind") or "")
+    if kind == "visual_analysis":
+        from webui.tools.generate_film_vision_fusion import cancel_local_visual_analysis
+
+        cancel_local_visual_analysis(task["task_id"])
+    elif kind == "fusion_matching":
+        from webui.tools.generate_short_summary import cancel_fusion_matching_task
+
+        cancel_fusion_matching_task(task["task_id"])
+    else:
+        raise ValueError(f"该任务类型暂不支持取消：{kind}")

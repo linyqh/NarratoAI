@@ -163,6 +163,90 @@ class FusionProjectStoreTests(unittest.TestCase):
         self.assertIsNotNone(archived["archive_state"])
         self.assertIsNone(restored["archive_state"])
 
+    def test_task_policy_allows_different_source_analysis_but_serializes_content_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory))
+            project = store.create("任务并发")
+            store.attach_task(
+                project["project_id"], task_id="visual-1", kind="visual_analysis",
+                source_id="source-1", status="running",
+            )
+
+            other_source = store.task_start_projection(
+                project["project_id"], kind="visual_analysis", source_id="source-2"
+            )
+            same_source = store.task_start_projection(
+                project["project_id"], kind="visual_analysis", source_id="source-1"
+            )
+            store.attach_task(
+                project["project_id"], task_id="matching-1", kind="fusion_matching",
+                status="running",
+            )
+            narration = store.task_start_projection(
+                project["project_id"], kind="narration_generation"
+            )
+
+        self.assertTrue(other_source["allowed"])
+        self.assertFalse(same_source["allowed"])
+        self.assertFalse(narration["allowed"])
+
+    def test_restart_reconciliation_marks_unfinished_tasks_interrupted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory))
+            project = store.create("恢复任务")
+            store.attach_task(
+                project["project_id"], task_id="task-1", kind="visual_analysis",
+                status="running",
+            )
+
+            reconciled = store.reconcile_unfinished_tasks(project["project_id"])
+
+        self.assertEqual("interrupted", reconciled["task_refs"][0]["status"])
+        self.assertTrue(reconciled["task_refs"][0]["recoverable"])
+
+    def test_task_diagnostics_projection_does_not_expose_request_or_credentials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory))
+            project = store.create("诊断")
+            store.attach_task(
+                project["project_id"], task_id="secret-task-id", kind="fusion_matching",
+                status="failed",
+            )
+            store.update_task_summary(
+                project["project_id"], "secret-task-id",
+                message="请求失败", error_message="超时", failure_category="total_timeout",
+                request={"api_key": "do-not-show"},
+            )
+
+            diagnostic = store.task_diagnostic_projection(project["project_id"], "secret-task-id")
+
+        self.assertEqual("total_timeout", diagnostic["failure_category"])
+        self.assertNotIn("request", diagnostic)
+        self.assertNotIn("task_id", diagnostic)
+        self.assertNotIn("do-not-show", str(diagnostic))
+
+    def test_visual_evidence_is_owned_by_its_source_and_combined_without_overwrite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory))
+            project = store.create("多视频")
+            first = store.add_local_reference(project["project_id"], path="first.mp4")
+            second = store.add_local_reference(project["project_id"], path="second.mp4")
+
+            store.attach_source_visual_evidence(
+                project["project_id"], source_id=first["source_id"],
+                evidence="00:00-00:06 第一段", artifact_path="first.json",
+            )
+            updated = store.attach_source_visual_evidence(
+                project["project_id"], source_id=second["source_id"],
+                evidence="00:00-00:06 第二段", artifact_path="second.json",
+            )
+
+        by_source = updated["artifact_refs"]["visual_evidence_by_source"]
+        self.assertEqual(2, len(by_source))
+        self.assertIn("第一段", updated["artifact_refs"]["visual_evidence"])
+        self.assertIn("第二段", updated["artifact_refs"]["visual_evidence"])
+        self.assertTrue(all(source["visual_evidence_status"] == "completed" for source in updated["source_video_sequence"]))
+
 
 if __name__ == "__main__":
     unittest.main()
