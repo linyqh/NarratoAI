@@ -56,6 +56,34 @@ class FusionScriptFinalizerTests(unittest.TestCase):
         result = self._finalize(request)
 
         self.assertEqual([], result.report.candidate_decisions)
+
+    def test_rejects_overlapping_authored_ranges_from_the_same_source(self):
+        with self.assertRaisesRegex(ValueError, "overlapping ranges.*film.mp4"):
+            self._finalize(
+                script=[
+                    {"_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "一", "narration": "一", "OST": 0},
+                    {"_id": 2, "video_name": "film.mp4", "timestamp": "00:00:05,000-00:00:15,000", "picture": "二", "narration": "二", "OST": 0},
+                ],
+                source_durations={"film.mp4": 20.0},
+            )
+
+    def test_rejects_non_positive_authored_range(self):
+        with self.assertRaisesRegex(ValueError, "non-positive range"):
+            self._finalize(
+                script=[
+                    {"_id": 1, "video_name": "film.mp4", "timestamp": "00:00:10,000-00:00:10,000", "picture": "一", "narration": "一", "OST": 0},
+                ],
+                source_durations={"film.mp4": 20.0},
+            )
+
+    def test_rejects_authored_range_beyond_known_source_duration(self):
+        with self.assertRaisesRegex(ValueError, "exceeds known duration.*film.mp4"):
+            self._finalize(
+                script=[
+                    {"_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:21,000", "picture": "一", "narration": "一", "OST": 0},
+                ],
+                source_durations={"film.mp4": 20.0},
+            )
     def test_records_artifact_rejections_even_when_ratio_is_zero(self):
         result = self._finalize(
             script=[{"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "开场", "narration": "开场", "OST": 0}],

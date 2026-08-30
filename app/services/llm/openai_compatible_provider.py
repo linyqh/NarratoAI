@@ -29,7 +29,14 @@ from app.utils.openai_base_url_security import (
     validate_openai_compatible_base_url as _validate_openai_compatible_base_url_value,
 )
 from .base import TextModelProvider, VisionModelProvider
-from .exceptions import APICallError, AuthenticationError, ConfigurationError, ContentFilterError, RateLimitError
+from .exceptions import (
+    APICallError,
+    AuthenticationError,
+    ConfigurationError,
+    ContentFilterError,
+    RateLimitError,
+    StreamGenerationTimeout,
+)
 
 
 def _normalize_model_name(model_name: str) -> str:
@@ -407,24 +414,96 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
         completion_kwargs["stream"] = True
 
         total_timeout_seconds = kwargs.get("total_timeout_seconds")
-        deadline = None
-        if total_timeout_seconds is not None:
-            deadline = asyncio.get_running_loop().time() + float(total_timeout_seconds)
+        first_chunk_timeout_seconds = float(
+            kwargs.get(
+                "first_chunk_timeout_seconds",
+                kwargs.get("request_timeout_seconds", config.app.get("llm_text_timeout", 180)),
+            )
+        )
+        idle_timeout_seconds = float(
+            kwargs.get("stream_idle_timeout_seconds", first_chunk_timeout_seconds)
+        )
+        stream_state: dict[str, Any] = {}
+        response_format_fallback_used = False
+
+        def reset_stream_state() -> None:
+            stream_state.clear()
+            stream_state.update(
+                {
+                    "started_at": asyncio.get_running_loop().time(),
+                    "first_chunk_at": None,
+                    "last_chunk_at": None,
+                    "reasoning_characters": 0,
+                    "content_characters": 0,
+                }
+            )
+
+        def diagnostics(category: str) -> dict[str, Any]:
+            now = asyncio.get_running_loop().time()
+            started_at = stream_state.get("started_at") or now
+            first_chunk_at = stream_state.get("first_chunk_at")
+            last_chunk_at = stream_state.get("last_chunk_at")
+            return {
+                "failure_category": category,
+                "elapsed_seconds": round(now - started_at, 3),
+                "first_chunk_latency_seconds": (
+                    round(first_chunk_at - started_at, 3)
+                    if first_chunk_at is not None
+                    else None
+                ),
+                "last_chunk_age_seconds": (
+                    round(now - last_chunk_at, 3)
+                    if last_chunk_at is not None
+                    else None
+                ),
+                "reasoning_characters": stream_state["reasoning_characters"],
+                "content_characters": stream_state["content_characters"],
+                "provider": self.provider_name,
+                "model": self.model_name,
+                "response_format_fallback": response_format_fallback_used,
+            }
 
         async def collect_stream() -> str:
             content_parts: List[str] = []
+            reset_stream_state()
+
+            def raise_timeout(category: str, message: str):
+                payload = diagnostics(category)
+                self._emit_stream_chunk(on_chunk, "timeout", payload)
+                raise StreamGenerationTimeout(message, details=payload)
+
             stream = await client.chat.completions.create(**completion_kwargs)
-            async for chunk in stream:
+            iterator = stream.__aiter__()
+            while True:
+                timeout_seconds = (
+                    first_chunk_timeout_seconds
+                    if stream_state["first_chunk_at"] is None
+                    else idle_timeout_seconds
+                )
+                try:
+                    chunk = await asyncio.wait_for(iterator.__anext__(), timeout=timeout_seconds)
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    if stream_state["first_chunk_at"] is None:
+                        raise_timeout("waiting_first_chunk", "等待首个流式文本片段超时")
+                    raise_timeout("timed_out_after_progress", "流式文本生成在已有输出后长时间无进展")
+                now = asyncio.get_running_loop().time()
+                if stream_state["first_chunk_at"] is None:
+                    stream_state["first_chunk_at"] = now
+                stream_state["last_chunk_at"] = now
                 if not getattr(chunk, "choices", None):
                     continue
                 delta = chunk.choices[0].delta
                 reasoning_delta = self._extract_reasoning_delta(delta)
                 if reasoning_delta:
+                    stream_state["reasoning_characters"] += len(reasoning_delta)
                     self._emit_stream_chunk(on_chunk, "reasoning", reasoning_delta)
 
                 content_delta = getattr(delta, "content", None) if delta is not None else None
                 if content_delta:
                     content_parts.append(content_delta)
+                    stream_state["content_characters"] += len(content_delta)
                     self._emit_stream_chunk(on_chunk, "content", content_delta)
 
             result = "".join(content_parts).strip()
@@ -434,31 +513,34 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
             raise APICallError("OpenAI 兼容接口返回空响应")
 
         async def collect_stream_with_timeout() -> str:
-            if deadline is not None:
-                remaining_seconds = deadline - asyncio.get_running_loop().time()
-                if remaining_seconds <= 0:
-                    raise asyncio.TimeoutError
+            if total_timeout_seconds is None:
+                return await collect_stream()
+            try:
                 return await asyncio.wait_for(
-                    collect_stream(), timeout=remaining_seconds
+                    collect_stream(), timeout=float(total_timeout_seconds)
                 )
-            return await collect_stream()
+            except asyncio.TimeoutError as exc:
+                payload = diagnostics("total_budget_expired")
+                self._emit_stream_chunk(on_chunk, "timeout", payload)
+                raise StreamGenerationTimeout("请求总时限已到，未能完成流式生成", details=payload) from exc
 
         try:
             return await collect_stream_with_timeout()
 
-        except asyncio.TimeoutError:
-            raise APICallError("请求总时限已到，未能完成流式生成")
+        except StreamGenerationTimeout:
+            raise
 
         except OpenAIBadRequestError as exc:
             error_msg = str(exc)
             if response_format == "json" and _is_response_format_error(error_msg):
                 logger.warning("目标网关不支持流式 response_format，回退为提示词约束 JSON 输出")
+                response_format_fallback_used = True
                 completion_kwargs.pop("response_format", None)
                 messages[-1]["content"] += "\n\n请确保输出严格的JSON格式，不要包含任何其他文字或标记。"
                 try:
                     result = await collect_stream_with_timeout()
-                except asyncio.TimeoutError as timeout_error:
-                    raise APICallError("请求总时限已到，未能完成流式生成") from timeout_error
+                except StreamGenerationTimeout:
+                    raise
                 return _clean_json_output(result)
 
             if _is_content_filter_error(error_msg):
@@ -474,6 +556,8 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
         except OpenAIAPIError as exc:
             logger.error(f"OpenAI 兼容接口 API 错误: {exc}")
             raise APICallError(f"API 错误: {exc}")
+        except APICallError:
+            raise
         except Exception as exc:
             logger.error(f"OpenAI 兼容接口流式调用失败: {exc}")
             raise APICallError(f"流式调用失败: {exc}")

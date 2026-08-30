@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path
 import threading
+import time
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -46,8 +47,21 @@ class LocalAnalysisTaskStore:
         return task
 
     def read(self, task_id: str) -> dict:
-        with self._path(task_id).open(encoding="utf-8") as handle:
-            return json.load(handle)
+        path = self._path(task_id)
+        last_error = None
+        # Windows can briefly deny a reader while an atomic replace is closing.
+        # A bounded retry keeps the durable task surface responsive without
+        # hiding malformed task data.
+        for attempt in range(5):
+            try:
+                with path.open(encoding="utf-8") as handle:
+                    return json.load(handle)
+            except PermissionError as exc:
+                last_error = exc
+                if attempt == 4:
+                    raise
+                time.sleep(0.01)
+        raise last_error
 
     def update(self, task_id: str, **changes) -> dict:
         task = self.read(task_id)
@@ -143,7 +157,6 @@ class LocalAnalysisTaskRunner:
                     task_id,
                     status="cancelled" if cancelled() else "failed",
                     error_message=str(exc),
-                    stream_snapshot=None,
                 )
 
         thread = threading.Thread(target=run, name=f"local-analysis-{task_id}", daemon=True)

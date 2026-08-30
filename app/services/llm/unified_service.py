@@ -136,6 +136,8 @@ class UnifiedLLMService:
             logger.info(f"流式文本生成完成，生成内容长度: {len(result)} 字符")
             return result
 
+        except LLMServiceError:
+            raise
         except Exception as e:
             logger.error(f"流式文本生成失败: {str(e)}")
             raise LLMServiceError(f"流式文本生成失败: {str(e)}")

@@ -395,6 +395,7 @@ class SubtitleAnalyzerAdapter:
             return {
                 "status": "error",
                 "message": str(e),
+                "error_details": dict(getattr(e, "details", {}) or {}),
                 "temperature": temperature,
             }
 

@@ -64,6 +64,10 @@ _Avoid_: hybrid script, combined script
 An ordered, reviewable plan that assigns contiguous portions of an approved narration to bounded source-time windows and narrative roles before a Fusion Script is matched.
 _Avoid_: full-script plan, shot list
 
+**Narrative Map**:
+A creator-reviewable, cached, evidence-bounded map of Story Beats, active subjects, goals, trigger events, risks, and time or location changes. It is created before narration-to-picture matching to improve continuity, but never establishes facts beyond Subtitle Evidence, Visual Evidence, and approved narration.
+_Avoid_: plot invention, external synopsis, final script
+
 **Evidence Window**:
 The time-bounded subset of Subtitle Evidence, Visual Evidence, and Highlight Candidates available to one Fusion Segment Plan entry.
 _Avoid_: global context, evidence chunk
@@ -79,6 +83,14 @@ _Avoid_: automatic plan continuation, script approval
 **Fusion Matching Task**:
 A resumable local background task that persists an approved Fusion Segment Plan and the status and output of each Segment Match.
 _Avoid_: foreground matching, browser-bound script generation
+
+**Fusion Project Workspace**:
+The creator's persistent review surface for one source-video generation, showing its current version, active background work, required reviews, evidence, timeline, and render readiness.
+_Avoid_: one-shot wizard, transient session page
+
+**Task Center**:
+A durable view of Background Analysis Tasks, Fusion Matching Tasks, retries, and render work, including their progress, last activity, recoverability, and actionable failure state.
+_Avoid_: toast-only progress, hidden background job
 
 **Fusion Stream Snapshot**:
 The transient, current-attempt progress of a Fusion planning or Segment Match request, including its phase and received model text; it is not an approved plan, Segment Match, or renderable output.
@@ -99,6 +111,10 @@ _Avoid_: model disagreement, mismatch
 **Finalization Report**:
 An audit of a Fusion Script's Original Sound Ratio, Highlight Candidate decisions, distribution, and unresolved Evidence Conflicts before rendering.
 _Avoid_: render report, model explanation
+
+**Render Preflight**:
+The creator-facing classification of a current Fusion Script into must-fix blockers, warnings that require an explicit reason to override, and checks that have passed before a render may begin.
+_Avoid_: generic error modal, automatic quality score
 
 **Story Beat**:
 A causally complete unit of a Fusion Script that states the active character or group, its immediate goal or pressure, the event that changes that state, and the resulting next risk or choice.

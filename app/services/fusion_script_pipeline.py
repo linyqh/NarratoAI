@@ -17,6 +17,15 @@ _VISUAL_BLOCK = re.compile(r"(?ms)^##\s+(?P<range>\d{2}:\d{2}:\d{2},\d{3}-\d{2}:
 
 def is_retryable_fusion_request_error(error: Exception) -> bool:
     """Return whether the one permitted Fusion retry can plausibly recover."""
+    failure_category = str(
+        getattr(error, "details", {}).get("failure_category", "")
+    )
+    if failure_category in {
+        "waiting_first_chunk",
+        "timed_out_after_progress",
+        "total_budget_expired",
+    }:
+        return True
     message = str(error).lower()
     if any(
         marker in message
@@ -434,9 +443,11 @@ class FusionScriptPipeline:
                 lambda: matcher(request), retry_count=retry_count
             )
         except Exception as error:
-            raise RuntimeError(
+            wrapped = RuntimeError(
                 f"segment {request.segment_id} failed after retry: {error}"
-            ) from error
+            )
+            wrapped.details = dict(getattr(error, "details", {}) or {})
+            raise wrapped from error
 
     def _match_pending_requests(
         self,

@@ -27,6 +27,8 @@ from app.services.SDE.short_drama_explanation import (
 )
 from app.services.subtitle_text import read_subtitle_text
 from app.services.fusion_script_finalizer import FusionScriptFinalizer
+from app.services.fusion_preflight import build_render_preflight
+from app.services.narrative_map import build_narrative_map, evaluate_narrative_quality
 from app.services.fusion_script_pipeline import (
     FusionScriptPipeline,
     call_fusion_request_with_retry,
@@ -64,6 +66,28 @@ FUSION_STREAM_WRITE_INTERVAL_SECONDS = 0.2
 def _append_fusion_stream_preview(existing: str, chunk: str) -> str:
     """Keep task progress responsive without persisting an unbounded model transcript."""
     return (str(existing or "") + str(chunk or ""))[-FUSION_STREAM_PREVIEW_LIMIT:]
+
+
+def _fusion_stream_failure_snapshot(current: dict | None, error: Exception, now: float) -> dict:
+    """Persist actionable stream failure context without promoting partial JSON to output."""
+    details = dict(getattr(error, "details", {}) or {})
+    category = str(details.get("failure_category") or "provider_error")
+    state = {
+        "waiting_first_chunk": "waiting_first_chunk_timeout",
+        "timed_out_after_progress": "timed_out_after_progress",
+        "total_budget_expired": "total_budget_expired",
+    }.get(category, "failed")
+    snapshot = dict(current or {})
+    snapshot.update(
+        {
+            "state": state,
+            "failure_category": category,
+            "failure_diagnostics": details,
+            "error_message": str(error),
+            "updated_at": now,
+        }
+    )
+    return snapshot
 SHORT_DRAMA_PROMPT_CATEGORY = "short_drama_narration"
 FILM_TV_PROMPT_CATEGORY = "film_tv_narration"
 SHORT_DRAMA_SEARCH_KEYWORDS = "短剧 剧情 介绍 人物 结局"
@@ -313,6 +337,12 @@ def match_approved_fusion_segment_plan(
         plan_approval, plan_payload, narration_copy, approval_source_identity
     ):
         raise ValueError("Fusion Segment Plan requires creator approval before matching")
+    narrative_map = build_narrative_map(
+        approved_narration=narration_copy,
+        plan_payload=plan_payload,
+        subtitle_evidence=subtitle_content,
+        visual_evidence=visual_evidence,
+    )
     class TextAdapter:
         def match_segment(self, segment_request):
             response = analyzer.match_narration_copy_to_script(
@@ -337,7 +367,9 @@ def match_approved_fusion_segment_plan(
                 ),
             )
             if response.get("status") != "success":
-                raise RuntimeError(str(response.get("message") or "segment matching failed"))
+                error = RuntimeError(str(response.get("message") or "segment matching failed"))
+                error.details = dict(response.get("error_details") or {})
+                raise error
             parsed = parse_and_fix_json(str(response.get("narration_script") or ""))
             if not isinstance(parsed, dict):
                 raise ValueError("segment matching returned invalid JSON")
@@ -427,6 +459,10 @@ def match_approved_fusion_segment_plan(
         ],
         "evidence_conflicts": result.evidence_conflicts,
         "continuity_report": result.continuity_report.to_dict(),
+        "narrative_map": narrative_map,
+        "narrative_quality_findings": evaluate_narrative_quality(
+            narrative_map, result.items
+        ),
         "matching_snapshot": {
             "plan_payload": result.snapshot.plan_payload,
             "completed_segment_results": result.snapshot.completed_segment_results,
@@ -443,6 +479,11 @@ def finalize_fusion_matching_result(
     """Finalize a completed background match without depending on Streamlit state."""
     continuity_report = matched_plan.get("continuity_report") or {}
     if not bool(continuity_report.get("is_renderable")):
+        preflight = build_render_preflight(
+            continuity_report=continuity_report,
+            evidence_conflicts=list(matched_plan.get("evidence_conflicts") or []),
+            segment_matches=matched_plan.get("segment_matches"),
+        ).to_dict(str(finalization_context.get("warning_override_reason") or ""))
         return {
             "status": "blocked_for_continuity_review",
             "original_script": list(matched_plan.get("items") or []),
@@ -450,6 +491,7 @@ def finalize_fusion_matching_result(
             "finalization_report": {},
             "evidence_conflicts": matched_plan.get("evidence_conflicts", []),
             "continuity_report": continuity_report,
+            "preflight": preflight,
             "renderable": False,
         }
     candidate_payloads = list(finalization_context.get("candidate_payloads") or [])
@@ -504,13 +546,24 @@ def finalize_fusion_matching_result(
             source_durations=dict(finalization_context.get("source_durations") or {}),
         )
     )
+    warning_override_reason = str(finalization_context.get("warning_override_reason") or "")
+    preflight = build_render_preflight(
+        continuity_report=continuity_report,
+        evidence_conflicts=finalization.evidence_conflicts,
+        segment_matches=matched_plan.get("segment_matches"),
+    ).to_dict(warning_override_reason)
     return {
         "original_script": finalization.original_script,
         "finalized_script": finalization.script,
         "finalization_report": asdict(finalization.report),
         "evidence_conflicts": finalization.evidence_conflicts,
         "continuity_report": continuity_report,
-        "renderable": not finalization.report.unresolved_conflict_count,
+        "narrative_map": matched_plan.get("narrative_map", {}),
+        "narrative_quality_findings": list(
+            matched_plan.get("narrative_quality_findings") or []
+        ),
+        "preflight": preflight,
+        "renderable": preflight["renderable"],
     }
 
 
@@ -584,6 +637,26 @@ def resume_fusion_matching_task(task_id: str) -> None:
 
 def fusion_matching_task_status(task_id: str) -> dict:
     return _fusion_matching_task_store().read(task_id)
+
+
+def override_fusion_matching_render_warning(task_id: str, reason: str) -> dict:
+    """Persist a creator's explicit warning override; blockers can never be overridden."""
+    reason = str(reason or "").strip()
+    if not reason:
+        raise ValueError("Render Preflight warning override requires a reason")
+    store = _fusion_matching_task_store()
+    task = store.read(task_id)
+    finalization = dict(task.get("finalization") or {})
+    preflight = dict(finalization.get("preflight") or {})
+    if preflight.get("blockers"):
+        raise ValueError("Render Preflight blockers cannot be overridden")
+    if not preflight.get("warnings"):
+        raise ValueError("Render Preflight has no warnings to override")
+    preflight["warning_override_reason"] = reason
+    preflight["renderable"] = True
+    finalization["preflight"] = preflight
+    finalization["renderable"] = True
+    return store.update(task_id, finalization=finalization, renderable=True)
 
 
 def find_fusion_matching_task(
@@ -763,6 +836,7 @@ def _start_fusion_matching_runner(
             )
 
         def checkpoint_failure(segment_request, error):
+            nonlocal stream_revision, latest_stream_snapshot, last_stream_snapshot_write_at
             checkpoint({
                 "batch_index": segment_request.segment_id,
                 "segment_id": segment_request.segment_id,
@@ -770,6 +844,16 @@ def _start_fusion_matching_runner(
                 "error_message": str(error),
             })
             update_segment_status(segment_request.segment_id, "failed", error_message=str(error))
+            with task_state_lock:
+                latest_stream_snapshot = _fusion_stream_failure_snapshot(
+                    latest_stream_snapshot or store.read(task_id).get("stream_snapshot"),
+                    error,
+                    time.time(),
+                )
+                stream_revision += 1
+                latest_stream_snapshot["revision"] = stream_revision
+                store.update(task_id, stream_snapshot=latest_stream_snapshot)
+                last_stream_snapshot_write_at = time.time()
 
         def checkpoint_attempt(segment_request, attempt_count):
             nonlocal stream_revision, latest_stream_snapshot, last_stream_snapshot_write_at

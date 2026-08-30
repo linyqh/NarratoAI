@@ -9,7 +9,7 @@ import httpx
 
 from app.config import config
 from app.services.llm.base import TextModelProvider
-from app.services.llm.exceptions import APICallError, ConfigurationError
+from app.services.llm.exceptions import APICallError, ConfigurationError, StreamGenerationTimeout
 from app.services.llm.manager import LLMServiceManager
 from app.services.llm.migration_adapter import LegacyLLMAdapter, VisionAnalyzerAdapter
 from app.services.llm.openai_compatible_provider import (
@@ -276,15 +276,57 @@ class OpenAICompatFusionStreamTests(unittest.IsolatedAsyncioTestCase):
 
         provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
         with patch("app.services.llm.openai_compatible_provider.AsyncOpenAI", FakeOpenAI):
-            with self.assertRaisesRegex(APICallError, "请求总时限"):
+            with self.assertRaisesRegex(StreamGenerationTimeout, "请求总时限") as raised:
                 await provider.generate_text_stream(
                     "prompt",
                     request_timeout_seconds=120,
                     max_retries=0,
                     total_timeout_seconds=0.01,
                 )
+        self.assertEqual("total_budget_expired", raised.exception.details["failure_category"])
+        self.assertEqual(0, raised.exception.details["content_characters"])
 
-    async def test_json_format_fallback_keeps_the_total_request_timeout(self):
+    async def test_fusion_stream_classifies_timeout_after_visible_progress(self):
+        class StalledStream:
+            def __init__(self):
+                self._sent = False
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if not self._sent:
+                    self._sent = True
+                    return SimpleNamespace(
+                        choices=[SimpleNamespace(delta=SimpleNamespace(content="partial", reasoning_content=None))]
+                    )
+                await asyncio.sleep(0.2)
+                raise StopAsyncIteration
+
+        class FakeCompletions:
+            async def create(self, **_kwargs):
+                return StalledStream()
+
+        class FakeOpenAI:
+            def __init__(self, **_kwargs):
+                self.chat = SimpleNamespace(completions=FakeCompletions())
+
+        events = []
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
+        with patch("app.services.llm.openai_compatible_provider.AsyncOpenAI", FakeOpenAI):
+            with self.assertRaises(StreamGenerationTimeout) as raised:
+                await provider.generate_text_stream(
+                    "prompt",
+                    stream_idle_timeout_seconds=0.01,
+                    total_timeout_seconds=1,
+                    on_chunk=events.append,
+                )
+
+        self.assertEqual("timed_out_after_progress", raised.exception.details["failure_category"])
+        self.assertEqual(7, raised.exception.details["content_characters"])
+        self.assertEqual("timeout", events[-1]["type"])
+
+    async def test_json_format_fallback_receives_an_independent_total_request_timeout(self):
         class HangingStream:
             def __aiter__(self):
                 return self
@@ -316,14 +358,15 @@ class OpenAICompatFusionStreamTests(unittest.IsolatedAsyncioTestCase):
 
         provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
         with patch("app.services.llm.openai_compatible_provider.AsyncOpenAI", FakeOpenAI):
-            with self.assertRaisesRegex(APICallError, "请求总时限"):
+            with self.assertRaises(StreamGenerationTimeout) as raised:
                 started_at = asyncio.get_running_loop().time()
                 await provider.generate_text_stream(
                     "prompt",
                     response_format="json",
                     total_timeout_seconds=0.12,
                 )
-        self.assertLess(asyncio.get_running_loop().time() - started_at, 0.18)
+        self.assertTrue(raised.exception.details["response_format_fallback"])
+        self.assertGreater(asyncio.get_running_loop().time() - started_at, 0.18)
 
 
 class OpenAICompatBaseURLValidationTests(unittest.TestCase):

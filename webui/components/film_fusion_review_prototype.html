@@ -1,0 +1,68 @@
+<!doctype html>
+<!--
+  THROWAWAY PROTOTYPE — do not ship as production UI.
+  Question: Which Film Vision Fusion review layout makes conflicts, clip choices,
+  partial success, and render readiness easiest for a creator to understand?
+  Three variants are available through ?variant=A, ?variant=B, and ?variant=C.
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Film Vision Fusion 审核原型</title>
+  <style>
+    :root { --bg:#0d1220; --surface:#161e31; --surface-2:#1e2940; --line:#31405e; --text:#eef3ff; --muted:#a8b4cc; --good:#55d6a4; --warn:#ffcb70; --danger:#ff8294; --blue:#76a8ff; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 Inter,"Microsoft YaHei",sans-serif; }
+    button { border:0; border-radius:8px; padding:8px 10px; color:var(--text); background:#2b3b5e; cursor:pointer; font:inherit; } button:hover { background:#385081; } button.primary { background:#306be6; } button.warning { background:#755a1b; }
+    .page { max-width:1380px; margin:0 auto; padding:28px 24px 110px; } .eyebrow { color:var(--blue); letter-spacing:.08em; font-size:12px; font-weight:700; } h1 { margin:3px 0 6px; font-size:28px; } h2,h3,p { margin-top:0; } .sub { color:var(--muted); margin-bottom:24px; }
+    .card { background:var(--surface); border:1px solid var(--line); border-radius:13px; padding:16px; } .card + .card { margin-top:12px; } .label { color:var(--muted); font-size:12px; } .metric { font-size:25px; font-weight:750; } .good { color:var(--good); } .warn { color:var(--warn); } .danger { color:var(--danger); }
+    .chip { display:inline-block; border-radius:99px; padding:3px 8px; background:#263551; color:#c7d7ff; font-size:12px; } .chip.danger { background:#542936; color:#ffb8c2; } .chip.good { background:#193f36; color:#97f1ce; }
+    .row { display:flex; align-items:center; justify-content:space-between; gap:12px; } .stack { display:grid; gap:12px; } .muted { color:var(--muted); } .divider { border-top:1px solid var(--line); margin:13px 0; }
+    .timeline { display:grid; gap:10px; } .clip { display:grid; grid-template-columns:90px 1fr auto; gap:12px; align-items:center; padding:11px; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); } .clip.active { border-color:#5c89ed; box-shadow:inset 3px 0 #5c89ed; } .clip-time { color:#a9c4ff; font-variant-numeric:tabular-nums; } .clip small { color:var(--muted); display:block; }
+    .evidence { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; } .evidence > div { border-left:3px solid var(--blue); background:#1b2740; border-radius:6px; padding:9px; } .evidence > div:last-child { border-left-color:var(--warn); }
+    .quality { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; } .quality .card { padding:12px; } .quality .metric { font-size:19px; } pre { max-height:240px; overflow:auto; background:#09101e; padding:13px; border-radius:9px; color:#b8c9e8; white-space:pre-wrap; }
+    .variant-a { display:grid; grid-template-columns:1.5fr .85fr; gap:16px; } .variant-b { display:grid; grid-template-columns:260px 1fr; gap:16px; } .variant-c { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; } .variant-c .span-2 { grid-column:span 2; }
+    .step { padding:12px; border-left:3px solid var(--line); color:var(--muted); } .step.current { border-left-color:var(--blue); color:var(--text); background:#18233a; } .step.done { border-left-color:var(--good); }
+    .bottom-bar { position:fixed; z-index:10; bottom:18px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:12px; padding:9px 12px; border:1px solid #496191; border-radius:999px; background:#0b1326ee; box-shadow:0 10px 35px #0008; backdrop-filter:blur(12px); } .bottom-bar strong { min-width:150px; text-align:center; }
+    @media (max-width:850px) { .variant-a,.variant-b,.variant-c { grid-template-columns:1fr; } .variant-c .span-2 { grid-column:auto; } .quality { grid-template-columns:repeat(2,1fr); } .evidence { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="eyebrow">THROWAWAY UI PROTOTYPE · Film Vision Fusion</div>
+    <h1>《迷雾追踪》解说审核</h1>
+    <p class="sub">问题：创作者是否能在渲染前看懂“哪里有冲突、为何选这个片段、还有什么不能安全生成”？所有数据均为模拟数据。</p>
+    <div id="app"></div>
+  </main>
+  <nav class="bottom-bar" aria-label="原型版本切换">
+    <button id="previous" aria-label="上一个版本">←</button><strong id="variant-label"></strong><button id="next" aria-label="下一个版本">→</button>
+  </nav>
+  <script>
+    const variants = { A: "时间线优先", B: "审核队列优先", C: "质量面板优先" };
+    const state = { conflictAcknowledged:false, selectedCandidate:true, ratio:42, target:45, narrative:84, timing:72, evidence:88, readiness:"需要审核" };
+    const clips = [
+      ["00:00–00:08","解说钩子","她以为自己逃出了那间房，却不知道追踪器一直在身上。","OST 0"],
+      ["00:08–00:18","高光候选：走廊追逐","镜头中两人穿过狭窄走廊，动作连续且危险感明确。","OST 1"],
+      ["00:18–00:31","因果桥接","她没有报警，而是回到旧公寓寻找被藏起来的录音。","OST 0"],
+      ["00:31–00:40","证据冲突","字幕说“他独自离开”；画面中另有一人站在门边。","待审阅"]
+    ];
+    function header() { return `<div class="row"><div><div class="label">成片状态</div><div class="metric ${state.conflictAcknowledged ? 'warn' : 'danger'}">${state.conflictAcknowledged ? '可编辑后渲染' : '存在未解决冲突'}</div></div><div><span class="chip ${state.conflictAcknowledged ? 'good' : 'danger'}">${state.conflictAcknowledged ? '1 项已确认' : '1 项阻塞'}</span> <span class="chip">OST ${state.ratio}% / 目标 ${state.target}%</span></div></div>`; }
+    function timeline() { return `<section class="card"><h2>最终时间线</h2><div class="timeline">${clips.map((clip,i)=>`<article class="clip ${i===3?'active':''}"><div class="clip-time">${clip[0]}</div><div><strong>${clip[1]}</strong><small>${clip[2]}</small></div><span class="chip ${i===3?'danger':''}">${clip[3]}</span></article>`).join('')}</div></section>`; }
+    function conflict() { return `<section class="card"><div class="row"><div><h2>证据冲突</h2><p class="muted">00:31–00:40 · 高严重度 · 不能自动进入成片</p></div><span class="chip danger">${state.conflictAcknowledged?'已确认，不代表已验证':'未解决'}</span></div><div class="evidence"><div><strong>字幕证据</strong><br>“他独自离开。”</div><div><strong>视觉证据</strong><br>门边仍可见另一名人物的轮廓。</div></div><div class="divider"></div><div class="row"><small class="muted">确认只记录人工审核，不会把任一证据升级为事实。</small><button class="warning" onclick="toggleConflict()">${state.conflictAcknowledged?'撤销确认':'确认已审阅'}</button></div></section>`; }
+    function candidate() { return `<section class="card"><div class="row"><div><h2>原片高光候选</h2><p class="muted">视觉影响 5/5 · 剧情重要性 4/5 · 仅由画面支持</p></div><button class="${state.selectedCandidate?'':'primary'}" onclick="toggleCandidate()">${state.selectedCandidate?'已保留':'加入 OST'}</button></div><div class="divider"></div><strong>00:08–00:18 · 走廊追逐</strong><p class="muted">用于原片段，原因只描述可见的动作、空间和表演，不推断音乐、对白或画外事件。</p></section>`; }
+    function quality() { return `<section class="card"><h2>成片前质量检查</h2><div class="quality">${[['叙事连续性',state.narrative,'good'],['画面/旁白时长',state.timing,'warn'],['证据可靠性',state.evidence,'good'],['OST 比例',state.ratio+'/'+state.target,'warn']].map(x=>`<div class="card"><div class="label">${x[0]}</div><div class="metric ${x[2]}">${x[1]}</div></div>`).join('')}</div><div class="divider"></div><p class="muted">下一步：处理时间 00:31–00:40 的冲突；检查第 3 段旁白是否超过 13 秒画面容量。</p></section>`; }
+    function stateView() { return `<section class="card"><h3>原型状态（仅供评审）</h3><pre>${JSON.stringify(state,null,2)}</pre></section>`; }
+    function renderA() { return `<div class="stack">${header()}<div class="variant-a"><div class="stack">${timeline()}${quality()}</div><aside class="stack">${conflict()}${candidate()}${stateView()}</aside></div></div>`; }
+    function renderB() { return `<div class="stack">${header()}<div class="variant-b"><aside class="card"><h2>审核队列</h2><div class="step done">1. 文案匹配<br><small>已完成</small></div><div class="step done">2. OST 片段<br><small>42%，在容差内</small></div><div class="step current">3. 证据冲突<br><small>1 项等待确认</small></div><div class="step">4. 成片质量<br><small>待完成审核</small></div></aside><div class="stack">${conflict()}${candidate()}${timeline()}${stateView()}</div></div></div>`; }
+    function renderC() { return `<div class="stack">${header()}<div class="variant-c">${quality()}${conflict()}<div class="span-2">${timeline()}</div>${candidate()}${stateView()}</div></div>`; }
+    function currentVariant(){ const p=new URLSearchParams(location.search); return variants[p.get('variant')] ? p.get('variant') : 'A'; }
+    function render(){ const key=currentVariant(); document.querySelector('#variant-label').textContent=`${key} · ${variants[key]}`; document.querySelector('#app').innerHTML=({A:renderA,B:renderB,C:renderC})[key](); }
+    function change(delta){ const keys=Object.keys(variants), i=keys.indexOf(currentVariant()); const next=keys[(i+delta+keys.length)%keys.length]; const url=new URL(location); url.searchParams.set('variant',next); history.replaceState({},'',url); render(); }
+    function toggleConflict(){ state.conflictAcknowledged=!state.conflictAcknowledged; render(); }
+    function toggleCandidate(){ state.selectedCandidate=!state.selectedCandidate; state.ratio=state.selectedCandidate?42:31; render(); }
+    document.querySelector('#previous').onclick=()=>change(-1); document.querySelector('#next').onclick=()=>change(1);
+    addEventListener('keydown',e=>{ if(['INPUT','TEXTAREA'].includes(document.activeElement.tagName)||document.activeElement.isContentEditable)return; if(e.key==='ArrowLeft')change(-1); if(e.key==='ArrowRight')change(1); });
+    render();
+  </script>
+</body>
+</html>

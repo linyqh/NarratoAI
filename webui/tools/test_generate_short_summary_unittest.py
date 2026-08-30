@@ -50,6 +50,66 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
     def test_invalid_json_does_not_create_default_fake_script(self):
         self.assertIsNone(parse_and_fix_json("not a json response"))
 
+    def test_stream_timeout_after_progress_keeps_only_bounded_diagnostics(self):
+        error = RuntimeError("stream timed out")
+        error.details = {
+            "failure_category": "timed_out_after_progress",
+            "content_characters": 42,
+            "provider": "openai",
+        }
+
+        snapshot = generate_short_summary._fusion_stream_failure_snapshot(
+            {"content_text": "partial JSON", "segment_id": "segment-1"}, error, 123.0
+        )
+
+        self.assertEqual("timed_out_after_progress", snapshot["state"])
+        self.assertEqual("timed_out_after_progress", snapshot["failure_category"])
+        self.assertEqual(42, snapshot["failure_diagnostics"]["content_characters"])
+        self.assertEqual("partial JSON", snapshot["content_text"])
+
+    def test_failed_matching_task_retains_its_stream_diagnostics(self):
+        plan = {
+            "segments": [
+                {"segment_id": "segment-1", "sentence_start": 1, "sentence_end": 1,
+                 "core_window": "00:00:00,000-00:00:20,000", "active_subject": "主角",
+                 "entering_state": "危机", "trigger_event": "事件", "exiting_state": "选择",
+                 "exception_reason": "测试单句边界"}
+            ]
+        }
+        approval = generate_short_summary.approve_fusion_segment_plan(
+            plan_payload=plan, narration_copy="第一句。", source_identity={}
+        )
+
+        def failed_match(**kwargs):
+            segment = type("Segment", (), {"segment_id": "segment-1"})()
+            error = RuntimeError("stream timed out")
+            error.details = {"failure_category": "timed_out_after_progress", "content_characters": 7}
+            kwargs["on_stream_chunk"](segment, {"type": "content", "text": "partial"})
+            kwargs["on_segment_failed"](segment, error)
+            raise error
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            with (
+                patch.object(generate_short_summary, "_fusion_matching_task_store", return_value=store),
+                patch.object(generate_short_summary, "match_approved_fusion_segment_plan", side_effect=failed_match),
+            ):
+                task_id = generate_short_summary.start_fusion_matching_task(
+                    short_name="测试影片", narration_copy="第一句。", narration_language="简体中文（中国）",
+                    drama_genre="剧情", original_sound_ratio=0, subtitle_content="字幕", visual_evidence="视觉",
+                    highlight_candidates="", plan_payload=plan, plan_approval=approval,
+                    temperature=0.3, source_identity={}, finalization_context={},
+                )
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    task = store.read(task_id)
+                    if task.get("status") == "failed":
+                        break
+                    time.sleep(0.01)
+
+        self.assertEqual("failed", task["status"])
+        self.assertEqual("timed_out_after_progress", task["stream_snapshot"]["failure_category"])
+
     def test_json_code_block_is_parsed(self):
         parsed = parse_and_fix_json(
             """```json
@@ -144,6 +204,38 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertTrue(result["renderable"])
         self.assertEqual("人物在废墟中前进。", result["finalized_script"][0]["picture"])
         self.assertTrue(result["continuity_report"]["is_renderable"])
+        self.assertTrue(result["preflight"]["renderable"])
+
+    def test_background_finalization_requires_a_reason_to_render_with_a_warning(self):
+        result = generate_short_summary.finalize_fusion_matching_result(
+            matched_plan={
+                "items": [
+                    {"_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "人物行动。", "narration": "人物行动。", "OST": 0}
+                ],
+                "evidence_conflicts": [
+                    {"video_name": "film.mp4", "time_range": "00:00:01,000-00:00:02,000", "subtitle_claim": "字幕", "visual_observation": "画面", "severity": "medium", "status": "unresolved"}
+                ],
+                "continuity_report": {"is_renderable": True, "findings": []},
+            },
+            finalization_context={"source_durations": {"film.mp4": 10.0}},
+        )
+
+        self.assertFalse(result["renderable"])
+        self.assertEqual("unresolved_evidence_conflict", result["preflight"]["warnings"][0]["code"])
+
+    def test_warning_override_requires_reason_and_refuses_blockers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            task = store.create({}, {})
+            store.update(
+                task["task_id"],
+                finalization={"renderable": False, "preflight": {"blockers": [], "warnings": [{"code": "warning"}]}},
+            )
+            with patch.object(generate_short_summary, "_fusion_matching_task_store", return_value=store):
+                updated = generate_short_summary.override_fusion_matching_render_warning(task["task_id"], "已人工确认")
+
+        self.assertTrue(updated["finalization"]["renderable"])
+        self.assertEqual("已人工确认", updated["finalization"]["preflight"]["warning_override_reason"])
 
     def test_background_match_stays_out_of_finalization_when_continuity_is_unreviewable(self):
         result = generate_short_summary.finalize_fusion_matching_result(

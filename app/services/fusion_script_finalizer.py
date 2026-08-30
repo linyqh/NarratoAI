@@ -150,7 +150,7 @@ class FusionScriptFinalizer:
         candidate_rejections = list(request.candidate_intake.rejections)
         original_script = deepcopy(script)
         finalized = deepcopy(script)
-        self._validate_authored_timeline(finalized)
+        self._validate_authored_timeline(finalized, source_durations)
         if finalized:
             default_video_name = str(finalized[0].get("video_name") or "")
             default_video_id = finalized[0].get("video_id", 1)
@@ -446,9 +446,37 @@ class FusionScriptFinalizer:
                 item["narration"] = f"播放原片{index}"
         return result
 
-    def _validate_authored_timeline(self, script) -> None:
+    def _validate_authored_timeline(self, script, source_durations=None) -> None:
         if not script:
             return
+        source_durations = dict(source_durations or {})
+        ranges_by_source = {}
+        for index, item in enumerate(script, start=1):
+            source_name = str(item.get("video_name") or "")
+            timestamp = str(item.get("timestamp") or item.get("time_range") or "")
+            try:
+                start, end = self._range(timestamp)
+            except ValueError as exc:
+                raise ValueError(
+                    f"authored timeline contains non-positive range for {source_name or '<unknown source>'} at item {index}"
+                ) from exc
+            if end <= start:
+                raise ValueError(
+                    f"authored timeline contains non-positive range for {source_name or '<unknown source>'} at item {index}"
+                )
+            known_duration = source_durations.get(source_name)
+            if known_duration is not None and end > float(known_duration):
+                raise ValueError(
+                    f"authored timeline range exceeds known duration for {source_name}: {timestamp}"
+                )
+            ranges_by_source.setdefault(source_name, []).append((start, end, index))
+        for source_name, ranges in ranges_by_source.items():
+            ranges.sort()
+            for (_, previous_end, previous_index), (current_start, _, current_index) in zip(ranges, ranges[1:]):
+                if current_start < previous_end:
+                    raise ValueError(
+                        f"authored timeline contains overlapping ranges for {source_name or '<unknown source>'}: items {previous_index} and {current_index}"
+                    )
         if int(script[0].get("OST", 0) or 0) == 1:
             raise ValueError("authored timeline cannot open with OST=1")
         if self._has_three_consecutive_original_sound(script):

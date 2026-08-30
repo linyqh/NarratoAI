@@ -15,6 +15,7 @@ from app.utils import utils, check_script
 from webui.tools.generate_script_docu import generate_script_docu
 from app.services.film_vision_fusion import load_visual_evidence_artifact
 from app.services.fusion_script_pipeline import FusionScriptPipeline
+from app.services.fusion_workspace import project_fusion_workspace
 from app.services.visual_evidence_artifact import build_source_video_identity
 from app.services.visual_evidence_artifact import read_highlight_candidate_intake
 from webui.tools.generate_film_vision_fusion import (
@@ -41,6 +42,7 @@ from webui.tools.generate_short_summary import (
     start_fusion_matching_task,
     find_fusion_matching_task,
     fusion_matching_task_status,
+    override_fusion_matching_render_warning,
     cancel_fusion_matching_task,
     resume_fusion_matching_task,
 )
@@ -2301,13 +2303,40 @@ def render_script_buttons(tr, params):
                     st.session_state["fusion_continuity_report"] = finalization.get(
                         "continuity_report", {}
                     )
+                    st.session_state["fusion_render_preflight"] = finalization.get(
+                        "preflight", {}
+                    )
+                    st.session_state["fusion_narrative_map"] = finalization.get(
+                        "narrative_map", {}
+                    )
+                    st.session_state["fusion_narrative_quality_findings"] = finalization.get(
+                        "narrative_quality_findings", []
+                    )
+                    st.session_state["fusion_workspace"] = project_fusion_workspace(
+                        task=task,
+                        finalization=finalization,
+                    )
                     if not finalization.get("renderable"):
+                        preflight = finalization.get("preflight") or {}
                         continuity = finalization.get("continuity_report") or {}
+                        if preflight.get("warnings") and not preflight.get("blockers"):
+                            override_reason = st.text_area(
+                                tr("Render Preflight 警告覆盖理由"),
+                                key=f"fusion_warning_override_{task_id}",
+                                help=tr("该理由会写入本地审计记录；它不会覆盖任何阻断项。"),
+                            )
+                            if st.button(tr("记录理由并继续渲染"), key=f"fusion_warning_override_apply_{task_id}"):
+                                try:
+                                    override_fusion_matching_render_warning(task_id, override_reason)
+                                    st.rerun()
+                                except ValueError as exc:
+                                    st.error(str(exc))
                         if not continuity.get("is_renderable", True):
                             st.error(tr("分段匹配发现待审阅叙事连续性问题，脚本未进入最终校验或可渲染状态。"))
                             st.json(continuity)
                         else:
-                            st.error(tr("最终校验发现待审阅证据冲突，脚本未进入可渲染状态。"))
+                            st.error(tr("Render Preflight 仍有待处理项，脚本未进入可渲染状态。"))
+                            st.json(preflight)
                         st.stop()
                     st.session_state["video_clip_json"] = finalization.get("finalized_script", [])
                     st.session_state.pop("fusion_matching_task_id", None)
@@ -2325,18 +2354,14 @@ def render_script_buttons(tr, params):
                             "waiting_first_chunk": "正在等待模型首个分片",
                             "streaming": "模型正在流式生成",
                             "completed": "当前段落流式生成完成",
+                            "waiting_first_chunk_timeout": "等待首个模型分片超时",
+                            "timed_out_after_progress": "模型已有输出后停止推进",
+                            "total_budget_expired": "本次请求已达到总时限",
+                            "failed": "模型请求失败",
                         }.get(stream_state, "正在同步模型进度")
                         st.caption(f"{state_label} · {segment_id} · 第 {attempt} 次尝试")
                         reasoning_text = str(stream_snapshot.get("reasoning_text") or "")
                         content_text = str(stream_snapshot.get("content_text") or "")
-                        if reasoning_text:
-                            st.text_area(
-                                tr("模型推理过程"),
-                                value=reasoning_text[-1800:],
-                                height=120,
-                                disabled=True,
-                                key=f"fusion_reasoning_preview_{task_id}_{stream_snapshot.get('revision', 0)}",
-                            )
                         if content_text:
                             st.text_area(
                                 tr("模型输出预览"),
@@ -2345,6 +2370,18 @@ def render_script_buttons(tr, params):
                                 disabled=True,
                                 key=f"fusion_content_preview_{task_id}_{stream_snapshot.get('revision', 0)}",
                             )
+                        if reasoning_text or stream_snapshot.get("failure_diagnostics"):
+                            with st.expander(tr("高级流式诊断"), expanded=False):
+                                if reasoning_text:
+                                    st.text_area(
+                                        tr("模型推理过程"),
+                                        value=reasoning_text[-1800:],
+                                        height=120,
+                                        disabled=True,
+                                        key=f"fusion_reasoning_preview_{task_id}_{stream_snapshot.get('revision', 0)}",
+                                    )
+                                if stream_snapshot.get("failure_diagnostics"):
+                                    st.json(stream_snapshot["failure_diagnostics"])
                     if status in {"queued", "running"} and st.button(
                         tr("取消分段匹配"), key="cancel_fusion_matching_task"
                     ):
@@ -2425,6 +2462,25 @@ def render_script_buttons(tr, params):
                         st.caption(
                             f"{tr('本地审计文件')}: {st.session_state['fusion_generation_audit_path']}"
                         )
+            if st.session_state.get("fusion_render_preflight"):
+                with st.expander(tr("Render Preflight"), expanded=True):
+                    st.json(st.session_state["fusion_render_preflight"])
+            if st.session_state.get("fusion_workspace"):
+                with st.expander(tr("Fusion Project Workspace"), expanded=True):
+                    workspace = st.session_state["fusion_workspace"]
+                    st.caption(f"{tr('当前阶段')}: {workspace.get('phase')}")
+                    queue = workspace.get("review_queue") or []
+                    if queue:
+                        st.caption(tr("审阅队列（按优先级）"))
+                        st.json(queue)
+                    else:
+                        st.caption(tr("当前没有待处理的审阅项。"))
+            if st.session_state.get("fusion_narrative_map"):
+                with st.expander(tr("Narrative Map"), expanded=False):
+                    st.json(st.session_state["fusion_narrative_map"])
+                    if st.session_state.get("fusion_narrative_quality_findings"):
+                        st.caption(tr("叙事质量建议（不会自动改写脚本）"))
+                        st.json(st.session_state["fusion_narrative_quality_findings"])
             if st.session_state.get("fusion_evidence_conflicts"):
                 with st.expander(tr("证据冲突（待审阅）"), expanded=True):
                     st.json(st.session_state["fusion_evidence_conflicts"])

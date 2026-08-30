@@ -48,15 +48,29 @@ class ConfigurationError(LLMServiceError):
 class APICallError(LLMServiceError):
     """API调用错误异常"""
     
-    def __init__(self, message: str, status_code: Optional[int] = None, response_text: Optional[str] = None):
+    def __init__(
+        self,
+        message: str,
+        status_code: Optional[int] = None,
+        response_text: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ):
         super().__init__(
             message=f"API调用失败: {message}",
             error_code="API_CALL_ERROR",
             details={
                 "status_code": status_code,
-                "response_text": response_text
+                "response_text": response_text,
+                **(details or {}),
             }
         )
+
+
+class StreamGenerationTimeout(APICallError):
+    """A streamed generation timed out with bounded, non-sensitive diagnostics."""
+
+    def __init__(self, message: str, *, details: Dict[str, Any]):
+        super().__init__(message, details=details)
 
 
 class ValidationError(LLMServiceError):
