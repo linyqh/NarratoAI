@@ -734,9 +734,62 @@ def override_fusion_matching_render_warning(task_id: str, reason: str) -> dict:
         raise ValueError("Render Preflight has no warnings to override")
     preflight["warning_override_reason"] = reason
     preflight["renderable"] = True
+    decisions = list(finalization.get("review_decisions") or [])
+    decisions.append(
+        {
+            "decision_id": f"preflight-warning-overridden-{len(decisions) + 1}",
+            "kind": "preflight",
+            "action": "warning_overridden",
+            "reason": reason,
+            "warning_codes": [
+                str(item.get("code") or "")
+                for item in preflight.get("warnings") or []
+                if isinstance(item, dict)
+            ],
+            "created_at": time.time(),
+        }
+    )
     finalization["preflight"] = preflight
     finalization["renderable"] = True
+    finalization["review_decisions"] = decisions
     return store.update(task_id, finalization=finalization, renderable=True)
+
+
+def undo_fusion_render_warning_override(task_id: str, *, decision_id: str) -> dict:
+    """Withdraw one warning override and return the task to its normal preflight state."""
+    store = _fusion_matching_task_store()
+    task = store.read(task_id)
+    finalization = dict(task.get("finalization") or {})
+    decisions = list(finalization.get("review_decisions") or [])
+    index = next(
+        (
+            current_index
+            for current_index, item in enumerate(decisions)
+            if isinstance(item, dict)
+            and str(item.get("decision_id") or "") == str(decision_id)
+            and item.get("kind") == "preflight"
+            and item.get("action") == "warning_overridden"
+        ),
+        None,
+    )
+    if index is None:
+        raise ValueError("The selected Render Preflight warning override cannot be undone")
+    decisions.pop(index)
+    preflight = dict(finalization.get("preflight") or {})
+    preflight.pop("warning_override_reason", None)
+    preflight["renderable"] = not preflight.get("blockers") and not preflight.get("warnings")
+    finalization.update(
+        {
+            "preflight": preflight,
+            "renderable": preflight["renderable"],
+            "review_decisions": decisions,
+        }
+    )
+    return store.update(
+        task_id,
+        finalization=finalization,
+        renderable=finalization["renderable"],
+    )
 
 
 def preview_fusion_narrative_map_review(

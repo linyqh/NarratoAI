@@ -50,6 +50,7 @@ from webui.tools.generate_short_summary import (
     fusion_matching_task_status,
     list_fusion_matching_tasks,
     override_fusion_matching_render_warning,
+    undo_fusion_render_warning_override,
     preview_fusion_narrative_map_review,
     review_fusion_narrative_map,
     approve_fusion_quality_repair,
@@ -2412,6 +2413,24 @@ def render_script_buttons(tr, params):
                                     st.rerun()
                                 except ValueError as exc:
                                     st.error(str(exc))
+                            warning_decisions = [
+                                item for item in finalization.get("review_decisions") or []
+                                if isinstance(item, dict)
+                                and item.get("kind") == "preflight"
+                                and item.get("action") == "warning_overridden"
+                            ]
+                            if warning_decisions and st.button(
+                                tr("撤销最近一次警告覆盖"),
+                                key=f"fusion_warning_override_undo_{task_id}",
+                            ):
+                                try:
+                                    undo_fusion_render_warning_override(
+                                        task_id,
+                                        decision_id=str(warning_decisions[-1].get("decision_id") or ""),
+                                    )
+                                    st.rerun()
+                                except ValueError as exc:
+                                    st.error(str(exc))
                         if not continuity.get("is_renderable", True):
                             st.error(tr("分段匹配发现待审阅叙事连续性问题，脚本未进入最终校验或可渲染状态。"))
                             st.json(continuity)
@@ -2716,6 +2735,30 @@ def render_script_buttons(tr, params):
                                 updated_task = undo_fusion_quality_ignore(
                                     workspace_task_id,
                                     decision_id=str(latest_ignore.get("decision_id") or ""),
+                                )
+                                st.session_state["fusion_workspace"] = project_fusion_workspace(
+                                    task=updated_task,
+                                    finalization=updated_task.get("finalization") or {},
+                                )
+                                st.rerun()
+                            except ValueError as exc:
+                                st.error(str(exc))
+                    warning_override_decisions = [
+                        item for item in workspace.get("inspector", {}).get("review_decisions", [])
+                        if isinstance(item, dict)
+                        and item.get("kind") == "preflight"
+                        and item.get("action") == "warning_overridden"
+                    ]
+                    if workspace_task_id and warning_override_decisions:
+                        latest_override = warning_override_decisions[-1]
+                        if st.button(
+                            tr("撤销最近一次警告覆盖"),
+                            key="fusion_undo_warning_override",
+                        ):
+                            try:
+                                updated_task = undo_fusion_render_warning_override(
+                                    workspace_task_id,
+                                    decision_id=str(latest_override.get("decision_id") or ""),
                                 )
                                 st.session_state["fusion_workspace"] = project_fusion_workspace(
                                     task=updated_task,

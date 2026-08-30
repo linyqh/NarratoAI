@@ -276,9 +276,18 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
             )
             with patch.object(generate_short_summary, "_fusion_matching_task_store", return_value=store):
                 updated = generate_short_summary.override_fusion_matching_render_warning(task["task_id"], "已人工确认")
+                self.assertTrue(updated["finalization"]["renderable"])
+                self.assertEqual("已人工确认", updated["finalization"]["preflight"]["warning_override_reason"])
+                decision = updated["finalization"]["review_decisions"][-1]
+                self.assertEqual("warning_overridden", decision["action"])
+                self.assertEqual(["warning"], decision["warning_codes"])
+                restored = generate_short_summary.undo_fusion_render_warning_override(
+                    task["task_id"], decision_id=decision["decision_id"]
+                )
 
-        self.assertTrue(updated["finalization"]["renderable"])
-        self.assertEqual("已人工确认", updated["finalization"]["preflight"]["warning_override_reason"])
+        self.assertFalse(restored["renderable"])
+        self.assertNotIn("warning_override_reason", restored["finalization"]["preflight"])
+        self.assertEqual([], restored["finalization"]["review_decisions"])
 
     def test_narrative_map_draft_invalidates_only_changed_segment_match(self):
         narrative_map = {
