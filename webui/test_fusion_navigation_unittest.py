@@ -8,6 +8,7 @@ from webui.fusion_navigation import (
     enter_legacy_modes,
     route_for_legacy_mode,
     selected_route,
+    transfer_project_to_traditional,
 )
 
 
@@ -31,21 +32,41 @@ class FusionNavigationTests(unittest.TestCase):
     def test_application_defaults_to_project_library(self):
         self.assertEqual(PROJECT_LIBRARY_ROUTE, selected_route({}))
 
-    def test_legacy_fusion_mode_redirects_to_project_library(self):
+    def test_legacy_fusion_mode_opens_explicit_traditional_fusion(self):
         state = {}
 
         route_for_legacy_mode("film_vision_fusion", state)
 
-        self.assertEqual(PROJECT_LIBRARY_ROUTE, state["fusion_ui_route"])
-        self.assertTrue(state["fusion_legacy_redirect_notice"])
+        self.assertEqual(LEGACY_MODES_ROUTE, state["fusion_ui_route"])
+        self.assertTrue(state["fusion_traditional_fusion_mode"])
 
-    def test_entering_traditional_modes_clears_stale_fusion_selection(self):
-        state = {"video_clip_json_path": "film_vision_fusion"}
+    def test_entering_traditional_fusion_preserves_explicit_selection(self):
+        state = {}
 
-        enter_legacy_modes(state)
+        enter_legacy_modes(state, fusion=True)
 
         self.assertEqual(LEGACY_MODES_ROUTE, state["fusion_ui_route"])
-        self.assertEqual("", state["video_clip_json_path"])
+        self.assertEqual("film_vision_fusion", state["video_clip_json_path"])
+
+    def test_project_transfer_copies_only_non_secret_configuration_and_sources(self):
+        state = {}
+        project = {
+            "name": "测试项目",
+            "project_settings": {
+                "tts_engine": "edge_tts", "voice_profile": "zh-CN-XiaoxiaoNeural",
+                "voice_parameters": {"rate": 1.1}, "subtitle_policy": "source_or_asr",
+            },
+            "source_video_sequence": [
+                {"path": "D:/movies/one.mp4", "subtitle_path": "D:/movies/one.srt"},
+            ],
+        }
+
+        transfer_project_to_traditional(project, state)
+
+        self.assertEqual(LEGACY_MODES_ROUTE, state["fusion_ui_route"])
+        self.assertEqual("film_vision_fusion", state["video_clip_json_path"])
+        self.assertEqual("D:/movies/one.mp4", state["fusion_traditional_transfer"]["source_paths"][0])
+        self.assertNotIn("api_key", state["fusion_traditional_transfer"])
 
 
 if __name__ == "__main__":

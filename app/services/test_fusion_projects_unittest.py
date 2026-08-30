@@ -617,6 +617,52 @@ class FusionProjectStoreTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertEqual(expected, project_projection({**base, **changes})["status"])
 
+    def test_uploaded_subtitle_is_project_owned_and_source_bound(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = FusionProjectStore(root / "projects")
+            project = store.create("字幕归属")
+            first = store.add_local_reference(project["project_id"], path=str(root / "first.mp4"))
+            second = store.add_local_reference(project["project_id"], path=str(root / "second.mp4"))
+
+            updated = store.save_source_subtitle_upload(
+                project["project_id"], source_id=first["source_id"],
+                filename="dialogue.srt", content=b"1\n00:00:00,000 --> 00:00:01,000\nhello\n",
+            )
+
+        sources = updated["source_video_sequence"]
+        saved = next(item for item in sources if item["source_id"] == first["source_id"])
+        untouched = next(item for item in sources if item["source_id"] == second["source_id"])
+        self.assertEqual("uploaded", saved["subtitle_origin"])
+        self.assertEqual("available", saved["subtitle_status"])
+        self.assertEqual("missing", untouched["subtitle_status"])
+
+    def test_unverified_visual_artifact_is_regression_only_and_blocks_narration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            movie = root / "movie.mp4"
+            movie.write_bytes(b"video")
+            store = FusionProjectStore(root / "projects")
+            project = store.create("旧产物")
+            source = store.add_local_reference(project["project_id"], path=str(movie))
+            store.set_source_subtitle(
+                project["project_id"], source_id=source["source_id"], subtitle_path=str(root / "missing.srt")
+            )
+
+            updated = store.import_source_visual_evidence_artifact(
+                project["project_id"], source_id=source["source_id"],
+                artifact={
+                    "artifact_version": "documentary-frame-analysis-v4",
+                    "batches": [{"time_range": "00:00:00-00:00:01", "overall_activity_summary": "人物走进房间"}],
+                },
+                artifact_path="legacy.json", allow_unverified_source=True,
+            )
+            narration_blockers = store.stage_readiness(project["project_id"])["narration"]["blockers"]
+
+        source_state = updated["source_video_sequence"][0]
+        self.assertEqual("regression_only", source_state["visual_evidence_status"])
+        self.assertIn("未验证视觉证据仅可回归测试", narration_blockers)
+
 
 if __name__ == "__main__":
     unittest.main()

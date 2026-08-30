@@ -7,6 +7,7 @@ from pathlib import Path
 import hashlib
 import json
 from uuid import uuid4
+from app.config import config
 
 import streamlit as st
 
@@ -19,6 +20,7 @@ from webui.fusion_navigation import (
     TASK_CENTER_ROUTE,
     enter_legacy_modes,
     navigate,
+    transfer_project_to_traditional,
 )
 
 
@@ -127,8 +129,12 @@ def _top_bar(*, project: dict | None = None) -> None:
             navigate(st.session_state, TASK_CENTER_ROUTE)
             st.rerun()
     with legacy:
-        if st.button("传统模式", use_container_width=True):
-            enter_legacy_modes(st.session_state)
+        legacy_label = "转到传统模式" if project else "传统模式"
+        if st.button(legacy_label, use_container_width=True):
+            if project:
+                transfer_project_to_traditional(project, st.session_state)
+            else:
+                enter_legacy_modes(st.session_state, fusion=True)
             st.rerun()
     st.divider()
 
@@ -279,20 +285,47 @@ def _render_new_project() -> None:
         )
         language = st.selectbox("输出语言", language_options, index=language_index)
         style_options, style_index = _options_with_current(
-            ["剧情解说", "悬疑推进", "人物成长", "冷静分析"],
+            ["剧情解说", "悬疑推进", "人物成长", "冷静分析", "逆袭/复仇"],
             str(settings.get("commentary_style") or "剧情解说"),
         )
         style = st.selectbox("解说风格", style_options, index=style_index)
         target = st.number_input("目标文案字数", min_value=300, max_value=10000, value=int(settings.get("target_narration_length") or 1200), step=100)
         ratio = st.slider("原片声音比例", 0, 100, int(settings.get("original_sound_ratio") or 30), 5)
-        subtitle_options, subtitle_index = _options_with_current(
-            ["source_or_asr", "source_only", "asr_if_missing"],
-            str(settings.get("subtitle_policy") or "source_or_asr"),
-        )
-        subtitle_policy = st.selectbox(
-            "字幕策略", subtitle_options, index=subtitle_index
-        )
-        voice_profile = st.text_input("TTS 音色", value=str(settings.get("voice_profile") or ""))
+        subtitle_policies = {
+            "优先使用现有字幕，缺失时自动转录": "source_or_asr",
+            "仅使用我提供的字幕": "source_only",
+            "始终重新转录": "always_asr",
+        }
+        policy_values = list(subtitle_policies.values())
+        current_policy = str(settings.get("subtitle_policy") or "source_or_asr")
+        policy_index = policy_values.index(current_policy) if current_policy in policy_values else 0
+        policy_label = st.selectbox("字幕策略", list(subtitle_policies), index=policy_index)
+        subtitle_policy = subtitle_policies[policy_label]
+        st.caption("策略会按每个源视频执行；字幕上传、转录、翻译与校准结果都只绑定到该源。")
+        from webui.components.audio_settings import get_tts_engine_options
+        tts_options = get_tts_engine_options()
+        saved_engine = str(settings.get("tts_engine") or config.ui.get("tts_engine") or config.INDEXTTS_ENGINE)
+        engine_values, engine_index = _options_with_current(list(tts_options), saved_engine)
+        tts_engine = st.selectbox("TTS 引擎", engine_values, index=engine_index, format_func=lambda key: tts_options.get(key, key))
+        saved_voice = str(settings.get("voice_profile") or config.ui.get("voice_name", ""))
+        if tts_engine == "edge_tts":
+            from app.services import voice
+            edge_voices = voice.get_all_edge_voices()
+            voice_options, voice_index = _options_with_current(edge_voices, saved_voice)
+            voice_profile = st.selectbox(
+                "TTS 音色", voice_options, index=voice_index,
+                format_func=lambda value: value.replace("Neural", "").replace("-Female", "（女）").replace("-Male", "（男）"),
+                help="与传统 Edge TTS 使用同一份可选音色列表。",
+            )
+        else:
+            voice_profile = st.text_input(
+                "TTS 音色", value=saved_voice,
+                help="项目保存选择快照；API Key 和本机服务地址仍使用本机设置。",
+            )
+        voice_parameters = dict(settings.get("voice_parameters") or {})
+        voice_rate = st.slider("语速", 0.5, 2.0, float(voice_parameters.get("rate") or 1.0), 0.1)
+        voice_volume = st.slider("解说音量", 0.0, 2.0, float(voice_parameters.get("volume") or 1.0), 0.05)
+        voice_pitch = st.slider("音调", 0.5, 2.0, float(voice_parameters.get("pitch") or 1.0), 0.1)
         background_music = st.text_input("背景音乐路径（可选）", value=str(settings.get("background_music") or ""))
         format_options, format_index = _options_with_current(
             ["mp4", "mkv"], str(settings.get("output_format") or "mp4")
@@ -313,7 +346,9 @@ def _render_new_project() -> None:
                 target_narration_length=int(target),
                 original_sound_ratio=int(ratio),
                 subtitle_policy=subtitle_policy,
+                tts_engine=tts_engine,
                 voice_profile=voice_profile,
+                voice_parameters={"rate": voice_rate, "volume": voice_volume, "pitch": voice_pitch},
                 background_music=background_music,
                 output_format=output_format,
                 video_aspect=video_aspect,
@@ -323,13 +358,27 @@ def _render_new_project() -> None:
             st.success("配置已保存")
     with right:
         st.subheader("源视频")
-        st.caption("可引用本机文件，也可上传为项目托管素材；删除项目不会触碰本机引用文件。")
+        st.caption("引用本机文件不会复制也不会在删除项目时删除；项目托管会复制一份，便于项目独立保存。")
+        resource_dir = Path(utils.video_dir())
+        resource_files = sorted(
+            [path for suffix in ("*.mp4", "*.mov", "*.avi", "*.flv", "*.mkv", "*.mpeg", "*.mpg", "*.3gp") for path in resource_dir.glob(suffix)],
+            key=lambda item: item.stat().st_mtime,
+            reverse=True,
+        ) if resource_dir.is_dir() else []
+        resource_path = st.selectbox(
+            "从资源目录选择", [""] + [str(path) for path in resource_files],
+            format_func=lambda value: "选择资源目录中的视频" if not value else str(Path(value).relative_to(resource_dir)),
+        )
+        if st.button("引用所选资源目录视频", disabled=not resource_path, use_container_width=True):
+            store.add_local_reference(project_id, path=resource_path)
+            st.rerun()
         local_path = st.text_input("本机视频路径", placeholder="D:\\Movies\\example.mp4")
         subtitle_path = st.text_input("字幕路径（SRT，可稍后补充）", placeholder="D:\\Movies\\example.srt")
         if st.button("添加本机视频", disabled=not local_path, use_container_width=True):
             store.add_local_reference(project_id, path=local_path, subtitle_path=subtitle_path)
             st.rerun()
-        upload = st.file_uploader("上传视频为项目托管素材", type=["mp4", "mkv", "mpeg", "mpg", "3gp"])
+        upload = st.file_uploader("上传并由项目托管", type=["mp4", "mkv", "mpeg", "mpg", "3gp"])
+        st.caption("托管上传会复制到当前项目；永久删除项目时仅删除这份副本，绝不删除本机引用文件。")
         if st.button("保存上传素材", disabled=upload is None, use_container_width=True):
             store.add_managed_asset(
                 project_id,
@@ -412,6 +461,130 @@ def _stage_evidence(project, store) -> None:
         a.metric("文件状态", "可用" if source.get("available") else "离线")
         b.metric("字幕", source.get("subtitle_status", "missing"))
         c.metric("视觉证据", source.get("visual_evidence_status", "not_started"))
+        with st.expander("字幕处理", expanded=source.get("subtitle_status") != "available"):
+            st.caption("字幕是剧情和对白证据。上传后的字幕只属于当前源视频；转录、翻译和校准将在此处生成同样的源绑定结果。")
+            subtitle_path = st.text_input(
+                "引用本机 SRT 路径", value=str(source.get("subtitle_path") or ""),
+                key=f"subtitle-path-{source['source_id']}",
+            )
+            update, uploaded = st.columns(2)
+            if update.button("采用本机字幕", key=f"subtitle-local-{source['source_id']}", disabled=not subtitle_path):
+                store.set_source_subtitle(
+                    project["project_id"], source_id=source["source_id"], subtitle_path=subtitle_path, origin="provided"
+                )
+                st.rerun()
+            subtitle_upload = uploaded.file_uploader(
+                "上传 SRT", type=["srt"], key=f"subtitle-upload-{source['source_id']}", label_visibility="collapsed"
+            )
+            if st.button("保存上传字幕", key=f"subtitle-save-{source['source_id']}", disabled=subtitle_upload is None):
+                store.save_source_subtitle_upload(
+                    project["project_id"], source_id=source["source_id"],
+                    filename=subtitle_upload.name, content=subtitle_upload.getvalue(),
+                )
+                st.rerun()
+            asr_backend = st.selectbox(
+                "转录方式", ["local", "firered", "bailian"],
+                format_func=lambda value: {
+                    "local": "本地 FunASR", "firered": "本地 FireRedASR", "bailian": "阿里百炼 Fun-ASR"
+                }[value],
+                key=f"subtitle-asr-{source['source_id']}",
+            )
+            transcription, translate, calibrate = st.columns(3)
+            if transcription.button("转录字幕", key=f"subtitle-asr-run-{source['source_id']}", disabled=not source.get("available")):
+                try:
+                    from app.services import fun_asr_subtitle
+                    output = store.source_subtitle_output_path(
+                        project["project_id"], source_id=source["source_id"], label=f"asr-{asr_backend}"
+                    )
+                    if asr_backend == "local":
+                        result = fun_asr_subtitle.create_with_local_fun_asr(
+                            source["path"], output, api_url=config.fun_asr.get("api_url", ""),
+                            hotword=config.fun_asr.get("hotword", ""), enable_spk=bool(config.fun_asr.get("enable_spk", False)),
+                        )
+                    elif asr_backend == "firered":
+                        result = fun_asr_subtitle.create_with_local_firered_asr(
+                            source["path"], output, api_url=config.fun_asr.get("firered_api_url", ""),
+                        )
+                    else:
+                        result = fun_asr_subtitle.create_with_fun_asr(
+                            source["path"], output, api_key=config.fun_asr.get("api_key", ""),
+                        )
+                    store.set_source_subtitle(
+                        project["project_id"], source_id=source["source_id"], subtitle_path=str(result or output), origin=f"asr:{asr_backend}"
+                    )
+                    st.success("字幕转录完成，已绑定到当前源视频。")
+                    st.rerun()
+                except Exception as error:
+                    st.error(f"字幕转录失败：{error}")
+            if translate.button("翻译字幕", key=f"subtitle-translate-{source['source_id']}", disabled=not source.get("subtitle_path")):
+                try:
+                    from app.services import subtitle_translator
+                    provider = config.app.get("text_llm_provider", "openai").lower()
+                    output = store.source_subtitle_output_path(project["project_id"], source_id=source["source_id"], label="translated")
+                    result = subtitle_translator.translate_subtitle_file(
+                        source["subtitle_path"], output_file=output,
+                        target_language=str((project.get("project_settings") or {}).get("output_language") or "中文"),
+                        provider=provider, api_key=config.app.get(f"text_{provider}_api_key", ""),
+                        base_url=config.app.get(f"text_{provider}_base_url", ""),
+                    )
+                    store.set_source_subtitle(project["project_id"], source_id=source["source_id"], subtitle_path=result, origin="translated")
+                    st.success("字幕翻译完成。")
+                    st.rerun()
+                except Exception as error:
+                    st.error(f"字幕翻译失败：{error}")
+            if calibrate.button("校准字幕", key=f"subtitle-calibrate-{source['source_id']}", disabled=not source.get("subtitle_path")):
+                try:
+                    from app.services import subtitle_corrector
+                    provider = config.app.get("text_llm_provider", "openai").lower()
+                    output = store.source_subtitle_output_path(project["project_id"], source_id=source["source_id"], label="corrected")
+                    result = subtitle_corrector.correct_subtitle_file(
+                        source["subtitle_path"], output_file=output,
+                        provider=provider, api_key=config.app.get(f"text_{provider}_api_key", ""),
+                        base_url=config.app.get(f"text_{provider}_base_url", ""),
+                    )
+                    store.set_source_subtitle(project["project_id"], source_id=source["source_id"], subtitle_path=result, origin="corrected")
+                    st.success("字幕校准完成。")
+                    st.rerun()
+                except Exception as error:
+                    st.error(f"字幕校准失败：{error}")
+            if source.get("subtitle_path"):
+                st.caption(f"当前采用：{source.get('subtitle_origin', 'provided')} · {source['subtitle_path']}")
+                with st.expander("字幕预览", expanded=False):
+                    try:
+                        st.text(Path(str(source["subtitle_path"])).read_text(encoding="utf-8")[:6000])
+                    except OSError as error:
+                        st.warning(f"无法读取当前字幕：{error}")
+        with st.expander("复用已视觉分析的 JSON", expanded=False):
+            st.caption("必须选择当前源视频对应的 JSON。内容身份不匹配会被拒绝；未验证旧 JSON 只能回归预览，不能生成正式成片。")
+            from webui.tools.generate_film_vision_fusion import list_local_visual_evidence_artifacts
+            local_artifacts = list_local_visual_evidence_artifacts()
+            selected_artifact = st.selectbox(
+                "本地视觉产物", [""] + [str(path) for path in local_artifacts],
+                format_func=lambda value: "选择已分析 JSON" if not value else Path(value).name,
+                key=f"visual-json-{source['source_id']}",
+            )
+            regression_only = st.checkbox(
+                "允许未验证旧 JSON（仅回归预览）", key=f"visual-unverified-{source['source_id']}"
+            )
+            uploaded_artifact = st.file_uploader(
+                "或上传视觉 JSON", type=["json"], key=f"visual-upload-{source['source_id']}"
+            )
+            if st.button("校验并导入视觉证据", key=f"visual-import-{source['source_id']}", disabled=not (selected_artifact or uploaded_artifact)):
+                try:
+                    if uploaded_artifact is not None:
+                        artifact_payload = json.loads(uploaded_artifact.getvalue().decode("utf-8"))
+                        artifact_name = f"导入：{uploaded_artifact.name}"
+                    else:
+                        artifact_name = selected_artifact
+                        artifact_payload = json.loads(Path(selected_artifact).read_text(encoding="utf-8"))
+                    store.import_source_visual_evidence_artifact(
+                        project["project_id"], source_id=source["source_id"], artifact=artifact_payload,
+                        artifact_path=artifact_name, allow_unverified_source=regression_only,
+                    )
+                    st.success("视觉证据已绑定到当前源视频。")
+                    st.rerun()
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+                    st.error(f"视觉证据导入失败：{error}")
         if source.get("available"):
             interval = st.number_input(
                 "关键帧间隔（秒）", min_value=2.0, max_value=60.0, value=6.0,
@@ -534,6 +707,9 @@ def _stage_narration(project, store) -> None:
         st.warning("需要先完成或导入视觉证据。现有证据不会因页面切换而丢失。")
     sources = project.get("source_video_sequence") or []
     subtitle_paths = [source.get("subtitle_path") for source in sources if source.get("subtitle_path")]
+    verified_visual_evidence = all(
+        source.get("visual_evidence_status") == "completed" for source in sources
+    )
     narration_start = store.task_start_projection(
         project["project_id"], kind="narration_generation"
     )
@@ -541,7 +717,7 @@ def _stage_narration(project, store) -> None:
         st.caption(narration_start["reason"])
     if st.button(
         "生成解说词", type="primary",
-        disabled=not subtitle_paths or not narration_start["allowed"],
+        disabled=not subtitle_paths or not verified_visual_evidence or not narration_start["allowed"],
     ):
         reservation_id = f"matchingreservation{uuid4().hex}"
         try:
@@ -1275,6 +1451,8 @@ def _start_narration_generation(project_id: str, task_id: str = "") -> str:
             ]
             if not subtitle_paths:
                 raise ValueError("Narration generation requires subtitle or ASR evidence")
+            if any(source.get("visual_evidence_status") != "completed" for source in sources):
+                raise ValueError("Narration generation requires verified visual evidence for every source")
             from webui.tools.generate_short_summary import (
                 FILM_TV_PROMPT_CATEGORY,
                 generate_short_drama_narration_copy,
@@ -1489,6 +1667,9 @@ def _start_project_render(
             str(settings.get("output_language") or "zh-CN"),
         ),
         voice_name=str(settings.get("voice_profile") or config.ui.get("voice_name", "zh-CN-YunjianNeural")),
+        voice_rate=float((settings.get("voice_parameters") or {}).get("rate") or 1.0),
+        voice_volume=float((settings.get("voice_parameters") or {}).get("volume") or 1.0),
+        voice_pitch=float((settings.get("voice_parameters") or {}).get("pitch") or 1.0),
         tts_engine=str(settings.get("tts_engine") or config.INDEXTTS_ENGINE),
         bgm_type="local" if settings.get("background_music") else "none",
         bgm_file=str(settings.get("background_music") or ""),

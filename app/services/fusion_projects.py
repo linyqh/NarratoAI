@@ -67,6 +67,8 @@ class FusionProjectStore:
                 "output_language": "简体中文（中国）",
                 "commentary_style": "剧情解说",
                 "voice_profile": "",
+                "tts_engine": "",
+                "voice_parameters": {},
                 "target_narration_length": 1200,
                 "subtitle_policy": "source_or_asr",
                 "original_sound_ratio": 30,
@@ -187,6 +189,59 @@ class FusionProjectStore:
         return source
 
     @_serialized
+    def set_source_subtitle(
+        self,
+        project_id: str,
+        *,
+        source_id: str,
+        subtitle_path: str,
+        origin: str = "provided",
+    ) -> dict[str, Any]:
+        """Bind one adopted subtitle artifact to exactly one project source."""
+        project = self.read(project_id)
+        sources = list(project.get("source_video_sequence") or [])
+        source = next((item for item in sources if item.get("source_id") == source_id), None)
+        if source is None:
+            raise ValueError("Fusion source video not found")
+        path = Path(str(subtitle_path or ""))
+        source["subtitle_path"] = str(path)
+        source["subtitle_origin"] = str(origin or "provided")
+        source["subtitle_status"] = "available" if path.is_file() else "missing"
+        return self.update(project_id, source_video_sequence=sources)
+
+    @_serialized
+    def save_source_subtitle_upload(
+        self,
+        project_id: str,
+        *,
+        source_id: str,
+        filename: str,
+        content: bytes,
+    ) -> dict[str, Any]:
+        """Store an uploaded SRT under the project and bind it to one source."""
+        safe_name = Path(str(filename or "subtitle.srt")).name
+        if Path(safe_name).suffix.lower() != ".srt":
+            raise ValueError("Fusion subtitle upload must be an SRT file")
+        target_dir = self._project_directory(project_id) / "subtitles" / str(source_id)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / safe_name
+        if target.exists():
+            target = target_dir / f"{target.stem}-{uuid4().hex[:8]}{target.suffix}"
+        target.write_bytes(bytes(content))
+        return self.set_source_subtitle(
+            project_id, source_id=source_id, subtitle_path=str(target), origin="uploaded"
+        )
+
+    def source_subtitle_output_path(
+        self, project_id: str, *, source_id: str, label: str
+    ) -> str:
+        """Reserve a project-owned path for an ASR or subtitle derivative."""
+        safe_label = "".join(char if char.isalnum() or char in "-_" else "_" for char in str(label)) or "subtitle"
+        target_dir = self._project_directory(project_id) / "subtitles" / str(source_id)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        return str(target_dir / f"{safe_label}-{uuid4().hex[:8]}.srt")
+
+    @_serialized
     def refresh_source_availability(self, project_id: str) -> dict[str, Any]:
         with self._lock:
             project = self.read(project_id)
@@ -256,6 +311,9 @@ class FusionProjectStore:
         identity_changed = [
             source for source in sources if source.get("identity_status") == "changed"
         ]
+        regression_only = [
+            source for source in sources if source.get("visual_evidence_status") == "regression_only"
+        ]
 
         def state(*blockers: str) -> dict[str, Any]:
             remaining = [blocker for blocker in blockers if blocker]
@@ -269,6 +327,7 @@ class FusionProjectStore:
             "可用源视频" if not available_sources else "",
             "源视频身份变化，需重新视觉分析" if identity_changed else "",
             "字幕或 ASR" if not any(source.get("subtitle_path") for source in sources) else "",
+            "未验证视觉证据仅可回归测试" if regression_only else "",
         )
         matching = state(
             "源视频身份变化，需重新视觉分析" if identity_changed else "",
@@ -302,6 +361,7 @@ class FusionProjectStore:
         source_id: str,
         evidence: str,
         artifact_path: str,
+        source_verified: bool = True,
     ) -> dict[str, Any]:
         with self._lock:
             project = self.read(project_id)
@@ -319,7 +379,7 @@ class FusionProjectStore:
             source["identity"] = observed
             source["observed_identity"] = observed
             source["identity_status"] = "verified"
-            source["visual_evidence_status"] = "completed"
+            source["visual_evidence_status"] = "completed" if source_verified else "regression_only"
             source["visual_evidence_artifact"] = str(artifact_path or "")
             artifacts = dict(project.get("artifact_refs") or {})
             by_source = dict(artifacts.get("visual_evidence_by_source") or {})
@@ -329,6 +389,7 @@ class FusionProjectStore:
                 "path": str(artifact_path or ""),
                 "source_identity": observed,
                 "evidence": str(evidence or ""),
+                "source_verified": bool(source_verified),
             }
             artifacts["visual_evidence_by_source"] = by_source
             artifacts["visual_evidence"] = "\n\n".join(
@@ -348,6 +409,39 @@ class FusionProjectStore:
                 artifact_refs=artifacts,
                 review_findings=findings,
             )
+
+    def import_source_visual_evidence_artifact(
+        self,
+        project_id: str,
+        *,
+        source_id: str,
+        artifact: dict[str, Any],
+        artifact_path: str,
+        allow_unverified_source: bool = False,
+    ) -> dict[str, Any]:
+        """Validate a JSON artifact against its chosen source before attaching it."""
+        project = self.read(project_id)
+        source = next(
+            (item for item in project.get("source_video_sequence") or [] if item.get("source_id") == source_id),
+            None,
+        )
+        if source is None:
+            raise ValueError("Fusion source video not found")
+        from app.services.film_vision_fusion import load_visual_evidence_artifact
+
+        restored = load_visual_evidence_artifact(
+            artifact,
+            source_video_path=str(source.get("path") or ""),
+            artifact_path=artifact_path,
+            allow_unverified_source=allow_unverified_source,
+        )
+        return self.attach_source_visual_evidence(
+            project_id,
+            source_id=source_id,
+            evidence=restored.context,
+            artifact_path=artifact_path,
+            source_verified=restored.source_verified,
+        )
 
     @_serialized
     def admit_matching_completion(

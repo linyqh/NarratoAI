@@ -30,16 +30,41 @@ def navigate(state, route: str, *, project_id: str = "") -> None:
 
 def route_for_legacy_mode(mode: str, state) -> str:
     if str(mode) == "film_vision_fusion":
-        state["fusion_ui_route"] = PROJECT_LIBRARY_ROUTE
-        state["fusion_legacy_redirect_notice"] = True
-        return PROJECT_LIBRARY_ROUTE
+        state["fusion_ui_route"] = LEGACY_MODES_ROUTE
+        state["fusion_traditional_fusion_mode"] = True
+        return LEGACY_MODES_ROUTE
     state["fusion_ui_route"] = LEGACY_MODES_ROUTE
     return LEGACY_MODES_ROUTE
 
 
-def enter_legacy_modes(state) -> str:
-    """Open traditional modes without allowing stale Fusion controls to render."""
-    if str(state.get("video_clip_json_path") or "") == "film_vision_fusion":
+def enter_legacy_modes(state, *, fusion: bool = False) -> str:
+    """Open an explicit traditional workflow without changing project state."""
+    state["fusion_traditional_fusion_mode"] = bool(fusion)
+    if fusion:
+        state["video_clip_json_path"] = "film_vision_fusion"
+    elif str(state.get("video_clip_json_path") or "") == "film_vision_fusion":
         state["video_clip_json_path"] = ""
     state["fusion_ui_route"] = LEGACY_MODES_ROUTE
     return LEGACY_MODES_ROUTE
+
+
+def transfer_project_to_traditional(project: dict, state) -> str:
+    """Copy a project's non-secret setup into one explicit legacy-session transfer."""
+    settings = dict(project.get("project_settings") or {})
+    sources = list(project.get("source_video_sequence") or [])
+    state["fusion_traditional_transfer"] = {
+        "project_name": str(project.get("name") or ""),
+        "settings": {
+            key: settings.get(key)
+            for key in (
+                "output_language", "commentary_style", "target_narration_length",
+                "subtitle_policy", "original_sound_ratio", "background_music",
+                "tts_engine", "voice_profile", "voice_parameters", "video_aspect",
+                "output_format", "subtitle_enabled",
+            )
+            if key in settings
+        },
+        "source_paths": [str(source.get("path") or "") for source in sources if source.get("path")],
+        "subtitle_paths": [str(source.get("subtitle_path") or "") for source in sources if source.get("subtitle_path")],
+    }
+    return enter_legacy_modes(state, fusion=True)

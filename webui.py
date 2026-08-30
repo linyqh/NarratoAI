@@ -710,6 +710,21 @@ def main():
     st.title(f"Narrato:blue[AI]:sunglasses: 📽️")
     st.write(get_help_text())
 
+    transfer = st.session_state.get("fusion_traditional_transfer")
+    if isinstance(transfer, dict):
+        settings = dict(transfer.get("settings") or {})
+        st.info(
+            "已从项目复制非敏感配置和素材引用到本次传统模式会话。"
+            "传统模式的任务、审核和输出不会回写到项目。"
+        )
+        with st.expander("查看已复制的项目配置", expanded=False):
+            st.json({
+                "项目": transfer.get("project_name"),
+                "素材": transfer.get("source_paths") or [],
+                "字幕": transfer.get("subtitle_paths") or [],
+                "配置": settings,
+            }, expanded=False)
+
     # 首先渲染不依赖PyTorch的UI部分
     # 渲染基础设置面板
     basic_settings.render_basic_settings(tr)

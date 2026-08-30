@@ -28,6 +28,30 @@ _Avoid_: uploaded video, remote asset
 A creator-uploaded source file copied into a Fusion Project's managed local storage. It belongs to the project lifecycle, unlike a Local Source Video that remains at its original path.
 _Avoid_: local source reference, temporary upload
 
+**Project Workspace Mode**:
+The durable Film Vision Fusion creation experience in which a Fusion Project owns configuration snapshots, sources, evidence, tasks, reviews, versions, and render outcomes.
+_Avoid_: new UI, project page, traditional mode
+
+**Traditional Compatibility Mode**:
+The pre-project Film Vision Fusion entry that preserves the existing session-based creation controls. It is a separate compatibility workflow, not a downgraded state of a Fusion Project.
+_Avoid_: project mode switch, legacy project, project downgrade
+
+**Subtitle Strategy**:
+The creator-selected rule that determines whether a source uses provided subtitles, generated transcription, or an explicit newly generated transcription for story evidence.
+_Avoid_: subtitle setting, ASR option, subtitle source
+
+**Provider Configuration Snapshot**:
+The non-secret, project-owned selection of a TTS or ASR provider and its reproducibility parameters. Credentials and machine-specific endpoints remain local environment configuration.
+_Avoid_: project credentials, copied API key, global configuration
+
+**Source-bound Evidence Artifact**:
+A subtitle derivative or Visual Evidence Artifact associated with exactly one Source Video Sequence member and its content identity.
+_Avoid_: project-wide JSON, shared subtitle, global artifact
+
+**Explicit Workflow Transfer**:
+A creator-triggered, one-time copy from Project Workspace Mode to Traditional Compatibility Mode or an explicit import in the opposite direction. It never creates live synchronization between the two workflows.
+_Avoid_: mode toggle, live migration, shared session
+
 **Full-Film Analysis**:
 The default visual-analysis scope for a Local Source Video. It examines the complete source timeline; a creator may narrow the range only as an explicit override.
 _Avoid_: preview-only analysis, implicit sample

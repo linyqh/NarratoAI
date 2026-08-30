@@ -76,7 +76,7 @@ The experience uses a dark desktop-first shell, an explicit New Fusion Project f
 - A Fusion Project is the ownership boundary for source references, managed assets, settings, artifacts, background tasks, drafts, versions, review decisions, and Render Outcomes.
 - Project creation occurs before expensive work and persists atomically. Browser session state may cache selections but is never the project authority.
 - The application uses a dedicated multipage Streamlit experience rather than introducing a separate frontend and local API layer during this phase.
-- The Project Library is the default Film Vision Fusion entry. The legacy mode selector temporarily redirects there and eventually stops rendering the old conditional form.
+- The Project Library is the default Film Vision Fusion entry. Traditional Compatibility Mode remains a deliberate, separately labelled entry while project parity is completed; selecting it must open the existing Film Vision Fusion controls rather than silently redirecting.
 - Local Source Videos remain external references with verified identity. Managed Project Assets belong to the project lifecycle. Permanent deletion never removes referenced local movies.
 - The Source Video Sequence defines creator-controlled ordering and keeps all evidence and timestamps scoped to a stable source identity.
 - The workspace contains six Fusion Workflow Stages: Setup, Media & Evidence, Narration & Narrative Map, Picture Matching, Review, and Output.
@@ -97,11 +97,27 @@ The experience uses a dark desktop-first shell, an explicit New Fusion Project f
 - The P0 Script Planning Reliability Gate must pass before project UI slices can be declared releasable.
 - Delivery is ordered: legacy-boundary freeze, project repository and projections, library/setup, evidence/tasks, narration/matching, review, output/migration, then visual and real-media acceptance.
 
+## P0: Project setup parity and traditional compatibility
+
+The first remediation priority is capability parity at project creation. A creator must not need to abandon Project Workspace Mode merely to access a traditional Film Vision Fusion input, and must be able to deliberately use the traditional workflow when its session-based behavior is preferred.
+
+1. **Two explicit modes.** Project Workspace Mode is the recommended durable workflow. Traditional Compatibility Mode remains a separately labelled entry for Film Vision Fusion. It never downgrades a project or live-synchronizes with it.
+2. **Explicit transfers only.** Project-to-traditional transfer copies non-secret settings and usable source references once. Traditional-to-project transfer is a separately confirmed import that binds chosen assets to the new project. Neither transfer grants project render authority to unvalidated legacy artifacts.
+3. **Style parity.** Project setup exposes the same supported commentary-style vocabulary used by Fusion generation, including an existing saved value. The chosen value is persisted as a project setting and is passed to narration and matching unchanged.
+4. **Executable subtitle strategy.** Setup presents human-readable choices: `优先使用现有字幕，缺失时自动转录`, `仅使用我提供的字幕`, and `始终重新转录`. Every source independently shows its adopted subtitle, source, status, and available actions: select/upload, transcribe, translate, calibrate, and preview. A strategy cannot claim readiness until it has produced source-bound subtitle evidence.
+5. **TTS configuration snapshot.** Project setup reuses the traditional engine and voice selection behavior. It persists an engine, voice name, and non-secret voice parameters as a Provider Configuration Snapshot. Provider credentials and machine endpoints remain in local configuration; unavailable selected providers block output with a clear recovery action rather than falling back silently.
+6. **Local resource parity.** Setup can select videos from the existing resource-video directory as Local Source Video references. It also accepts a manually entered local path. Neither choice copies or deletes the original movie.
+7. **Managed-upload explanation.** Browser upload is labelled `上传并由项目托管` and explains that it copies a source into project storage for portability and deletion with the project. It is distinct from a local reference, which is not copied and may become offline if moved.
+8. **Visual-artifact parity.** Each source may list local Visual Evidence Artifact JSON files or upload one. Import validates the selected source's content identity. An unverified legacy artifact may be marked regression-only for inspection, but cannot enable formal narration, matching, or rendering.
+9. **Source affinity.** Subtitle derivatives and visual artifacts are always Source-bound Evidence Artifacts. A multi-source project never applies one source's evidence to another source implicitly.
+
+P0 acceptance requires project setup to expose all eight creation inputs above, preserve selections across refresh, pass the resulting subtitle and TTS snapshots into the existing pipeline, and prove via automated tests that mode entry, source identity checks, and cross-source rejection are safe.
+
 ## Testing Decisions
 
 - The highest primary seam is the public Fusion Project application command and projection boundary. Tests issue creator actions and assert durable project state, next actions, blockers, stage readiness, and creator-facing projections rather than private helper calls or widget structure.
 - Project-store tests remain a narrower supporting seam for atomic writes, schema rejection, managed/reference deletion semantics, trash/restore, and concurrent task checkpoints.
-- Navigation tests verify startup, project creation, project refresh, and legacy redirection through externally visible page outcomes rather than internal Streamlit session keys.
+- Navigation tests verify startup, project creation, project refresh, explicit Project Workspace Mode entry, and explicit Traditional Compatibility Mode entry through externally visible page outcomes rather than internal Streamlit session keys.
 - Task tests use durable status and input fingerprints to cover progress, interruption, retry, cancellation, concurrency, and stale-result admission.
 - Workspace tests cover synchronized selection, queue ordering, decision persistence, undo, draft impact, version creation, comparison, and safe restoration.
 - Render tests enter through Render Preflight and prove blockers disable rendering, warning reasons persist, passed checks allow rendering, and existing Render Outcomes are immutable.

@@ -189,7 +189,12 @@ def _find_original_subtitle_paths_for_videos(video_paths: list[str]) -> list[str
         if not matches:
             continue
 
-        matches.sort(key=lambda item: path.getmtime(item), reverse=True)
+        # File-system timestamp precision can make two newly generated subtitles
+        # indistinguishable.  Use their stable names as a deterministic tie-breaker.
+        matches.sort(
+            key=lambda item: (path.getmtime(item), path.basename(item).lower()),
+            reverse=True,
+        )
         selected_path = matches[0]
         if selected_path not in seen:
             resolved_paths.append(selected_path)
