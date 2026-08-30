@@ -109,19 +109,39 @@ def evaluate_narrative_quality(
         previous = beat
 
     normalized_previous = ""
+    beats_by_id = {
+        str(beat.get("segment_id") or ""): beat
+        for beat in beats or []
+        if isinstance(beat, dict)
+    }
     for item in matched_items or []:
         narration = re.sub(r"\s+", "", str(item.get("narration") or ""))
+        segment_id = str(item.get("_segment_id") or "")
+        active_subject = str(
+            (beats_by_id.get(segment_id) or {}).get("active_subject") or ""
+        ).strip()
+        if (
+            not active_subject
+            and re.search(r"(?:他|她|他们|她们|这人|此人|对方)", narration)
+        ):
+            findings.append(
+                NarrativeQualityFinding(
+                    "ambiguous_character_reference",
+                    segment_id,
+                    "Narration uses a character reference without an active subject in its Story Beat.",
+                )
+            )
         if narration and narration == normalized_previous:
-            findings.append(NarrativeQualityFinding("repetitive_narration", str(item.get("_segment_id") or ""), "Adjacent narration is repeated."))
+            findings.append(NarrativeQualityFinding("repetitive_narration", segment_id, "Adjacent narration is repeated."))
         normalized_previous = narration
         try:
             window = TimeRange.parse(str(item.get("timestamp") or ""))
             characters_per_second = len(narration) / max(0.1, window.end_seconds - window.start_seconds)
             if narration and characters_per_second > 14:
-                findings.append(NarrativeQualityFinding("narration_density_high", str(item.get("_segment_id") or ""), "Narration density may be too high for comfortable viewing."))
+                findings.append(NarrativeQualityFinding("narration_density_high", segment_id, "Narration density may be too high for comfortable viewing."))
         except ValueError:
             continue
-        if int(item.get("OST") or 0) == 1 and not str(item.get("_segment_id") or ""):
+        if int(item.get("OST") or 0) == 1 and not segment_id:
             findings.append(NarrativeQualityFinding("highlight_story_relevance_unknown", "", "Original-sound highlight is not linked to a Story Beat."))
     return [finding.to_dict() for finding in findings]
 

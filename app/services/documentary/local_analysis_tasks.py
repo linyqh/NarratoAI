@@ -131,10 +131,28 @@ class LocalAnalysisTaskStore:
 
     def _write(self, task: dict) -> None:
         path = self._path(str(task["task_id"]))
-        temporary = path.with_suffix(".tmp")
-        with temporary.open("w", encoding="utf-8") as handle:
-            json.dump(task, handle, ensure_ascii=False, indent=2)
-        temporary.replace(path)
+        # Stream checkpoints and terminal status can arrive concurrently.  A
+        # task-specific fixed ``.tmp`` name lets one writer replace another's
+        # staging file on Windows, so every write gets its own staging path.
+        temporary = path.with_name(f"{path.stem}.{uuid4().hex}.tmp")
+        try:
+            with temporary.open("w", encoding="utf-8") as handle:
+                json.dump(task, handle, ensure_ascii=False, indent=2)
+            for attempt in range(5):
+                try:
+                    temporary.replace(path)
+                    return
+                except PermissionError:
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.01)
+        finally:
+            # replace() consumes the staging path on success; this only clears
+            # a failed write's own uniquely named temporary file.
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     @staticmethod
     def _now() -> str:

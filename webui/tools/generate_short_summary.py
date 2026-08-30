@@ -584,16 +584,19 @@ def finalize_fusion_matching_result(
         "preflight": preflight,
         "renderable": preflight["renderable"],
     }
+    result["active_version_id"] = "original-match"
+    original_version = _fusion_version_entry(
+        version_id="original-match",
+        kind="original_match",
+        item_count=len(finalization.original_script),
+        snapshot={
+            **_fusion_version_snapshot(result),
+            "finalized_script": list(finalization.original_script),
+        },
+    )
+    result["active_version_id"] = "finalized-script"
     result["version_history"] = [
-        _fusion_version_entry(
-            version_id="original-match",
-            kind="original_match",
-            item_count=len(finalization.original_script),
-            snapshot={
-                **_fusion_version_snapshot(result),
-                "finalized_script": list(finalization.original_script),
-            },
-        ),
+        original_version,
         _fusion_version_entry(
             version_id="finalized-script",
             kind="finalized_script",
@@ -617,6 +620,7 @@ def _fusion_version_snapshot(finalization: dict) -> dict:
         "review_decisions",
         "preflight",
         "renderable",
+        "active_version_id",
     )
     payload = {
         field: finalization.get(field, [] if field == "review_decisions" else None)
@@ -785,16 +789,6 @@ def review_fusion_narrative_map(
     )
     finalization["narrative_map"] = reviewed
     versions = list(finalization.get("version_history") or [])
-    versions.append(
-        {
-            "version_id": f"narrative-map-{len(versions) + 1}",
-            "kind": "narrative_map_review",
-            "action": action,
-            "changed_story_beats": list(impact["changed_story_beats"]),
-            "created_at": time.time(),
-        }
-    )
-    finalization["version_history"] = versions
     changes = {"finalization": finalization}
     invalidated = set(impact["invalidates_segment_matches"])
     if invalidated:
@@ -851,6 +845,19 @@ def review_fusion_narrative_map(
         )
         finalization.update({"preflight": preflight, "renderable": preflight["renderable"]})
         changes["renderable"] = finalization["renderable"]
+    version_id = f"narrative-map-{len(versions) + 1}"
+    finalization["active_version_id"] = version_id
+    versions.append(
+        _fusion_version_entry(
+            version_id=version_id,
+            kind="narrative_map_review",
+            item_count=len(finalization.get("finalized_script") or []),
+            snapshot=_fusion_version_snapshot(finalization),
+            action=action,
+            changed_story_beats=list(impact["changed_story_beats"]),
+        )
+    )
+    finalization["version_history"] = versions
     return store.update(task_id, **changes)
 
 
@@ -888,16 +895,8 @@ def approve_fusion_quality_repair(
             entry.update({"status": "repairing", "error_message": f"Creator approved quality repair: {finding_code}"})
         matches.append(entry)
     versions = list(finalization.get("version_history") or [])
-    versions.append(
-        _fusion_version_entry(
-            version_id=f"quality-repair-{len(versions) + 1}",
-            kind="quality_repair",
-            item_count=len(finalization.get("finalized_script") or []),
-            snapshot=_fusion_version_snapshot(finalization),
-            segment_id=str(segment_id),
-            finding_code=str(finding_code),
-        )
-    )
+    version_id = f"quality-repair-{len(versions) + 1}"
+    finalization["active_version_id"] = version_id
     preflight = dict(finalization.get("preflight") or {})
     blockers = list(preflight.get("blockers") or [])
     blockers.append(
@@ -921,12 +920,22 @@ def approve_fusion_quality_repair(
     )
     finalization.update(
         {
-            "version_history": versions,
             "review_decisions": decisions,
             "preflight": preflight,
             "renderable": False,
         }
     )
+    versions.append(
+        _fusion_version_entry(
+            version_id=version_id,
+            kind="quality_repair",
+            item_count=len(finalization.get("finalized_script") or []),
+            snapshot=_fusion_version_snapshot(finalization),
+            segment_id=str(segment_id),
+            finding_code=str(finding_code),
+        )
+    )
+    finalization["version_history"] = versions
     batches = [
         batch for batch in task.get("completed_batches") or []
         if str(batch.get("segment_id") or batch.get("batch_index") or "") != str(segment_id)
@@ -1060,8 +1069,10 @@ def restore_fusion_matching_version(task_id: str, *, version_id: str) -> dict:
         raise ValueError("The selected Fusion version has no restorable review context")
     restored = {**finalization, **_fusion_version_snapshot(snapshot)}
     restored["review_decisions"] = list(snapshot.get("review_decisions") or [])
+    restore_version_id = f"restore-{len(versions) + 1}"
+    restored["active_version_id"] = restore_version_id
     restore_entry = _fusion_version_entry(
-        version_id=f"restore-{len(versions) + 1}",
+        version_id=restore_version_id,
         kind="restored_context",
         item_count=len(restored.get("finalized_script") or []),
         snapshot=_fusion_version_snapshot(restored),
@@ -1343,9 +1354,11 @@ def _start_fusion_matching_runner(
         quality_repair = request.get("quality_repair_request")
         if prior_versions and isinstance(quality_repair, dict):
             finalization["review_decisions"] = prior_decisions
+            output_version_id = f"quality-repair-output-{len(prior_versions) + 1}"
+            finalization["active_version_id"] = output_version_id
             finalization["version_history"] = prior_versions + [
                 _fusion_version_entry(
-                    version_id=f"quality-repair-output-{len(prior_versions) + 1}",
+                    version_id=output_version_id,
                     kind="quality_repair_output",
                     item_count=len(finalization.get("finalized_script") or []),
                     snapshot=_fusion_version_snapshot(finalization),

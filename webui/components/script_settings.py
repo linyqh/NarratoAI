@@ -16,7 +16,11 @@ from webui.tools.generate_script_docu import generate_script_docu
 from app.services.film_vision_fusion import load_visual_evidence_artifact
 from app.services.fusion_script_pipeline import FusionScriptPipeline
 from app.services.documentary.frame_analysis_models import TimeRange
-from app.services.fusion_workspace import locate_fusion_review_item, project_fusion_workspace
+from app.services.fusion_workspace import (
+    locate_fusion_review_item,
+    project_fusion_task_center_details,
+    project_fusion_workspace,
+)
 from app.services.visual_evidence_artifact import build_source_video_identity
 from app.services.visual_evidence_artifact import read_highlight_candidate_intake
 from webui.tools.generate_film_vision_fusion import (
@@ -2628,8 +2632,53 @@ def render_script_buttons(tr, params):
                                         st.error(str(exc))
                     else:
                         st.caption(tr("当前没有待处理的审阅项。"))
-                    with st.expander(tr("Task Center"), expanded=False):
-                        st.json(list_fusion_matching_tasks())
+                    with st.expander(tr("Fusion Matching Task Center"), expanded=False):
+                        task_summaries = list_fusion_matching_tasks()
+                        if not task_summaries:
+                            st.caption(tr("当前没有 Fusion Matching 任务。"))
+                        else:
+                            task_ids = [str(item.get("task_id") or "") for item in task_summaries]
+                            current_task_id = str(
+                                workspace.get("task_center", {}).get("task_id")
+                                or st.session_state.get("fusion_matching_task_id")
+                                or task_ids[0]
+                            )
+                            selected_index = task_ids.index(current_task_id) if current_task_id in task_ids else 0
+                            selected_task_id = st.selectbox(
+                                tr("选择任务"),
+                                task_ids,
+                                index=selected_index,
+                                format_func=lambda task_id: next(
+                                    (
+                                        f"{item.get('status') or 'unknown'} · {task_id}"
+                                        for item in task_summaries
+                                        if str(item.get("task_id") or "") == task_id
+                                    ),
+                                    task_id,
+                                ),
+                                key="fusion_task_center_selection",
+                            )
+                            selected_task = fusion_matching_task_status(selected_task_id)
+                            task_detail = project_fusion_task_center_details(selected_task)
+                            st.json(task_detail)
+                            task_actions = st.columns(3)
+                            if task_actions[0].button(tr("打开此任务"), key="fusion_task_center_open"):
+                                st.session_state["fusion_matching_task_id"] = selected_task_id
+                                st.session_state["fusion_workspace"] = project_fusion_workspace(
+                                    task=selected_task,
+                                    finalization=selected_task.get("finalization") or {},
+                                )
+                                st.rerun()
+                            if task_detail["can_resume"] and task_actions[1].button(
+                                tr("继续任务"), key="fusion_task_center_resume"
+                            ):
+                                resume_fusion_matching_task(selected_task_id)
+                                st.rerun()
+                            if task_detail["can_cancel"] and task_actions[2].button(
+                                tr("取消任务"), key="fusion_task_center_cancel"
+                            ):
+                                cancel_fusion_matching_task(selected_task_id)
+                                st.rerun()
                     workspace_task_id = str(
                         workspace.get("task_center", {}).get("task_id")
                         or st.session_state.get("fusion_matching_task_id")
@@ -2660,6 +2709,10 @@ def render_script_buttons(tr, params):
                     ]
                     if workspace_task_id and restorable_versions:
                         with st.expander(tr("版本比较与恢复"), expanded=False):
+                            if workspace.get("active_version_id"):
+                                st.caption(
+                                    f"{tr('当前生效版本')}: {workspace['active_version_id']}"
+                                )
                             version_ids = [str(item.get("version_id") or "") for item in restorable_versions]
                             if len(version_ids) > 1:
                                 baseline_id = st.selectbox(

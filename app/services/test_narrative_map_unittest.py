@@ -54,6 +54,29 @@ class NarrativeMapTests(unittest.TestCase):
 
         self.assertTrue({"unexplained_temporal_jump", "narration_density_high", "highlight_story_relevance_unknown"}.issubset({item["code"] for item in findings}))
 
+    def test_quality_suggestion_flags_pronouns_without_a_story_beat_subject(self):
+        artifact = build_narrative_map(
+            approved_narration="他立刻离开。",
+            plan_payload={"segments": [{
+                **self._plan()["segments"][0],
+                "active_subject": "",
+            }]},
+            subtitle_evidence="字幕证据",
+            visual_evidence="",
+        )
+
+        findings = evaluate_narrative_quality(
+            artifact,
+            [{
+                "_segment_id": "segment-1",
+                "timestamp": "00:00:00,000-00:00:10,000",
+                "narration": "他立刻离开。",
+                "OST": 0,
+            }],
+        )
+
+        self.assertIn("ambiguous_character_reference", {item["code"] for item in findings})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -206,6 +206,8 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertTrue(result["continuity_report"]["is_renderable"])
         self.assertTrue(result["preflight"]["renderable"])
         self.assertTrue(result["version_history"][1]["snapshot"]["renderable"])
+        self.assertEqual("finalized-script", result["active_version_id"])
+        self.assertEqual("finalized-script", result["version_history"][1]["snapshot"]["active_version_id"])
 
     def test_restore_fusion_version_restores_saved_preflight_and_script(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -245,6 +247,7 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("可恢复版本", restored["finalization"]["finalized_script"][0]["narration"])
         self.assertEqual([], restored["finalization"]["review_decisions"])
         self.assertEqual("restored_context", restored["finalization"]["version_history"][-1]["kind"])
+        self.assertEqual("restore-2", restored["finalization"]["active_version_id"])
 
     def test_background_finalization_requires_a_reason_to_render_with_a_warning(self):
         result = generate_short_summary.finalize_fusion_matching_result(
@@ -306,6 +309,11 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertNotIn("segment-2", updated["matching_snapshot"]["completed_segment_results"])
         self.assertEqual("interrupted", updated["status"])
         self.assertFalse(updated["finalization"]["renderable"])
+        self.assertEqual("narrative-map-1", updated["finalization"]["active_version_id"])
+        self.assertEqual(
+            "applied_draft",
+            updated["finalization"]["version_history"][-1]["snapshot"]["narrative_map"]["approval_status"],
+        )
 
     def test_narrative_map_draft_preview_is_non_mutating_and_requires_current_artifact(self):
         narrative_map = {
@@ -363,6 +371,11 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertNotIn("segment-2", updated["matching_snapshot"]["completed_segment_results"])
         self.assertEqual("interrupted", updated["status"])
         self.assertEqual("quality_repair", updated["finalization"]["version_history"][-1]["kind"])
+        self.assertEqual("quality-repair-1", updated["finalization"]["active_version_id"])
+        self.assertEqual(
+            "quality-repair-1",
+            updated["finalization"]["version_history"][-1]["snapshot"]["active_version_id"],
+        )
 
     def test_creator_can_ignore_and_undo_a_non_blocking_quality_finding(self):
         with tempfile.TemporaryDirectory() as directory:

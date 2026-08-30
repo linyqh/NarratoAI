@@ -66,6 +66,7 @@ def project_fusion_workspace(
     stream_snapshot = task.get("stream_snapshot") if isinstance(task.get("stream_snapshot"), dict) else {}
     return {
         "phase": phase if phase in _PHASES else "not_started",
+        "active_version_id": str(finalization.get("active_version_id") or ""),
         "review_queue": queue,
         "task_center": {
             "task_id": task.get("task_id"),
@@ -81,6 +82,32 @@ def project_fusion_workspace(
             "review_decisions": decisions,
         },
         "versions": list(finalization.get("version_history") or []),
+    }
+
+
+def project_fusion_task_center_details(task: dict[str, Any] | None) -> dict[str, Any]:
+    """Expose bounded matching-task diagnostics without leaking the full request."""
+    task = task or {}
+    stream_snapshot = task.get("stream_snapshot")
+    stream_snapshot = stream_snapshot if isinstance(stream_snapshot, dict) else {}
+    return {
+        "task_id": str(task.get("task_id") or ""),
+        "status": str(task.get("status") or ""),
+        "progress": task.get("progress"),
+        "error_message": str(task.get("error_message") or ""),
+        "failure_category": str(stream_snapshot.get("failure_category") or ""),
+        "failure_diagnostics": stream_snapshot.get("failure_diagnostics") or {},
+        "segment_matches": [
+            {
+                "segment_id": str(item.get("segment_id") or ""),
+                "status": str(item.get("status") or ""),
+                "error_message": str(item.get("error_message") or ""),
+            }
+            for item in task.get("segment_matches") or []
+            if isinstance(item, dict)
+        ],
+        "can_cancel": str(task.get("status") or "") in {"queued", "running"},
+        "can_resume": str(task.get("status") or "") in {"failed", "cancelled", "interrupted"},
     }
 
 

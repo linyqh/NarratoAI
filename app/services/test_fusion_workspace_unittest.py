@@ -3,6 +3,7 @@ import unittest
 from app.services.fusion_workspace import (
     compare_fusion_versions,
     locate_fusion_review_item,
+    project_fusion_task_center_details,
     project_fusion_workspace,
 )
 
@@ -20,10 +21,32 @@ class FusionWorkspaceProjectionTests(unittest.TestCase):
         self.assertEqual("timed_out_after_progress", workspace["task_center"]["failure_category"])
 
     def test_renderable_finalization_projects_an_approved_workspace(self):
-        workspace = project_fusion_workspace(finalization={"renderable": True, "preflight": {}})
+        workspace = project_fusion_workspace(finalization={
+            "renderable": True, "preflight": {}, "active_version_id": "finalized-script"
+        })
 
         self.assertEqual("approved", workspace["phase"])
         self.assertEqual([], workspace["review_queue"])
+        self.assertEqual("finalized-script", workspace["active_version_id"])
+
+    def test_task_center_details_expose_actions_and_bounded_diagnostics(self):
+        detail = project_fusion_task_center_details({
+            "task_id": "task-1",
+            "status": "interrupted",
+            "progress": 0.5,
+            "error_message": "retry needed",
+            "request": {"api_key": "must-not-leak"},
+            "stream_snapshot": {
+                "failure_category": "timed_out_after_progress",
+                "failure_diagnostics": {"last_chunk_at": 1},
+            },
+            "segment_matches": [{"segment_id": "segment-1", "status": "failed"}],
+        })
+
+        self.assertTrue(detail["can_resume"])
+        self.assertFalse(detail["can_cancel"])
+        self.assertEqual("timed_out_after_progress", detail["failure_category"])
+        self.assertNotIn("request", detail)
 
     def test_selected_review_item_resolves_to_its_evidence_window(self):
         location = locate_fusion_review_item(

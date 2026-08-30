@@ -1,7 +1,9 @@
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.services.documentary.local_analysis_tasks import LocalAnalysisTaskRunner, LocalAnalysisTaskStore, estimate_full_film_analysis
 
@@ -86,6 +88,38 @@ class FullFilmEstimateTests(unittest.TestCase):
         self.assertEqual(task["task_id"], summaries[0]["task_id"])
         self.assertTrue(summaries[0]["recoverable"])
         self.assertNotIn("request", summaries[0])
+
+    def test_concurrent_writes_use_distinct_temporary_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            task = store.create({}, {})
+            original_replace = Path.replace
+            errors = []
+            temporary_paths = []
+
+            def synchronized_replace(source, target):
+                if source.suffix == ".tmp":
+                    temporary_paths.append(str(source))
+                return original_replace(source, target)
+
+            def write_status(status):
+                try:
+                    store.update(task["task_id"], status=status)
+                except Exception as exc:  # The assertion below reports writer failures.
+                    errors.append(exc)
+
+            with patch.object(Path, "replace", new=synchronized_replace):
+                writers = [
+                    threading.Thread(target=write_status, args=(status,))
+                    for status in ("running", "failed")
+                ]
+                for writer in writers:
+                    writer.start()
+                for writer in writers:
+                    writer.join(timeout=2)
+
+        self.assertFalse(errors)
+        self.assertEqual(2, len(set(temporary_paths)))
 
 
 if __name__ == "__main__":
