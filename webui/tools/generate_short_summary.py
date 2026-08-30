@@ -1342,6 +1342,85 @@ def restore_fusion_matching_version(task_id: str, *, version_id: str) -> dict:
     )
 
 
+def edit_fusion_timeline_item(
+    task_id: str, *, item_id: int | str, new_timestamp: str
+) -> dict:
+    """Apply one creator timeline edit without leaving its approved Evidence Window."""
+    store = _fusion_matching_task_store()
+    task = store.read(task_id)
+    if str(task.get("status") or "") in {"queued", "running"}:
+        raise ValueError("A running Fusion Matching Task cannot edit the timeline")
+    request = task.get("request") if isinstance(task.get("request"), dict) else {}
+    finalization = dict(task.get("finalization") or {})
+    script = [dict(item) for item in finalization.get("finalized_script") or []]
+    target = next(
+        (item for item in script if str(item.get("_id")) == str(item_id)),
+        None,
+    )
+    if target is None:
+        raise ValueError("The selected Fusion timeline item does not exist")
+    segment_id = str(target.get("_segment_id") or "")
+    plan = request.get("plan_payload") if isinstance(request.get("plan_payload"), dict) else {}
+    segment = next(
+        (
+            item for item in plan.get("segments") or []
+            if isinstance(item, dict) and str(item.get("segment_id") or "") == segment_id
+        ),
+        None,
+    )
+    if segment is None:
+        raise ValueError("The selected timeline item has no approved Segment identity")
+    edited_range = TimeRange.parse(str(new_timestamp or ""))
+    evidence_range = TimeRange.parse(str(segment.get("core_window") or ""))
+    if (
+        edited_range.start_seconds < evidence_range.start_seconds
+        or edited_range.end_seconds > evidence_range.end_seconds
+    ):
+        raise ValueError("Timeline edits cannot expand beyond the approved Evidence Window")
+    target["timestamp"] = str(new_timestamp)
+    context = request.get("finalization_context")
+    context = context if isinstance(context, dict) else {}
+    FusionScriptFinalizer().validate_authored_timeline(
+        script, dict(context.get("source_durations") or {})
+    )
+    warning_reason = str(
+        (finalization.get("preflight") or {}).get("warning_override_reason") or ""
+    )
+    preflight = build_render_preflight(
+        continuity_report=finalization.get("continuity_report") or {},
+        evidence_conflicts=finalization.get("evidence_conflicts") or [],
+        segment_matches=task.get("segment_matches") or [],
+    ).to_dict(warning_reason)
+    versions = list(finalization.get("version_history") or [])
+    version_id = f"timeline-edit-{len(versions) + 1}"
+    finalization.update(
+        {
+            "finalized_script": script,
+            "preflight": preflight,
+            "renderable": bool(preflight.get("renderable")),
+            "active_version_id": version_id,
+        }
+    )
+    versions.append(
+        _fusion_version_entry(
+            version_id=version_id,
+            kind="timeline_edit",
+            item_count=len(script),
+            snapshot=_fusion_version_snapshot(finalization),
+            edited_item_id=str(item_id),
+            segment_id=segment_id,
+        )
+    )
+    finalization["version_history"] = versions
+    return store.update(
+        task_id,
+        finalization=finalization,
+        status="completed",
+        renderable=bool(finalization.get("renderable")),
+        error_message="",
+    )
+
+
 def cancel_fusion_matching_task(task_id: str) -> None:
     _fusion_matching_task_store().request_cancel(task_id)
 

@@ -84,6 +84,16 @@ class FusionScriptFinalizerTests(unittest.TestCase):
                 ],
                 source_durations={"film.mp4": 20.0},
             )
+
+    def test_public_timeline_validation_reuses_finalizer_safety_rules(self):
+        with self.assertRaisesRegex(ValueError, "overlapping ranges"):
+            FusionScriptFinalizer().validate_authored_timeline(
+                [
+                    {"video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000"},
+                    {"video_name": "film.mp4", "timestamp": "00:00:05,000-00:00:12,000"},
+                ],
+                {"film.mp4": 20.0},
+            )
     def test_records_artifact_rejections_even_when_ratio_is_zero(self):
         result = self._finalize(
             script=[{"_id": 1, "video_id": 1, "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "开场", "narration": "开场", "OST": 0}],

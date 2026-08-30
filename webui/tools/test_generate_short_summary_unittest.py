@@ -264,6 +264,55 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("restored_context", restored["finalization"]["version_history"][-1]["kind"])
         self.assertEqual("restore-2", restored["finalization"]["active_version_id"])
 
+    def test_bounded_timeline_edit_creates_version_and_rejects_window_expansion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            task = store.create(
+                {
+                    "plan_payload": {
+                        "segments": [
+                            {"segment_id": "segment-1", "core_window": "00:00:00,000-00:00:20,000"}
+                        ]
+                    },
+                    "finalization_context": {"source_durations": {"film.mp4": 30.0}},
+                },
+                {},
+            )
+            store.update(
+                task["task_id"],
+                status="completed",
+                segment_matches=[{"segment_id": "segment-1", "status": "succeeded"}],
+                finalization={
+                    "active_version_id": "v1",
+                    "finalized_script": [
+                        {
+                            "_id": 1, "_segment_id": "segment-1", "video_name": "film.mp4",
+                            "timestamp": "00:00:05,000-00:00:10,000", "narration": "旁白", "OST": 0,
+                        }
+                    ],
+                    "continuity_report": {"is_renderable": True, "findings": []},
+                    "evidence_conflicts": [],
+                    "preflight": {"blockers": [], "warnings": [], "renderable": True},
+                    "version_history": [],
+                },
+            )
+            with patch.object(generate_short_summary, "_fusion_matching_task_store", return_value=store):
+                edited = generate_short_summary.edit_fusion_timeline_item(
+                    task["task_id"], item_id=1,
+                    new_timestamp="00:00:06,000-00:00:12,000",
+                )
+                with self.assertRaisesRegex(ValueError, "Evidence Window"):
+                    generate_short_summary.edit_fusion_timeline_item(
+                        task["task_id"], item_id=1,
+                        new_timestamp="00:00:06,000-00:00:21,000",
+                    )
+
+        self.assertEqual(
+            "00:00:06,000-00:00:12,000",
+            edited["finalization"]["finalized_script"][0]["timestamp"],
+        )
+        self.assertEqual("timeline_edit", edited["finalization"]["version_history"][-1]["kind"])
+
     def test_background_finalization_requires_a_reason_to_render_with_a_warning(self):
         result = generate_short_summary.finalize_fusion_matching_result(
             matched_plan={

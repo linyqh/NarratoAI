@@ -138,6 +138,14 @@ class FusionScriptFinalizer:
         self._candidate_eligibility = _CandidateEligibilityPolicy()
         self._timeline_policy = _TimelinePolicy()
 
+    def validate_authored_timeline(
+        self,
+        script: list[dict[str, Any]],
+        source_durations: dict[str, float] | None = None,
+    ) -> None:
+        """Validate creator timeline edits through the finalizer's safety policy."""
+        self._validate_authored_timeline(list(script), source_durations or {})
+
     def finalize(
         self,
         request: FinalizationRequest,

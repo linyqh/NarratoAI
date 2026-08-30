@@ -667,33 +667,85 @@ def _stage_matching(project, store) -> None:
 def _stage_review(project, store) -> None:
     st.header("审核工作区")
     _render_narrative_map_checkpoint(project, store)
+    artifacts = project.get("artifact_refs") or {}
+    task_id = str(artifacts.get("fusion_matching_task_id") or "")
+    task = {}
+    if task_id:
+        try:
+            from webui.tools.generate_short_summary import fusion_matching_task_status
+
+            task = fusion_matching_task_status(task_id)
+        except Exception:
+            task = {}
+    finalization = (
+        task.get("finalization")
+        if isinstance(task.get("finalization"), dict)
+        else artifacts.get("finalization") or {}
+    )
+    if not finalization:
+        st.info("完成画面匹配后，审核队列、视频、时间线和证据会在这里联动。")
+        return
+    from app.services.fusion_workspace import (
+        project_fusion_review_context,
+        project_fusion_workspace,
+    )
+
+    workspace = project_fusion_workspace(task=task, finalization=finalization)
+    findings = workspace.get("review_queue") or []
     left, center, right = st.columns([0.85, 1.6, 1.05], gap="medium")
-    findings = project.get("review_findings") or []
+    selected_finding = None
     with left:
         st.subheader("审核队列")
         if findings:
-            st.dataframe(findings, use_container_width=True, hide_index=True)
-            finding_ids = [str(item.get("finding_id") or item.get("code") or index) for index, item in enumerate(findings)]
-            selected = st.selectbox("选择审核项", finding_ids)
-            action = st.selectbox("审核决定", ["acknowledge", "adopt", "ignore", "override"])
-            reason = st.text_input("决定原因（覆盖警告时必填）")
-            if st.button("保存审核决定", disabled=action == "override" and not reason):
-                store.record_review_decision(project["project_id"], finding_id=selected, action=action, reason=reason)
-                st.rerun()
+            selected_index = st.selectbox(
+                "选择审核项",
+                list(range(len(findings))),
+                format_func=lambda index: (
+                    f"{findings[index].get('kind')} · "
+                    f"{findings[index].get('code') or findings[index].get('message') or '待审核'}"
+                ),
+            )
+            selected_finding = findings[selected_index]
+            st.json(
+                {
+                    key: selected_finding.get(key)
+                    for key in ("kind", "code", "message", "severity", "segment_id", "time_range")
+                    if selected_finding.get(key) not in (None, "")
+                },
+                expanded=False,
+            )
+            _render_production_review_actions(
+                project, store, task_id, task, selected_finding
+            )
         else:
             st.success("当前没有待处理审核项")
+        _render_review_undo(project, store, task_id, finalization)
+
+    segment_id = str((selected_finding or {}).get("segment_id") or "")
+    context = project_fusion_review_context(
+        task=task, finalization=finalization, segment_id=segment_id
+    ) if segment_id else {}
     with center:
         st.subheader("视频与时间线")
-        st.info("选择审核项后，视频、时间线和 Story Beat 将同步定位。")
+        if not selected_finding:
+            st.info("选择审核项后，视频、时间线和 Story Beat 将同步定位。")
+        elif not segment_id:
+            st.warning("该问题没有可靠的 Segment 身份，已禁止猜测定位到其他画面。")
+        else:
+            _render_synchronized_video(project, finalization, context)
+            if context.get("timeline_items"):
+                st.dataframe(context["timeline_items"], use_container_width=True, hide_index=True)
+                _render_timeline_editor(project, store, task_id, context)
     with right:
         st.subheader("证据与版本")
-        st.json(
-            {
-                "active_version_id": project.get("active_version_id"),
-                "review_decisions": project.get("review_decisions") or [],
-            },
-            expanded=False,
-        )
+        if context:
+            st.markdown("**Story Beat**")
+            st.json(context.get("story_beat") or {}, expanded=False)
+            st.markdown("**Subtitle Evidence**")
+            st.text(context.get("subtitle_evidence") or "当前范围没有可定位字幕证据")
+            st.markdown("**Visual Evidence**")
+            st.text(context.get("visual_evidence") or "当前范围没有可定位视觉证据")
+        _render_version_controls(project, store, task_id, finalization)
 
 
 def _render_narrative_map_checkpoint(project: dict, store: FusionProjectStore) -> None:
@@ -770,6 +822,215 @@ def _apply_narrative_map_review(
         st.rerun()
     except Exception as error:
         st.error(f"Narrative Map 审核未应用：{error}")
+
+
+def _render_production_review_actions(
+    project: dict,
+    store: FusionProjectStore,
+    task_id: str,
+    task: dict,
+    finding: dict,
+) -> None:
+    kind = str(finding.get("kind") or "")
+    segment_id = str(finding.get("segment_id") or "")
+    code = str(finding.get("code") or "")
+    try:
+        if kind == "evidence_conflict" and finding.get("conflict_key"):
+            if st.button("确认已查看证据冲突", use_container_width=True):
+                from webui.tools.generate_short_summary import acknowledge_fusion_evidence_conflict
+
+                updated = acknowledge_fusion_evidence_conflict(
+                    task_id, conflict_key=str(finding["conflict_key"])
+                )
+                _sync_matching_review(project, store, task_id, updated)
+        elif kind == "quality" and segment_id and code:
+            actions = st.columns(2)
+            if actions[0].button("采纳并定向修复", use_container_width=True):
+                from webui.tools.generate_short_summary import approve_fusion_quality_repair
+
+                updated = approve_fusion_quality_repair(
+                    task_id, segment_id=segment_id, finding_code=code
+                )
+                _sync_matching_review(project, store, task_id, updated)
+            if actions[1].button("忽略建议", use_container_width=True):
+                from webui.tools.generate_short_summary import ignore_fusion_quality_finding
+
+                updated = ignore_fusion_quality_finding(
+                    task_id, segment_id=segment_id, finding_code=code
+                )
+                _sync_matching_review(project, store, task_id, updated)
+        else:
+            reason = st.text_input("审核备注", key=f"review-note-{code}-{segment_id}")
+            if st.button("记录已查看", use_container_width=True):
+                store.record_review_decision(
+                    project["project_id"],
+                    finding_id=str(finding.get("finding_id") or code),
+                    action="acknowledge",
+                    reason=reason,
+                )
+                st.rerun()
+    except Exception as error:
+        st.error(f"审核操作未应用：{error}")
+
+
+def _sync_matching_review(
+    project: dict, store: FusionProjectStore, task_id: str, task: dict
+) -> None:
+    store.sync_admitted_matching_state(
+        project["project_id"], task_id=task_id,
+        finalization=task.get("finalization") or {},
+    )
+    st.rerun()
+
+
+def _render_review_undo(
+    project: dict, store: FusionProjectStore, task_id: str, finalization: dict
+) -> None:
+    decisions = list(finalization.get("review_decisions") or [])
+    local_decisions = [
+        item for item in project.get("review_decisions") or []
+        if item.get("status") == "active"
+    ]
+    if not decisions and not local_decisions:
+        return
+    with st.expander("审核历史与撤销"):
+        for index, decision in enumerate(decisions):
+            if not isinstance(decision, dict):
+                continue
+            label = (
+                f"{decision.get('kind') or 'review'} · "
+                f"{decision.get('action') or ''} · {decision.get('code') or decision.get('segment_id') or ''}"
+            )
+            st.caption(label)
+            if st.button("撤销", key=f"undo-production-{index}-{decision.get('decision_id')}"):
+                try:
+                    kind = decision.get("kind")
+                    action = decision.get("action")
+                    if kind == "quality" and action == "ignored":
+                        from webui.tools.generate_short_summary import undo_fusion_quality_ignore
+
+                        updated = undo_fusion_quality_ignore(
+                            task_id, decision_id=decision["decision_id"]
+                        )
+                    elif kind == "evidence_conflict" and action == "acknowledged":
+                        from webui.tools.generate_short_summary import undo_fusion_evidence_conflict_acknowledgement
+
+                        updated = undo_fusion_evidence_conflict_acknowledgement(
+                            task_id, decision_id=decision["decision_id"]
+                        )
+                    elif kind == "preflight" and action == "warning_overridden":
+                        from webui.tools.generate_short_summary import undo_fusion_render_warning_override
+
+                        updated = undo_fusion_render_warning_override(
+                            task_id, decision_id=decision["decision_id"]
+                        )
+                    else:
+                        raise ValueError("该审核决定当前不能撤销")
+                    _sync_matching_review(project, store, task_id, updated)
+                except Exception as error:
+                    st.error(f"无法撤销：{error}")
+        for decision in local_decisions:
+            st.caption(f"project review · {decision.get('action')} · {decision.get('finding_id')}")
+            if st.button("撤销", key=f"undo-local-{decision['decision_id']}"):
+                store.undo_review_decision(project["project_id"], decision["decision_id"])
+                st.rerun()
+
+
+def _render_synchronized_video(project: dict, finalization: dict, context: dict) -> None:
+    from app.services.documentary.frame_analysis_models import TimeRange
+
+    segment_id = str(context.get("segment_id") or "")
+    timeline_item = next(
+        (
+            item for item in finalization.get("finalized_script") or []
+            if isinstance(item, dict) and str(item.get("_segment_id") or "") == segment_id
+        ),
+        None,
+    )
+    if timeline_item is None:
+        st.warning("该审核项没有可验证的时间线条目，未自动跳转视频。")
+        return
+    video_name = str(timeline_item.get("video_name") or "")
+    source = next(
+        (
+            item for item in project.get("source_video_sequence") or []
+            if video_name
+            and video_name in {str(item.get("title") or ""), Path(str(item.get("path") or "")).name}
+        ),
+        None,
+    )
+    if source is None or not source.get("available"):
+        st.warning("无法按来源身份定位视频；请重新连接对应素材，系统不会回退到其他影片。")
+        return
+    time_range = str(context.get("time_range") or timeline_item.get("timestamp") or "")
+    try:
+        start_time = int(TimeRange.parse(time_range).start_seconds)
+    except ValueError:
+        st.warning("该审核项的时间范围无效，未自动跳转视频。")
+        return
+    st.video(source["path"], start_time=start_time)
+    st.caption(f"来源：{video_name} · 定位：{time_range} · Segment：{segment_id}")
+
+
+def _render_timeline_editor(
+    project: dict, store: FusionProjectStore, task_id: str, context: dict
+) -> None:
+    if not task_id:
+        return
+    items = context.get("timeline_items") or []
+    ids = [item.get("_id") for item in items if item.get("_id") is not None]
+    if not ids:
+        return
+    with st.expander("受限时间线调整"):
+        item_id = st.selectbox("时间线条目", ids)
+        selected = next(item for item in items if item.get("_id") == item_id)
+        timestamp = st.text_input(
+            "新时间范围",
+            value=str(selected.get("timestamp") or ""),
+            key=f"timeline-edit-{task_id}-{item_id}",
+        )
+        st.caption("新范围必须留在该 Segment 已批准的 Evidence Window 内，并重新通过时间线与 Preflight 校验。")
+        if st.button("验证并应用时间线调整", type="primary"):
+            try:
+                from webui.tools.generate_short_summary import edit_fusion_timeline_item
+
+                updated = edit_fusion_timeline_item(
+                    task_id, item_id=item_id, new_timestamp=timestamp
+                )
+                _sync_matching_review(project, store, task_id, updated)
+            except Exception as error:
+                st.error(f"时间线调整未应用：{error}")
+
+
+def _render_version_controls(
+    project: dict, store: FusionProjectStore, task_id: str, finalization: dict
+) -> None:
+    versions = [item for item in finalization.get("version_history") or [] if item.get("version_id")]
+    st.caption(f"当前版本：{project.get('active_version_id') or '无'}")
+    if not task_id or not versions:
+        return
+    with st.expander("版本比较与恢复"):
+        ids = [str(item["version_id"]) for item in versions]
+        baseline = st.selectbox("基准版本", ids, index=0)
+        candidate = st.selectbox("候选版本", ids, index=len(ids) - 1)
+        compare_col, restore_col = st.columns(2)
+        if compare_col.button("比较版本", use_container_width=True):
+            from webui.tools.generate_short_summary import compare_fusion_matching_versions
+
+            st.json(
+                compare_fusion_matching_versions(
+                    task_id, baseline_version_id=baseline, candidate_version_id=candidate
+                ),
+                expanded=False,
+            )
+        if restore_col.button("恢复候选版本", use_container_width=True):
+            try:
+                from webui.tools.generate_short_summary import restore_fusion_matching_version
+
+                updated = restore_fusion_matching_version(task_id, version_id=candidate)
+                _sync_matching_review(project, store, task_id, updated)
+            except Exception as error:
+                st.error(f"无法恢复版本：{error}")
 
 
 def _stage_output(project, store) -> None:
