@@ -822,21 +822,30 @@ def project_projection(project: dict[str, Any]) -> dict[str, Any]:
     ]
     open_reviews = [item for item in findings if item.get("status", "open") == "open"]
     if project.get("trash_state"):
-        status, next_action = "trashed", "Restore project"
+        status, next_action = "trashed", "恢复项目"
     elif project.get("archive_state"):
-        status, next_action = "archived", "Unarchive project"
+        status, next_action = "archived", "取消归档"
     elif open_blockers:
-        status, next_action = "blocked", "Resolve review blocker"
+        status, next_action = "blocked", "解决审核阻断项"
     elif any(task.get("status") in {"queued", "running", "rendering"} for task in tasks):
-        status, next_action = "running", "View running task"
+        status, next_action = "running", "查看运行任务"
+    elif any(task.get("status") == "interrupted" for task in tasks):
+        status, next_action = "interrupted", "继续中断任务"
+    elif (
+        project.get("source_video_sequence")
+        and not any(source.get("available") for source in project.get("source_video_sequence") or [])
+    ):
+        status, next_action = "source_offline", "重新连接源视频"
+    elif project.get("stale_task_results"):
+        status, next_action = "stale_result", "检查过期任务结果"
     elif open_reviews:
-        status, next_action = "waiting_for_review", "Continue review"
+        status, next_action = "waiting_for_review", "继续审核"
     elif project.get("render_outcomes"):
-        status, next_action = "completed", "Open latest render"
+        status, next_action = "completed", "打开最新成片"
     elif project.get("active_version_id"):
-        status, next_action = "ready_to_render", "Run Render Preflight"
+        status, next_action = "ready_to_render", "运行渲染前检查"
     else:
-        status, next_action = "draft", "Continue setup"
+        status, next_action = "draft", "继续项目设置"
     return {
         "project_id": project.get("project_id"),
         "name": project.get("name"),

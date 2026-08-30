@@ -43,7 +43,7 @@ class FusionProjectStoreTests(unittest.TestCase):
         projection = project_projection(project)
 
         self.assertEqual("blocked", projection["status"])
-        self.assertEqual("Resolve review blocker", projection["next_action"])
+        self.assertEqual("解决审核阻断项", projection["next_action"])
 
     def test_task_result_with_old_input_version_becomes_stale(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -373,6 +373,29 @@ class FusionProjectStoreTests(unittest.TestCase):
                 store.override_render_warnings(project["project_id"], reason="不能覆盖")
 
         self.assertTrue(overridden["artifact_refs"]["finalization"]["preflight"]["renderable"])
+
+    def test_project_projection_covers_creator_facing_state_matrix(self):
+        base = {
+            "project_id": "project1", "name": "状态", "trash_state": None,
+            "archive_state": None, "review_findings": [], "task_refs": [],
+            "render_outcomes": [], "active_stage": "setup", "active_version_id": "",
+            "source_video_sequence": [], "stale_task_results": [],
+        }
+        cases = [
+            ({}, "draft"),
+            ({"task_refs": [{"status": "running"}]}, "running"),
+            ({"task_refs": [{"status": "interrupted"}]}, "interrupted"),
+            ({"review_findings": [{"severity": "warning", "status": "open"}]}, "waiting_for_review"),
+            ({"active_version_id": "v1"}, "ready_to_render"),
+            ({"render_outcomes": [{"outcome_id": "o1"}]}, "completed"),
+            ({"source_video_sequence": [{"available": False}]}, "source_offline"),
+            ({"stale_task_results": [{"task_id": "old"}]}, "stale_result"),
+            ({"review_findings": [{"severity": "blocker", "status": "open"}], "task_refs": [{"status": "running"}]}, "blocked"),
+        ]
+
+        for changes, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(expected, project_projection({**base, **changes})["status"])
 
 
 if __name__ == "__main__":

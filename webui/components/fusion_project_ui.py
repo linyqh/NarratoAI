@@ -30,6 +30,20 @@ STAGE_LABELS = {
     "output": "输出",
 }
 
+STATUS_LABELS = {
+    "draft": "草稿",
+    "running": "处理中",
+    "interrupted": "已中断",
+    "waiting_for_review": "等待审核",
+    "blocked": "已阻断",
+    "ready_to_render": "可渲染",
+    "completed": "已完成",
+    "source_offline": "素材离线",
+    "stale_result": "存在过期结果",
+    "archived": "已归档",
+    "trashed": "回收站",
+}
+
 
 def project_store() -> FusionProjectStore:
     return FusionProjectStore(Path(utils.storage_dir("fusion_projects", create=True)))
@@ -56,7 +70,7 @@ def _theme() -> None:
         .stButton > button p { color:inherit; }
         .stButton > button:hover { border-color:#5d8ff4; color:#8bb2ff; }
         .stButton > button:disabled { background:#11151a; color:#697381; border-color:#252b33; }
-        .stButton > button[kind="primary"] { background:#4f83f1; color:white; border-color:#4f83f1; }
+        .stButton > button[kind="primary"] { background:#3568d4; color:white; border-color:#3568d4; }
         [data-testid="stTextInput"] input, [data-testid="stNumberInput"] input,
         [data-baseweb="select"] > div { background:#11151a; color:#eef2f8; border-color:#353d48; }
         </style>
@@ -194,7 +208,7 @@ def _render_library() -> None:
                 "<div class='fusion-card'>"
                 f"<div class='fusion-kicker'>FILM VISION FUSION</div>"
                 f"<div class='fusion-title'>{escape(str(project['name']))}</div>"
-                f"<span class='fusion-status'>{escape(str(projection['status']))}</span>"
+                f"<span class='fusion-status'>{escape(STATUS_LABELS.get(str(projection['status']), str(projection['status'])))}</span>"
                 f"<div class='fusion-meta'>阶段：{escape(str(STAGE_LABELS.get(projection['active_stage'], projection['active_stage'])))}<br>"
                 f"待审核：{projection['review_count']} · 运行任务：{projection['running_task_count']}<br>"
                 f"下一步：{escape(str(projection['next_action']))}</div></div>",
