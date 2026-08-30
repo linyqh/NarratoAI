@@ -140,6 +140,11 @@ def local_visual_analysis_status(task_id: str) -> dict:
     return LocalAnalysisTaskStore(Path(utils.task_dir("visual_analysis"))).read(task_id)
 
 
+def list_local_visual_analysis_tasks(limit: int = 20) -> list[dict]:
+    """List durable local visual-analysis task summaries for the shared Task Center."""
+    return LocalAnalysisTaskStore(Path(utils.task_dir("visual_analysis"))).list_tasks(limit=limit)
+
+
 def find_local_visual_analysis(video_path: str, analysis_signature: str = "") -> dict | None:
     store = LocalAnalysisTaskStore(Path(utils.task_dir("visual_analysis")))
     return store.find_latest_for_source(build_source_video_identity(video_path), analysis_signature)

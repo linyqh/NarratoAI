@@ -4,6 +4,7 @@ from app.services.fusion_workspace import (
     compare_fusion_versions,
     locate_fusion_review_item,
     project_fusion_review_context,
+    project_fusion_task_center,
     project_fusion_task_center_details,
     project_fusion_workspace,
 )
@@ -48,6 +49,20 @@ class FusionWorkspaceProjectionTests(unittest.TestCase):
         self.assertFalse(detail["can_cancel"])
         self.assertEqual("timed_out_after_progress", detail["failure_category"])
         self.assertNotIn("request", detail)
+
+    def test_task_center_combines_visual_and_matching_tasks_by_latest_activity(self):
+        tasks = project_fusion_task_center(
+            visual_analysis_tasks=[{
+                "task_id": "visual-1", "status": "running", "updated_at": "2026-01-02T00:00:00+00:00"
+            }],
+            matching_tasks=[{
+                "task_id": "match-1", "status": "failed", "updated_at": "2026-01-03T00:00:00+00:00"
+            }],
+        )
+
+        self.assertEqual(["fusion_matching", "visual_analysis"], [item["kind"] for item in tasks])
+        self.assertTrue(tasks[0]["can_resume"])
+        self.assertTrue(tasks[1]["can_cancel"])
 
     def test_selected_review_item_resolves_to_its_evidence_window(self):
         location = locate_fusion_review_item(

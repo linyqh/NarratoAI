@@ -114,6 +114,35 @@ def project_fusion_task_center_details(task: dict[str, Any] | None) -> dict[str,
     }
 
 
+def project_fusion_task_center(
+    *, visual_analysis_tasks: list[dict[str, Any]] | None, matching_tasks: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
+    """Combine durable Fusion task summaries into one action-oriented Task Center list."""
+    tasks = []
+    for kind, entries in (
+        ("visual_analysis", visual_analysis_tasks or []),
+        ("fusion_matching", matching_tasks or []),
+    ):
+        for entry in entries:
+            if not isinstance(entry, dict) or not str(entry.get("task_id") or ""):
+                continue
+            status = str(entry.get("status") or "")
+            tasks.append(
+                {
+                    "kind": kind,
+                    "task_id": str(entry.get("task_id") or ""),
+                    "status": status,
+                    "progress": entry.get("progress"),
+                    "message": str(entry.get("message") or ""),
+                    "updated_at": str(entry.get("updated_at") or ""),
+                    "failure_category": str(entry.get("failure_category") or ""),
+                    "can_cancel": status in {"queued", "running"},
+                    "can_resume": status in {"failed", "interrupted", "cancelled"},
+                }
+            )
+    return sorted(tasks, key=lambda item: item["updated_at"], reverse=True)
+
+
 def project_fusion_review_context(
     *, task: dict[str, Any] | None, finalization: dict[str, Any] | None, segment_id: str
 ) -> dict[str, Any]:

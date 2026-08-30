@@ -19,6 +19,7 @@ from app.services.documentary.frame_analysis_models import TimeRange
 from app.services.fusion_workspace import (
     locate_fusion_review_item,
     project_fusion_review_context,
+    project_fusion_task_center,
     project_fusion_task_center_details,
     project_fusion_workspace,
 )
@@ -29,6 +30,7 @@ from webui.tools.generate_film_vision_fusion import (
     collect_visual_evidence,
     estimate_local_visual_analysis,
     find_local_visual_analysis,
+    list_local_visual_analysis_tasks,
     list_local_visual_evidence_artifacts,
     local_visual_analysis_status,
     resume_local_visual_analysis,
@@ -2672,52 +2674,82 @@ def render_script_buttons(tr, params):
                                         st.error(str(exc))
                     else:
                         st.caption(tr("当前没有待处理的审阅项。"))
-                    with st.expander(tr("Fusion Matching Task Center"), expanded=False):
-                        task_summaries = list_fusion_matching_tasks()
+                    with st.expander(tr("Task Center"), expanded=False):
+                        task_summaries = project_fusion_task_center(
+                            visual_analysis_tasks=list_local_visual_analysis_tasks(),
+                            matching_tasks=list_fusion_matching_tasks(),
+                        )
                         if not task_summaries:
-                            st.caption(tr("当前没有 Fusion Matching 任务。"))
+                            st.caption(tr("当前没有本地 Fusion 任务。"))
                         else:
-                            task_ids = [str(item.get("task_id") or "") for item in task_summaries]
+                            task_options = [
+                                f"{item['kind']}:{item['task_id']}" for item in task_summaries
+                            ]
                             current_task_id = str(
                                 workspace.get("task_center", {}).get("task_id")
                                 or st.session_state.get("fusion_matching_task_id")
-                                or task_ids[0]
+                                or ""
                             )
-                            selected_index = task_ids.index(current_task_id) if current_task_id in task_ids else 0
-                            selected_task_id = st.selectbox(
+                            selected_index = next(
+                                (
+                                    index for index, item in enumerate(task_summaries)
+                                    if item["task_id"] == current_task_id
+                                ),
+                                0,
+                            )
+                            selected_option = st.selectbox(
                                 tr("选择任务"),
-                                task_ids,
+                                task_options,
                                 index=selected_index,
-                                format_func=lambda task_id: next(
+                                format_func=lambda option: next(
                                     (
-                                        f"{item.get('status') or 'unknown'} · {task_id}"
+                                        f"{item['kind']} · {item['status'] or 'unknown'} · {item['task_id']}"
                                         for item in task_summaries
-                                        if str(item.get("task_id") or "") == task_id
+                                        if f"{item['kind']}:{item['task_id']}" == option
                                     ),
-                                    task_id,
+                                    option,
                                 ),
                                 key="fusion_task_center_selection",
                             )
-                            selected_task = fusion_matching_task_status(selected_task_id)
+                            selected_summary = next(
+                                item for item in task_summaries
+                                if f"{item['kind']}:{item['task_id']}" == selected_option
+                            )
+                            selected_task_id = selected_summary["task_id"]
+                            selected_kind = selected_summary["kind"]
+                            selected_task = (
+                                local_visual_analysis_status(selected_task_id)
+                                if selected_kind == "visual_analysis"
+                                else fusion_matching_task_status(selected_task_id)
+                            )
                             task_detail = project_fusion_task_center_details(selected_task)
                             st.json(task_detail)
                             task_actions = st.columns(3)
                             if task_actions[0].button(tr("打开此任务"), key="fusion_task_center_open"):
-                                st.session_state["fusion_matching_task_id"] = selected_task_id
-                                st.session_state["fusion_workspace"] = project_fusion_workspace(
-                                    task=selected_task,
-                                    finalization=selected_task.get("finalization") or {},
-                                )
+                                if selected_kind == "visual_analysis":
+                                    st.session_state["fusion_visual_task_id"] = selected_task_id
+                                else:
+                                    st.session_state["fusion_matching_task_id"] = selected_task_id
+                                    st.session_state["fusion_workspace"] = project_fusion_workspace(
+                                        task=selected_task,
+                                        finalization=selected_task.get("finalization") or {},
+                                    )
                                 st.rerun()
                             if task_detail["can_resume"] and task_actions[1].button(
                                 tr("继续任务"), key="fusion_task_center_resume"
                             ):
-                                resume_fusion_matching_task(selected_task_id)
+                                if selected_kind == "visual_analysis":
+                                    resume_local_visual_analysis(selected_task_id)
+                                else:
+                                    resume_fusion_matching_task(selected_task_id)
                                 st.rerun()
                             if task_detail["can_cancel"] and task_actions[2].button(
                                 tr("取消任务"), key="fusion_task_center_cancel"
                             ):
-                                cancel_fusion_matching_task(selected_task_id)
+                                if selected_kind == "visual_analysis":
+                                    cancel_local_visual_analysis(selected_task_id)
+                                else:
+                                    cancel_fusion_matching_task(selected_task_id)
                                 st.rerun()
                     workspace_task_id = str(
                         workspace.get("task_center", {}).get("task_id")
