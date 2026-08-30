@@ -5,6 +5,7 @@ from __future__ import annotations
 from html import escape
 from pathlib import Path
 import json
+from uuid import uuid4
 
 import streamlit as st
 
@@ -424,7 +425,20 @@ def _stage_narration(project, store) -> None:
         st.warning("需要先完成或导入视觉证据。现有证据不会因页面切换而丢失。")
     sources = project.get("source_video_sequence") or []
     subtitle_paths = [source.get("subtitle_path") for source in sources if source.get("subtitle_path")]
-    if st.button("生成解说词", type="primary", disabled=not subtitle_paths):
+    narration_start = store.task_start_projection(
+        project["project_id"], kind="narration_generation"
+    )
+    if narration_start["reason"]:
+        st.caption(narration_start["reason"])
+    if st.button(
+        "生成解说词", type="primary",
+        disabled=not subtitle_paths or not narration_start["allowed"],
+    ):
+        task_id = f"narration{uuid4().hex}"
+        store.attach_task(
+            project["project_id"], task_id=task_id, kind="narration_generation",
+            input_version_id=project.get("active_version_id") or "setup", status="running",
+        )
         try:
             from webui.tools.generate_short_summary import (
                 FILM_TV_PROMPT_CATEGORY,
@@ -450,8 +464,17 @@ def _stage_narration(project, store) -> None:
                     subtitle_content=result["subtitle_content"],
                 )
                 project = store.update(project["project_id"], artifact_refs=artifacts)
+                store.update_task_summary(
+                    project["project_id"], task_id, status="completed", progress=100,
+                    message="解说词已生成并保存为待审核草稿",
+                )
                 st.rerun()
         except Exception as error:
+            store.update_task_summary(
+                project["project_id"], task_id, status="failed",
+                error_message=str(error), failure_category=_failure_category(error),
+                recoverable=True,
+            )
             st.error(f"解说词生成未完成：{error}")
     draft = st.text_area("解说词草稿", value=str(artifacts.get("narration_draft") or artifacts.get("narration") or ""), height=280)
     if st.button("保存为 Content Draft", use_container_width=True):
@@ -473,16 +496,177 @@ def _stage_narration(project, store) -> None:
 
 def _stage_matching(project, store) -> None:
     st.header("画面匹配")
-    attempts = (project.get("artifact_refs") or {}).get("fusion_plan_attempts") or []
+    artifacts = dict(project.get("artifact_refs") or {})
+    narration = str(artifacts.get("narration") or "")
+    if not narration:
+        st.warning("请先在“解说词与 Narrative Map”阶段应用解说词草稿。")
+        return
+    plan_store = _plan_attempt_store(project["project_id"])
+    attempts = plan_store.list_attempts()
     if attempts:
-        st.dataframe(attempts, use_container_width=True, hide_index=True)
-    else:
-        st.info("生成 Fusion Segment Plan 后，将在这里完成审核、批准和分段匹配。")
+        st.caption(f"已保存 {len(attempts)} 次 Plan Attempt；失败输出不会覆盖成功版本。")
+        with st.expander("Plan Attempt 诊断"):
+            st.dataframe(
+                [
+                    {
+                        "类型": item.get("kind"), "状态": item.get("status"),
+                        "字符数": item.get("received_characters"),
+                        "问题数": len(item.get("findings") or []),
+                        "时间": item.get("updated_at"),
+                    }
+                    for item in attempts
+                ],
+                use_container_width=True, hide_index=True,
+            )
+    plan_start = store.task_start_projection(project["project_id"], kind="fusion_plan")
+    stream = st.empty()
+    if st.button(
+        "生成 Fusion Segment Plan", type="primary",
+        disabled=not plan_start["allowed"],
+    ):
+        plan_task_id = f"fusionplan{uuid4().hex}"
+        store.attach_task(
+            project["project_id"], task_id=plan_task_id, kind="fusion_plan",
+            input_version_id=project.get("active_version_id") or "", status="running",
+        )
+        try:
+            from webui.tools.generate_short_summary import create_fusion_segment_plan
+
+            analyzer, provider, model = _text_analyzer()
+            plan = create_fusion_segment_plan(
+                analyzer=analyzer,
+                short_name=project["name"],
+                plot_analysis=str(artifacts.get("plot_analysis") or ""),
+                subtitle_content=str(artifacts.get("subtitle_content") or ""),
+                narration_copy=narration,
+                narration_language=str((project.get("project_settings") or {}).get("output_language") or "简体中文（中国）"),
+                drama_genre=str((project.get("project_settings") or {}).get("commentary_style") or "剧情解说"),
+                visual_evidence=str(artifacts.get("visual_evidence") or ""),
+                highlight_candidates=str(artifacts.get("highlight_candidates") or ""),
+                temperature=0.3,
+                stream_callback=lambda event: stream.info(
+                    f"模型正在生成计划：{str((event or {}).get('text') or '')[-600:]}"
+                ),
+                attempt_store=plan_store,
+                attempt_context={
+                    "provider": provider, "model": model,
+                    "input_fingerprint": project.get("active_version_id") or "setup",
+                },
+            )
+            artifacts["fusion_segment_plan_draft"] = plan
+            artifacts["fusion_plan_attempts"] = _safe_attempt_summaries(plan_store)
+            project = store.update(project["project_id"], artifact_refs=artifacts)
+            store.update_task_summary(
+                project["project_id"], plan_task_id, status="completed", progress=100,
+                message="分段计划已生成，等待审核批准",
+            )
+            st.rerun()
+        except Exception as error:
+            recovery = getattr(error, "to_dict", lambda: {})()
+            artifacts["fusion_plan_attempts"] = _safe_attempt_summaries(plan_store)
+            store.update(project["project_id"], artifact_refs=artifacts)
+            store.update_task_summary(
+                project["project_id"], plan_task_id, status="failed",
+                error_message=str(error), failure_category=_failure_category(error),
+                recoverable=True,
+            )
+            st.error(str(recovery.get("message") or f"分段计划未完成：{error}"))
+            if recovery.get("findings"):
+                st.dataframe(recovery["findings"], use_container_width=True, hide_index=True)
+
+    draft_plan = artifacts.get("fusion_segment_plan_draft") or artifacts.get("fusion_segment_plan")
+    if draft_plan:
+        editor = st.text_area(
+            "结构化计划编辑器",
+            value=json.dumps(draft_plan, ensure_ascii=False, indent=2),
+            height=320,
+            key=f"plan-editor-{project['project_id']}-{project.get('active_version_id')}",
+        )
+        if st.button("验证并批准 Plan", type="primary"):
+            try:
+                from app.services.fusion_script_pipeline import FusionScriptPipeline
+                from webui.tools.generate_short_summary import approve_fusion_segment_plan
+
+                edited = json.loads(editor)
+                pipeline = FusionScriptPipeline()
+                validation = pipeline.validate_plan_findings(narration, edited)
+                if not validation.is_valid:
+                    raise ValueError("；".join(item.message for item in validation.findings))
+                continuity = pipeline.validate_continuity(narration, edited)
+                if not continuity.is_renderable:
+                    raise ValueError("；".join(item.message for item in continuity.findings))
+                identity = _project_source_identity(project)
+                approval = approve_fusion_segment_plan(
+                    plan_payload=edited, narration_copy=narration, source_identity=identity
+                )
+                artifacts.update(
+                    fusion_segment_plan=edited,
+                    fusion_segment_plan_draft=edited,
+                    fusion_plan_approval=approval,
+                )
+                store.update(project["project_id"], artifact_refs=artifacts)
+                st.success("Plan 已通过结构与连续性校验并完成批准。")
+                st.rerun()
+            except Exception as error:
+                st.error(f"Plan 仍不能批准：{error}")
+
+    approved_plan = artifacts.get("fusion_segment_plan")
+    approval = artifacts.get("fusion_plan_approval")
+    matching_projection = store.task_start_projection(
+        project["project_id"], kind="fusion_matching"
+    )
+    if st.button(
+        "开始分段画面匹配", type="primary",
+        disabled=not approved_plan or not approval or not matching_projection["allowed"],
+    ):
+        try:
+            from app.utils.video_processor import VideoProcessor
+            from webui.tools.generate_short_summary import start_fusion_matching_task
+
+            sources = [source for source in project.get("source_video_sequence") or [] if source.get("available")]
+            source_identity = _project_source_identity(project)
+            source_durations = {
+                Path(source["path"]).name: VideoProcessor(source["path"]).duration
+                for source in sources
+            }
+            task_id = start_fusion_matching_task(
+                short_name=project["name"], narration_copy=narration,
+                narration_language=str((project.get("project_settings") or {}).get("output_language") or "简体中文（中国）"),
+                drama_genre=str((project.get("project_settings") or {}).get("commentary_style") or "剧情解说"),
+                original_sound_ratio=int((project.get("project_settings") or {}).get("original_sound_ratio") or 30),
+                subtitle_content=str(artifacts.get("subtitle_content") or ""),
+                visual_evidence=str(artifacts.get("visual_evidence") or ""),
+                highlight_candidates=str(artifacts.get("highlight_candidates") or ""),
+                plan_payload=approved_plan, plan_approval=approval, temperature=0.3,
+                source_identity=source_identity,
+                finalization_context={
+                    "candidate_payloads": artifacts.get("highlight_candidate_items") or [],
+                    "candidate_rejections": artifacts.get("highlight_candidate_rejections") or [],
+                    "original_sound_ratio": int((project.get("project_settings") or {}).get("original_sound_ratio") or 30),
+                    "source_identity": source_identity,
+                    "source_durations": source_durations,
+                },
+            )
+            store.attach_task(
+                project["project_id"], task_id=task_id, kind="fusion_matching",
+                input_version_id=project.get("active_version_id") or "", status="queued",
+            )
+            st.rerun()
+        except Exception as error:
+            st.error(f"无法开始画面匹配：{error}")
+
+    matching = next(
+        (task for task in reversed(project.get("task_refs") or []) if task.get("kind") == "fusion_matching"),
+        None,
+    )
+    if matching:
+        _render_matching_task(project, store, matching)
     st.caption("未经验证和 Plan Approval 的计划不能开始匹配。")
 
 
 def _stage_review(project, store) -> None:
     st.header("审核工作区")
+    _render_narrative_map_checkpoint(project, store)
     left, center, right = st.columns([0.85, 1.6, 1.05], gap="medium")
     findings = project.get("review_findings") or []
     with left:
@@ -512,6 +696,82 @@ def _stage_review(project, store) -> None:
         )
 
 
+def _render_narrative_map_checkpoint(project: dict, store: FusionProjectStore) -> None:
+    artifacts = project.get("artifact_refs") or {}
+    finalization = artifacts.get("finalization") if isinstance(artifacts.get("finalization"), dict) else {}
+    narrative_map = finalization.get("narrative_map") if isinstance(finalization.get("narrative_map"), dict) else {}
+    if not narrative_map or narrative_map.get("approval_status") not in {"pending", ""}:
+        return
+    task_id = str(artifacts.get("fusion_matching_task_id") or "")
+    if not task_id:
+        st.error("Narrative Map 缺少项目任务绑定，不能安全批准。")
+        return
+    st.warning("Narrative Map 等待审核：批准、明确跳过，或先预览草稿影响。")
+    beats_text = st.text_area(
+        "Story Beats 草稿",
+        value=json.dumps(narrative_map.get("beats") or [], ensure_ascii=False, indent=2),
+        height=260,
+        key=f"narrative-map-editor-{project['project_id']}-{project.get('active_version_id')}",
+    )
+    actions = st.columns(3)
+    if actions[0].button("批准 Narrative Map", type="primary"):
+        _apply_narrative_map_review(project, store, task_id, action="approved")
+    if actions[1].button("明确跳过"):
+        _apply_narrative_map_review(project, store, task_id, action="skipped")
+    if actions[2].button("预览草稿影响"):
+        try:
+            from webui.tools.generate_short_summary import preview_fusion_narrative_map_review
+
+            edited_beats = json.loads(beats_text)
+            preview = preview_fusion_narrative_map_review(
+                task_id, action="applied_draft", edited_beats=edited_beats
+            )
+            st.session_state[f"narrative-map-preview-{project['project_id']}"] = preview
+        except Exception as error:
+            st.error(f"无法预览 Narrative Map 草稿：{error}")
+    preview = st.session_state.get(f"narrative-map-preview-{project['project_id']}")
+    if preview:
+        impact = preview.get("impact") or {}
+        st.info(
+            "将失效的 Segment Match："
+            + (", ".join(impact.get("invalidates_segment_matches") or []) or "无")
+        )
+        if st.button("确认影响并应用 Narrative Map 草稿", type="primary"):
+            _apply_narrative_map_review(
+                project, store, task_id, action="applied_draft",
+                edited_beats=preview.get("edited_beats") or [],
+                fingerprint=preview.get("narrative_map_fingerprint"),
+            )
+
+
+def _apply_narrative_map_review(
+    project: dict,
+    store: FusionProjectStore,
+    task_id: str,
+    *,
+    action: str,
+    edited_beats: list[dict] | None = None,
+    fingerprint: str | None = None,
+) -> None:
+    try:
+        from webui.tools.generate_short_summary import review_fusion_narrative_map
+
+        task = review_fusion_narrative_map(
+            task_id,
+            action=action,
+            edited_beats=edited_beats,
+            expected_narrative_map_fingerprint=fingerprint,
+        )
+        finalization = task.get("finalization") or {}
+        store.sync_admitted_matching_state(
+            project["project_id"], task_id=task_id, finalization=finalization
+        )
+        st.session_state.pop(f"narrative-map-preview-{project['project_id']}", None)
+        st.rerun()
+    except Exception as error:
+        st.error(f"Narrative Map 审核未应用：{error}")
+
+
 def _stage_output(project, store) -> None:
     st.header("输出")
     blockers = [
@@ -526,6 +786,129 @@ def _stage_output(project, store) -> None:
     else:
         st.success("Render Preflight：通过。可以创建新的 Render Outcome。")
     st.button("开始渲染", type="primary", disabled=bool(blockers) or not project.get("active_version_id"))
+
+
+def _failure_category(error: Exception) -> str:
+    text = str(error).lower()
+    if "total" in text and ("timeout" in text or "时限" in text):
+        return "total_timeout"
+    if "timeout" in text or "超时" in text:
+        return "stream_timeout"
+    if "validation" in text or "校验" in text or "plan" in text:
+        return "validation_failed"
+    return "generation_failed"
+
+
+def _plan_attempt_store(project_id: str):
+    from app.services.fusion_plan_attempts import FusionPlanAttemptStore
+
+    return FusionPlanAttemptStore(
+        Path(utils.task_dir("fusion_plan_attempts")) / str(project_id)
+    )
+
+
+def _safe_attempt_summaries(attempt_store) -> list[dict]:
+    return [
+        {
+            "attempt_id": item.get("attempt_id"),
+            "kind": item.get("kind"),
+            "parent_attempt_id": item.get("parent_attempt_id"),
+            "status": item.get("status"),
+            "received_characters": item.get("received_characters"),
+            "findings": item.get("findings") or [],
+            "updated_at": item.get("updated_at"),
+        }
+        for item in attempt_store.list_attempts()
+    ]
+
+
+def _text_analyzer():
+    from app.config import config
+    from app.services.llm.migration_adapter import SubtitleAnalyzerAdapter
+    from webui.tools.generate_short_summary import FILM_TV_PROMPT_CATEGORY
+
+    provider = str(config.app.get("text_llm_provider", "gemini")).lower()
+    model = str(config.app.get(f"text_{provider}_model_name") or "")
+    analyzer = SubtitleAnalyzerAdapter(
+        config.app.get(f"text_{provider}_api_key"),
+        model,
+        config.app.get(f"text_{provider}_base_url"),
+        provider,
+        prompt_category=FILM_TV_PROMPT_CATEGORY,
+    )
+    return analyzer, provider, model
+
+
+def _project_source_identity(project: dict) -> dict:
+    sources = []
+    for source in project.get("source_video_sequence") or []:
+        identity = dict(source.get("identity") or {})
+        identity.update(
+            source_id=str(source.get("source_id") or ""),
+            title=str(source.get("title") or ""),
+            sequence=int(source.get("sequence") or 0),
+        )
+        sources.append(identity)
+    return {"project_id": str(project.get("project_id") or ""), "sources": sources}
+
+
+def _render_matching_task(project: dict, store: FusionProjectStore, task_ref: dict) -> None:
+    try:
+        from webui.tools.generate_short_summary import (
+            cancel_fusion_matching_task,
+            fusion_matching_task_status,
+            resume_fusion_matching_task,
+        )
+
+        task = fusion_matching_task_status(task_ref["task_id"])
+        status = str(task.get("status") or "")
+        stream = task.get("stream_snapshot") if isinstance(task.get("stream_snapshot"), dict) else {}
+        store.update_task_summary(
+            project["project_id"], task_ref["task_id"],
+            status=status, progress=task.get("progress"), message=task.get("message"),
+            error_message=task.get("error_message", ""),
+            failure_category=stream.get("failure_category", ""),
+            recoverable=status in {"failed", "interrupted", "cancelled"},
+        )
+        st.progress(
+            float(task.get("progress") or 0) / 100.0,
+            text=str(task.get("message") or status),
+        )
+        controls = st.columns(3)
+        if controls[0].button(
+            "继续匹配", key=f"resume-match-{task_ref['task_id']}",
+            disabled=status not in {"failed", "interrupted", "cancelled"},
+        ):
+            resume_fusion_matching_task(task_ref["task_id"])
+            st.rerun()
+        if controls[1].button(
+            "取消匹配", key=f"cancel-match-{task_ref['task_id']}",
+            disabled=status not in {"queued", "running"},
+        ):
+            cancel_fusion_matching_task(task_ref["task_id"])
+            st.rerun()
+        if controls[2].button("查看诊断", key=f"diag-match-{task_ref['task_id']}"):
+            st.json(
+                {
+                    "状态": status,
+                    "进度": task.get("progress"),
+                    "失败类别": stream.get("failure_category"),
+                    "错误": str(task.get("error_message") or "")[:1000],
+                }
+            )
+        if status == "completed" and isinstance(task.get("finalization"), dict):
+            if task_ref.get("status") != "completed":
+                admitted = store.admit_matching_completion(
+                    project["project_id"], task_id=task_ref["task_id"],
+                    finalization=task["finalization"],
+                )
+                if admitted["admission"] == "stale":
+                    st.warning("匹配已完成，但输入版本已过期；结果已保留，未替换当前版本。")
+                else:
+                    st.success("匹配与 Finalization 已完成，正在进入审核工作区。")
+                    st.rerun()
+    except Exception as error:
+        st.warning(f"匹配任务状态暂不可用：{error}")
 
 
 def _render_task_center() -> None:

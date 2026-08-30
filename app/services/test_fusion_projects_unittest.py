@@ -247,6 +247,74 @@ class FusionProjectStoreTests(unittest.TestCase):
         self.assertIn("第二段", updated["artifact_refs"]["visual_evidence"])
         self.assertTrue(all(source["visual_evidence_status"] == "completed" for source in updated["source_video_sequence"]))
 
+    def test_matching_completion_updates_active_project_only_for_same_input_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory))
+            project = store.create("匹配")
+            store.update(project["project_id"], active_version_id="version-1")
+            store.attach_task(
+                project["project_id"], task_id="matching-1", kind="fusion_matching",
+                input_version_id="version-1", status="running",
+            )
+            finalization = {
+                "active_version_id": "matched-1",
+                "preflight": {"blockers": [{"code": "gap", "message": "时间线缺口"}], "warnings": []},
+                "narrative_quality_findings": [{"code": "pace", "segment_id": "s1"}],
+            }
+
+            admitted = store.admit_matching_completion(
+                project["project_id"], task_id="matching-1", finalization=finalization
+            )
+
+        self.assertEqual("active", admitted["admission"])
+        self.assertEqual("matched-1", admitted["project"]["active_version_id"])
+        self.assertEqual("blocker", admitted["project"]["review_findings"][0]["severity"])
+
+    def test_matching_completion_for_old_version_is_visible_but_not_active(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory))
+            project = store.create("过期匹配")
+            store.update(project["project_id"], active_version_id="version-2")
+            store.attach_task(
+                project["project_id"], task_id="matching-old", kind="fusion_matching",
+                input_version_id="version-1", status="running",
+            )
+
+            admitted = store.admit_matching_completion(
+                project["project_id"], task_id="matching-old",
+                finalization={"active_version_id": "matched-old", "preflight": {}},
+            )
+
+        self.assertEqual("stale", admitted["admission"])
+        self.assertEqual("version-2", admitted["project"]["active_version_id"])
+        self.assertNotIn("finalization", admitted["project"]["artifact_refs"])
+
+    def test_creator_review_sync_updates_only_the_admitted_matching_task(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory))
+            project = store.create("Narrative Map")
+            store.update(project["project_id"], active_version_id="v1")
+            store.attach_task(
+                project["project_id"], task_id="matching-1", kind="fusion_matching",
+                input_version_id="v1", status="running",
+            )
+            store.admit_matching_completion(
+                project["project_id"], task_id="matching-1",
+                finalization={"active_version_id": "matched-1", "preflight": {}},
+            )
+
+            synced = store.sync_admitted_matching_state(
+                project["project_id"], task_id="matching-1",
+                finalization={
+                    "active_version_id": "narrative-map-2",
+                    "narrative_map": {"approval_status": "approved"},
+                    "preflight": {"blockers": [], "warnings": []},
+                },
+            )
+
+        self.assertEqual("narrative-map-2", synced["active_version_id"])
+        self.assertEqual("approved", synced["artifact_refs"]["narrative_map"]["approval_status"])
+
 
 if __name__ == "__main__":
     unittest.main()

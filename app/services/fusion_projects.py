@@ -244,6 +244,96 @@ class FusionProjectStore:
             project_id, source_video_sequence=sources, artifact_refs=artifacts
         )
 
+    def admit_matching_completion(
+        self, project_id: str, *, task_id: str, finalization: dict[str, Any]
+    ) -> dict[str, Any]:
+        project = self.read(project_id)
+        task = next(
+            (item for item in project.get("task_refs") or [] if item.get("task_id") == task_id),
+            None,
+        )
+        if task is None or task.get("kind") != "fusion_matching":
+            raise ValueError("Fusion Matching Task is not owned by this project")
+        input_version_id = str(task.get("input_version_id") or "")
+        active_version_id = str(project.get("active_version_id") or "")
+        self.update_task_summary(project_id, task_id, status="completed", progress=100)
+        if input_version_id != active_version_id:
+            project = self.read(project_id)
+            stale = list(project.get("stale_task_results") or [])
+            stale.append(
+                {
+                    "task_id": task_id,
+                    "kind": "fusion_matching",
+                    "input_version_id": input_version_id,
+                    "active_version_id": active_version_id,
+                    "admission": "stale",
+                    "completed_at": _now(),
+                }
+            )
+            project = self.update(project_id, stale_task_results=stale)
+            return {"admission": "stale", "project": project}
+
+        artifacts = dict(project.get("artifact_refs") or {})
+        artifacts["finalization"] = finalization
+        artifacts["fusion_matching_task_id"] = str(task_id)
+        if finalization.get("narrative_map"):
+            artifacts["narrative_map"] = finalization["narrative_map"]
+        if finalization.get("finalized_script"):
+            artifacts["fusion_script"] = finalization["finalized_script"]
+        findings = self._review_findings(finalization)
+        project = self.update(
+            project_id,
+            artifact_refs=artifacts,
+            review_findings=findings,
+            active_version_id=str(finalization.get("active_version_id") or active_version_id),
+            active_stage="review",
+        )
+        return {"admission": "active", "project": project}
+
+    def sync_admitted_matching_state(
+        self, project_id: str, *, task_id: str, finalization: dict[str, Any]
+    ) -> dict[str, Any]:
+        project = self.read(project_id)
+        artifacts = dict(project.get("artifact_refs") or {})
+        if str(artifacts.get("fusion_matching_task_id") or "") != str(task_id):
+            raise ValueError("Fusion Matching Task is not the admitted active result")
+        artifacts["finalization"] = finalization
+        if finalization.get("narrative_map"):
+            artifacts["narrative_map"] = finalization["narrative_map"]
+        if finalization.get("finalized_script"):
+            artifacts["fusion_script"] = finalization["finalized_script"]
+        return self.update(
+            project_id,
+            artifact_refs=artifacts,
+            review_findings=self._review_findings(finalization),
+            active_version_id=str(
+                finalization.get("active_version_id") or project.get("active_version_id") or ""
+            ),
+        )
+
+    @staticmethod
+    def _review_findings(finalization: dict[str, Any]) -> list[dict[str, Any]]:
+        findings: list[dict[str, Any]] = []
+        preflight = finalization.get("preflight") or {}
+        for severity, entries in (
+            ("blocker", preflight.get("blockers") or []),
+            ("warning", preflight.get("warnings") or []),
+            ("warning", finalization.get("evidence_conflicts") or []),
+            ("suggestion", finalization.get("narrative_quality_findings") or []),
+        ):
+            for index, finding in enumerate(entries):
+                if not isinstance(finding, dict):
+                    continue
+                projected = dict(finding)
+                projected.setdefault(
+                    "finding_id",
+                    f"{projected.get('code') or 'finding'}-{projected.get('segment_id') or index}",
+                )
+                projected.setdefault("severity", severity)
+                projected.setdefault("status", "open")
+                findings.append(projected)
+        return findings
+
     def permanent_delete_plan(self, project_id: str) -> dict[str, Any]:
         project = self.read(project_id)
         managed = [
