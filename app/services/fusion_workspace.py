@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.documentary.frame_analysis_models import TimeRange
+from app.services.fusion_script_pipeline import FusionScriptPipeline
+
 
 _PHASES = {
     "not_started", "running", "waiting_for_review", "approved", "warning",
@@ -111,6 +114,60 @@ def project_fusion_task_center_details(task: dict[str, Any] | None) -> dict[str,
     }
 
 
+def project_fusion_review_context(
+    *, task: dict[str, Any] | None, finalization: dict[str, Any] | None, segment_id: str
+) -> dict[str, Any]:
+    """Project every evidence-bound artefact related to one reviewable segment."""
+    task = task or {}
+    finalization = finalization or {}
+    request = task.get("request") if isinstance(task.get("request"), dict) else {}
+    plan = request.get("plan_payload") if isinstance(request.get("plan_payload"), dict) else {}
+    segment = next(
+        (
+            item for item in plan.get("segments") or []
+            if isinstance(item, dict) and str(item.get("segment_id") or "") == str(segment_id)
+        ),
+        {},
+    )
+    narrative_map = finalization.get("narrative_map") if isinstance(finalization.get("narrative_map"), dict) else {}
+    story_beat = next(
+        (
+            item for item in narrative_map.get("beats") or []
+            if isinstance(item, dict) and str(item.get("segment_id") or "") == str(segment_id)
+        ),
+        {},
+    )
+    time_range = str(segment.get("core_window") or story_beat.get("evidence_window") or "")
+    timeline_items = [
+        {
+            key: item.get(key)
+            for key in ("_id", "timestamp", "picture", "narration", "OST", "_segment_id")
+        }
+        for item in finalization.get("finalized_script") or []
+        if isinstance(item, dict) and str(item.get("_segment_id") or "") == str(segment_id)
+    ]
+    evidence = {"subtitle_evidence": "", "visual_evidence": "", "highlight_candidates": ""}
+    try:
+        window = TimeRange.parse(time_range)
+        evidence_values = FusionScriptPipeline().select_evidence_window(
+            subtitle_evidence=str(request.get("subtitle_content") or ""),
+            visual_evidence=str(request.get("visual_evidence") or ""),
+            highlight_candidates=str(request.get("highlight_candidates") or ""),
+            time_range=window,
+        )
+        evidence = dict(zip(evidence, evidence_values))
+    except ValueError:
+        pass
+    return {
+        "segment_id": str(segment_id),
+        "time_range": time_range,
+        "story_beat": story_beat,
+        "plan_segment": segment,
+        "timeline_items": timeline_items,
+        **evidence,
+    }
+
+
 def locate_fusion_review_item(
     *, narrative_map: dict[str, Any], segment_id: str
 ) -> dict[str, str]:
@@ -152,6 +209,9 @@ def compare_fusion_versions(
             "warning_codes",
             "quality_codes",
             "narrative_map_approval",
+            "ost_ratio",
+            "evidence_conflicts",
+            "timeline_ranges",
         )
         if baseline_summary.get(field) != candidate_summary.get(field)
     ]
@@ -170,6 +230,22 @@ def _fusion_version_summary(version: dict[str, Any]) -> dict[str, Any]:
     quality = snapshot.get("narrative_quality_findings")
     quality = quality if isinstance(quality, list) else []
     narrative_map = snapshot.get("narrative_map") if isinstance(snapshot.get("narrative_map"), dict) else {}
+    durations = []
+    ost_duration = 0.0
+    for item in script:
+        if not isinstance(item, dict):
+            continue
+        try:
+            time_range = TimeRange.parse(str(item.get("timestamp") or ""))
+            duration = time_range.end_seconds - time_range.start_seconds
+        except ValueError:
+            continue
+        durations.append(max(0.0, duration))
+        if int(item.get("OST") or 0) == 1:
+            ost_duration += max(0.0, duration)
+    total_duration = sum(durations)
+    conflicts = snapshot.get("evidence_conflicts")
+    conflicts = conflicts if isinstance(conflicts, list) else []
     return {
         "version_id": str(version.get("version_id") or ""),
         "kind": str(version.get("kind") or ""),
@@ -197,4 +273,19 @@ def _fusion_version_summary(version: dict[str, Any]) -> dict[str, Any]:
             if isinstance(item, dict)
         ),
         "narrative_map_approval": str(narrative_map.get("approval_status") or ""),
+        "ost_ratio": round(ost_duration / total_duration, 4) if total_duration else 0.0,
+        "evidence_conflicts": sorted(
+            (
+                str(item.get("severity") or ""),
+                str(item.get("time_range") or ""),
+                str(item.get("status") or ""),
+            )
+            for item in conflicts
+            if isinstance(item, dict)
+        ),
+        "timeline_ranges": [
+            (str(item.get("video_name") or ""), str(item.get("timestamp") or ""))
+            for item in script
+            if isinstance(item, dict)
+        ],
     }

@@ -18,6 +18,7 @@ from app.services.fusion_script_pipeline import FusionScriptPipeline
 from app.services.documentary.frame_analysis_models import TimeRange
 from app.services.fusion_workspace import (
     locate_fusion_review_item,
+    project_fusion_review_context,
     project_fusion_task_center_details,
     project_fusion_workspace,
 )
@@ -2567,14 +2568,19 @@ def render_script_buttons(tr, params):
                             )
                             if location.get("time_range"):
                                 st.caption(f"{tr('源视频定位')}: {location['time_range']} · {location['active_subject']}")
-                                selected_beat = next(
-                                    (
-                                        beat for beat in workspace.get("inspector", {}).get("narrative_map", {}).get("beats", [])
-                                        if isinstance(beat, dict)
-                                        and str(beat.get("segment_id") or "") == str(selected.get("segment_id") or "")
-                                    ),
-                                    {},
+                                current_task_id = str(
+                                    workspace.get("task_center", {}).get("task_id") or ""
                                 )
+                                current_task = (
+                                    fusion_matching_task_status(current_task_id)
+                                    if current_task_id else {}
+                                )
+                                review_context = project_fusion_review_context(
+                                    task=current_task,
+                                    finalization=current_task.get("finalization") or {},
+                                    segment_id=str(selected.get("segment_id") or ""),
+                                )
+                                selected_beat = review_context["story_beat"]
                                 preview_columns = st.columns((3, 2))
                                 source_videos = _selected_video_paths()
                                 with preview_columns[0]:
@@ -2589,6 +2595,21 @@ def render_script_buttons(tr, params):
                                 with preview_columns[1]:
                                     st.caption(tr("对应 Story Beat"))
                                     st.json(selected_beat)
+                                with st.expander(tr("同步审阅上下文"), expanded=False):
+                                    context_columns = st.columns(3)
+                                    with context_columns[0]:
+                                        st.caption(tr("旁白与时间线"))
+                                        st.json(review_context["timeline_items"])
+                                    with context_columns[1]:
+                                        st.caption(tr("Subtitle Evidence"))
+                                        st.text(review_context["subtitle_evidence"] or tr("此时间窗内没有字幕证据。"))
+                                        st.caption(tr("Visual Evidence"))
+                                        st.text(review_context["visual_evidence"] or tr("此时间窗内没有视觉证据。"))
+                                    with context_columns[2]:
+                                        st.caption(tr("Highlight Candidates"))
+                                        st.text(review_context["highlight_candidates"] or tr("此时间窗内没有高光候选。"))
+                                        st.caption(tr("Fusion Segment Plan"))
+                                        st.json(review_context["plan_segment"])
                             if selected.get("kind") == "quality":
                                 quality_actions = st.columns(2)
                                 if quality_actions[0].button(tr("批准并定向修复此分段"), key="fusion_approve_quality_repair"):
