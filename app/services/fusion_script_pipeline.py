@@ -15,6 +15,43 @@ _TIME_RANGE = re.compile(r"(\d{2}:\d{2}:\d{2},\d{3})\s*(?:-->|-)\s*(\d{2}:\d{2}:
 _VISUAL_BLOCK = re.compile(r"(?ms)^##\s+(?P<range>\d{2}:\d{2}:\d{2},\d{3}-\d{2}:\d{2}:\d{2},\d{3})\s*\n(?P<body>.*?)(?=^##\s+|\Z)")
 
 
+def is_retryable_fusion_request_error(error: Exception) -> bool:
+    """Return whether the one permitted Fusion retry can plausibly recover."""
+    message = str(error).lower()
+    if any(
+        marker in message
+        for marker in (
+            "authentication", "api key", "configuration", "invalid parameter",
+            "请求错误", "content filter",
+        )
+    ):
+        return False
+    return any(
+        marker in message
+        for marker in (
+            "timeout", "timed out", "connection", "temporary", "unavailable",
+            "rate limit", "429", "500", "502", "503", "504",
+        )
+    )
+
+
+def call_fusion_request_with_retry(call, *, retry_count: int = 1, on_retry=None):
+    """Run a Fusion request with bounded retries for recoverable provider failures."""
+    attempts = max(0, int(retry_count)) + 1
+    last_error = None
+    for attempt_index in range(attempts):
+        try:
+            return call()
+        except Exception as error:
+            last_error = error
+            if attempt_index >= attempts - 1 or not is_retryable_fusion_request_error(error):
+                raise
+            if on_retry:
+                on_retry(error)
+            time.sleep(1.0)
+    raise RuntimeError("Fusion request exhausted retries") from last_error
+
+
 @dataclass(frozen=True, slots=True)
 class FusionPlanSegment:
     segment_id: str
@@ -384,36 +421,6 @@ class FusionScriptPipeline:
         )
 
     @staticmethod
-    def _is_retryable_match_error(error: Exception) -> bool:
-        message = str(error).lower()
-        nonrecoverable_markers = (
-            "authentication",
-            "api key",
-            "configuration",
-            "invalid parameter",
-            "请求错误",
-            "content filter",
-        )
-        if any(marker in message for marker in nonrecoverable_markers):
-            return False
-        return any(
-            marker in message
-            for marker in (
-                "timeout",
-                "timed out",
-                "connection",
-                "temporary",
-                "unavailable",
-                "rate limit",
-                "429",
-                "500",
-                "502",
-                "503",
-                "504",
-            )
-        )
-
-    @staticmethod
     def _sentences(narration_copy: str) -> list[str]:
         sentences = [sentence.strip() for sentence in re.findall(r"[^。！？!?…]+[。！？!?…]*", str(narration_copy or ""))]
         sentences = [sentence for sentence in sentences if sentence]
@@ -422,21 +429,14 @@ class FusionScriptPipeline:
         return sentences
 
     def _call_with_retry(self, request, matcher, retry_count):
-        last_error: Exception | None = None
-        attempts = max(0, int(retry_count)) + 1
-        for attempt_index in range(attempts):
-            try:
-                return matcher(request)
-            except Exception as exc:  # Provider failures are retried at the segment boundary.
-                last_error = exc
-                if (
-                    attempt_index < attempts - 1
-                    and self._is_retryable_match_error(exc)
-                ):
-                    time.sleep(1.0)
-                    continue
-                break
-        raise RuntimeError(f"segment {request.segment_id} failed after retry: {last_error}") from last_error
+        try:
+            return call_fusion_request_with_retry(
+                lambda: matcher(request), retry_count=retry_count
+            )
+        except Exception as error:
+            raise RuntimeError(
+                f"segment {request.segment_id} failed after retry: {error}"
+            ) from error
 
     def _match_pending_requests(
         self,

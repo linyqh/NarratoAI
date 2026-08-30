@@ -5,12 +5,15 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
+
 from app.config import config
 from app.services.llm.base import TextModelProvider
 from app.services.llm.exceptions import APICallError, ConfigurationError
 from app.services.llm.manager import LLMServiceManager
 from app.services.llm.migration_adapter import LegacyLLMAdapter, VisionAnalyzerAdapter
 from app.services.llm.openai_compatible_provider import (
+    OpenAIBadRequestError,
     OpenAICompatibleTextProvider,
     OpenAICompatibleVisionProvider,
     is_trusted_openai_compatible_base_url,
@@ -280,6 +283,47 @@ class OpenAICompatFusionStreamTests(unittest.IsolatedAsyncioTestCase):
                     max_retries=0,
                     total_timeout_seconds=0.01,
                 )
+
+    async def test_json_format_fallback_keeps_the_total_request_timeout(self):
+        class HangingStream:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                await asyncio.sleep(0.2)
+                raise StopAsyncIteration
+
+        class FakeCompletions:
+            calls = 0
+
+            async def create(self, **_kwargs):
+                type(self).calls += 1
+                if type(self).calls == 1:
+                    await asyncio.sleep(0.08)
+                    raise OpenAIBadRequestError(
+                        "response_format is not supported",
+                        response=httpx.Response(
+                            400,
+                            request=httpx.Request("POST", "https://example.invalid/v1/chat/completions"),
+                        ),
+                        body=None,
+                    )
+                return HangingStream()
+
+        class FakeOpenAI:
+            def __init__(self, **_kwargs):
+                self.chat = SimpleNamespace(completions=FakeCompletions())
+
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
+        with patch("app.services.llm.openai_compatible_provider.AsyncOpenAI", FakeOpenAI):
+            with self.assertRaisesRegex(APICallError, "请求总时限"):
+                started_at = asyncio.get_running_loop().time()
+                await provider.generate_text_stream(
+                    "prompt",
+                    response_format="json",
+                    total_timeout_seconds=0.12,
+                )
+        self.assertLess(asyncio.get_running_loop().time() - started_at, 0.18)
 
 
 class OpenAICompatBaseURLValidationTests(unittest.TestCase):

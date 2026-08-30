@@ -15,6 +15,13 @@ from webui.tools.generate_short_summary import _format_progress_status, parse_an
 
 
 class GenerateShortSummaryJsonTests(unittest.TestCase):
+    def test_fusion_stream_preview_is_bounded_to_the_ui_limit(self):
+        prefix = "a" * 2000
+        preview = generate_short_summary._append_fusion_stream_preview(prefix, "b" * 1000)
+
+        self.assertEqual(generate_short_summary.FUSION_STREAM_PREVIEW_LIMIT, len(preview))
+        self.assertEqual("a" * 800 + "b" * 1000, preview)
+
     def _finalize(self, **kwargs):
         candidates = tuple(
             HighlightCandidate(

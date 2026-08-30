@@ -406,6 +406,11 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
         )
         completion_kwargs["stream"] = True
 
+        total_timeout_seconds = kwargs.get("total_timeout_seconds")
+        deadline = None
+        if total_timeout_seconds is not None:
+            deadline = asyncio.get_running_loop().time() + float(total_timeout_seconds)
+
         async def collect_stream() -> str:
             content_parts: List[str] = []
             stream = await client.chat.completions.create(**completion_kwargs)
@@ -428,13 +433,18 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
                 return result
             raise APICallError("OpenAI 兼容接口返回空响应")
 
-        try:
-            total_timeout_seconds = kwargs.get("total_timeout_seconds")
-            if total_timeout_seconds is not None:
+        async def collect_stream_with_timeout() -> str:
+            if deadline is not None:
+                remaining_seconds = deadline - asyncio.get_running_loop().time()
+                if remaining_seconds <= 0:
+                    raise asyncio.TimeoutError
                 return await asyncio.wait_for(
-                    collect_stream(), timeout=float(total_timeout_seconds)
+                    collect_stream(), timeout=remaining_seconds
                 )
             return await collect_stream()
+
+        try:
+            return await collect_stream_with_timeout()
 
         except asyncio.TimeoutError:
             raise APICallError("请求总时限已到，未能完成流式生成")
@@ -445,7 +455,10 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
                 logger.warning("目标网关不支持流式 response_format，回退为提示词约束 JSON 输出")
                 completion_kwargs.pop("response_format", None)
                 messages[-1]["content"] += "\n\n请确保输出严格的JSON格式，不要包含任何其他文字或标记。"
-                result = await collect_stream()
+                try:
+                    result = await collect_stream_with_timeout()
+                except asyncio.TimeoutError as timeout_error:
+                    raise APICallError("请求总时限已到，未能完成流式生成") from timeout_error
                 return _clean_json_output(result)
 
             if _is_content_filter_error(error_msg):

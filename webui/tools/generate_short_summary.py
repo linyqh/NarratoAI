@@ -27,7 +27,10 @@ from app.services.SDE.short_drama_explanation import (
 )
 from app.services.subtitle_text import read_subtitle_text
 from app.services.fusion_script_finalizer import FusionScriptFinalizer
-from app.services.fusion_script_pipeline import FusionScriptPipeline
+from app.services.fusion_script_pipeline import (
+    FusionScriptPipeline,
+    call_fusion_request_with_retry,
+)
 from app.services.fusion_matching_workflow import (
     FusionMatchingInput,
     FusionMatchingSnapshot,
@@ -54,6 +57,13 @@ import re
 
 
 PUBLIC_SCRIPT_FIELDS = ["_id", "video_id", "video_name", "timestamp", "picture", "narration", "OST"]
+FUSION_STREAM_PREVIEW_LIMIT = 1800
+FUSION_STREAM_WRITE_INTERVAL_SECONDS = 0.2
+
+
+def _append_fusion_stream_preview(existing: str, chunk: str) -> str:
+    """Keep task progress responsive without persisting an unbounded model transcript."""
+    return (str(existing or "") + str(chunk or ""))[-FUSION_STREAM_PREVIEW_LIMIT:]
 SHORT_DRAMA_PROMPT_CATEGORY = "short_drama_narration"
 FILM_TV_PROMPT_CATEGORY = "film_tv_narration"
 SHORT_DRAMA_SEARCH_KEYWORDS = "短剧 剧情 介绍 人物 结局"
@@ -196,35 +206,8 @@ def _format_progress_status(progress, message: str = "", tr=lambda key: key):
     return f"{tr('Progress')}: {progress}%"
 
 
-def _is_retryable_fusion_request_error(error: Exception) -> bool:
-    message = str(error).lower()
-    if any(
-        marker in message
-        for marker in (
-            "authentication", "api key", "configuration", "invalid parameter",
-            "请求错误", "content filter",
-        )
-    ):
-        return False
-    return any(
-        marker in message
-        for marker in (
-            "timeout", "timed out", "connection", "temporary", "unavailable",
-            "rate limit", "429", "500", "502", "503", "504",
-        )
-    )
-
-
 def _call_fusion_request_with_retry(call, on_retry=None):
-    try:
-        return call()
-    except Exception as first_error:
-        if not _is_retryable_fusion_request_error(first_error):
-            raise
-        if on_retry:
-            on_retry(first_error)
-        time.sleep(1.0)
-        return call()
+    return call_fusion_request_with_retry(call, on_retry=on_retry)
 
 
 def create_fusion_segment_plan(
@@ -653,15 +636,17 @@ def _start_fusion_matching_runner(
             persisted_snapshot.get("repair_attempts_by_segment") or {}
         )
         stream_revision = 0
+        latest_stream_snapshot = None
+        last_stream_snapshot_write_at = 0.0
 
         def checkpoint_stream(segment_request, event):
-            nonlocal stream_revision
+            nonlocal stream_revision, latest_stream_snapshot, last_stream_snapshot_write_at
             event = event if isinstance(event, dict) else {}
             chunk_type = str(event.get("type") or "content")
             chunk_text = str(event.get("text") or "")
             now = time.time()
             with task_state_lock:
-                current = store.read(task_id).get("stream_snapshot") or {}
+                current = latest_stream_snapshot or store.read(task_id).get("stream_snapshot") or {}
                 segment_id = str(segment_request.segment_id)
                 attempt = int(attempts_by_segment.get(segment_id) or 1)
                 if (
@@ -679,17 +664,25 @@ def _start_fusion_matching_runner(
                     }
                 bucket = "reasoning_text" if chunk_type == "reasoning" else "content_text"
                 if chunk_type in {"reasoning", "content"} and chunk_text:
-                    current[bucket] = str(current.get(bucket) or "") + chunk_text
-                stream_revision += 1
+                    current[bucket] = _append_fusion_stream_preview(
+                        current.get(bucket) or "", chunk_text
+                    )
                 current.update(
                     {
-                        "revision": stream_revision,
                         "state": "completed" if chunk_type == "done" else "streaming",
                         "updated_at": now,
                         "last_chunk_at": now,
                     }
                 )
-                store.update(task_id, stream_snapshot=current)
+                latest_stream_snapshot = current
+                if (
+                    chunk_type == "done"
+                    or now - last_stream_snapshot_write_at >= FUSION_STREAM_WRITE_INTERVAL_SECONDS
+                ):
+                    stream_revision += 1
+                    current["revision"] = stream_revision
+                    store.update(task_id, stream_snapshot=current)
+                    last_stream_snapshot_write_at = now
 
         def persist_matching_snapshot():
             with task_state_lock:
@@ -735,14 +728,13 @@ def _start_fusion_matching_runner(
                 store.update(task_id, segment_matches=entries)
 
         def mark_segment_started(segment_request):
+            nonlocal latest_stream_snapshot, last_stream_snapshot_write_at
             update_segment_status(segment_request.segment_id, "running")
             with task_state_lock:
                 current = store.read(task_id).get("stream_snapshot") or {}
                 stream_id = str(segment_request.segment_id)
                 if current.get("segment_id") != stream_id:
-                    store.update(
-                        task_id,
-                        stream_snapshot={
+                    latest_stream_snapshot = {
                             "revision": stream_revision,
                             "phase": "matching",
                             "segment_id": stream_id,
@@ -751,8 +743,9 @@ def _start_fusion_matching_runner(
                             "reasoning_text": "",
                             "content_text": "",
                             "updated_at": time.time(),
-                        },
-                    )
+                    }
+                    store.update(task_id, stream_snapshot=latest_stream_snapshot)
+                    last_stream_snapshot_write_at = time.time()
 
         def checkpoint_segment(segment_request, response):
             checkpoint({
@@ -779,7 +772,7 @@ def _start_fusion_matching_runner(
             update_segment_status(segment_request.segment_id, "failed", error_message=str(error))
 
         def checkpoint_attempt(segment_request, attempt_count):
-            nonlocal stream_revision
+            nonlocal stream_revision, latest_stream_snapshot, last_stream_snapshot_write_at
             with task_state_lock:
                 attempts_by_segment[segment_request.segment_id] = attempt_count
                 update_segment_status(
@@ -789,9 +782,7 @@ def _start_fusion_matching_runner(
                 )
                 if attempt_count > 1:
                     stream_revision += 1
-                    store.update(
-                        task_id,
-                        stream_snapshot={
+                    latest_stream_snapshot = {
                             "revision": stream_revision,
                             "phase": "matching",
                             "segment_id": str(segment_request.segment_id),
@@ -800,8 +791,9 @@ def _start_fusion_matching_runner(
                             "reasoning_text": "",
                             "content_text": "",
                             "updated_at": time.time(),
-                        },
-                    )
+                    }
+                    store.update(task_id, stream_snapshot=latest_stream_snapshot)
+                    last_stream_snapshot_write_at = time.time()
                 persist_matching_snapshot()
 
         def checkpoint_repair_attempt(repair_request, attempt_count):
