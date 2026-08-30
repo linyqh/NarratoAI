@@ -45,6 +45,7 @@ from webui.tools.generate_short_summary import (
     fusion_matching_task_status,
     list_fusion_matching_tasks,
     override_fusion_matching_render_warning,
+    preview_fusion_narrative_map_review,
     review_fusion_narrative_map,
     approve_fusion_quality_repair,
     compare_fusion_matching_versions,
@@ -2335,19 +2336,65 @@ def render_script_buttons(tr, params):
                                 value=json.dumps(narrative_map.get("beats") or [], ensure_ascii=False, indent=2),
                                 key=f"fusion_narrative_map_draft_{task_id}",
                             )
+                            pending_draft_key = f"fusion_narrative_map_pending_application_{task_id}"
                             review_columns = st.columns(3)
                             for action, label, column in (
                                 ("approved", tr("批准 Narrative Map"), review_columns[0]),
                                 ("skipped", tr("跳过 Narrative Map 审阅"), review_columns[1]),
-                                ("applied_draft", tr("应用草稿并显示影响"), review_columns[2]),
                             ):
                                 if column.button(label, key=f"fusion_narrative_map_{action}_{task_id}"):
                                     try:
-                                        beats = json.loads(draft_text) if action == "applied_draft" else None
-                                        review_fusion_narrative_map(task_id, action=action, edited_beats=beats)
+                                        review_fusion_narrative_map(task_id, action=action)
                                         st.rerun()
-                                    except (ValueError, json.JSONDecodeError) as exc:
+                                    except ValueError as exc:
                                         st.error(str(exc))
+                            if review_columns[2].button(
+                                tr("预览草稿影响"), key=f"fusion_narrative_map_preview_{task_id}"
+                            ):
+                                try:
+                                    st.session_state[pending_draft_key] = preview_fusion_narrative_map_review(
+                                        task_id,
+                                        action="applied_draft",
+                                        edited_beats=json.loads(draft_text),
+                                    )
+                                    st.rerun()
+                                except (ValueError, json.JSONDecodeError) as exc:
+                                    st.error(str(exc))
+                            pending_draft = st.session_state.get(pending_draft_key)
+                            if isinstance(pending_draft, dict):
+                                impact = pending_draft.get("impact") or {}
+                                changed_beats = list(impact.get("changed_story_beats") or [])
+                                if changed_beats:
+                                    st.warning(
+                                        tr("应用草稿将仅失效并重匹配这些 Story Beats：")
+                                        + ", ".join(changed_beats)
+                                    )
+                                    st.caption(tr("Visual Evidence 与未受影响的 Segment Matches 将保留。"))
+                                else:
+                                    st.info(tr("草稿不会失效任何 Segment Match。"))
+                                confirm_columns = st.columns(2)
+                                if confirm_columns[0].button(
+                                    tr("确认应用草稿"),
+                                    key=f"fusion_narrative_map_confirm_draft_{task_id}",
+                                ):
+                                    try:
+                                        review_fusion_narrative_map(
+                                            task_id,
+                                            action="applied_draft",
+                                            edited_beats=pending_draft.get("edited_beats"),
+                                            expected_narrative_map_fingerprint=pending_draft.get(
+                                                "narrative_map_fingerprint"
+                                            ),
+                                        )
+                                        st.session_state.pop(pending_draft_key, None)
+                                        st.rerun()
+                                    except ValueError as exc:
+                                        st.error(str(exc))
+                                if confirm_columns[1].button(
+                                    tr("放弃草稿"), key=f"fusion_narrative_map_discard_draft_{task_id}"
+                                ):
+                                    st.session_state.pop(pending_draft_key, None)
+                                    st.rerun()
                         elif preflight.get("warnings") and not preflight.get("blockers"):
                             override_reason = st.text_area(
                                 tr("Render Preflight 警告覆盖理由"),

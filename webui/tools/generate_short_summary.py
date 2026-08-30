@@ -735,14 +735,51 @@ def override_fusion_matching_render_warning(task_id: str, reason: str) -> dict:
     return store.update(task_id, finalization=finalization, renderable=True)
 
 
-def review_fusion_narrative_map(
+def preview_fusion_narrative_map_review(
     task_id: str, *, action: str, edited_beats: list[dict] | None = None
+) -> dict:
+    """Calculate a Narrative Map review impact without changing the durable task."""
+    task = _fusion_matching_task_store().read(task_id)
+    artifact = dict((task.get("finalization") or {}).get("narrative_map") or {})
+    _reviewed, impact = review_narrative_map(
+        artifact, action=action, edited_beats=edited_beats
+    )
+    return {
+        "task_id": str(task_id),
+        "action": action,
+        "edited_beats": json.loads(json.dumps(edited_beats or [], ensure_ascii=False)),
+        "impact": impact,
+        "narrative_map_fingerprint": _fusion_narrative_map_fingerprint(artifact),
+    }
+
+
+def _fusion_narrative_map_fingerprint(artifact: dict) -> str:
+    """Identify the current creator-reviewable Narrative Map state."""
+    payload = {
+        "approval_status": artifact.get("approval_status"),
+        "beats": artifact.get("beats") or [],
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def review_fusion_narrative_map(
+    task_id: str,
+    *,
+    action: str,
+    edited_beats: list[dict] | None = None,
+    expected_narrative_map_fingerprint: str | None = None,
 ) -> dict:
     """Persist an approve/skip/draft action and invalidate only changed Segment Matches."""
     store = _fusion_matching_task_store()
     task = store.read(task_id)
     finalization = dict(task.get("finalization") or {})
     artifact = dict(finalization.get("narrative_map") or {})
+    if (
+        expected_narrative_map_fingerprint is not None
+        and expected_narrative_map_fingerprint != _fusion_narrative_map_fingerprint(artifact)
+    ):
+        raise ValueError("Narrative Map changed after this preview; review the impact again before applying")
     reviewed, impact = review_narrative_map(
         artifact, action=action, edited_beats=edited_beats
     )

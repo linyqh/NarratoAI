@@ -307,6 +307,36 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("interrupted", updated["status"])
         self.assertFalse(updated["finalization"]["renderable"])
 
+    def test_narrative_map_draft_preview_is_non_mutating_and_requires_current_artifact(self):
+        narrative_map = {
+            "beats": [
+                {"segment_id": "segment-1", "evidence_window": "00:00:00,000-00:00:10,000"},
+                {"segment_id": "segment-2", "evidence_window": "00:00:10,000-00:00:20,000"},
+            ],
+            "approval_status": "pending",
+        }
+        edited = [dict(beat) for beat in narrative_map["beats"]]
+        edited[1]["active_subject"] = "新主体"
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            task = store.create({}, {})
+            store.update(task["task_id"], finalization={"narrative_map": narrative_map})
+            with patch.object(generate_short_summary, "_fusion_matching_task_store", return_value=store):
+                preview = generate_short_summary.preview_fusion_narrative_map_review(
+                    task["task_id"], action="applied_draft", edited_beats=edited
+                )
+                unchanged = store.read(task["task_id"])
+                updated = generate_short_summary.review_fusion_narrative_map(
+                    task["task_id"],
+                    action="applied_draft",
+                    edited_beats=preview["edited_beats"],
+                    expected_narrative_map_fingerprint=preview["narrative_map_fingerprint"],
+                )
+
+        self.assertEqual(["segment-2"], preview["impact"]["invalidates_segment_matches"])
+        self.assertEqual("pending", unchanged["finalization"]["narrative_map"]["approval_status"])
+        self.assertEqual("applied_draft", updated["finalization"]["narrative_map"]["approval_status"])
+
     def test_creator_approved_quality_repair_invalidates_only_its_segment(self):
         with tempfile.TemporaryDirectory() as directory:
             store = LocalAnalysisTaskStore(Path(directory))
