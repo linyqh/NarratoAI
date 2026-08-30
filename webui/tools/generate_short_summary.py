@@ -28,6 +28,10 @@ from app.services.SDE.short_drama_explanation import (
 from app.services.subtitle_text import read_subtitle_text
 from app.services.fusion_script_finalizer import FusionScriptFinalizer
 from app.services.fusion_preflight import build_render_preflight
+from app.services.fusion_plan_attempts import (
+    FusionPlanAttemptStore,
+    FusionPlanRecoveryRequired,
+)
 from app.services.narrative_map import (
     build_narrative_map,
     evaluate_narrative_quality,
@@ -252,6 +256,8 @@ def create_fusion_segment_plan(
     temperature: float,
     stream_callback=None,
     on_retry=None,
+    attempt_store: FusionPlanAttemptStore | None = None,
+    attempt_context: dict | None = None,
 ) -> dict:
     """Generate and validate a creator-approvable Fusion Segment Plan."""
     plan_raw = _call_fusion_request_with_retry(
@@ -269,30 +275,158 @@ def create_fusion_segment_plan(
         ),
         on_retry=on_retry,
     )
+    context = dict(attempt_context or {})
+    input_fingerprint = str(context.get("input_fingerprint") or hashlib.sha256(
+        json.dumps(
+            {
+                "short_name": short_name,
+                "narration_copy": narration_copy,
+                "subtitle_content": subtitle_content,
+                "visual_evidence": visual_evidence,
+                "highlight_candidates": highlight_candidates,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest())
+
+    def record(raw_response: str, *, kind: str, parent_attempt_id: str = ""):
+        if attempt_store is None:
+            return None
+        return attempt_store.create(
+            raw_response=raw_response,
+            input_fingerprint=input_fingerprint,
+            provider=str(context.get("provider") or ""),
+            model=str(context.get("model") or ""),
+            kind=kind,
+            parent_attempt_id=parent_attempt_id,
+        )
+
+    def update_attempt(attempt, **changes):
+        if attempt_store is not None and attempt is not None:
+            return attempt_store.update(str(attempt["attempt_id"]), **changes)
+        return attempt
+
+    original_attempt = record(plan_raw, kind="generation")
     plan = parse_and_fix_json(plan_raw)
-    if not isinstance(plan, dict):
-        raise ValueError("Fusion Segment Plan is not valid JSON")
     pipeline = FusionScriptPipeline()
-    pipeline.validate_plan(narration_copy, plan)
-    continuity_report = pipeline.validate_continuity(narration_copy, plan)
-    if not continuity_report.is_renderable:
-        repaired_raw = analyzer.repair_fusion_segment_plan(
-            plan_payload=json.dumps(plan, ensure_ascii=False),
-            continuity_findings=json.dumps(continuity_report.to_dict(), ensure_ascii=False),
-            subtitle_content=subtitle_content,
-            visual_evidence=visual_evidence,
-            highlight_candidates=highlight_candidates,
-            temperature=temperature,
+    if isinstance(plan, dict):
+        validation_report = pipeline.validate_plan_findings(narration_copy, plan)
+    else:
+        validation_report = None
+    continuity_report = (
+        pipeline.validate_continuity(narration_copy, plan)
+        if validation_report is not None and validation_report.is_valid
+        else None
+    )
+    needs_repair = (
+        validation_report is None
+        or not validation_report.is_valid
+        or not continuity_report.is_renderable
+    )
+    if needs_repair:
+        repair_findings = (
+            {
+                "is_valid": False,
+                "findings": [
+                    {
+                        "code": "plan_json_invalid",
+                        "message": "Fusion Segment Plan is not valid JSON",
+                        "recovery_class": "auto_repairable",
+                    }
+                ],
+            }
+            if validation_report is None
+            else (
+                validation_report.to_dict()
+                if not validation_report.is_valid
+                else continuity_report.to_dict()
+            )
+        )
+        update_attempt(
+            original_attempt,
+            status="validation_failed",
+            findings=repair_findings["findings"],
+        )
+        try:
+            repaired_raw = analyzer.repair_fusion_segment_plan(
+                plan_payload=(
+                    json.dumps(plan, ensure_ascii=False)
+                    if isinstance(plan, dict)
+                    else str(plan_raw)
+                ),
+                continuity_findings=json.dumps(repair_findings, ensure_ascii=False),
+                subtitle_content=subtitle_content,
+                visual_evidence=visual_evidence,
+                highlight_candidates=highlight_candidates,
+                temperature=temperature,
+            )
+        except Exception as error:
+            attempt = update_attempt(original_attempt, status="waiting_for_review")
+            if attempt is not None:
+                raise FusionPlanRecoveryRequired(
+                    "分段计划已保存，但自动修复未完成。请检查计划或重新生成。",
+                    attempt_id=str(attempt["attempt_id"]),
+                    findings=repair_findings["findings"],
+                ) from error
+            raise
+        repaired_attempt = record(
+            repaired_raw,
+            kind="format_repair" if validation_report is None else "targeted_repair",
+            parent_attempt_id=(
+                str(original_attempt["attempt_id"]) if original_attempt is not None else ""
+            ),
         )
         repaired_plan = parse_and_fix_json(repaired_raw)
         if not isinstance(repaired_plan, dict):
-            raise ValueError("Fusion Segment Plan repair is not valid JSON")
-        pipeline.validate_plan(narration_copy, repaired_plan)
+            findings = [{
+                "code": "plan_json_invalid_after_repair",
+                "message": "Fusion Segment Plan repair is not valid JSON",
+                "recovery_class": "creator_edit_required",
+            }]
+            attempt = update_attempt(
+                repaired_attempt, status="validation_failed", findings=findings
+            )
+            if attempt is not None:
+                raise FusionPlanRecoveryRequired(
+                    "分段计划修复结果仍无法解析。原始输出已保存，请检查或重新生成。",
+                    attempt_id=str(attempt["attempt_id"]),
+                    findings=findings,
+                )
+            raise ValueError(findings[0]["message"])
+        repaired_validation = pipeline.validate_plan_findings(narration_copy, repaired_plan)
+        if not repaired_validation.is_valid:
+            findings = [finding.to_dict() for finding in repaired_validation.findings]
+            attempt = update_attempt(
+                repaired_attempt, status="validation_failed", findings=findings
+            )
+            if attempt is not None:
+                raise FusionPlanRecoveryRequired(
+                    "分段计划修复后仍未通过结构校验。请检查标记的问题。",
+                    attempt_id=str(attempt["attempt_id"]),
+                    findings=findings,
+                )
+            messages = "; ".join(finding["message"] for finding in findings)
+            raise ValueError(f"Fusion Segment Plan remains structurally invalid after repair: {messages}")
         continuity_report = pipeline.validate_continuity(narration_copy, repaired_plan)
         if not continuity_report.is_renderable:
-            messages = "; ".join(finding.message for finding in continuity_report.findings)
+            findings = [finding.to_dict() for finding in continuity_report.findings]
+            attempt = update_attempt(
+                repaired_attempt, status="validation_failed", findings=findings
+            )
+            if attempt is not None:
+                raise FusionPlanRecoveryRequired(
+                    "分段计划修复后仍需连续性审核。请检查标记的问题。",
+                    attempt_id=str(attempt["attempt_id"]),
+                    findings=findings,
+                )
+            messages = "; ".join(finding["message"] for finding in findings)
             raise ValueError(f"Fusion Segment Plan lacks narrative continuity after repair: {messages}")
+        update_attempt(repaired_attempt, status="validated", findings=[])
+        update_attempt(original_attempt, status="repaired")
         plan = repaired_plan
+    else:
+        update_attempt(original_attempt, status="validated", findings=[])
     return plan
 
 
@@ -644,6 +778,10 @@ def _fusion_version_entry(
 
 def _fusion_matching_task_store() -> LocalAnalysisTaskStore:
     return LocalAnalysisTaskStore(Path(utils.task_dir("fusion_matching")))
+
+
+def _fusion_plan_attempt_store() -> FusionPlanAttemptStore:
+    return FusionPlanAttemptStore(Path(utils.task_dir("fusion_plan_attempts")))
 
 
 def start_fusion_matching_task(
@@ -2097,6 +2235,11 @@ def generate_script_short_sunmmary(
                     on_retry=lambda _error: update_waiting(
                         tr("分段计划请求超时，正在进行第 2 次尝试…")
                     ),
+                    attempt_store=_fusion_plan_attempt_store(),
+                    attempt_context={
+                        "provider": text_provider,
+                        "model": text_model,
+                    },
                 )
                 st.session_state["fusion_segment_plan_pending"] = plan
                 st.session_state["fusion_segment_plan_editor"] = json.dumps(
@@ -2328,6 +2471,12 @@ def generate_script_short_sunmmary(
         status_text.text(tr("Script generation completed!"))
         st.success(tr("Video script generated successfully"))
 
+    except FusionPlanRecoveryRequired as err:
+        st.session_state["fusion_plan_recovery"] = err.to_dict()
+        st.warning(str(err))
+        logger.warning(
+            f"Fusion Segment Plan waiting for creator review: {err.attempt_id}"
+        )
     except Exception as err:
         st.error(f"{tr('Generation error')}: {str(err)}")
         logger.exception(f"生成脚本时发生错误\n{traceback.format_exc()}")

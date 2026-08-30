@@ -134,6 +134,49 @@ class ContinuityReport:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class PlanValidationFinding:
+    code: str
+    message: str
+    segment_id: str = ""
+    sentence_start: int | None = None
+    sentence_end: int | None = None
+    recovery_class: str = "auto_repairable"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "message": self.message,
+            "segment_id": self.segment_id,
+            "sentence_start": self.sentence_start,
+            "sentence_end": self.sentence_end,
+            "recovery_class": self.recovery_class,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PlanValidationReport:
+    findings: tuple[PlanValidationFinding, ...]
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.findings
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "is_valid": self.is_valid,
+            "findings": [finding.to_dict() for finding in self.findings],
+        }
+
+
+class FusionPlanValidationError(ValueError):
+    """Typed deterministic rejection of a proposed Fusion Segment Plan."""
+
+    def __init__(self, finding: PlanValidationFinding):
+        super().__init__(finding.message)
+        self.finding = finding
+
+
 class FusionScriptPipeline:
     """Match an approved plan through local evidence windows, not full-film prompts."""
 
@@ -217,6 +260,26 @@ class FusionScriptPipeline:
     def validate_plan(self, narration_copy: str, plan_payload: dict[str, Any]) -> list[FusionPlanSegment]:
         """Validate a creator-edited plan before it can be approved."""
         return self._parse_plan(plan_payload, len(self._sentences(narration_copy)))
+
+    def validate_plan_findings(
+        self, narration_copy: str, plan_payload: dict[str, Any]
+    ) -> PlanValidationReport:
+        """Return stable findings without leaking validator exceptions to orchestration."""
+        try:
+            self.validate_plan(narration_copy, plan_payload)
+        except FusionPlanValidationError as error:
+            return PlanValidationReport((error.finding,))
+        except (TypeError, ValueError) as error:
+            return PlanValidationReport(
+                (
+                    PlanValidationFinding(
+                        code="invalid_plan_value",
+                        message=str(error),
+                        recovery_class="creator_edit_required",
+                    ),
+                )
+            )
+        return PlanValidationReport(())
 
     def select_evidence_window(
         self,
@@ -323,23 +386,70 @@ class FusionScriptPipeline:
     def _parse_plan(self, payload: dict[str, Any], sentence_count: int) -> list[FusionPlanSegment]:
         segments = payload.get("segments") if isinstance(payload, dict) else None
         if not isinstance(segments, list) or not segments:
-            raise ValueError("Fusion Segment Plan requires segments")
+            raise FusionPlanValidationError(
+                PlanValidationFinding(
+                    "plan_segments_required",
+                    "Fusion Segment Plan requires segments",
+                    recovery_class="creator_edit_required",
+                )
+            )
         parsed: list[FusionPlanSegment] = []
         segment_ids: set[str] = set()
         expected_sentence_start = 1
         for index, item in enumerate(segments, start=1):
             if not isinstance(item, dict):
-                raise ValueError("Fusion Segment Plan segments must be objects")
-            sentence_start = int(item.get("sentence_start", 0))
-            sentence_end = int(item.get("sentence_end", 0))
+                raise FusionPlanValidationError(
+                    PlanValidationFinding(
+                        "plan_segment_object_required",
+                        "Fusion Segment Plan segments must be objects",
+                        segment_id=f"segment-{index}",
+                    )
+                )
+            segment_id = str(item.get("segment_id") or f"segment-{index}")
+            try:
+                sentence_start = int(item.get("sentence_start", 0))
+                sentence_end = int(item.get("sentence_end", 0))
+            except (TypeError, ValueError) as error:
+                raise FusionPlanValidationError(
+                    PlanValidationFinding(
+                        "segment_sentence_index_invalid",
+                        "Fusion Segment Plan sentence indexes must be integers",
+                        segment_id=segment_id,
+                    )
+                ) from error
             if sentence_start != expected_sentence_start or sentence_end < sentence_start:
-                raise ValueError("Fusion Segment Plan must cover narration sentences in order")
+                raise FusionPlanValidationError(
+                    PlanValidationFinding(
+                        "segment_sentence_coverage_invalid",
+                        "Fusion Segment Plan must cover narration sentences in order",
+                        segment_id=segment_id,
+                        sentence_start=sentence_start,
+                        sentence_end=sentence_end,
+                    )
+                )
             sentence_span = sentence_end - sentence_start + 1
             if not 3 <= sentence_span <= 8 and not str(item.get("exception_reason") or "").strip():
-                raise ValueError(
-                    "Fusion Segment Plan segments outside 3-8 sentences require an exception_reason"
+                raise FusionPlanValidationError(
+                    PlanValidationFinding(
+                        "segment_sentence_span_requires_exception",
+                        "Fusion Segment Plan segments outside 3-8 sentences require an exception_reason",
+                        segment_id=segment_id,
+                        sentence_start=sentence_start,
+                        sentence_end=sentence_end,
+                    )
                 )
-            core_window = TimeRange.parse(str(item.get("core_window") or item.get("timestamp") or ""))
+            try:
+                core_window = TimeRange.parse(
+                    str(item.get("core_window") or item.get("timestamp") or "")
+                )
+            except (TypeError, ValueError) as error:
+                raise FusionPlanValidationError(
+                    PlanValidationFinding(
+                        "segment_core_window_invalid",
+                        f"Fusion Segment Plan core window is invalid: {error}",
+                        segment_id=segment_id,
+                    )
+                ) from error
             if any(
                 self._overlaps(
                     core_window.start_seconds,
@@ -349,10 +459,21 @@ class FusionScriptPipeline:
                 )
                 for existing in parsed
             ):
-                raise ValueError("Fusion Segment Plan core windows must not overlap")
-            segment_id = str(item.get("segment_id") or f"segment-{index}")
+                raise FusionPlanValidationError(
+                    PlanValidationFinding(
+                        "segment_core_windows_overlap",
+                        "Fusion Segment Plan core windows must not overlap",
+                        segment_id=segment_id,
+                    )
+                )
             if segment_id in segment_ids:
-                raise ValueError("Fusion Segment Plan segment IDs must be unique")
+                raise FusionPlanValidationError(
+                    PlanValidationFinding(
+                        "segment_id_duplicate",
+                        "Fusion Segment Plan segment IDs must be unique",
+                        segment_id=segment_id,
+                    )
+                )
             segment_ids.add(segment_id)
             parsed.append(
                 FusionPlanSegment(
@@ -392,7 +513,14 @@ class FusionScriptPipeline:
             )
             expected_sentence_start = sentence_end + 1
         if expected_sentence_start != sentence_count + 1:
-            raise ValueError("Fusion Segment Plan must cover every narration sentence")
+            raise FusionPlanValidationError(
+                PlanValidationFinding(
+                    "plan_sentence_coverage_incomplete",
+                    "Fusion Segment Plan must cover every narration sentence",
+                    sentence_start=expected_sentence_start,
+                    sentence_end=sentence_count,
+                )
+            )
         return parsed
 
     def _is_marked_nonlinear(self, segment: FusionPlanSegment) -> bool:

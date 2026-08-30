@@ -5,6 +5,7 @@ OpenAI 兼容提供商实现
 """
 
 import asyncio
+import inspect
 import io
 import base64
 import re
@@ -472,39 +473,56 @@ class OpenAICompatibleTextProvider(_OpenAICompatibleBase, TextModelProvider):
                 self._emit_stream_chunk(on_chunk, "timeout", payload)
                 raise StreamGenerationTimeout(message, details=payload)
 
-            stream = await client.chat.completions.create(**completion_kwargs)
-            iterator = stream.__aiter__()
-            while True:
-                timeout_seconds = (
-                    first_chunk_timeout_seconds
-                    if stream_state["first_chunk_at"] is None
-                    else idle_timeout_seconds
-                )
-                try:
-                    chunk = await asyncio.wait_for(iterator.__anext__(), timeout=timeout_seconds)
-                except StopAsyncIteration:
-                    break
-                except asyncio.TimeoutError:
+            stream = None
+            iterator = None
+            try:
+                stream = await client.chat.completions.create(**completion_kwargs)
+                iterator = stream.__aiter__()
+                while True:
+                    timeout_seconds = (
+                        first_chunk_timeout_seconds
+                        if stream_state["first_chunk_at"] is None
+                        else idle_timeout_seconds
+                    )
+                    try:
+                        chunk = await asyncio.wait_for(
+                            iterator.__anext__(), timeout=timeout_seconds
+                        )
+                    except StopAsyncIteration:
+                        break
+                    except asyncio.TimeoutError:
+                        if stream_state["first_chunk_at"] is None:
+                            raise_timeout("waiting_first_chunk", "等待首个流式文本片段超时")
+                        raise_timeout("timed_out_after_progress", "流式文本生成在已有输出后长时间无进展")
+                    now = asyncio.get_running_loop().time()
                     if stream_state["first_chunk_at"] is None:
-                        raise_timeout("waiting_first_chunk", "等待首个流式文本片段超时")
-                    raise_timeout("timed_out_after_progress", "流式文本生成在已有输出后长时间无进展")
-                now = asyncio.get_running_loop().time()
-                if stream_state["first_chunk_at"] is None:
-                    stream_state["first_chunk_at"] = now
-                stream_state["last_chunk_at"] = now
-                if not getattr(chunk, "choices", None):
-                    continue
-                delta = chunk.choices[0].delta
-                reasoning_delta = self._extract_reasoning_delta(delta)
-                if reasoning_delta:
-                    stream_state["reasoning_characters"] += len(reasoning_delta)
-                    self._emit_stream_chunk(on_chunk, "reasoning", reasoning_delta)
+                        stream_state["first_chunk_at"] = now
+                    stream_state["last_chunk_at"] = now
+                    if not getattr(chunk, "choices", None):
+                        continue
+                    delta = chunk.choices[0].delta
+                    reasoning_delta = self._extract_reasoning_delta(delta)
+                    if reasoning_delta:
+                        stream_state["reasoning_characters"] += len(reasoning_delta)
+                        self._emit_stream_chunk(on_chunk, "reasoning", reasoning_delta)
 
-                content_delta = getattr(delta, "content", None) if delta is not None else None
-                if content_delta:
-                    content_parts.append(content_delta)
-                    stream_state["content_characters"] += len(content_delta)
-                    self._emit_stream_chunk(on_chunk, "content", content_delta)
+                    content_delta = getattr(delta, "content", None) if delta is not None else None
+                    if content_delta:
+                        content_parts.append(content_delta)
+                        stream_state["content_characters"] += len(content_delta)
+                        self._emit_stream_chunk(on_chunk, "content", content_delta)
+            finally:
+                close_target = iterator if hasattr(iterator, "aclose") else stream
+                closer = getattr(close_target, "aclose", None)
+                if closer is not None:
+                    try:
+                        close_result = closer()
+                        if inspect.isawaitable(close_result):
+                            await close_result
+                    except Exception as cleanup_error:
+                        logger.warning(
+                            f"关闭 OpenAI 兼容流时发生次要错误: {cleanup_error}"
+                        )
 
             result = "".join(content_parts).strip()
             if result:

@@ -11,7 +11,11 @@ from app.config import config
 from app.services.llm.base import TextModelProvider
 from app.services.llm.exceptions import APICallError, ConfigurationError, StreamGenerationTimeout
 from app.services.llm.manager import LLMServiceManager
-from app.services.llm.migration_adapter import LegacyLLMAdapter, VisionAnalyzerAdapter
+from app.services.llm.migration_adapter import (
+    LegacyLLMAdapter,
+    VisionAnalyzerAdapter,
+    _run_async_safely,
+)
 from app.services.llm.openai_compatible_provider import (
     OpenAIBadRequestError,
     OpenAICompatibleTextProvider,
@@ -44,6 +48,25 @@ def _reset_manager_state():
     LLMServiceManager._text_providers.clear()
     LLMServiceManager._vision_instance_cache.clear()
     LLMServiceManager._text_instance_cache.clear()
+
+
+class AsyncBridgeLifecycleTests(unittest.TestCase):
+    def test_bridge_finishes_async_generators_before_closing_its_loop(self):
+        finalized = []
+
+        async def source():
+            try:
+                yield "chunk"
+            finally:
+                await asyncio.sleep(0)
+                finalized.append(True)
+
+        async def consume_one():
+            stream = source()
+            return await stream.__anext__()
+
+        self.assertEqual("chunk", _run_async_safely(consume_one))
+        self.assertEqual([True], finalized)
 
 
 class OpenAICompatManagerTests(unittest.TestCase):
@@ -196,6 +219,48 @@ class OpenAICompatGenerationOptionTests(unittest.TestCase):
 
 
 class OpenAICompatFusionStreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_fusion_stream_closes_provider_iterator_after_success(self):
+        class ClosableStream:
+            closed = False
+
+            def __init__(self):
+                self._sent = False
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if self._sent:
+                    raise StopAsyncIteration
+                self._sent = True
+                return SimpleNamespace(
+                    choices=[
+                        SimpleNamespace(
+                            delta=SimpleNamespace(
+                                content="complete", reasoning_content=None
+                            )
+                        )
+                    ]
+                )
+
+            async def aclose(self):
+                type(self).closed = True
+
+        class FakeCompletions:
+            async def create(self, **_kwargs):
+                return ClosableStream()
+
+        class FakeOpenAI:
+            def __init__(self, **_kwargs):
+                self.chat = SimpleNamespace(completions=FakeCompletions())
+
+        provider = OpenAICompatibleTextProvider(api_key="k", model_name="m")
+        with patch("app.services.llm.openai_compatible_provider.AsyncOpenAI", FakeOpenAI):
+            result = await provider.generate_text_stream("prompt")
+
+        self.assertEqual("complete", result)
+        self.assertTrue(ClosableStream.closed)
+
     async def test_fusion_stream_uses_explicit_first_chunk_timeout_without_sdk_retries(self):
         class FakeStream:
             def __init__(self):

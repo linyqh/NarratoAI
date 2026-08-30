@@ -7,6 +7,10 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from app.services.fusion_script_finalizer import FusionScriptFinalizer
+from app.services.fusion_plan_attempts import (
+    FusionPlanAttemptStore,
+    FusionPlanRecoveryRequired,
+)
 from app.services.documentary.frame_analysis_models import HighlightCandidate, TimeRange
 from app.services.documentary.local_analysis_tasks import LocalAnalysisTaskStore
 from app.services.fusion_models import CandidateRejection, EvidenceConflict, FinalizationRequest, HighlightCandidateIntake
@@ -589,6 +593,101 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
 
         self.assertTrue(result["segments"][0]["bridge_to_next"])
         analyzer.repair_fusion_segment_plan.assert_called_once()
+
+    def test_planning_repairs_a_structural_span_failure_once_before_creator_approval(self):
+        base_segment = {
+            "segment_id": "segment-1",
+            "sentence_start": 1,
+            "sentence_end": 9,
+            "core_window": "00:00:00,000-00:01:30,000",
+            "active_subject": "主角",
+            "entering_state": "仍被困在危机中",
+            "trigger_event": "他获得新的证据",
+            "exiting_state": "决定展开反击",
+        }
+        invalid_plan = {"segments": [base_segment]}
+        repaired_plan = {
+            "segments": [
+                {
+                    **base_segment,
+                    "exception_reason": "这一连续行动必须保留为一个完整的叙事单元。",
+                }
+            ]
+        }
+        analyzer = Mock()
+        analyzer.plan_narration_segments.return_value = json.dumps(
+            invalid_plan, ensure_ascii=False
+        )
+        analyzer.repair_fusion_segment_plan.return_value = json.dumps(
+            repaired_plan, ensure_ascii=False
+        )
+
+        result = generate_short_summary.create_fusion_segment_plan(
+            analyzer=analyzer,
+            short_name="测试影片",
+            plot_analysis="剧情概要",
+            subtitle_content="字幕事实",
+            narration_copy="".join(f"第{i}句。" for i in range(1, 10)),
+            narration_language="简体中文（中国）",
+            drama_genre="剧情",
+            visual_evidence="视觉事实",
+            highlight_candidates="",
+            temperature=0.3,
+        )
+
+        self.assertEqual(
+            "这一连续行动必须保留为一个完整的叙事单元。",
+            result["segments"][0]["exception_reason"],
+        )
+        analyzer.repair_fusion_segment_plan.assert_called_once()
+        repair_findings = json.loads(
+            analyzer.repair_fusion_segment_plan.call_args.kwargs["continuity_findings"]
+        )
+        self.assertEqual(
+            "segment_sentence_span_requires_exception",
+            repair_findings["findings"][0]["code"],
+        )
+
+    def test_invalid_plan_repair_is_preserved_for_creator_recovery(self):
+        invalid_plan = {
+            "segments": [
+                {
+                    "segment_id": "segment-1",
+                    "sentence_start": 1,
+                    "sentence_end": 9,
+                    "core_window": "00:00:00,000-00:01:30,000",
+                }
+            ]
+        }
+        analyzer = Mock()
+        analyzer.plan_narration_segments.return_value = json.dumps(invalid_plan)
+        analyzer.repair_fusion_segment_plan.return_value = json.dumps(invalid_plan)
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionPlanAttemptStore(Path(directory))
+            with self.assertRaises(FusionPlanRecoveryRequired) as raised:
+                generate_short_summary.create_fusion_segment_plan(
+                    analyzer=analyzer,
+                    short_name="测试影片",
+                    plot_analysis="剧情概要",
+                    subtitle_content="字幕事实",
+                    narration_copy="".join(f"第{i}句。" for i in range(1, 10)),
+                    narration_language="简体中文（中国）",
+                    drama_genre="剧情",
+                    visual_evidence="视觉事实",
+                    highlight_candidates="",
+                    temperature=0.3,
+                    attempt_store=store,
+                    attempt_context={"provider": "fake", "model": "fake-model"},
+                )
+
+            attempts = store.list_attempts()
+
+        self.assertEqual("waiting_for_review", raised.exception.status)
+        self.assertEqual(2, len(attempts))
+        self.assertEqual("validation_failed", attempts[1]["status"])
+        self.assertEqual(attempts[0]["attempt_id"], attempts[1]["parent_attempt_id"])
+        self.assertNotIn("字幕事实", json.dumps(attempts, ensure_ascii=False))
 
     def test_fusion_segment_plan_forwards_the_live_stream_callback(self):
         valid_plan = {
