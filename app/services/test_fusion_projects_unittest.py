@@ -1,11 +1,33 @@
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+import os
 from pathlib import Path
 
 from app.services.fusion_projects import FusionProjectStore, project_projection
 
 
 class FusionProjectStoreTests(unittest.TestCase):
+    def _render_authorization(self, store, project, root, configuration=None):
+        movie = Path(root) / "render-source.mp4"
+        movie.write_bytes(b"video")
+        store.add_local_reference(project["project_id"], path=str(movie))
+        finalization = {
+            "active_version_id": "version-1",
+            "renderable": True,
+            "finalized_script": [{"_id": 1}],
+            "preflight": {
+                "blockers": [], "warnings": [], "renderable": True,
+            },
+        }
+        store.update(
+            project["project_id"], active_version_id="version-1",
+            artifact_refs={"finalization": finalization},
+        )
+        return store.create_render_authorization(
+            project["project_id"], configuration_snapshot=configuration or {}
+        )
+
     def test_project_survives_reopening_and_preserves_local_source_reference(self):
         with tempfile.TemporaryDirectory() as directory:
             store = FusionProjectStore(Path(directory))
@@ -60,6 +82,90 @@ class FusionProjectStoreTests(unittest.TestCase):
 
         self.assertEqual("stale", result["admission"])
 
+    def test_concurrent_task_updates_do_not_lose_project_mutations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = FusionProjectStore(root)
+            project = store.create("并发更新")
+
+            def attach(index):
+                FusionProjectStore(root).attach_task(
+                    project["project_id"], task_id=f"task-{index}",
+                    kind="visual_analysis", source_id=f"source-{index}",
+                )
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                list(executor.map(attach, range(20)))
+            reopened = store.read(project["project_id"])
+
+        self.assertEqual(20, len(reopened["task_refs"]))
+        self.assertGreaterEqual(reopened["revision"], 21)
+
+    def test_task_reservation_atomically_blocks_duplicate_content_work(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = FusionProjectStore(root).create("任务互斥")
+
+            def reserve(index):
+                try:
+                    FusionProjectStore(root).reserve_task(
+                        project["project_id"], task_id=f"plan-{index}", kind="fusion_plan"
+                    )
+                    return "started"
+                except ValueError:
+                    return "blocked"
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = list(executor.map(reserve, range(2)))
+
+        self.assertEqual(["blocked", "started"], sorted(results))
+
+    def test_cancelled_run_cannot_commit_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory))
+            project = store.create("取消竞争")
+            store.reserve_task(
+                project["project_id"], task_id="plan-1", kind="fusion_plan",
+                run_id="run-1",
+            )
+            store.cancel_task_run(
+                project["project_id"], task_id="plan-1", run_id="run-1"
+            )
+
+            with self.assertRaisesRegex(ValueError, "no longer current"):
+                store.commit_task_artifacts(
+                    project["project_id"], task_id="plan-1", run_id="run-1",
+                    artifact_changes={"fusion_segment_plan_draft": {"segments": []}},
+                    message="不应提交",
+                )
+            reopened = store.read(project["project_id"])
+
+        self.assertNotIn("fusion_segment_plan_draft", reopened["artifact_refs"])
+        self.assertEqual("cancelled", reopened["task_refs"][0]["status"])
+
+    def test_completed_run_cannot_be_relabelled_cancelled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory))
+            project = store.create("完成后取消")
+            store.reserve_task(
+                project["project_id"], task_id="plan-1", kind="fusion_plan",
+                run_id="run-1",
+            )
+            store.commit_task_artifacts(
+                project["project_id"], task_id="plan-1", run_id="run-1",
+                artifact_changes={"fusion_segment_plan_draft": {"segments": []}},
+                message="已完成",
+            )
+
+            with self.assertRaisesRegex(ValueError, "no longer cancellable"):
+                store.cancel_task_run(
+                    project["project_id"], task_id="plan-1", run_id="run-1"
+                )
+            reopened = store.read(project["project_id"])
+
+        self.assertEqual("completed", reopened["task_refs"][0]["status"])
+        self.assertIn("fusion_segment_plan_draft", reopened["artifact_refs"])
+
     def test_applying_content_draft_creates_version_and_invalidates_dependents(self):
         with tempfile.TemporaryDirectory() as directory:
             store = FusionProjectStore(Path(directory))
@@ -86,16 +192,20 @@ class FusionProjectStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             store = FusionProjectStore(Path(directory))
             project = store.create("审核项目")
-            store.update(project["project_id"], active_version_id="version-1")
+            authorization = self._render_authorization(
+                store, project, directory
+            )
             decision = store.record_review_decision(
                 project["project_id"], finding_id="finding-1", action="acknowledge"
             )
             undone = store.undo_review_decision(project["project_id"], decision["decision_id"])
             first = store.add_render_outcome(
-                project["project_id"], media_path="first.mp4", preflight={"blockers": []}
+                project["project_id"], media_path="first.mp4",
+                render_authorization=authorization,
             )
             second = store.add_render_outcome(
-                project["project_id"], media_path="second.mp4", preflight={"blockers": []}
+                project["project_id"], media_path="second.mp4",
+                render_authorization=authorization,
             )
 
         self.assertEqual("undone", undone["review_decisions"][0]["status"])
@@ -138,6 +248,38 @@ class FusionProjectStoreTests(unittest.TestCase):
 
         self.assertTrue(refreshed["source_video_sequence"][0]["available"])
         self.assertTrue(refreshed["source_video_sequence"][0]["identity"]["size"])
+
+    def test_replacing_source_at_same_path_invalidates_old_evidence_and_versions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            movie = root / "movie.mp4"
+            movie.write_bytes(b"old-video")
+            store = FusionProjectStore(root / "projects")
+            project = store.create("身份变化")
+            source = store.add_local_reference(project["project_id"], path=str(movie))
+            store.attach_source_visual_evidence(
+                project["project_id"], source_id=source["source_id"],
+                evidence="旧画面", artifact_path="old.json",
+            )
+            store.update(
+                project["project_id"], active_version_id="v1",
+                artifact_refs={
+                    **store.read(project["project_id"])["artifact_refs"],
+                    "fusion_segment_plan": {"segments": []},
+                    "finalization": {"active_version_id": "v1"},
+                },
+            )
+            original_stat = movie.stat()
+            movie.write_bytes(b"new-video")
+            os.utime(movie, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+            refreshed = store.refresh_source_availability(project["project_id"])
+
+        self.assertEqual("changed", refreshed["source_video_sequence"][0]["identity_status"])
+        self.assertEqual("stale", refreshed["source_video_sequence"][0]["visual_evidence_status"])
+        self.assertFalse(refreshed["active_version_id"])
+        self.assertNotIn("finalization", refreshed["artifact_refs"])
+        self.assertEqual("source_identity_changed", refreshed["review_findings"][0]["code"])
 
     def test_stage_readiness_explains_why_matching_is_blocked(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -227,10 +369,13 @@ class FusionProjectStoreTests(unittest.TestCase):
 
     def test_visual_evidence_is_owned_by_its_source_and_combined_without_overwrite(self):
         with tempfile.TemporaryDirectory() as directory:
-            store = FusionProjectStore(Path(directory))
+            root = Path(directory)
+            (root / "first.mp4").write_bytes(b"first")
+            (root / "second.mp4").write_bytes(b"second")
+            store = FusionProjectStore(root / "projects")
             project = store.create("多视频")
-            first = store.add_local_reference(project["project_id"], path="first.mp4")
-            second = store.add_local_reference(project["project_id"], path="second.mp4")
+            first = store.add_local_reference(project["project_id"], path=str(root / "first.mp4"))
+            second = store.add_local_reference(project["project_id"], path=str(root / "second.mp4"))
 
             store.attach_source_visual_evidence(
                 project["project_id"], source_id=first["source_id"],
@@ -328,23 +473,88 @@ class FusionProjectStoreTests(unittest.TestCase):
             reopened = store.read(migrated["project_id"])
 
         self.assertEqual("legacy_fusion_import", reopened["migration_state"]["kind"])
+        self.assertEqual("requires_revalidation", reopened["migration_state"]["status"])
         self.assertEqual("review", reopened["active_stage"])
         self.assertTrue(reopened["active_version_id"])
+        self.assertFalse(reopened["artifact_refs"]["finalization"]["renderable"])
+        self.assertEqual(
+            "legacy_import_requires_revalidation",
+            reopened["review_findings"][0]["code"],
+        )
+
+    def test_legacy_migration_can_be_revalidated_against_current_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            movie = root / "movie.mp4"
+            movie.write_bytes(b"video")
+            store = FusionProjectStore(root / "projects")
+            migrated = store.migrate_legacy_project(
+                name="可迁移项目", source_paths=[str(movie)],
+                finalized_script=[{
+                    "_id": 1, "video_name": movie.name, "OST": 0,
+                    "narration": "开场", "timestamp": "00:00:00,000-00:00:05,000",
+                }],
+                preflight={"blockers": [], "warnings": [], "renderable": True},
+            )
+
+            revalidated = store.revalidate_legacy_project(
+                migrated["project_id"], source_durations={movie.name: 10.0}
+            )
+
+        self.assertEqual("revalidated", revalidated["migration_state"]["status"])
+        self.assertTrue(revalidated["artifact_refs"]["finalization"]["renderable"])
+        self.assertFalse(revalidated["review_findings"])
 
     def test_render_outcome_freezes_configuration_snapshot(self):
         with tempfile.TemporaryDirectory() as directory:
             store = FusionProjectStore(Path(directory))
             project = store.create("输出")
-            store.update(project["project_id"], active_version_id="version-1")
             configuration = {"voice": "voice-a", "subtitle_enabled": True}
+            authorization = self._render_authorization(
+                store, project, directory, configuration
+            )
 
             outcome = store.add_render_outcome(
                 project["project_id"], media_path="movie.mp4",
-                preflight={"blockers": []}, configuration_snapshot=configuration,
+                render_authorization=authorization,
             )
             configuration["voice"] = "changed"
 
         self.assertEqual("voice-a", outcome["configuration_snapshot"]["voice"])
+
+    def test_render_completion_for_changed_version_is_stale(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory) / "projects")
+            project = store.create("过期输出")
+            authorization = self._render_authorization(store, project, directory)
+            store.attach_task(
+                project["project_id"], task_id="render-1", kind="render",
+                input_version_id="version-1", status="running",
+            )
+            store.update(project["project_id"], active_version_id="version-2")
+
+            outcome = store.add_render_outcome(
+                project["project_id"], media_path="old.mp4",
+                render_authorization=authorization, render_task_id="render-1",
+            )
+
+        self.assertEqual("stale", outcome["admission"])
+        self.assertEqual("version-1", outcome["version_id"])
+        self.assertEqual("render", outcome["project"]["stale_task_results"][0]["kind"])
+
+    def test_render_authorization_rechecks_current_media_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = FusionProjectStore(Path(directory) / "projects")
+            project = store.create("授权身份")
+            self._render_authorization(store, project, directory)
+            source = store.read(project["project_id"])["source_video_sequence"][0]
+            movie = Path(source["path"])
+            original_stat = movie.stat()
+            movie.write_bytes(b"other")
+            os.utime(movie, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+            with self.assertRaisesRegex(ValueError, "content changed"):
+                store.create_render_authorization(project["project_id"])
 
     def test_warning_override_requires_reason_and_blockers_remain_unoverridable(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -386,8 +596,18 @@ class FusionProjectStoreTests(unittest.TestCase):
             ({"task_refs": [{"status": "running"}]}, "running"),
             ({"task_refs": [{"status": "interrupted"}]}, "interrupted"),
             ({"review_findings": [{"severity": "warning", "status": "open"}]}, "waiting_for_review"),
-            ({"active_version_id": "v1"}, "ready_to_render"),
-            ({"render_outcomes": [{"outcome_id": "o1"}]}, "completed"),
+            ({"active_version_id": "v1"}, "waiting_for_review"),
+            ({
+                "active_version_id": "v1",
+                "artifact_refs": {"finalization": {
+                    "active_version_id": "v1", "renderable": True,
+                    "preflight": {"blockers": [], "warnings": [], "renderable": True},
+                }},
+            }, "ready_to_render"),
+            ({
+                "active_version_id": "v1",
+                "render_outcomes": [{"outcome_id": "o1", "version_id": "v1", "admission": "active"}],
+            }, "completed"),
             ({"source_video_sequence": [{"available": False}]}, "source_offline"),
             ({"stale_task_results": [{"task_id": "old"}]}, "stale_result"),
             ({"review_findings": [{"severity": "blocker", "status": "open"}], "task_refs": [{"status": "running"}]}, "blocked"),

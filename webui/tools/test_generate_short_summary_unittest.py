@@ -727,16 +727,25 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
                     highlight_candidates="",
                     temperature=0.3,
                     attempt_store=store,
-                    attempt_context={"provider": "fake", "model": "fake-model"},
+                    attempt_context={
+                        "provider": "fake", "model": "fake-model",
+                        "project_id": "project-1", "version_id": "version-1",
+                    },
                 )
 
             attempts = store.list_attempts()
+            recovered = store.read_recovery_payload(attempts[1]["attempt_id"])
 
         self.assertEqual("waiting_for_review", raised.exception.status)
         self.assertEqual(2, len(attempts))
-        self.assertEqual("validation_failed", attempts[1]["status"])
+        self.assertEqual("waiting_for_review", attempts[1]["status"])
         self.assertEqual(attempts[0]["attempt_id"], attempts[1]["parent_attempt_id"])
         self.assertNotIn("字幕事实", json.dumps(attempts, ensure_ascii=False))
+        self.assertEqual("project-1", attempts[1]["project_id"])
+        self.assertEqual("version-1", attempts[1]["version_id"])
+        self.assertEqual(invalid_plan, recovered)
+        self.assertTrue(attempts[1]["raw_response_ref"])
+        self.assertTrue(attempts[1]["recovery_payload_ref"])
 
     def test_fusion_segment_plan_forwards_the_live_stream_callback(self):
         valid_plan = {

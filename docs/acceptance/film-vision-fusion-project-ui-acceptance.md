@@ -1,7 +1,7 @@
 # Film Vision Fusion project UI acceptance
 
-Date: 2026-08-30  
-Implementation baseline: `0f7865c`  
+Date: 2026-08-30
+Implementation baseline: `0f7865c`
 Acceptance target: P0 plus Slice 0–7 in `ready-for-agent-film-vision-fusion-project-workspace-ui.md`
 
 ## Automated state and safety coverage
@@ -20,6 +20,15 @@ The focused project/UI suite also verifies:
 - Plan validation, approval, matching, Narrative Map review, synchronized review context, bounded timeline edits, and version restore;
 - Render Preflight blocker/warning policy, immutable Render Outcomes, and frozen render configuration snapshots;
 - default Project Library navigation and removal of stale Film Vision Fusion state before entering traditional modes.
+
+The post-review full discovery run completed **272 tests successfully** with one
+provider/environment test skipped. It additionally verifies that a source file
+replaced at the same path invalidates old evidence, concurrent project-task
+updates are serialized, complete Plan responses remain recoverable, legacy
+imports cannot inherit render authority, and a render completed for an older
+version is retained only as a stale outcome. The same coverage also verifies
+atomic task reservation, run-token isolation after cancel/retry, media-content
+hash identity, and the safe legacy revalidation path.
 
 ## Responsive visual inspection
 

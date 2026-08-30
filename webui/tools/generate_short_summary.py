@@ -300,6 +300,8 @@ def create_fusion_segment_plan(
             model=str(context.get("model") or ""),
             kind=kind,
             parent_attempt_id=parent_attempt_id,
+            project_id=str(context.get("project_id") or ""),
+            version_id=str(context.get("version_id") or ""),
         )
 
     def update_attempt(attempt, **changes):
@@ -309,6 +311,10 @@ def create_fusion_segment_plan(
 
     original_attempt = record(plan_raw, kind="generation")
     plan = parse_and_fix_json(plan_raw)
+    if attempt_store is not None and original_attempt is not None and isinstance(plan, dict):
+        original_attempt = attempt_store.save_recovery_payload(
+            str(original_attempt["attempt_id"]), plan
+        )
     pipeline = FusionScriptPipeline()
     if isinstance(plan, dict):
         validation_report = pipeline.validate_plan_findings(narration_copy, plan)
@@ -378,6 +384,14 @@ def create_fusion_segment_plan(
             ),
         )
         repaired_plan = parse_and_fix_json(repaired_raw)
+        if (
+            attempt_store is not None
+            and repaired_attempt is not None
+            and isinstance(repaired_plan, dict)
+        ):
+            repaired_attempt = attempt_store.save_recovery_payload(
+                str(repaired_attempt["attempt_id"]), repaired_plan
+            )
         if not isinstance(repaired_plan, dict):
             findings = [{
                 "code": "plan_json_invalid_after_repair",
@@ -385,7 +399,7 @@ def create_fusion_segment_plan(
                 "recovery_class": "creator_edit_required",
             }]
             attempt = update_attempt(
-                repaired_attempt, status="validation_failed", findings=findings
+                repaired_attempt, status="waiting_for_review", findings=findings
             )
             if attempt is not None:
                 raise FusionPlanRecoveryRequired(
@@ -398,7 +412,7 @@ def create_fusion_segment_plan(
         if not repaired_validation.is_valid:
             findings = [finding.to_dict() for finding in repaired_validation.findings]
             attempt = update_attempt(
-                repaired_attempt, status="validation_failed", findings=findings
+                repaired_attempt, status="waiting_for_review", findings=findings
             )
             if attempt is not None:
                 raise FusionPlanRecoveryRequired(
@@ -412,7 +426,7 @@ def create_fusion_segment_plan(
         if not continuity_report.is_renderable:
             findings = [finding.to_dict() for finding in continuity_report.findings]
             attempt = update_attempt(
-                repaired_attempt, status="validation_failed", findings=findings
+                repaired_attempt, status="waiting_for_review", findings=findings
             )
             if attempt is not None:
                 raise FusionPlanRecoveryRequired(

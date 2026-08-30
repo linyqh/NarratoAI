@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from html import escape
 from pathlib import Path
+import hashlib
 import json
 from uuid import uuid4
 
@@ -43,6 +44,22 @@ STATUS_LABELS = {
     "archived": "已归档",
     "trashed": "回收站",
 }
+
+TASK_CAPABILITIES = {
+    "visual_analysis": {"resume", "cancel"},
+    "fusion_matching": {"resume", "cancel"},
+    "narration_generation": {"resume", "cancel"},
+    "fusion_plan": {"resume", "cancel"},
+    "render": {"resume"},
+}
+
+
+def _options_with_current(defaults: list[str], current: str) -> tuple[list[str], int]:
+    current = str(current or "")
+    options = list(defaults)
+    if current and current not in options:
+        options.insert(0, current)
+    return options, options.index(current) if current in options else 0
 
 
 def project_store() -> FusionProjectStore:
@@ -256,18 +273,36 @@ def _render_new_project() -> None:
         st.subheader("剪辑配置")
         name = st.text_input("项目名称", value=project["name"])
         settings = dict(project.get("project_settings") or {})
-        language = st.selectbox("输出语言", ["简体中文（中国）", "繁體中文", "English"], index=0)
-        style = st.selectbox("解说风格", ["剧情解说", "悬疑推进", "人物成长", "冷静分析"])
+        language_options, language_index = _options_with_current(
+            ["简体中文（中国）", "繁體中文", "English"],
+            str(settings.get("output_language") or "简体中文（中国）"),
+        )
+        language = st.selectbox("输出语言", language_options, index=language_index)
+        style_options, style_index = _options_with_current(
+            ["剧情解说", "悬疑推进", "人物成长", "冷静分析"],
+            str(settings.get("commentary_style") or "剧情解说"),
+        )
+        style = st.selectbox("解说风格", style_options, index=style_index)
         target = st.number_input("目标文案字数", min_value=300, max_value=10000, value=int(settings.get("target_narration_length") or 1200), step=100)
         ratio = st.slider("原片声音比例", 0, 100, int(settings.get("original_sound_ratio") or 30), 5)
-        subtitle_policy = st.selectbox("字幕策略", ["source_or_asr", "source_only", "asr_if_missing"])
+        subtitle_options, subtitle_index = _options_with_current(
+            ["source_or_asr", "source_only", "asr_if_missing"],
+            str(settings.get("subtitle_policy") or "source_or_asr"),
+        )
+        subtitle_policy = st.selectbox(
+            "字幕策略", subtitle_options, index=subtitle_index
+        )
         voice_profile = st.text_input("TTS 音色", value=str(settings.get("voice_profile") or ""))
         background_music = st.text_input("背景音乐路径（可选）", value=str(settings.get("background_music") or ""))
-        output_format = st.selectbox("输出格式", ["mp4", "mkv"], index=0)
-        video_aspect = st.selectbox(
-            "视频比例", ["9:16", "16:9", "1:1", "3:4", "4:3"],
-            index=["9:16", "16:9", "1:1", "3:4", "4:3"].index(str(settings.get("video_aspect") or "9:16")),
+        format_options, format_index = _options_with_current(
+            ["mp4", "mkv"], str(settings.get("output_format") or "mp4")
         )
+        output_format = st.selectbox("输出格式", format_options, index=format_index)
+        aspect_options, aspect_index = _options_with_current(
+            ["9:16", "16:9", "1:1", "3:4", "4:3"],
+            str(settings.get("video_aspect") or "9:16"),
+        )
+        video_aspect = st.selectbox("视频比例", aspect_options, index=aspect_index)
         subtitle_enabled = st.toggle(
             "启用字幕", value=bool(settings.get("subtitle_enabled", True))
         )
@@ -416,8 +451,15 @@ def _stage_evidence(project, store) -> None:
                 "开始视觉分析", type="primary", key=f"start-{source['source_id']}",
                 disabled=not start_projection["allowed"],
             ):
+                reservation_id = f"visualreservation{uuid4().hex}"
                 try:
                     from webui.tools.generate_film_vision_fusion import start_local_visual_analysis
+
+                    store.reserve_task(
+                        project["project_id"], task_id=reservation_id,
+                        kind="visual_analysis", source_id=source["source_id"],
+                        input_version_id=project.get("active_version_id") or "setup",
+                    )
 
                     task_id = start_local_visual_analysis(
                         video_path=source["path"],
@@ -426,13 +468,19 @@ def _stage_evidence(project, store) -> None:
                         frame_interval_seconds=float(interval),
                         vision_batch_size=int(batch),
                     )
-                    store.attach_task(
-                        project["project_id"], task_id=task_id,
-                        kind="visual_analysis", source_id=source["source_id"],
-                        input_version_id=project.get("active_version_id") or "setup",
+                    store.bind_reserved_task(
+                        project["project_id"], reservation_id=reservation_id,
+                        task_id=task_id,
                     )
                     st.rerun()
                 except Exception as error:
+                    try:
+                        store.update_task_summary(
+                            project["project_id"], reservation_id, status="failed",
+                            error_message=str(error), recoverable=True,
+                        )
+                    except ValueError:
+                        pass
                     st.error(f"无法开始视觉分析：{error}")
 
     visual_tasks = [task for task in project.get("task_refs") or [] if task.get("kind") == "visual_analysis"]
@@ -495,48 +543,25 @@ def _stage_narration(project, store) -> None:
         "生成解说词", type="primary",
         disabled=not subtitle_paths or not narration_start["allowed"],
     ):
-        task_id = f"narration{uuid4().hex}"
-        store.attach_task(
-            project["project_id"], task_id=task_id, kind="narration_generation",
-            input_version_id=project.get("active_version_id") or "setup", status="running",
-        )
+        reservation_id = f"matchingreservation{uuid4().hex}"
         try:
-            from webui.tools.generate_short_summary import (
-                FILM_TV_PROMPT_CATEGORY,
-                generate_short_drama_narration_copy,
-            )
-
-            result = generate_short_drama_narration_copy(
-                subtitle_path=subtitle_paths,
-                video_theme=project["name"],
-                temperature=0.3,
-                video_paths=[source.get("path") for source in sources],
-                narration_language=(project.get("project_settings") or {}).get("output_language", "简体中文（中国）"),
-                drama_genre=(project.get("project_settings") or {}).get("commentary_style", "剧情解说"),
-                prompt_category=FILM_TV_PROMPT_CATEGORY,
-                narration_word_count=int((project.get("project_settings") or {}).get("target_narration_length", 1200)),
-                visual_evidence=str(artifacts.get("visual_evidence") or ""),
-            )
-            if result:
-                artifacts = dict(artifacts)
-                artifacts.update(
-                    narration_draft=result["narration_copy"],
-                    plot_analysis=result["plot_analysis"],
-                    subtitle_content=result["subtitle_content"],
-                )
-                project = store.update(project["project_id"], artifact_refs=artifacts)
-                store.update_task_summary(
-                    project["project_id"], task_id, status="completed", progress=100,
-                    message="解说词已生成并保存为待审核草稿",
-                )
-                st.rerun()
+            _start_narration_generation(project["project_id"])
+            st.rerun()
         except Exception as error:
-            store.update_task_summary(
-                project["project_id"], task_id, status="failed",
-                error_message=str(error), failure_category=_failure_category(error),
-                recoverable=True,
-            )
-            st.error(f"解说词生成未完成：{error}")
+            st.error(f"无法启动解说词生成：{error}")
+    narration_task = next(
+        (
+            task for task in reversed(project.get("task_refs") or [])
+            if task.get("kind") == "narration_generation"
+        ),
+        None,
+    )
+    if narration_task and narration_task.get("status") in {
+        "queued", "running", "failed", "interrupted", "cancelled"
+    }:
+        st.info(str(narration_task.get("message") or narration_task.get("status")))
+        if st.button("刷新解说词任务状态"):
+            st.rerun()
     draft = st.text_area("解说词草稿", value=str(artifacts.get("narration_draft") or artifacts.get("narration") or ""), height=280)
     if st.button("保存为 Content Draft", use_container_width=True):
         saved = store.save_content_draft(project["project_id"], kind="narration", content=draft)
@@ -585,61 +610,57 @@ def _stage_matching(project, store) -> None:
         "生成 Fusion Segment Plan", type="primary",
         disabled=not plan_start["allowed"],
     ):
-        plan_task_id = f"fusionplan{uuid4().hex}"
-        store.attach_task(
-            project["project_id"], task_id=plan_task_id, kind="fusion_plan",
-            input_version_id=project.get("active_version_id") or "", status="running",
-        )
         try:
-            from webui.tools.generate_short_summary import create_fusion_segment_plan
-
-            analyzer, provider, model = _text_analyzer()
-            plan = create_fusion_segment_plan(
-                analyzer=analyzer,
-                short_name=project["name"],
-                plot_analysis=str(artifacts.get("plot_analysis") or ""),
-                subtitle_content=str(artifacts.get("subtitle_content") or ""),
-                narration_copy=narration,
-                narration_language=str((project.get("project_settings") or {}).get("output_language") or "简体中文（中国）"),
-                drama_genre=str((project.get("project_settings") or {}).get("commentary_style") or "剧情解说"),
-                visual_evidence=str(artifacts.get("visual_evidence") or ""),
-                highlight_candidates=str(artifacts.get("highlight_candidates") or ""),
-                temperature=0.3,
-                stream_callback=lambda event: stream.info(
-                    f"模型正在生成计划：{str((event or {}).get('text') or '')[-600:]}"
-                ),
-                attempt_store=plan_store,
-                attempt_context={
-                    "provider": provider, "model": model,
-                    "input_fingerprint": project.get("active_version_id") or "setup",
-                },
-            )
-            artifacts["fusion_segment_plan_draft"] = plan
-            artifacts["fusion_plan_attempts"] = _safe_attempt_summaries(plan_store)
-            project = store.update(project["project_id"], artifact_refs=artifacts)
-            store.update_task_summary(
-                project["project_id"], plan_task_id, status="completed", progress=100,
-                message="分段计划已生成，等待审核批准",
-            )
+            _start_fusion_plan_generation(project["project_id"])
             st.rerun()
         except Exception as error:
-            recovery = getattr(error, "to_dict", lambda: {})()
-            artifacts["fusion_plan_attempts"] = _safe_attempt_summaries(plan_store)
-            store.update(project["project_id"], artifact_refs=artifacts)
-            store.update_task_summary(
-                project["project_id"], plan_task_id, status="failed",
-                error_message=str(error), failure_category=_failure_category(error),
-                recoverable=True,
-            )
-            st.error(str(recovery.get("message") or f"分段计划未完成：{error}"))
-            if recovery.get("findings"):
-                st.dataframe(recovery["findings"], use_container_width=True, hide_index=True)
+            st.error(f"无法启动分段计划生成：{error}")
+    plan_task = next(
+        (
+            task for task in reversed(project.get("task_refs") or [])
+            if task.get("kind") == "fusion_plan"
+        ),
+        None,
+    )
+    if plan_task and plan_task.get("status") in {
+        "queued", "running", "failed", "interrupted", "cancelled"
+    }:
+        stream.info(str(plan_task.get("message") or plan_task.get("error_message") or plan_task.get("status")))
+        if st.button("刷新 Plan 任务状态"):
+            st.rerun()
 
     draft_plan = artifacts.get("fusion_segment_plan_draft") or artifacts.get("fusion_segment_plan")
+    recovered_attempt = None
+    if not draft_plan:
+        current_version = str(project.get("active_version_id") or "setup")
+        current_fingerprint = _plan_input_fingerprint(project, artifacts, narration)
+        recoverable = [
+            item for item in attempts
+            if item.get("status") in {"validation_failed", "waiting_for_review"}
+            and str(item.get("project_id") or project["project_id"]) == project["project_id"]
+            and str(item.get("version_id") or "setup") == current_version
+            and str(item.get("input_fingerprint") or "") == current_fingerprint
+        ]
+        if recoverable:
+            recovered_attempt = recoverable[-1]
+            try:
+                draft_plan = plan_store.read_recovery_payload(
+                    str(recovered_attempt["attempt_id"])
+                )
+                st.info(
+                    "已从失败的 Plan Attempt 恢复完整模型输出；编辑并验证后可继续，"
+                    "不会重新消耗整次生成结果。"
+                )
+            except (OSError, ValueError, json.JSONDecodeError) as error:
+                st.warning(f"Plan Attempt 的恢复载荷暂不可用：{error}")
     if draft_plan:
         editor = st.text_area(
             "结构化计划编辑器",
-            value=json.dumps(draft_plan, ensure_ascii=False, indent=2),
+            value=(
+                draft_plan
+                if isinstance(draft_plan, str)
+                else json.dumps(draft_plan, ensure_ascii=False, indent=2)
+            ),
             height=320,
             key=f"plan-editor-{project['project_id']}-{project.get('active_version_id')}",
         )
@@ -685,6 +706,11 @@ def _stage_matching(project, store) -> None:
             from webui.tools.generate_short_summary import start_fusion_matching_task
 
             sources = [source for source in project.get("source_video_sequence") or [] if source.get("available")]
+            store.reserve_task(
+                project["project_id"], task_id=reservation_id,
+                kind="fusion_matching",
+                input_version_id=project.get("active_version_id") or "",
+            )
             source_identity = _project_source_identity(project)
             source_durations = {
                 Path(source["path"]).name: VideoProcessor(source["path"]).duration
@@ -708,12 +734,19 @@ def _stage_matching(project, store) -> None:
                     "source_durations": source_durations,
                 },
             )
-            store.attach_task(
-                project["project_id"], task_id=task_id, kind="fusion_matching",
-                input_version_id=project.get("active_version_id") or "", status="queued",
+            store.bind_reserved_task(
+                project["project_id"], reservation_id=reservation_id,
+                task_id=task_id,
             )
             st.rerun()
         except Exception as error:
+            try:
+                store.update_task_summary(
+                    project["project_id"], reservation_id, status="failed",
+                    error_message=str(error), recoverable=True,
+                )
+            except ValueError:
+                pass
             st.error(f"无法开始画面匹配：{error}")
 
     matching = next(
@@ -1099,6 +1132,27 @@ def _stage_output(project, store) -> None:
     artifacts = project.get("artifact_refs") or {}
     finalization = artifacts.get("finalization") if isinstance(artifacts.get("finalization"), dict) else {}
     preflight = finalization.get("preflight") if isinstance(finalization.get("preflight"), dict) else {}
+    migration = dict(project.get("migration_state") or {})
+    if migration.get("status") == "requires_revalidation":
+        st.warning(
+            "这是旧版导入项目。旧 Preflight 不具备渲染授权；请确认当前来源后运行新版校验。"
+        )
+        if st.button("重新绑定来源并运行当前 Preflight", type="primary"):
+            try:
+                from app.utils.video_processor import VideoProcessor
+
+                sources = list(project.get("source_video_sequence") or [])
+                source_durations = {
+                    Path(source["path"]).name: VideoProcessor(source["path"]).duration
+                    for source in sources if source.get("available")
+                }
+                store.revalidate_legacy_project(
+                    project["project_id"], source_durations=source_durations
+                )
+                st.success("旧项目已通过当前来源绑定与 Preflight。")
+                st.rerun()
+            except Exception as error:
+                st.error(f"旧项目仍未通过重新校验：{error}")
     blockers = list(preflight.get("blockers") or [])
     warnings = list(preflight.get("warnings") or [])
     if blockers:
@@ -1113,14 +1167,15 @@ def _stage_output(project, store) -> None:
         if st.button("记录原因并重新检查", disabled=not reason.strip()):
             store.override_render_warnings(project["project_id"], reason=reason)
             st.rerun()
-    elif not finalization.get("renderable") and not preflight.get("renderable"):
+    elif not finalization.get("renderable") or not preflight.get("renderable"):
         st.warning("Render Preflight：Narrative Map 或审核状态尚未允许渲染。")
     else:
         st.success("Render Preflight：通过。可以创建新的 Render Outcome。")
     renderable = bool(
         project.get("active_version_id")
         and not blockers
-        and (finalization.get("renderable") or preflight.get("renderable"))
+        and finalization.get("renderable")
+        and preflight.get("renderable")
         and (not warnings or str(preflight.get("warning_override_reason") or "").strip())
     )
     script = finalization.get("finalized_script") or []
@@ -1142,13 +1197,14 @@ def _stage_output(project, store) -> None:
         except Exception as error:
             st.error(f"无法开始渲染：{error}")
     if active_render:
-        _poll_project_render(project, store, active_render, preflight)
+        _poll_project_render(project, store, active_render)
     outcomes = project.get("render_outcomes") or []
     if outcomes:
         st.subheader("Render Outcomes")
         for outcome in reversed(outcomes):
             st.caption(
                 f"版本 {outcome.get('version_id')} · {outcome.get('created_at')}"
+                + (" · 过期结果（未设为当前成片）" if outcome.get("admission") == "stale" else "")
             )
             if Path(str(outcome.get("media_path") or "")).is_file():
                 st.video(outcome["media_path"])
@@ -1165,6 +1221,223 @@ def _failure_category(error: Exception) -> str:
     if "validation" in text or "校验" in text or "plan" in text:
         return "validation_failed"
     return "generation_failed"
+
+
+def _task_input_version(store: FusionProjectStore, project_id: str, task_id: str) -> str:
+    project = store.read(project_id)
+    task = next(
+        (item for item in project.get("task_refs") or [] if item.get("task_id") == task_id),
+        {},
+    )
+    return str(task.get("input_version_id") or "")
+
+
+def _task_run_is_current(
+    store: FusionProjectStore, project_id: str, task_id: str, run_id: str
+) -> bool:
+    project = store.read(project_id)
+    task = next(
+        (item for item in project.get("task_refs") or [] if item.get("task_id") == task_id),
+        {},
+    )
+    return (
+        str(task.get("run_id") or "") == str(run_id)
+        and task.get("status") not in {"cancelled", "superseded"}
+    )
+
+
+def _start_narration_generation(project_id: str, task_id: str = "") -> str:
+    import threading
+
+    store = project_store()
+    project = store.read(project_id)
+    task_id = task_id or f"narration{uuid4().hex}"
+    run_id = uuid4().hex
+    store.reserve_task(
+        project_id, task_id=task_id, kind="narration_generation",
+        input_version_id=project.get("active_version_id") or "setup", run_id=run_id,
+    )
+
+    def run() -> None:
+        worker_store = project_store()
+        try:
+            if not _task_run_is_current(worker_store, project_id, task_id, run_id):
+                return
+            worker_store.update_task_summary(
+                project_id, task_id, status="running", progress=5,
+                message="正在生成解说词",
+            )
+            current = worker_store.read(project_id)
+            artifacts = dict(current.get("artifact_refs") or {})
+            sources = list(current.get("source_video_sequence") or [])
+            subtitle_paths = [
+                source.get("subtitle_path") for source in sources if source.get("subtitle_path")
+            ]
+            if not subtitle_paths:
+                raise ValueError("Narration generation requires subtitle or ASR evidence")
+            from webui.tools.generate_short_summary import (
+                FILM_TV_PROMPT_CATEGORY,
+                generate_short_drama_narration_copy,
+            )
+
+            result = generate_short_drama_narration_copy(
+                subtitle_path=subtitle_paths,
+                video_theme=current["name"],
+                temperature=0.3,
+                video_paths=[source.get("path") for source in sources],
+                narration_language=(current.get("project_settings") or {}).get(
+                    "output_language", "简体中文（中国）"
+                ),
+                drama_genre=(current.get("project_settings") or {}).get(
+                    "commentary_style", "剧情解说"
+                ),
+                prompt_category=FILM_TV_PROMPT_CATEGORY,
+                narration_word_count=int(
+                    (current.get("project_settings") or {}).get(
+                        "target_narration_length", 1200
+                    )
+                ),
+                visual_evidence=str(artifacts.get("visual_evidence") or ""),
+            )
+            if not _task_run_is_current(worker_store, project_id, task_id, run_id):
+                return
+            if not result:
+                raise ValueError("Narration generation returned no result")
+            current = worker_store.read(project_id)
+            input_version = _task_input_version(worker_store, project_id, task_id)
+            active_input = str(current.get("active_version_id") or "setup")
+            if input_version != active_input:
+                artifact_path = worker_store.save_json_artifact(
+                    project_id, name=f"stale-{task_id}.json", payload=result
+                )
+                worker_store.commit_stale_task_artifact(
+                    project_id, task_id=task_id, run_id=run_id,
+                    artifact_ref=artifact_path,
+                    message="解说词已完成，但输入版本已变化；结果作为过期产物保留",
+                )
+                return
+            worker_store.commit_task_artifacts(
+                project_id, task_id=task_id, run_id=run_id,
+                artifact_changes=dict(
+                narration_draft=result["narration_copy"],
+                plot_analysis=result["plot_analysis"],
+                subtitle_content=result["subtitle_content"],
+                ),
+                message="解说词已生成并保存为待审核草稿",
+            )
+        except Exception as error:
+            try:
+                worker_store.finish_task_run(
+                    project_id, task_id=task_id, run_id=run_id, status="failed",
+                    error_message=str(error), progress=0,
+                    message="解说词生成未完成",
+                    failure_category=_failure_category(error), recoverable=True,
+                )
+            except ValueError:
+                pass
+
+    threading.Thread(
+        target=run, name=f"fusion-narration-{task_id}", daemon=True
+    ).start()
+    return task_id
+
+
+def _start_fusion_plan_generation(project_id: str, task_id: str = "") -> str:
+    import threading
+
+    store = project_store()
+    project = store.read(project_id)
+    task_id = task_id or f"fusionplan{uuid4().hex}"
+    run_id = uuid4().hex
+    store.reserve_task(
+        project_id, task_id=task_id, kind="fusion_plan",
+        input_version_id=project.get("active_version_id") or "", run_id=run_id,
+    )
+
+    def run() -> None:
+        worker_store = project_store()
+        attempt_store = _plan_attempt_store(project_id)
+        try:
+            if not _task_run_is_current(worker_store, project_id, task_id, run_id):
+                return
+            worker_store.update_task_summary(
+                project_id, task_id, status="running", progress=5,
+                message="正在生成 Fusion Segment Plan",
+            )
+            current = worker_store.read(project_id)
+            artifacts = dict(current.get("artifact_refs") or {})
+            narration = str(artifacts.get("narration") or "")
+            if not narration:
+                raise ValueError("Fusion Segment Plan requires approved narration")
+            from webui.tools.generate_short_summary import create_fusion_segment_plan
+
+            analyzer, provider, model = _text_analyzer()
+            plan = create_fusion_segment_plan(
+                analyzer=analyzer,
+                short_name=current["name"],
+                plot_analysis=str(artifacts.get("plot_analysis") or ""),
+                subtitle_content=str(artifacts.get("subtitle_content") or ""),
+                narration_copy=narration,
+                narration_language=str((current.get("project_settings") or {}).get("output_language") or "简体中文（中国）"),
+                drama_genre=str((current.get("project_settings") or {}).get("commentary_style") or "剧情解说"),
+                visual_evidence=str(artifacts.get("visual_evidence") or ""),
+                highlight_candidates=str(artifacts.get("highlight_candidates") or ""),
+                temperature=0.3,
+                attempt_store=attempt_store,
+                attempt_context={
+                    "provider": provider,
+                    "model": model,
+                    "input_fingerprint": _plan_input_fingerprint(
+                        current, artifacts, narration
+                    ),
+                    "project_id": project_id,
+                    "version_id": current.get("active_version_id") or "setup",
+                },
+            )
+            if not _task_run_is_current(worker_store, project_id, task_id, run_id):
+                return
+            current = worker_store.read(project_id)
+            input_version = _task_input_version(worker_store, project_id, task_id)
+            active_input = str(current.get("active_version_id") or "")
+            if input_version != active_input:
+                artifact_path = worker_store.save_json_artifact(
+                    project_id, name=f"stale-{task_id}.json", payload=plan
+                )
+                worker_store.commit_stale_task_artifact(
+                    project_id, task_id=task_id, run_id=run_id,
+                    artifact_ref=artifact_path,
+                    message="分段计划已完成，但输入版本已变化；结果作为过期产物保留",
+                )
+                return
+            worker_store.commit_task_artifacts(
+                project_id, task_id=task_id, run_id=run_id,
+                artifact_changes={
+                    "fusion_segment_plan_draft": plan,
+                    "fusion_plan_attempts": _safe_attempt_summaries(attempt_store),
+                },
+                message="分段计划已生成，等待审核批准",
+            )
+        except Exception as error:
+            recovery = getattr(error, "to_dict", lambda: {})()
+            try:
+                worker_store.finish_task_run(
+                    project_id, task_id=task_id, run_id=run_id,
+                    status=str(recovery.get("status") or "failed"),
+                    progress=100 if recovery.get("status") == "waiting_for_review" else 0,
+                    error_message=str(error),
+                    message=str(recovery.get("message") or "分段计划需要恢复审核"),
+                    artifact_changes={
+                        "fusion_plan_attempts": _safe_attempt_summaries(attempt_store)
+                    },
+                    failure_category=_failure_category(error), recoverable=True,
+                )
+            except ValueError:
+                pass
+
+    threading.Thread(
+        target=run, name=f"fusion-plan-{task_id}", daemon=True
+    ).start()
+    return task_id
 
 
 def _start_project_render(
@@ -1199,6 +1472,11 @@ def _start_project_render(
         str(source.get("subtitle_path") or "") for source in sources
         if source.get("subtitle_path")
     ]
+    language_codes = {
+        "简体中文（中国）": "zh-CN",
+        "繁體中文": "zh-TW",
+        "English": "en-US",
+    }
     params = VideoClipParams(
         video_clip_json_path=script_path,
         video_origin_path=source_paths[0],
@@ -1206,7 +1484,10 @@ def _start_project_render(
         original_subtitle_path=subtitle_paths[0] if subtitle_paths else "",
         original_subtitle_paths=subtitle_paths,
         video_aspect=str(settings.get("video_aspect") or "9:16"),
-        video_language=str(settings.get("output_language") or "zh-CN"),
+        video_language=language_codes.get(
+            str(settings.get("output_language") or ""),
+            str(settings.get("output_language") or "zh-CN"),
+        ),
         voice_name=str(settings.get("voice_profile") or config.ui.get("voice_name", "zh-CN-YunjianNeural")),
         tts_engine=str(settings.get("tts_engine") or config.INDEXTTS_ENGINE),
         bgm_type="local" if settings.get("background_music") else "none",
@@ -1223,13 +1504,17 @@ def _start_project_render(
         ],
         "script_path": script_path,
     }
-    store.attach_task(
+    authorization = store.create_render_authorization(
+        project["project_id"], configuration_snapshot=configuration_snapshot
+    )
+    store.reserve_task(
         project["project_id"], task_id=task_id, kind="render",
-        input_version_id=version_id, status="queued",
+        input_version_id=version_id, run_id=uuid4().hex,
     )
     store.update_task_summary(
         project["project_id"], task_id,
         configuration_snapshot=configuration_snapshot,
+        render_authorization=authorization,
         message="渲染已排队",
     )
 
@@ -1250,7 +1535,7 @@ def _start_project_render(
 
 
 def _poll_project_render(
-    project: dict, store: FusionProjectStore, task_ref: dict, preflight: dict
+    project: dict, store: FusionProjectStore, task_ref: dict
 ) -> None:
     from app.models import const
     from app.services import state as state_service
@@ -1289,8 +1574,7 @@ def _poll_project_render(
                 store.add_render_outcome(
                     project["project_id"],
                     media_path=media_path,
-                    preflight=preflight,
-                    configuration_snapshot=task_ref.get("configuration_snapshot") or {},
+                    render_authorization=task_ref.get("render_authorization") or {},
                     render_task_id=task_ref["task_id"],
                 )
             st.rerun()
@@ -1316,6 +1600,11 @@ def _safe_attempt_summaries(attempt_store) -> list[dict]:
             "parent_attempt_id": item.get("parent_attempt_id"),
             "status": item.get("status"),
             "received_characters": item.get("received_characters"),
+            "project_id": item.get("project_id"),
+            "version_id": item.get("version_id"),
+            "input_fingerprint": item.get("input_fingerprint"),
+            "raw_response_ref": item.get("raw_response_ref"),
+            "recovery_payload_ref": item.get("recovery_payload_ref"),
             "findings": item.get("findings") or [],
             "updated_at": item.get("updated_at"),
         }
@@ -1351,6 +1640,23 @@ def _project_source_identity(project: dict) -> dict:
         )
         sources.append(identity)
     return {"project_id": str(project.get("project_id") or ""), "sources": sources}
+
+
+def _plan_input_fingerprint(
+    project: dict, artifacts: dict, narration: str
+) -> str:
+    payload = {
+        "project_id": str(project.get("project_id") or ""),
+        "version_id": str(project.get("active_version_id") or "setup"),
+        "narration": str(narration or ""),
+        "plot_analysis": str(artifacts.get("plot_analysis") or ""),
+        "subtitle_content": str(artifacts.get("subtitle_content") or ""),
+        "visual_evidence": str(artifacts.get("visual_evidence") or ""),
+        "highlight_candidates": str(artifacts.get("highlight_candidates") or ""),
+    }
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
 
 def _render_matching_task(project: dict, store: FusionProjectStore, task_ref: dict) -> None:
@@ -1440,28 +1746,43 @@ def _render_task_center() -> None:
             label = f"{project['name']} · {task.get('kind')} · {task.get('status')}"
             with st.expander(label):
                 controls = st.columns(3)
-                can_resume = task.get("status") in {"failed", "interrupted", "cancelled"}
-                can_cancel = task.get("status") in {"queued", "running"}
+                capabilities = TASK_CAPABILITIES.get(str(task.get("kind") or ""), set())
+                can_resume = (
+                    "resume" in capabilities
+                    and task.get("status") in {"failed", "interrupted", "cancelled"}
+                )
+                can_cancel = (
+                    "cancel" in capabilities
+                    and task.get("status") in {"queued", "running"}
+                )
                 if controls[0].button(
                     "继续", key=f"task-resume-{task['task_id']}", disabled=not can_resume
                 ):
-                    _resume_project_task(task)
-                    st.rerun()
+                    try:
+                        _resume_project_task(project, task)
+                        st.rerun()
+                    except Exception as error:
+                        st.error(f"无法继续任务：{error}")
                 if controls[1].button(
                     "取消", key=f"task-cancel-{task['task_id']}", disabled=not can_cancel
                 ):
-                    _cancel_project_task(task)
-                    st.rerun()
+                    try:
+                        _cancel_project_task(project, task)
+                        st.rerun()
+                    except Exception as error:
+                        st.error(f"无法取消任务：{error}")
                 if controls[2].button("查看诊断", key=f"task-diag-{task['task_id']}"):
                     diagnostic = project_store().task_diagnostic_projection(
                         project["project_id"], task["task_id"]
                     )
                     st.json(diagnostic)
+                if not capabilities:
+                    st.caption("该任务仅提供诊断；请回到对应阶段重新运行。")
     else:
         st.info("当前没有项目任务。")
 
 
-def _resume_project_task(task: dict) -> None:
+def _resume_project_task(project: dict, task: dict) -> None:
     kind = str(task.get("kind") or "")
     if kind == "visual_analysis":
         from webui.tools.generate_film_vision_fusion import resume_local_visual_analysis
@@ -1471,11 +1792,20 @@ def _resume_project_task(task: dict) -> None:
         from webui.tools.generate_short_summary import resume_fusion_matching_task
 
         resume_fusion_matching_task(task["task_id"])
+    elif kind == "narration_generation":
+        _start_narration_generation(project["project_id"])
+    elif kind == "fusion_plan":
+        _start_fusion_plan_generation(project["project_id"])
+    elif kind == "render":
+        finalization = dict(
+            (project.get("artifact_refs") or {}).get("finalization") or {}
+        )
+        _start_project_render(project, project_store(), finalization)
     else:
         raise ValueError(f"该任务类型暂不支持继续：{kind}")
 
 
-def _cancel_project_task(task: dict) -> None:
+def _cancel_project_task(project: dict, task: dict) -> None:
     kind = str(task.get("kind") or "")
     if kind == "visual_analysis":
         from webui.tools.generate_film_vision_fusion import cancel_local_visual_analysis
@@ -1485,5 +1815,10 @@ def _cancel_project_task(task: dict) -> None:
         from webui.tools.generate_short_summary import cancel_fusion_matching_task
 
         cancel_fusion_matching_task(task["task_id"])
+    elif kind in {"narration_generation", "fusion_plan"}:
+        project_store().cancel_task_run(
+            project["project_id"], task_id=task["task_id"],
+            run_id=str(task.get("run_id") or ""),
+        )
     else:
         raise ValueError(f"该任务类型暂不支持取消：{kind}")
