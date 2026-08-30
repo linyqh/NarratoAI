@@ -209,6 +209,17 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("finalized-script", result["active_version_id"])
         self.assertEqual("finalized-script", result["version_history"][1]["snapshot"]["active_version_id"])
 
+    def test_background_finalization_preserves_segment_id_for_workspace_review(self):
+        result = generate_short_summary.finalize_fusion_matching_result(
+            matched_plan={
+                "items": [{"_id": 1, "_segment_id": "segment-1", "video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "picture": "画面", "narration": "旁白", "OST": 0}],
+                "evidence_conflicts": [], "continuity_report": {"is_renderable": True, "findings": []},
+            },
+            finalization_context={"source_durations": {"film.mp4": 10.0}},
+        )
+
+        self.assertEqual("segment-1", result["finalized_script"][0]["_segment_id"])
+
     def test_restore_fusion_version_restores_saved_preflight_and_script(self):
         with tempfile.TemporaryDirectory() as directory:
             store = LocalAnalysisTaskStore(Path(directory))
@@ -411,6 +422,31 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertEqual("ignored", ignored["finalization"]["review_decisions"][-1]["action"])
         self.assertEqual([], restored["finalization"]["review_decisions"])
         self.assertEqual("evidence_conflict", restored["finalization"]["preflight"]["warnings"][0]["code"])
+
+    def test_conflict_acknowledgement_is_durable_and_does_not_change_render_safety(self):
+        conflict = {"video_name": "film.mp4", "time_range": "00:00:01,000-00:00:02,000", "subtitle_claim": "字幕", "visual_observation": "画面", "severity": "high", "status": "unresolved"}
+        from app.services.fusion_workspace import fusion_evidence_conflict_key
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            task = store.create({}, {})
+            store.update(task["task_id"], finalization={
+                "renderable": False,
+                "evidence_conflicts": [conflict],
+                "preflight": {"blockers": [{"code": "unresolved_high_severity_conflict"}]},
+            })
+            with patch.object(generate_short_summary, "_fusion_matching_task_store", return_value=store):
+                acknowledged = generate_short_summary.acknowledge_fusion_evidence_conflict(
+                    task["task_id"], conflict_key=fusion_evidence_conflict_key(conflict)
+                )
+                restored = generate_short_summary.undo_fusion_evidence_conflict_acknowledgement(
+                    task["task_id"], decision_id=acknowledged["finalization"]["review_decisions"][-1]["decision_id"]
+                )
+
+        self.assertEqual("unresolved", acknowledged["finalization"]["evidence_conflicts"][0]["status"])
+        self.assertFalse(acknowledged["finalization"]["renderable"])
+        self.assertEqual("unresolved_high_severity_conflict", acknowledged["finalization"]["preflight"]["blockers"][0]["code"])
+        self.assertEqual([], restored["finalization"]["review_decisions"])
 
     def test_creator_approved_quality_repair_resumes_one_segment_and_refinalizes(self):
         plan = {

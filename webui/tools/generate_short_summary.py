@@ -462,10 +462,9 @@ def match_approved_fusion_segment_plan(
         is_cancelled=is_cancelled,
     )
     return {
-        "items": [
-            {key: value for key, value in item.items() if key != "_segment_id"}
-            for item in result.items
-        ],
+        # This internal link is needed by the review workspace to keep a rendered
+        # timeline item attached to its Narrative Map beat and evidence window.
+        "items": result.items,
         "evidence_conflicts": result.evidence_conflicts,
         "continuity_report": result.continuity_report.to_dict(),
         "narrative_map": narrative_map,
@@ -1083,6 +1082,70 @@ def undo_fusion_quality_ignore(task_id: str, *, decision_id: str) -> dict:
     )
     if index is None:
         raise ValueError("The selected quality-ignore decision cannot be undone")
+    decisions.pop(index)
+    finalization["review_decisions"] = decisions
+    return store.update(task_id, finalization=finalization)
+
+
+def acknowledge_fusion_evidence_conflict(task_id: str, *, conflict_key: str) -> dict:
+    """Record a creator acknowledgement without resolving or weakening a conflict."""
+    from app.services.fusion_workspace import fusion_evidence_conflict_key
+
+    store = _fusion_matching_task_store()
+    task = store.read(task_id)
+    finalization = dict(task.get("finalization") or {})
+    conflict = next(
+        (
+            item for item in finalization.get("evidence_conflicts") or []
+            if isinstance(item, dict) and fusion_evidence_conflict_key(item) == str(conflict_key)
+        ),
+        None,
+    )
+    if conflict is None:
+        raise ValueError("The selected Evidence Conflict is not available")
+    decisions = list(finalization.get("review_decisions") or [])
+    if any(
+        isinstance(item, dict)
+        and item.get("kind") == "evidence_conflict"
+        and item.get("action") == "acknowledged"
+        and str(item.get("conflict_key") or "") == str(conflict_key)
+        for item in decisions
+    ):
+        raise ValueError("The selected Evidence Conflict has already been acknowledged")
+    decisions.append(
+        {
+            "decision_id": f"evidence-conflict-acknowledged-{len(decisions) + 1}",
+            "kind": "evidence_conflict",
+            "action": "acknowledged",
+            "conflict_key": str(conflict_key),
+            "severity": str(conflict.get("severity") or ""),
+            "time_range": str(conflict.get("time_range") or ""),
+            "created_at": time.time(),
+        }
+    )
+    finalization["review_decisions"] = decisions
+    return store.update(task_id, finalization=finalization)
+
+
+def undo_fusion_evidence_conflict_acknowledgement(task_id: str, *, decision_id: str) -> dict:
+    """Undo a durable conflict acknowledgement; it never changes conflict status."""
+    store = _fusion_matching_task_store()
+    task = store.read(task_id)
+    finalization = dict(task.get("finalization") or {})
+    decisions = list(finalization.get("review_decisions") or [])
+    index = next(
+        (
+            current_index
+            for current_index, item in enumerate(decisions)
+            if isinstance(item, dict)
+            and str(item.get("decision_id") or "") == str(decision_id)
+            and item.get("kind") == "evidence_conflict"
+            and item.get("action") == "acknowledged"
+        ),
+        None,
+    )
+    if index is None:
+        raise ValueError("The selected Evidence Conflict acknowledgement cannot be undone")
     decisions.pop(index)
     finalization["review_decisions"] = decisions
     return store.update(task_id, finalization=finalization)

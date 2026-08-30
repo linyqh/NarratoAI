@@ -56,12 +56,14 @@ from webui.tools.generate_short_summary import (
     preview_fusion_narrative_map_review,
     review_fusion_narrative_map,
     approve_fusion_quality_repair,
+    acknowledge_fusion_evidence_conflict,
     compare_fusion_matching_versions,
     cancel_fusion_matching_task,
     ignore_fusion_quality_finding,
     restore_fusion_matching_version,
     resume_fusion_matching_task,
     undo_fusion_quality_ignore,
+    undo_fusion_evidence_conflict_acknowledgement,
 )
 
 
@@ -2575,7 +2577,10 @@ def render_script_buttons(tr, params):
                     if queue:
                         st.caption(tr("审阅队列（按优先级）"))
                         st.json(queue)
-                        locatable = [item for item in queue if item.get("segment_id")]
+                        locatable = [
+                            item for item in queue
+                            if item.get("segment_id") or item.get("kind") == "evidence_conflict"
+                        ]
                         if locatable:
                             selected = st.selectbox(
                                 tr("定位审阅项"),
@@ -2587,6 +2592,12 @@ def render_script_buttons(tr, params):
                                 narrative_map=workspace.get("inspector", {}).get("narrative_map", {}),
                                 segment_id=selected.get("segment_id", ""),
                             )
+                            if selected.get("kind") == "evidence_conflict" and not location.get("time_range"):
+                                location = {
+                                    "segment_id": "",
+                                    "time_range": str(selected.get("time_range") or ""),
+                                    "active_subject": "",
+                                }
                             if location.get("time_range"):
                                 st.caption(f"{tr('源视频定位')}: {location['time_range']} · {location['active_subject']}")
                                 current_task_id = str(
@@ -2605,10 +2616,17 @@ def render_script_buttons(tr, params):
                                 preview_columns = st.columns((3, 2))
                                 source_videos = _selected_video_paths()
                                 with preview_columns[0]:
-                                    if source_videos and os.path.isfile(source_videos[0]):
+                                    selected_video = next(
+                                        (
+                                            path for path in source_videos
+                                            if os.path.basename(path) == str(selected.get("video_name") or "")
+                                        ),
+                                        source_videos[0] if source_videos else "",
+                                    )
+                                    if selected_video and os.path.isfile(selected_video):
                                         try:
                                             start_seconds = TimeRange.parse(location["time_range"]).start_seconds
-                                            st.video(source_videos[0], start_time=start_seconds)
+                                            st.video(selected_video, start_time=start_seconds)
                                         except ValueError:
                                             st.caption(tr("该审阅项的时间范围无法用于视频预览。"))
                                     else:
@@ -2672,6 +2690,42 @@ def render_script_buttons(tr, params):
                                         st.rerun()
                                     except ValueError as exc:
                                         st.error(str(exc))
+                            if selected.get("kind") == "evidence_conflict":
+                                st.caption(tr("确认仅记录审阅决定；未解决的高风险冲突仍会阻止渲染。"))
+                                try:
+                                    workspace_task_id = str(
+                                        workspace.get("task_center", {}).get("task_id")
+                                        or st.session_state.get("fusion_matching_task_id")
+                                        or ""
+                                    )
+                                    if not workspace_task_id:
+                                        raise ValueError("Fusion Matching Task is unavailable for this review decision")
+                                    if selected.get("acknowledged"):
+                                        decision = next(
+                                            item for item in workspace.get("inspector", {}).get("review_decisions", [])
+                                            if isinstance(item, dict)
+                                            and item.get("kind") == "evidence_conflict"
+                                            and item.get("action") == "acknowledged"
+                                            and str(item.get("conflict_key") or "") == str(selected.get("conflict_key") or "")
+                                        )
+                                        if st.button(tr("撤销此冲突的审阅确认"), key="fusion_undo_conflict_ack"):
+                                            updated_task = undo_fusion_evidence_conflict_acknowledgement(
+                                                workspace_task_id, decision_id=str(decision.get("decision_id") or "")
+                                            )
+                                            st.session_state["fusion_workspace"] = project_fusion_workspace(
+                                                task=updated_task, finalization=updated_task.get("finalization") or {}
+                                            )
+                                            st.rerun()
+                                    elif st.button(tr("确认已审阅此冲突"), key="fusion_acknowledge_conflict"):
+                                        updated_task = acknowledge_fusion_evidence_conflict(
+                                            workspace_task_id, conflict_key=str(selected.get("conflict_key") or "")
+                                        )
+                                        st.session_state["fusion_workspace"] = project_fusion_workspace(
+                                            task=updated_task, finalization=updated_task.get("finalization") or {}
+                                        )
+                                        st.rerun()
+                                except ValueError as exc:
+                                    st.error(str(exc))
                     else:
                         st.caption(tr("当前没有待处理的审阅项。"))
                     with st.expander(tr("Task Center"), expanded=False):

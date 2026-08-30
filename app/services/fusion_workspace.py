@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 from app.services.documentary.frame_analysis_models import TimeRange
@@ -12,6 +14,18 @@ _PHASES = {
     "not_started", "running", "waiting_for_review", "approved", "warning",
     "blocked", "invalidated", "archived",
 }
+
+
+def fusion_evidence_conflict_key(conflict: dict[str, Any]) -> str:
+    """Return a stable, content-based identifier for one persisted conflict."""
+    payload = {
+        key: str(conflict.get(key) or "")
+        for key in (
+            "video_name", "time_range", "subtitle_claim", "visual_observation", "severity",
+        )
+    }
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
 
 
 def project_fusion_workspace(
@@ -39,6 +53,18 @@ def project_fusion_workspace(
         if isinstance(item, dict)
         and (str(item.get("segment_id") or ""), str(item.get("code") or "")) not in ignored_quality
     ]
+    acknowledged_conflicts = {
+        str(item.get("conflict_key") or "")
+        for item in decisions
+        if isinstance(item, dict)
+        and item.get("kind") == "evidence_conflict"
+        and item.get("action") == "acknowledged"
+    }
+    conflicts = [
+        _project_evidence_conflict(conflict, finalization, acknowledged_conflicts)
+        for conflict in finalization.get("evidence_conflicts") or []
+        if isinstance(conflict, dict) and str(conflict.get("status") or "unresolved") == "unresolved"
+    ]
     task_status = str(task.get("status") or "")
     if blockers or task_status in {"failed", "cancelled", "interrupted"}:
         phase = "blocked"
@@ -64,7 +90,7 @@ def project_fusion_workspace(
         {"priority": 2, "kind": "quality", **item}
         for item in quality
         if isinstance(item, dict)
-    ]
+    ] + conflicts
     queue.sort(key=lambda item: (int(item["priority"]), str(item.get("segment_id") or ""), str(item.get("code") or "")))
     stream_snapshot = task.get("stream_snapshot") if isinstance(task.get("stream_snapshot"), dict) else {}
     return {
@@ -86,6 +112,43 @@ def project_fusion_workspace(
         },
         "versions": list(finalization.get("version_history") or []),
     }
+
+
+def _project_evidence_conflict(
+    conflict: dict[str, Any], finalization: dict[str, Any], acknowledged_conflicts: set[str]
+) -> dict[str, Any]:
+    """Make a conflict reviewable without letting acknowledgement change safety state."""
+    conflict_key = fusion_evidence_conflict_key(conflict)
+    return {
+        "priority": 0 if str(conflict.get("severity") or "").lower() in {"high", "critical"} else 1,
+        "kind": "evidence_conflict",
+        "code": "evidence_conflict",
+        "conflict_key": conflict_key,
+        "acknowledged": conflict_key in acknowledged_conflicts,
+        "segment_id": _conflict_segment_id(conflict, finalization),
+        **conflict,
+    }
+
+
+def _conflict_segment_id(conflict: dict[str, Any], finalization: dict[str, Any]) -> str:
+    """Find the authored segment whose timeline overlaps this conflict's evidence window."""
+    try:
+        conflict_window = TimeRange.parse(str(conflict.get("time_range") or ""))
+    except ValueError:
+        return ""
+    conflict_video = str(conflict.get("video_name") or "")
+    for item in finalization.get("finalized_script") or []:
+        if not isinstance(item, dict) or not str(item.get("_segment_id") or ""):
+            continue
+        if conflict_video and str(item.get("video_name") or "") != conflict_video:
+            continue
+        try:
+            item_window = TimeRange.parse(str(item.get("timestamp") or ""))
+        except ValueError:
+            continue
+        if conflict_window.start_seconds < item_window.end_seconds and item_window.start_seconds < conflict_window.end_seconds:
+            return str(item.get("_segment_id") or "")
+    return ""
 
 
 def project_fusion_task_center_details(task: dict[str, Any] | None) -> dict[str, Any]:

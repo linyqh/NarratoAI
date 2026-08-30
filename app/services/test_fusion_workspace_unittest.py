@@ -7,6 +7,7 @@ from app.services.fusion_workspace import (
     project_fusion_task_center,
     project_fusion_task_center_details,
     project_fusion_workspace,
+    fusion_evidence_conflict_key,
 )
 
 
@@ -175,6 +176,24 @@ class FusionWorkspaceProjectionTests(unittest.TestCase):
         )
 
         self.assertEqual(["blocker", "warning"], [item["kind"] for item in workspace["review_queue"]])
+
+    def test_evidence_conflict_stays_visible_and_locatable_after_acknowledgement(self):
+        conflict = {
+            "video_name": "film.mp4", "time_range": "00:00:01,000-00:00:02,000",
+            "subtitle_claim": "字幕说他离开", "visual_observation": "画面中他仍在", "severity": "high",
+            "status": "unresolved",
+        }
+        workspace = project_fusion_workspace(finalization={
+            "evidence_conflicts": [conflict],
+            "finalized_script": [{"video_name": "film.mp4", "timestamp": "00:00:00,000-00:00:10,000", "_segment_id": "segment-1"}],
+            "review_decisions": [{"kind": "evidence_conflict", "action": "acknowledged", "conflict_key": fusion_evidence_conflict_key(conflict)}],
+        })
+
+        item = workspace["review_queue"][0]
+        self.assertEqual("evidence_conflict", item["kind"])
+        self.assertEqual(0, item["priority"])
+        self.assertEqual("segment-1", item["segment_id"])
+        self.assertTrue(item["acknowledged"])
 
 
 if __name__ == "__main__":
