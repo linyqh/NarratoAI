@@ -28,7 +28,11 @@ from app.services.SDE.short_drama_explanation import (
 from app.services.subtitle_text import read_subtitle_text
 from app.services.fusion_script_finalizer import FusionScriptFinalizer
 from app.services.fusion_preflight import build_render_preflight
-from app.services.narrative_map import build_narrative_map, evaluate_narrative_quality
+from app.services.narrative_map import (
+    build_narrative_map,
+    evaluate_narrative_quality,
+    review_narrative_map,
+)
 from app.services.fusion_script_pipeline import (
     FusionScriptPipeline,
     call_fusion_request_with_retry,
@@ -328,6 +332,7 @@ def match_approved_fusion_segment_plan(
     on_repair_attempt=None,
     on_stream_chunk=None,
     is_cancelled=None,
+    narrative_map_override: dict | None = None,
 ) -> dict:
     """Match each approved plan entry against a bounded Evidence Window."""
     approval_source_identity = (
@@ -337,11 +342,15 @@ def match_approved_fusion_segment_plan(
         plan_approval, plan_payload, narration_copy, approval_source_identity
     ):
         raise ValueError("Fusion Segment Plan requires creator approval before matching")
-    narrative_map = build_narrative_map(
-        approved_narration=narration_copy,
-        plan_payload=plan_payload,
-        subtitle_evidence=subtitle_content,
-        visual_evidence=visual_evidence,
+    narrative_map = (
+        dict(narrative_map_override)
+        if isinstance(narrative_map_override, dict)
+        else build_narrative_map(
+            approved_narration=narration_copy,
+            plan_payload=plan_payload,
+            subtitle_evidence=subtitle_content,
+            visual_evidence=visual_evidence,
+        )
     )
     class TextAdapter:
         def match_segment(self, segment_request):
@@ -552,16 +561,41 @@ def finalize_fusion_matching_result(
         evidence_conflicts=finalization.evidence_conflicts,
         segment_matches=matched_plan.get("segment_matches"),
     ).to_dict(warning_override_reason)
+    narrative_map = matched_plan.get("narrative_map", {})
+    if isinstance(narrative_map, dict) and narrative_map.get("approval_status") == "pending":
+        preflight["warnings"].append(
+            {
+                "code": "narrative_map_review_required",
+                "message": "Narrative Map must be approved or explicitly skipped before rendering.",
+                "segment_id": "",
+            }
+        )
+        preflight["renderable"] = False
+    version_history = [
+        {
+            "version_id": "original-match",
+            "kind": "original_match",
+            "created_at": time.time(),
+            "item_count": len(finalization.original_script),
+        },
+        {
+            "version_id": "finalized-script",
+            "kind": "finalized_script",
+            "created_at": time.time(),
+            "item_count": len(finalization.script),
+        },
+    ]
     return {
         "original_script": finalization.original_script,
         "finalized_script": finalization.script,
         "finalization_report": asdict(finalization.report),
         "evidence_conflicts": finalization.evidence_conflicts,
         "continuity_report": continuity_report,
-        "narrative_map": matched_plan.get("narrative_map", {}),
+        "narrative_map": narrative_map,
         "narrative_quality_findings": list(
             matched_plan.get("narrative_quality_findings") or []
         ),
+        "version_history": version_history,
         "preflight": preflight,
         "renderable": preflight["renderable"],
     }
@@ -639,6 +673,10 @@ def fusion_matching_task_status(task_id: str) -> dict:
     return _fusion_matching_task_store().read(task_id)
 
 
+def list_fusion_matching_tasks(limit: int = 20) -> list[dict]:
+    return _fusion_matching_task_store().list_tasks(limit=limit)
+
+
 def override_fusion_matching_render_warning(task_id: str, reason: str) -> dict:
     """Persist a creator's explicit warning override; blockers can never be overridden."""
     reason = str(reason or "").strip()
@@ -657,6 +695,88 @@ def override_fusion_matching_render_warning(task_id: str, reason: str) -> dict:
     finalization["preflight"] = preflight
     finalization["renderable"] = True
     return store.update(task_id, finalization=finalization, renderable=True)
+
+
+def review_fusion_narrative_map(
+    task_id: str, *, action: str, edited_beats: list[dict] | None = None
+) -> dict:
+    """Persist an approve/skip/draft action and invalidate only changed Segment Matches."""
+    store = _fusion_matching_task_store()
+    task = store.read(task_id)
+    finalization = dict(task.get("finalization") or {})
+    artifact = dict(finalization.get("narrative_map") or {})
+    reviewed, impact = review_narrative_map(
+        artifact, action=action, edited_beats=edited_beats
+    )
+    finalization["narrative_map"] = reviewed
+    versions = list(finalization.get("version_history") or [])
+    versions.append(
+        {
+            "version_id": f"narrative-map-{len(versions) + 1}",
+            "kind": "narrative_map_review",
+            "action": action,
+            "changed_story_beats": list(impact["changed_story_beats"]),
+            "created_at": time.time(),
+        }
+    )
+    finalization["version_history"] = versions
+    changes = {"finalization": finalization}
+    invalidated = set(impact["invalidates_segment_matches"])
+    if invalidated:
+        snapshot = dict(task.get("matching_snapshot") or {})
+        completed = dict(snapshot.get("completed_segment_results") or {})
+        snapshot["completed_segment_results"] = {
+            segment_id: response
+            for segment_id, response in completed.items()
+            if segment_id not in invalidated
+        }
+        matches = []
+        for match in task.get("segment_matches") or []:
+            entry = dict(match)
+            if str(entry.get("segment_id") or "") in invalidated:
+                entry["status"] = "invalidated"
+                entry["error_message"] = "Narrative Map draft changed this Story Beat"
+            matches.append(entry)
+        preflight = dict(finalization.get("preflight") or {})
+        blockers = list(preflight.get("blockers") or [])
+        blockers.append(
+            {
+                "code": "narrative_map_change_requires_rematch",
+                "message": "Changed Story Beats must be rematched before rendering.",
+                "segment_id": ",".join(sorted(invalidated)),
+            }
+        )
+        preflight.update({"blockers": blockers, "renderable": False})
+        finalization.update({"preflight": preflight, "renderable": False})
+        remaining_batches = [
+            batch for batch in task.get("completed_batches") or []
+            if str(batch.get("segment_id") or batch.get("batch_index") or "") not in invalidated
+        ]
+        changes.update(
+            {
+                "matching_snapshot": snapshot,
+                "segment_matches": matches,
+                "completed_batches": remaining_batches,
+                "status": "interrupted",
+                "error_message": "Narrative Map changes require targeted Segment Match recovery.",
+                "renderable": False,
+                "request": {**task.get("request", {}), "narrative_map_override": reviewed},
+            }
+        )
+    else:
+        preflight = dict(finalization.get("preflight") or {})
+        warnings = [
+            warning for warning in preflight.get("warnings") or []
+            if isinstance(warning, dict)
+            and warning.get("code") != "narrative_map_review_required"
+        ]
+        preflight["warnings"] = warnings
+        preflight["renderable"] = not preflight.get("blockers") and (
+            not warnings or bool(str(preflight.get("warning_override_reason") or "").strip())
+        )
+        finalization.update({"preflight": preflight, "renderable": preflight["renderable"]})
+        changes["renderable"] = finalization["renderable"]
+    return store.update(task_id, **changes)
 
 
 def find_fusion_matching_task(

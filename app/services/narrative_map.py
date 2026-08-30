@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 import re
+import time
 from typing import Any
 
 from app.services.documentary.frame_analysis_models import TimeRange
@@ -100,6 +101,11 @@ def evaluate_narrative_quality(
             findings.append(NarrativeQualityFinding("missing_causal_bridge", segment_id, "Story Beat is missing a trigger or resulting change."))
         if previous and str(previous.get("active_subject") or "").strip() != str(beat.get("active_subject") or "").strip() and not bool(previous.get("bridge_to_next")):
             findings.append(NarrativeQualityFinding("unstable_subject_handoff", segment_id, "Active subject changes without a Narrative Bridge."))
+        if previous:
+            previous_window = TimeRange.parse(str(previous.get("evidence_window") or ""))
+            current_window = TimeRange.parse(str(beat.get("evidence_window") or ""))
+            if current_window.start_seconds - previous_window.end_seconds > 150 and not bool(previous.get("bridge_to_next")):
+                findings.append(NarrativeQualityFinding("unexplained_temporal_jump", segment_id, "Story Beat jumps forward in source time without a Narrative Bridge."))
         previous = beat
 
     normalized_previous = ""
@@ -108,4 +114,56 @@ def evaluate_narrative_quality(
         if narration and narration == normalized_previous:
             findings.append(NarrativeQualityFinding("repetitive_narration", str(item.get("_segment_id") or ""), "Adjacent narration is repeated."))
         normalized_previous = narration
+        try:
+            window = TimeRange.parse(str(item.get("timestamp") or ""))
+            characters_per_second = len(narration) / max(0.1, window.end_seconds - window.start_seconds)
+            if narration and characters_per_second > 14:
+                findings.append(NarrativeQualityFinding("narration_density_high", str(item.get("_segment_id") or ""), "Narration density may be too high for comfortable viewing."))
+        except ValueError:
+            continue
+        if int(item.get("OST") or 0) == 1 and not str(item.get("_segment_id") or ""):
+            findings.append(NarrativeQualityFinding("highlight_story_relevance_unknown", "", "Original-sound highlight is not linked to a Story Beat."))
     return [finding.to_dict() for finding in findings]
+
+
+def review_narrative_map(
+    artifact: dict[str, Any], *, action: str, edited_beats: list[dict[str, Any]] | None = None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Apply a creator review decision without allowing evidence windows to drift."""
+    if action not in {"approved", "skipped", "applied_draft"}:
+        raise ValueError("Narrative Map review action must be approved, skipped, or applied_draft")
+    updated = dict(artifact or {})
+    original_beats = list(updated.get("beats") or [])
+    proposed_beats = list(edited_beats) if edited_beats is not None else original_beats
+    original_by_id = {str(beat.get("segment_id") or ""): beat for beat in original_beats if isinstance(beat, dict)}
+    if len(proposed_beats) != len(original_by_id):
+        raise ValueError("Narrative Map edits cannot add or remove Story Beats")
+    for beat in proposed_beats:
+        if not isinstance(beat, dict) or str(beat.get("segment_id") or "") not in original_by_id:
+            raise ValueError("Narrative Map edit refers to an unknown Story Beat")
+        original = original_by_id[str(beat["segment_id"])]
+        if str(beat.get("evidence_window") or "") != str(original.get("evidence_window") or ""):
+            raise ValueError("Narrative Map edits cannot expand an Evidence Window")
+    invalidation = preview_narrative_map_invalidation(original_beats, proposed_beats)
+    updated["beats"] = proposed_beats
+    updated["approval_status"] = action
+    updated["reviewed_at"] = time.time()
+    return updated, invalidation
+
+
+def preview_narrative_map_invalidation(
+    original_beats: list[dict[str, Any]], proposed_beats: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Report only changed Story Beats and their existing match dependencies."""
+    original_by_id = {str(beat.get("segment_id") or ""): beat for beat in original_beats if isinstance(beat, dict)}
+    changed = [
+        str(beat.get("segment_id") or "")
+        for beat in proposed_beats
+        if isinstance(beat, dict) and beat != original_by_id.get(str(beat.get("segment_id") or ""))
+    ]
+    return {
+        "changed_story_beats": changed,
+        "invalidates_segment_matches": changed,
+        "retains_visual_evidence": True,
+        "requires_creator_confirmation": bool(changed),
+    }

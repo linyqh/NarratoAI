@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.fusion_workspace import project_fusion_workspace
+from app.services.fusion_workspace import locate_fusion_review_item, project_fusion_workspace
 
 
 class FusionWorkspaceProjectionTests(unittest.TestCase):
@@ -20,6 +20,14 @@ class FusionWorkspaceProjectionTests(unittest.TestCase):
 
         self.assertEqual("approved", workspace["phase"])
         self.assertEqual([], workspace["review_queue"])
+
+    def test_selected_review_item_resolves_to_its_evidence_window(self):
+        location = locate_fusion_review_item(
+            narrative_map={"beats": [{"segment_id": "segment-2", "evidence_window": "00:01:00,000-00:01:10,000", "active_subject": "主角"}]},
+            segment_id="segment-2",
+        )
+
+        self.assertEqual("00:01:00,000-00:01:10,000", location["time_range"])
 
 
 if __name__ == "__main__":

@@ -519,6 +519,11 @@ def cut_video(params, progress_callback=None):
         task_id = str(uuid4())
         st.session_state['task_id'] = task_id
 
+        if st.session_state.get('video_clip_json_path') == 'film_vision_fusion':
+            preflight = st.session_state.get('fusion_render_preflight') or {}
+            if not bool(preflight.get('renderable')):
+                raise ValueError('Render Preflight has unresolved blockers or warnings')
+
         if not st.session_state.get('video_clip_json'):
             raise ValueError("视频脚本不能为空")
 

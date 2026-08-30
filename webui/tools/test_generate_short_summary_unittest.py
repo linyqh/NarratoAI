@@ -237,6 +237,36 @@ class GenerateShortSummaryJsonTests(unittest.TestCase):
         self.assertTrue(updated["finalization"]["renderable"])
         self.assertEqual("已人工确认", updated["finalization"]["preflight"]["warning_override_reason"])
 
+    def test_narrative_map_draft_invalidates_only_changed_segment_match(self):
+        narrative_map = {
+            "beats": [
+                {"segment_id": "segment-1", "evidence_window": "00:00:00,000-00:00:10,000"},
+                {"segment_id": "segment-2", "evidence_window": "00:00:10,000-00:00:20,000"},
+            ],
+            "approval_status": "pending",
+        }
+        edited = [dict(beat) for beat in narrative_map["beats"]]
+        edited[1]["active_subject"] = "新主体"
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            task = store.create({}, {})
+            store.update(
+                task["task_id"],
+                finalization={"renderable": True, "narrative_map": narrative_map, "preflight": {"blockers": []}},
+                matching_snapshot={"completed_segment_results": {"segment-1": {"items": []}, "segment-2": {"items": []}},},
+                segment_matches=[{"segment_id": "segment-1", "status": "succeeded"}, {"segment_id": "segment-2", "status": "succeeded"}],
+            )
+            with patch.object(generate_short_summary, "_fusion_matching_task_store", return_value=store):
+                updated = generate_short_summary.review_fusion_narrative_map(
+                    task["task_id"], action="applied_draft", edited_beats=edited
+                )
+
+        self.assertEqual("succeeded", updated["segment_matches"][0]["status"])
+        self.assertEqual("invalidated", updated["segment_matches"][1]["status"])
+        self.assertNotIn("segment-2", updated["matching_snapshot"]["completed_segment_results"])
+        self.assertEqual("interrupted", updated["status"])
+        self.assertFalse(updated["finalization"]["renderable"])
+
     def test_background_match_stays_out_of_finalization_when_continuity_is_unreviewable(self):
         result = generate_short_summary.finalize_fusion_matching_result(
             matched_plan={

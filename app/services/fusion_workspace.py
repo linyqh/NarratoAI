@@ -68,4 +68,19 @@ def project_fusion_workspace(
             "preflight": preflight,
             "stream_diagnostics": stream_snapshot.get("failure_diagnostics") or {},
         },
+        "versions": list(finalization.get("version_history") or []),
     }
+
+
+def locate_fusion_review_item(
+    *, narrative_map: dict[str, Any], segment_id: str
+) -> dict[str, str]:
+    """Return the evidence-bounded source location used by a selected review item."""
+    for beat in narrative_map.get("beats") or []:
+        if isinstance(beat, dict) and str(beat.get("segment_id") or "") == str(segment_id):
+            return {
+                "segment_id": str(segment_id),
+                "time_range": str(beat.get("evidence_window") or ""),
+                "active_subject": str(beat.get("active_subject") or ""),
+            }
+    return {"segment_id": str(segment_id), "time_range": "", "active_subject": ""}

@@ -76,6 +76,17 @@ class FullFilmEstimateTests(unittest.TestCase):
 
         self.assertEqual(task["task_id"], restored["task_id"])
 
+    def test_list_tasks_omits_request_payload_and_marks_recoverability(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = LocalAnalysisTaskStore(Path(directory))
+            task = store.create({"api_key": "secret"}, {"sha256": "a" * 64})
+            store.update(task["task_id"], status="failed", stream_snapshot={"failure_category": "timed_out_after_progress"})
+            summaries = store.list_tasks()
+
+        self.assertEqual(task["task_id"], summaries[0]["task_id"])
+        self.assertTrue(summaries[0]["recoverable"])
+        self.assertNotIn("request", summaries[0])
+
 
 if __name__ == "__main__":
     unittest.main()

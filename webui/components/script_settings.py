@@ -15,7 +15,7 @@ from app.utils import utils, check_script
 from webui.tools.generate_script_docu import generate_script_docu
 from app.services.film_vision_fusion import load_visual_evidence_artifact
 from app.services.fusion_script_pipeline import FusionScriptPipeline
-from app.services.fusion_workspace import project_fusion_workspace
+from app.services.fusion_workspace import locate_fusion_review_item, project_fusion_workspace
 from app.services.visual_evidence_artifact import build_source_video_identity
 from app.services.visual_evidence_artifact import read_highlight_candidate_intake
 from webui.tools.generate_film_vision_fusion import (
@@ -42,7 +42,9 @@ from webui.tools.generate_short_summary import (
     start_fusion_matching_task,
     find_fusion_matching_task,
     fusion_matching_task_status,
+    list_fusion_matching_tasks,
     override_fusion_matching_render_warning,
+    review_fusion_narrative_map,
     cancel_fusion_matching_task,
     resume_fusion_matching_task,
 )
@@ -2319,7 +2321,28 @@ def render_script_buttons(tr, params):
                     if not finalization.get("renderable"):
                         preflight = finalization.get("preflight") or {}
                         continuity = finalization.get("continuity_report") or {}
-                        if preflight.get("warnings") and not preflight.get("blockers"):
+                        narrative_map = finalization.get("narrative_map") or {}
+                        if narrative_map.get("approval_status") == "pending":
+                            st.caption(tr("请审阅 Narrative Map；可批准、明确跳过，或应用受限草稿。"))
+                            draft_text = st.text_area(
+                                tr("Narrative Map 草稿"),
+                                value=json.dumps(narrative_map.get("beats") or [], ensure_ascii=False, indent=2),
+                                key=f"fusion_narrative_map_draft_{task_id}",
+                            )
+                            review_columns = st.columns(3)
+                            for action, label, column in (
+                                ("approved", tr("批准 Narrative Map"), review_columns[0]),
+                                ("skipped", tr("跳过 Narrative Map 审阅"), review_columns[1]),
+                                ("applied_draft", tr("应用草稿并显示影响"), review_columns[2]),
+                            ):
+                                if column.button(label, key=f"fusion_narrative_map_{action}_{task_id}"):
+                                    try:
+                                        beats = json.loads(draft_text) if action == "applied_draft" else None
+                                        review_fusion_narrative_map(task_id, action=action, edited_beats=beats)
+                                        st.rerun()
+                                    except (ValueError, json.JSONDecodeError) as exc:
+                                        st.error(str(exc))
+                        elif preflight.get("warnings") and not preflight.get("blockers"):
                             override_reason = st.text_area(
                                 tr("Render Preflight 警告覆盖理由"),
                                 key=f"fusion_warning_override_{task_id}",
@@ -2473,8 +2496,24 @@ def render_script_buttons(tr, params):
                     if queue:
                         st.caption(tr("审阅队列（按优先级）"))
                         st.json(queue)
+                        locatable = [item for item in queue if item.get("segment_id")]
+                        if locatable:
+                            selected = st.selectbox(
+                                tr("定位审阅项"),
+                                options=locatable,
+                                format_func=lambda item: f"{item.get('kind')} · {item.get('code')} · {item.get('segment_id')}",
+                                key="fusion_workspace_selected_review_item",
+                            )
+                            location = locate_fusion_review_item(
+                                narrative_map=workspace.get("inspector", {}).get("narrative_map", {}),
+                                segment_id=selected.get("segment_id", ""),
+                            )
+                            if location.get("time_range"):
+                                st.caption(f"{tr('源视频定位')}: {location['time_range']} · {location['active_subject']}")
                     else:
                         st.caption(tr("当前没有待处理的审阅项。"))
+                    with st.expander(tr("Task Center"), expanded=False):
+                        st.json(list_fusion_matching_tasks())
             if st.session_state.get("fusion_narrative_map"):
                 with st.expander(tr("Narrative Map"), expanded=False):
                     st.json(st.session_state["fusion_narrative_map"])

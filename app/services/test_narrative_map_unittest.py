@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.narrative_map import build_narrative_map, evaluate_narrative_quality
+from app.services.narrative_map import build_narrative_map, evaluate_narrative_quality, review_narrative_map
 
 
 class NarrativeMapTests(unittest.TestCase):
@@ -22,6 +22,37 @@ class NarrativeMapTests(unittest.TestCase):
         findings = evaluate_narrative_quality(artifact, [])
 
         self.assertEqual({"missing_causal_bridge", "unstable_subject_handoff"}, {finding["code"] for finding in findings})
+
+    def test_creator_edit_reports_only_affected_segment_invalidation(self):
+        artifact = build_narrative_map(approved_narration="第一句。第二句。", plan_payload=self._plan(), subtitle_evidence="字幕证据", visual_evidence="")
+        edited = [dict(beat) for beat in artifact["beats"]]
+        edited[1]["next_risk_or_choice"] = "新的风险"
+
+        reviewed, impact = review_narrative_map(artifact, action="applied_draft", edited_beats=edited)
+
+        self.assertEqual("applied_draft", reviewed["approval_status"])
+        self.assertEqual(["segment-2"], impact["invalidates_segment_matches"])
+        self.assertTrue(impact["retains_visual_evidence"])
+
+    def test_creator_cannot_expand_a_story_beat_evidence_window(self):
+        artifact = build_narrative_map(approved_narration="第一句。第二句。", plan_payload=self._plan(), subtitle_evidence="字幕证据", visual_evidence="")
+        edited = [dict(beat) for beat in artifact["beats"]]
+        edited[0]["evidence_window"] = "00:00:00,000-00:00:30,000"
+
+        with self.assertRaisesRegex(ValueError, "cannot expand"):
+            review_narrative_map(artifact, action="applied_draft", edited_beats=edited)
+
+    def test_quality_suggestions_cover_temporal_jump_density_and_unlinked_highlight(self):
+        artifact = build_narrative_map(approved_narration="第一句。第二句。", plan_payload={"segments": [
+            {**self._plan()["segments"][0], "core_window": "00:00:00,000-00:00:10,000"},
+            {**self._plan()["segments"][1], "core_window": "00:03:00,000-00:03:10,000"},
+        ]}, subtitle_evidence="字幕证据", visual_evidence="")
+        findings = evaluate_narrative_quality(artifact, [
+            {"timestamp": "00:00:00,000-00:00:01,000", "narration": "这是一段很长很长很长很长很长很长的解说", "OST": 0},
+            {"timestamp": "00:00:01,000-00:00:02,000", "narration": "原片", "OST": 1},
+        ])
+
+        self.assertTrue({"unexplained_temporal_jump", "narration_density_high", "highlight_story_relevance_unknown"}.issubset({item["code"] for item in findings}))
 
 
 if __name__ == "__main__":

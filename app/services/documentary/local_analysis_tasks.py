@@ -101,6 +101,29 @@ class LocalAnalysisTaskStore:
                 matches.append(task)
         return max(matches, key=lambda task: str(task.get("updated_at") or ""), default=None)
 
+    def list_tasks(self, *, limit: int = 20) -> list[dict]:
+        """Return durable task summaries without exposing request payloads or credentials."""
+        summaries = []
+        for path in self._directory.glob("*.json"):
+            try:
+                with path.open(encoding="utf-8") as handle:
+                    task = json.load(handle)
+            except (OSError, json.JSONDecodeError):
+                continue
+            stream = task.get("stream_snapshot") if isinstance(task.get("stream_snapshot"), dict) else {}
+            summaries.append(
+                {
+                    "task_id": task.get("task_id"),
+                    "status": task.get("status"),
+                    "progress": task.get("progress"),
+                    "message": task.get("message"),
+                    "updated_at": task.get("updated_at"),
+                    "failure_category": stream.get("failure_category"),
+                    "recoverable": task.get("status") in {"failed", "interrupted", "cancelled"},
+                }
+            )
+        return sorted(summaries, key=lambda item: str(item.get("updated_at") or ""), reverse=True)[:max(0, int(limit))]
+
     def _path(self, task_id: str) -> Path:
         if not task_id.isalnum():
             raise ValueError("invalid local analysis task id")
