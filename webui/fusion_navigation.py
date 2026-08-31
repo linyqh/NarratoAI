@@ -33,6 +33,7 @@ def route_for_legacy_mode(mode: str, state) -> str:
         state["fusion_ui_route"] = LEGACY_MODES_ROUTE
         state["fusion_traditional_fusion_mode"] = True
         return LEGACY_MODES_ROUTE
+    state["fusion_traditional_fusion_mode"] = False
     state["fusion_ui_route"] = LEGACY_MODES_ROUTE
     return LEGACY_MODES_ROUTE
 
@@ -46,6 +47,32 @@ def enter_legacy_modes(state, *, fusion: bool = False) -> str:
         state["video_clip_json_path"] = ""
     state["fusion_ui_route"] = LEGACY_MODES_ROUTE
     return LEGACY_MODES_ROUTE
+
+
+def exit_legacy_modes(state) -> str:
+    """Return from Traditional Compatibility Mode to the Project Library."""
+    state["fusion_traditional_fusion_mode"] = False
+    state["fusion_ui_route"] = PROJECT_LIBRARY_ROUTE
+    state.pop("fusion_traditional_transfer", None)
+    state.pop("fusion_traditional_transfer_pending", None)
+    state.pop("fusion_traditional_transfer_active", None)
+    return PROJECT_LIBRARY_ROUTE
+
+
+def traditional_compatibility_projection(state) -> dict:
+    """Project the visible ownership boundary for Traditional Compatibility Mode."""
+    visible = (
+        selected_route(state) == LEGACY_MODES_ROUTE
+        and bool(state.get("fusion_traditional_fusion_mode"))
+    )
+    return {
+        "visible": visible,
+        "title": "Traditional Compatibility Mode",
+        "notice": (
+            "这是会话态的 Film Vision Fusion 兼容流程。"
+            "任务、审核和输出不会回写到 Fusion Project；可随时返回项目库。"
+        ),
+    }
 
 
 def transfer_project_to_traditional(project: dict, state) -> str:

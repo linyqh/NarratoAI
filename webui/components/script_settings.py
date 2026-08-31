@@ -25,6 +25,7 @@ from app.services.fusion_workspace import (
 )
 from app.services.visual_evidence_artifact import build_source_video_identity
 from app.services.visual_evidence_artifact import read_highlight_candidate_intake
+from webui.fusion_navigation import route_for_legacy_mode
 from webui.tools.generate_film_vision_fusion import (
     cancel_local_visual_analysis,
     collect_visual_evidence,
@@ -504,13 +505,11 @@ def render_script_file(tr, params):
             new_mode = mode_options[selected_label]
             st.session_state.video_clip_json_path = new_mode
             params.video_clip_json_path = new_mode
-            if new_mode == MODE_FILM_VISION_FUSION:
-                from webui.fusion_navigation import route_for_legacy_mode
-
-                route_for_legacy_mode(new_mode, st.session_state)
+            route_for_legacy_mode(new_mode, st.session_state)
         else:
             st.session_state.video_clip_json_path = default_mode
             params.video_clip_json_path = default_mode
+            route_for_legacy_mode(default_mode, st.session_state)
 
     # 渲染组件
     selected_mode_label = st.selectbox(

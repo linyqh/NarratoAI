@@ -6,8 +6,10 @@ from webui.fusion_navigation import (
     LEGACY_MODES_ROUTE,
     PROJECT_LIBRARY_ROUTE,
     enter_legacy_modes,
+    exit_legacy_modes,
     route_for_legacy_mode,
     selected_route,
+    traditional_compatibility_projection,
     traditional_session_to_project_draft,
     transfer_project_to_traditional,
 )
@@ -41,6 +43,14 @@ class FusionNavigationTests(unittest.TestCase):
         self.assertEqual(LEGACY_MODES_ROUTE, state["fusion_ui_route"])
         self.assertTrue(state["fusion_traditional_fusion_mode"])
 
+    def test_switching_from_fusion_to_another_legacy_mode_clears_compatibility_label(self):
+        state = {"fusion_traditional_fusion_mode": True}
+
+        route_for_legacy_mode("short", state)
+
+        self.assertFalse(state["fusion_traditional_fusion_mode"])
+        self.assertFalse(traditional_compatibility_projection(state)["visible"])
+
     def test_entering_traditional_fusion_preserves_explicit_selection(self):
         state = {}
 
@@ -48,6 +58,43 @@ class FusionNavigationTests(unittest.TestCase):
 
         self.assertEqual(LEGACY_MODES_ROUTE, state["fusion_ui_route"])
         self.assertEqual("film_vision_fusion", state["video_clip_json_path"])
+
+    def test_leaving_traditional_mode_returns_to_project_library(self):
+        state = {
+            "fusion_ui_route": LEGACY_MODES_ROUTE,
+            "fusion_traditional_fusion_mode": True,
+            "video_clip_json_path": "film_vision_fusion",
+            "fusion_traditional_transfer": {"project_name": "旧转移"},
+            "fusion_traditional_transfer_pending": True,
+            "fusion_traditional_transfer_active": True,
+        }
+
+        route = exit_legacy_modes(state)
+
+        self.assertEqual(PROJECT_LIBRARY_ROUTE, route)
+        self.assertEqual(PROJECT_LIBRARY_ROUTE, state["fusion_ui_route"])
+        self.assertFalse(state["fusion_traditional_fusion_mode"])
+        self.assertNotIn("fusion_traditional_transfer", state)
+        self.assertNotIn("fusion_traditional_transfer_pending", state)
+        self.assertNotIn("fusion_traditional_transfer_active", state)
+
+    def test_traditional_fusion_projects_an_explicit_session_boundary(self):
+        projection = traditional_compatibility_projection({
+            "fusion_ui_route": LEGACY_MODES_ROUTE,
+            "fusion_traditional_fusion_mode": True,
+        })
+
+        self.assertTrue(projection["visible"])
+        self.assertEqual("Traditional Compatibility Mode", projection["title"])
+        self.assertIn("不会回写", projection["notice"])
+
+    def test_non_fusion_legacy_mode_does_not_show_project_return(self):
+        projection = traditional_compatibility_projection({
+            "fusion_ui_route": LEGACY_MODES_ROUTE,
+            "fusion_traditional_fusion_mode": False,
+        })
+
+        self.assertFalse(projection["visible"])
 
     def test_project_transfer_copies_only_non_secret_configuration_and_sources(self):
         state = {}

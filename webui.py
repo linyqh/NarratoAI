@@ -12,7 +12,12 @@ from app.utils import utils
 from app.utils import ffmpeg_utils
 from app.models import const
 from app.models.schema import VideoClipParams, VideoAspect
-from webui.fusion_navigation import LEGACY_MODES_ROUTE, selected_route
+from webui.fusion_navigation import (
+    LEGACY_MODES_ROUTE,
+    exit_legacy_modes,
+    selected_route,
+    traditional_compatibility_projection,
+)
 from webui.components.fusion_project_ui import render_project_app
 
 
@@ -706,6 +711,14 @@ def main():
     if selected_route(st.session_state) != LEGACY_MODES_ROUTE:
         render_project_app(tr)
         return
+
+    compatibility = traditional_compatibility_projection(st.session_state)
+    if compatibility["visible"]:
+        st.subheader(compatibility["title"])
+        st.caption(compatibility["notice"])
+        if st.button("← 返回 Film Vision Fusion 项目库", type="secondary"):
+            exit_legacy_modes(st.session_state)
+            st.rerun()
 
     st.title(f"Narrato:blue[AI]:sunglasses: 📽️")
     st.write(get_help_text())
