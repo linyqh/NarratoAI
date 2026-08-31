@@ -1,6 +1,6 @@
 import unittest
 
-from webui.components.fusion_project_ui import _options_with_current, _plan_input_fingerprint
+from webui.components.fusion_project_ui import _options_with_current, _plan_input_fingerprint, _tts_configuration_issue
 
 from webui.fusion_navigation import (
     LEGACY_MODES_ROUTE,
@@ -81,6 +81,15 @@ class FusionNavigationTests(unittest.TestCase):
         self.assertEqual(["D:/movies/one.mp4"], draft["source_paths"])
         self.assertEqual("edge_tts", draft["settings"]["tts_engine"])
         self.assertNotIn("api_key", draft["settings"])
+
+    def test_cloud_tts_without_credentials_is_blocked_before_render(self):
+        from app.config import config
+        from unittest.mock import patch
+
+        with patch.dict(config.azure, {"speech_region": "", "speech_key": ""}, clear=False):
+            issue = _tts_configuration_issue({"tts_engine": "azure_speech", "voice_profile": "voice"})
+
+        self.assertIn("Azure Speech", issue)
 
 
 if __name__ == "__main__":

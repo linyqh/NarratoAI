@@ -95,6 +95,29 @@ def _legacy_voice_profile(tts_engine: str) -> str:
     return ""
 
 
+def _tts_configuration_issue(settings: dict) -> str:
+    """Return an actionable blocker when the selected legacy TTS provider is unavailable."""
+    engine = str(settings.get("tts_engine") or config.ui.get("tts_engine") or config.INDEXTTS_ENGINE)
+    if engine == "azure_speech":
+        if not config.azure.get("speech_region") or not config.azure.get("speech_key"):
+            return "Azure Speech 尚未配置服务区域和 API Key，请到传统 TTS 设置完成配置"
+    elif engine == "tencent_tts":
+        if not config.tencent.get("secret_id") or not config.tencent.get("secret_key"):
+            return "腾讯云 TTS 尚未配置 Secret ID 和 Secret Key，请到传统 TTS 设置完成配置"
+    elif engine == "qwen3_tts":
+        if not config.tts_qwen.get("api_key"):
+            return "通义千问 TTS 尚未配置 API Key，请到传统 TTS 设置完成配置"
+    elif engine == "doubaotts":
+        if not config.doubaotts.get("api_key") and not (
+            config.doubaotts.get("appid") and config.doubaotts.get("token")
+        ):
+            return "豆包 TTS 尚未配置 API Key 或 AppID + Token，请到传统 TTS 设置完成配置"
+    voice_profile = str(settings.get("voice_profile") or _legacy_voice_profile(engine)).strip()
+    if not voice_profile:
+        return "当前 TTS 引擎尚未配置音色，请到传统 TTS 设置完成配置"
+    return ""
+
+
 def project_store() -> FusionProjectStore:
     return FusionProjectStore(Path(utils.storage_dir("fusion_projects", create=True)))
 
@@ -1341,6 +1364,9 @@ def _stage_output(project, store) -> None:
     finalization = artifacts.get("finalization") if isinstance(artifacts.get("finalization"), dict) else {}
     preflight = finalization.get("preflight") if isinstance(finalization.get("preflight"), dict) else {}
     migration = dict(project.get("migration_state") or {})
+    tts_issue = _tts_configuration_issue(dict(project.get("project_settings") or {}))
+    if tts_issue:
+        st.error(f"TTS 配置阻断：{tts_issue}")
     if migration.get("status") == "requires_revalidation":
         st.warning(
             "这是旧版导入项目。旧 Preflight 不具备渲染授权；请确认当前来源后运行新版校验。"
@@ -1385,6 +1411,7 @@ def _stage_output(project, store) -> None:
         and finalization.get("renderable")
         and preflight.get("renderable")
         and (not warnings or str(preflight.get("warning_override_reason") or "").strip())
+        and not tts_issue
     )
     script = finalization.get("finalized_script") or []
     sources = [source for source in project.get("source_video_sequence") or [] if source.get("available")]
@@ -1675,6 +1702,9 @@ def _start_project_render(
     if not sources:
         raise ValueError("Render requires at least one available source video")
     settings = dict(project.get("project_settings") or {})
+    tts_issue = _tts_configuration_issue(settings)
+    if tts_issue:
+        raise ValueError(f"TTS 配置不可用：{tts_issue}")
     script_path = store.save_json_artifact(
         project["project_id"], name=f"render-{version_id}.json", payload=script
     )
