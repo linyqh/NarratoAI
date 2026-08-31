@@ -642,6 +642,27 @@ def render_script_file(tr, params):
 
 def render_video_file(tr, params):
     """渲染视频文件选择"""
+    transfer = st.session_state.get("fusion_traditional_transfer")
+    if st.session_state.pop("fusion_traditional_transfer_pending", False) and isinstance(transfer, dict):
+        st.session_state["fusion_traditional_transfer_active"] = True
+    if st.session_state.get("fusion_traditional_transfer_active") and isinstance(transfer, dict):
+        transferred_paths = [path for path in transfer.get("source_paths", []) if os.path.isfile(path)]
+        transferred_subtitles = [path for path in transfer.get("subtitle_paths", []) if os.path.isfile(path)]
+        _set_video_origin_state(transferred_paths, params)
+        _set_subtitle_state(transferred_subtitles)
+        settings = dict(transfer.get("settings") or {})
+        st.session_state["video_theme"] = str(transfer.get("project_name") or "")
+        st.session_state["tts_engine"] = settings.get("tts_engine", st.session_state.get("tts_engine", ""))
+        st.session_state["voice_name"] = settings.get("voice_profile", st.session_state.get("voice_name", ""))
+        st.session_state["voice_rate"] = (settings.get("voice_parameters") or {}).get("rate", 1.0)
+        st.session_state["voice_volume"] = (settings.get("voice_parameters") or {}).get("volume", 1.0)
+        st.session_state["voice_pitch"] = (settings.get("voice_parameters") or {}).get("pitch", 1.0)
+        st.info(tr("已采用项目转移的本机素材和非敏感配置。选择下方按钮后才会改用传统模式的新素材。"))
+        if st.button(tr("更改转移素材"), key="clear-fusion-traditional-transfer"):
+            st.session_state.pop("fusion_traditional_transfer_active", None)
+            st.session_state.pop("fusion_traditional_transfer", None)
+            st.rerun()
+        return
     source_options = {
         tr("Select from resource directory"): "resource",
         tr("Upload Local Files"): "upload",

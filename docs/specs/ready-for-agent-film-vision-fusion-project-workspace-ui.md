@@ -62,7 +62,7 @@ The experience uses a dark desktop-first shell, an explicit New Fusion Project f
 38. As a creator, I want archived and trashed projects recoverable, so that routine cleanup is reversible.
 39. As a creator, I want permanent deletion to list exactly what will be removed, so that referenced local movies and managed project data cannot be confused.
 40. As a creator, I want legacy work imported only after I select related sources and artifacts, so that unrelated historical records are never grouped automatically.
-41. As a creator, I want the old Film Vision Fusion selector to redirect into the new project flow, so that there is one production experience rather than two competing interfaces.
+41. As a creator, I want an explicit choice between the Project Workspace and Traditional Compatibility Mode, with an intentional transfer in either direction, so that I can adopt the new workflow without stranding ongoing work.
 42. As a mobile user, I want to monitor and acknowledge work, so that lightweight task supervision remains possible away from desktop.
 43. As a desktop creator, I want the three-region review workspace optimized for wide screens, so that video, queue, and evidence remain visible together.
 44. As a maintainer, I want project status and stage readiness derived once, so that separate pages cannot disagree about what is safe.
@@ -505,7 +505,7 @@ Diagnostic drawers may show provider/model identity, timing, character counts, a
 ## Migration behavior
 
 - Keep a temporary Film Vision Fusion option in the legacy creation-mode selector.
-- Selecting it redirects to Project Library with an explanation; it no longer expands the old Fusion settings form.
+- Selecting it opens Traditional Compatibility Mode with an explanation of its session-only limits; Project Workspace Mode remains the recommended default entry.
 - Provide Import Existing Work for compatible visual-analysis and Fusion Matching records.
 - Import requires creator selection of related records and source videos.
 - Imported records remain untouched; the Migrated Fusion Project stores references and migration metadata.
@@ -617,8 +617,8 @@ Exit: every actionable review item is locatable or explicitly marked unsafe to l
 - Build Output stage around Render Preflight.
 - Create immutable Render Outcomes and render history.
 - Implement Migrated Fusion Project flow.
-- Redirect legacy Fusion selector to Project Library.
-- Remove conditional Fusion Workspace rendering from the legacy form after parity verification.
+- Keep the legacy Fusion selector as an explicitly labelled Traditional Compatibility Mode entry.
+- Support explicit project-to-traditional and traditional-session-to-project setup transfer; remove the old form only after parity verification and migration cutoff.
 
 Exit: one real project completes from creation to a playable final video without the legacy Fusion UI.
 
@@ -686,7 +686,7 @@ Navigation:
 
 - App opens at Project Library.
 - New Project creates a durable draft before upload.
-- Legacy Fusion selector redirects rather than renders old controls.
+- Legacy Fusion selector opens explicitly labelled Traditional Compatibility Mode; transfer preserves non-secret setup and source references.
 - Project refresh returns to the same project and restores its durable projection.
 
 ## Manual acceptance checklist
@@ -703,7 +703,7 @@ The Phase 3 UI is complete only when all are true:
 8. Content Draft application shows impact and creates a version.
 9. Render Preflight is the only render entry.
 10. Each render creates a distinct Render Outcome.
-11. The legacy Fusion selector no longer expands the old configuration page.
+11. The legacy Fusion selector opens Traditional Compatibility Mode, and both modes make their different ownership and transfer behavior clear.
 12. Normal creator flows expose neither `st.session_state`, raw JSON files, nor task IDs.
 13. 1440p, 1080p, and 1024px visual acceptance is recorded.
 14. At least one real source completes creation-to-render usability acceptance.

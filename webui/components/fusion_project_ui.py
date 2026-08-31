@@ -21,6 +21,7 @@ from webui.fusion_navigation import (
     enter_legacy_modes,
     navigate,
     transfer_project_to_traditional,
+    traditional_session_to_project_draft,
 )
 
 
@@ -62,6 +63,36 @@ def _options_with_current(defaults: list[str], current: str) -> tuple[list[str],
     if current and current not in options:
         options.insert(0, current)
     return options, options.index(current) if current in options else 0
+
+
+def _legacy_voice_profile(tts_engine: str) -> str:
+    """Return the legacy local TTS voice selection without exposing credentials."""
+    engine = str(tts_engine or "")
+    if engine == "azure_speech":
+        return str(config.ui.get("azure_voice_name") or "zh-CN-XiaoxiaoMultilingualNeural")
+    if engine == "tencent_tts":
+        return f"tencent:{config.ui.get('tencent_voice_type', '101001')}"
+    if engine == "qwen3_tts":
+        return f"qwen3:{config.ui.get('qwen_voice_type', 'Cherry')}"
+    if engine == "doubaotts":
+        return str(config.ui.get("doubaotts_voice_type") or "BV700_streaming")
+    if engine == config.INDEXTTS_ENGINE:
+        return f"{config.INDEXTTS_VOICE_PREFIX}{config.indextts.get('reference_audio', '')}"
+    if engine == config.INDEXTTS_MACOS_ENGINE:
+        return f"{config.INDEXTTS_MACOS_VOICE_PREFIX}{config.indextts_macos.get('reference_audio', '')}"
+    if engine == config.INDEXTTS2_ENGINE:
+        return f"{config.INDEXTTS2_VOICE_PREFIX}{config.indextts2.get('reference_audio', '')}"
+    if engine == config.OMNIVOICE_ENGINE:
+        mode = config.omnivoice.get("mode", "auto")
+        reference = config.omnivoice.get("reference_audio", "")
+        return f"{config.OMNIVOICE_VOICE_PREFIX}{reference if mode == 'voice_clone' else mode}"
+    if engine == config.VOXCPM_ENGINE:
+        return f"{config.VOXCPM_VOICE_PREFIX}{config.voxcpm_05b.get('reference_audio', '') or 'default'}"
+    if engine == config.VOXCPM2_ENGINE:
+        mode = config.voxcpm_2b.get("mode", "design")
+        reference = config.voxcpm_2b.get("reference_audio", "")
+        return f"{config.VOXCPM2_VOICE_PREFIX}{reference if mode == 'clone' else mode}"
+    return ""
 
 
 def project_store() -> FusionProjectStore:
@@ -151,6 +182,30 @@ def _render_library() -> None:
             project = store.create("未命名电影解说")
             navigate(st.session_state, NEW_PROJECT_ROUTE, project_id=project["project_id"])
             st.rerun()
+
+    traditional_draft = traditional_session_to_project_draft(st.session_state)
+    if traditional_draft["source_paths"]:
+        with st.expander("接收传统模式当前会话", expanded=False):
+            st.caption("这会创建一个新的项目草稿并复制当前本机素材引用与非敏感 TTS 配置；不会同步会话，也不会复制凭据。")
+            if st.button("创建项目草稿", key="adopt-traditional-session"):
+                try:
+                    project = store.create(traditional_draft["name"])
+                    for source_path in traditional_draft["source_paths"]:
+                        store.add_local_reference(project["project_id"], path=source_path)
+                    project = store.read(project["project_id"])
+                    for source, subtitle_path in zip(project.get("source_video_sequence") or [], traditional_draft["subtitle_paths"]):
+                        if Path(subtitle_path).is_file():
+                            store.set_source_subtitle(
+                                project["project_id"], source["source_id"],
+                                subtitle_path=subtitle_path, origin="traditional_session",
+                            )
+                    project = store.update(
+                        project["project_id"], project_settings=traditional_draft["settings"]
+                    )
+                    navigate(st.session_state, NEW_PROJECT_ROUTE, project_id=project["project_id"])
+                    st.rerun()
+                except Exception as error:
+                    st.error(f"接收传统模式会话失败：{error}")
 
     with st.expander("迁移现有 Fusion 工作"):
         st.caption("仅在你明确提交脚本和源视频路径后创建迁移项目；系统不会自动扫描旧会话。")
@@ -292,7 +347,7 @@ def _render_new_project() -> None:
         target = st.number_input("目标文案字数", min_value=300, max_value=10000, value=int(settings.get("target_narration_length") or 1200), step=100)
         ratio = st.slider("原片声音比例", 0, 100, int(settings.get("original_sound_ratio") or 30), 5)
         subtitle_policies = {
-            "优先使用现有字幕，缺失时自动转录": "source_or_asr",
+            "优先使用现有字幕，缺失时允许转录": "source_or_asr",
             "仅使用我提供的字幕": "source_only",
             "始终重新转录": "always_asr",
         }
@@ -318,10 +373,13 @@ def _render_new_project() -> None:
                 help="与传统 Edge TTS 使用同一份可选音色列表。",
             )
         else:
+            local_voice = _legacy_voice_profile(tts_engine)
             voice_profile = st.text_input(
-                "TTS 音色", value=saved_voice,
-                help="项目保存选择快照；API Key 和本机服务地址仍使用本机设置。",
+                "TTS 音色", value=saved_voice or local_voice, disabled=True,
+                help="此音色复用传统 TTS 设置中的本机选择；项目只保存快照，API Key 和服务地址不进入项目。",
             )
+            if not local_voice:
+                st.warning("该 TTS 引擎尚未在本机传统 TTS 设置中配置可用音色；渲染前请先完成本机配置。")
         voice_parameters = dict(settings.get("voice_parameters") or {})
         voice_rate = st.slider("语速", 0.5, 2.0, float(voice_parameters.get("rate") or 1.0), 0.1)
         voice_volume = st.slider("解说音量", 0.0, 2.0, float(voice_parameters.get("volume") or 1.0), 0.05)
@@ -451,7 +509,11 @@ def _stage_setup(project, store) -> None:
 
 def _stage_evidence(project, store) -> None:
     st.header("媒体与证据")
+    from app.services.fusion_project_subtitles import FusionProjectSubtitleWorkflow
+
+    subtitle_workflow = FusionProjectSubtitleWorkflow(store)
     sources = project.get("source_video_sequence") or []
+    subtitle_policy = str((project.get("project_settings") or {}).get("subtitle_policy") or "source_or_asr")
     if not sources:
         st.warning("请先添加至少一个源视频。")
         return
@@ -490,59 +552,25 @@ def _stage_evidence(project, store) -> None:
                 key=f"subtitle-asr-{source['source_id']}",
             )
             transcription, translate, calibrate = st.columns(3)
-            if transcription.button("转录字幕", key=f"subtitle-asr-run-{source['source_id']}", disabled=not source.get("available")):
+            if subtitle_policy == "source_only":
+                st.caption("当前字幕策略仅允许采用你提供的字幕。")
+            if transcription.button("转录字幕", key=f"subtitle-asr-run-{source['source_id']}", disabled=not source.get("available") or subtitle_policy == "source_only"):
                 try:
-                    from app.services import fun_asr_subtitle
-                    output = store.source_subtitle_output_path(
-                        project["project_id"], source_id=source["source_id"], label=f"asr-{asr_backend}"
-                    )
-                    if asr_backend == "local":
-                        result = fun_asr_subtitle.create_with_local_fun_asr(
-                            source["path"], output, api_url=config.fun_asr.get("api_url", ""),
-                            hotword=config.fun_asr.get("hotword", ""), enable_spk=bool(config.fun_asr.get("enable_spk", False)),
-                        )
-                    elif asr_backend == "firered":
-                        result = fun_asr_subtitle.create_with_local_firered_asr(
-                            source["path"], output, api_url=config.fun_asr.get("firered_api_url", ""),
-                        )
-                    else:
-                        result = fun_asr_subtitle.create_with_fun_asr(
-                            source["path"], output, api_key=config.fun_asr.get("api_key", ""),
-                        )
-                    store.set_source_subtitle(
-                        project["project_id"], source_id=source["source_id"], subtitle_path=str(result or output), origin=f"asr:{asr_backend}"
-                    )
+                    subtitle_workflow.transcribe(project["project_id"], source["source_id"], asr_backend)
                     st.success("字幕转录完成，已绑定到当前源视频。")
                     st.rerun()
                 except Exception as error:
                     st.error(f"字幕转录失败：{error}")
             if translate.button("翻译字幕", key=f"subtitle-translate-{source['source_id']}", disabled=not source.get("subtitle_path")):
                 try:
-                    from app.services import subtitle_translator
-                    provider = config.app.get("text_llm_provider", "openai").lower()
-                    output = store.source_subtitle_output_path(project["project_id"], source_id=source["source_id"], label="translated")
-                    result = subtitle_translator.translate_subtitle_file(
-                        source["subtitle_path"], output_file=output,
-                        target_language=str((project.get("project_settings") or {}).get("output_language") or "中文"),
-                        provider=provider, api_key=config.app.get(f"text_{provider}_api_key", ""),
-                        base_url=config.app.get(f"text_{provider}_base_url", ""),
-                    )
-                    store.set_source_subtitle(project["project_id"], source_id=source["source_id"], subtitle_path=result, origin="translated")
+                    subtitle_workflow.translate(project["project_id"], source["source_id"])
                     st.success("字幕翻译完成。")
                     st.rerun()
                 except Exception as error:
                     st.error(f"字幕翻译失败：{error}")
             if calibrate.button("校准字幕", key=f"subtitle-calibrate-{source['source_id']}", disabled=not source.get("subtitle_path")):
                 try:
-                    from app.services import subtitle_corrector
-                    provider = config.app.get("text_llm_provider", "openai").lower()
-                    output = store.source_subtitle_output_path(project["project_id"], source_id=source["source_id"], label="corrected")
-                    result = subtitle_corrector.correct_subtitle_file(
-                        source["subtitle_path"], output_file=output,
-                        provider=provider, api_key=config.app.get(f"text_{provider}_api_key", ""),
-                        base_url=config.app.get(f"text_{provider}_base_url", ""),
-                    )
-                    store.set_source_subtitle(project["project_id"], source_id=source["source_id"], subtitle_path=result, origin="corrected")
+                    subtitle_workflow.calibrate(project["project_id"], source["source_id"])
                     st.success("字幕校准完成。")
                     st.rerun()
                 except Exception as error:
@@ -707,6 +735,10 @@ def _stage_narration(project, store) -> None:
         st.warning("需要先完成或导入视觉证据。现有证据不会因页面切换而丢失。")
     sources = project.get("source_video_sequence") or []
     subtitle_paths = [source.get("subtitle_path") for source in sources if source.get("subtitle_path")]
+    subtitle_policy = str((project.get("project_settings") or {}).get("subtitle_policy") or "source_or_asr")
+    subtitle_ready = len(subtitle_paths) == len(sources) and (
+        subtitle_policy != "always_asr" or all(str(source.get("subtitle_origin") or "").startswith("asr:") for source in sources)
+    )
     verified_visual_evidence = all(
         source.get("visual_evidence_status") == "completed" for source in sources
     )
@@ -717,7 +749,7 @@ def _stage_narration(project, store) -> None:
         st.caption(narration_start["reason"])
     if st.button(
         "生成解说词", type="primary",
-        disabled=not subtitle_paths or not verified_visual_evidence or not narration_start["allowed"],
+        disabled=not subtitle_ready or not verified_visual_evidence or not narration_start["allowed"],
     ):
         reservation_id = f"matchingreservation{uuid4().hex}"
         try:
@@ -1446,11 +1478,12 @@ def _start_narration_generation(project_id: str, task_id: str = "") -> str:
             current = worker_store.read(project_id)
             artifacts = dict(current.get("artifact_refs") or {})
             sources = list(current.get("source_video_sequence") or [])
-            subtitle_paths = [
-                source.get("subtitle_path") for source in sources if source.get("subtitle_path")
-            ]
-            if not subtitle_paths:
-                raise ValueError("Narration generation requires subtitle or ASR evidence")
+            subtitle_paths = [source.get("subtitle_path") for source in sources if source.get("subtitle_path")]
+            policy = str((current.get("project_settings") or {}).get("subtitle_policy") or "source_or_asr")
+            if len(subtitle_paths) != len(sources):
+                raise ValueError("Narration generation requires subtitle or ASR evidence for every source")
+            if policy == "always_asr" and any(not str(source.get("subtitle_origin") or "").startswith("asr:") for source in sources):
+                raise ValueError("Narration generation requires fresh ASR evidence for every source")
             if any(source.get("visual_evidence_status") != "completed" for source in sources):
                 raise ValueError("Narration generation requires verified visual evidence for every source")
             from webui.tools.generate_short_summary import (

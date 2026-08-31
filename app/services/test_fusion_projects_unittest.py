@@ -663,6 +663,28 @@ class FusionProjectStoreTests(unittest.TestCase):
         self.assertEqual("regression_only", source_state["visual_evidence_status"])
         self.assertIn("未验证视觉证据仅可回归测试", narration_blockers)
 
+    def test_subtitle_policy_requires_each_source_and_retranscription_when_selected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first_movie = root / "first.mp4"
+            second_movie = root / "second.mp4"
+            subtitle = root / "first.srt"
+            first_movie.write_bytes(b"first")
+            second_movie.write_bytes(b"second")
+            subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\ntext\n", encoding="utf-8")
+            store = FusionProjectStore(root / "projects")
+            project = store.create("策略")
+            first = store.add_local_reference(project["project_id"], path=str(first_movie))
+            store.add_local_reference(project["project_id"], path=str(second_movie))
+            store.set_source_subtitle(project["project_id"], source_id=first["source_id"], subtitle_path=str(subtitle))
+
+            blockers = store.stage_readiness(project["project_id"])["narration"]["blockers"]
+            store.update(project["project_id"], project_settings={"subtitle_policy": "always_asr"})
+            asr_blockers = store.stage_readiness(project["project_id"])["narration"]["blockers"]
+
+        self.assertIn("每个源视频的字幕或 ASR", blockers)
+        self.assertIn("字幕策略要求为每个源重新转录", asr_blockers)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -67,4 +67,30 @@ def transfer_project_to_traditional(project: dict, state) -> str:
         "source_paths": [str(source.get("path") or "") for source in sources if source.get("path")],
         "subtitle_paths": [str(source.get("subtitle_path") or "") for source in sources if source.get("subtitle_path")],
     }
+    state["fusion_traditional_transfer_pending"] = True
     return enter_legacy_modes(state, fusion=True)
+
+
+def traditional_session_to_project_draft(state) -> dict:
+    """Expose the current traditional-session setup as an explicit project draft.
+
+    This is intentionally a copy, not synchronization: credentials and provider
+    endpoints stay in local configuration, while source references and creator
+    choices can be adopted by a new durable project.
+    """
+    source_paths = state.get("video_origin_paths") or [state.get("video_origin_path")]
+    subtitle_paths = state.get("subtitle_paths") or [state.get("subtitle_path")]
+    return {
+        "name": str(state.get("video_theme") or "从传统模式导入的项目"),
+        "source_paths": [str(path) for path in source_paths if str(path or "").strip()],
+        "subtitle_paths": [str(path) for path in subtitle_paths if str(path or "").strip()],
+        "settings": {
+            "tts_engine": state.get("tts_engine"),
+            "voice_profile": state.get("voice_name"),
+            "voice_parameters": {
+                "rate": state.get("voice_rate"),
+                "volume": state.get("voice_volume"),
+                "pitch": state.get("voice_pitch"),
+            },
+        },
+    }

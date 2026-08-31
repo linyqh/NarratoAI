@@ -314,6 +314,12 @@ class FusionProjectStore:
         regression_only = [
             source for source in sources if source.get("visual_evidence_status") == "regression_only"
         ]
+        subtitle_policy = str((project.get("project_settings") or {}).get("subtitle_policy") or "source_or_asr")
+        missing_subtitles = [source for source in sources if not source.get("subtitle_path")]
+        not_retranscribed = [
+            source for source in sources
+            if not str(source.get("subtitle_origin") or "").startswith("asr:")
+        ]
 
         def state(*blockers: str) -> dict[str, Any]:
             remaining = [blocker for blocker in blockers if blocker]
@@ -326,11 +332,13 @@ class FusionProjectStore:
         narration = state(
             "可用源视频" if not available_sources else "",
             "源视频身份变化，需重新视觉分析" if identity_changed else "",
-            "字幕或 ASR" if not any(source.get("subtitle_path") for source in sources) else "",
+            "每个源视频的字幕或 ASR" if missing_subtitles else "",
+            "字幕策略要求为每个源重新转录" if subtitle_policy == "always_asr" and not_retranscribed else "",
             "未验证视觉证据仅可回归测试" if regression_only else "",
         )
         matching = state(
             "源视频身份变化，需重新视觉分析" if identity_changed else "",
+            "未验证视觉证据仅可回归测试" if regression_only else "",
             "解说词" if not artifacts.get("narration") else "",
             "Fusion Segment Plan" if not artifacts.get("fusion_segment_plan") else "",
             "Plan Approval" if not artifacts.get("fusion_plan_approval") else "",
@@ -338,6 +346,7 @@ class FusionProjectStore:
         review = state("画面匹配结果" if not artifacts.get("finalization") else "")
         output = state(
             "源视频身份变化，需重新视觉分析" if identity_changed else "",
+            "未验证视觉证据仅可回归测试" if regression_only else "",
             "活动版本" if not project.get("active_version_id") else "",
             "审核阻断项" if any(
                 item.get("severity") == "blocker" and item.get("status", "open") == "open"

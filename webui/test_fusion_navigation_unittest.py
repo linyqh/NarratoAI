@@ -8,6 +8,7 @@ from webui.fusion_navigation import (
     enter_legacy_modes,
     route_for_legacy_mode,
     selected_route,
+    traditional_session_to_project_draft,
     transfer_project_to_traditional,
 )
 
@@ -67,6 +68,19 @@ class FusionNavigationTests(unittest.TestCase):
         self.assertEqual("film_vision_fusion", state["video_clip_json_path"])
         self.assertEqual("D:/movies/one.mp4", state["fusion_traditional_transfer"]["source_paths"][0])
         self.assertNotIn("api_key", state["fusion_traditional_transfer"])
+
+    def test_traditional_session_can_be_adopted_as_a_non_secret_project_draft(self):
+        draft = traditional_session_to_project_draft({
+            "video_theme": "旧会话", "video_origin_paths": ["D:/movies/one.mp4"],
+            "subtitle_paths": ["D:/movies/one.srt"], "tts_engine": "edge_tts",
+            "voice_name": "zh-CN-XiaoxiaoNeural", "voice_rate": 1.1,
+            "voice_volume": 0.8, "voice_pitch": 1.0, "api_key": "must-not-copy",
+        })
+
+        self.assertEqual("旧会话", draft["name"])
+        self.assertEqual(["D:/movies/one.mp4"], draft["source_paths"])
+        self.assertEqual("edge_tts", draft["settings"]["tts_engine"])
+        self.assertNotIn("api_key", draft["settings"])
 
 
 if __name__ == "__main__":
