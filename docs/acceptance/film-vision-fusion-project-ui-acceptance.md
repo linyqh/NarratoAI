@@ -1,7 +1,7 @@
 # Film Vision Fusion project UI acceptance
 
-Date: 2026-08-30
-Implementation baseline: `0f7865c`
+Date: 2026-08-31
+Implementation baseline: `6aed5a6`
 Acceptance target: P0 plus Slice 0–7 in `ready-for-agent-film-vision-fusion-project-workspace-ui.md`
 
 ## Automated state and safety coverage
@@ -19,9 +19,13 @@ The focused project/UI suite also verifies:
 - Content Draft impact and version creation;
 - Plan validation, approval, matching, Narrative Map review, synchronized review context, bounded timeline edits, and version restore;
 - Render Preflight blocker/warning policy, immutable Render Outcomes, and frozen render configuration snapshots;
-- default Project Library navigation and removal of stale Film Vision Fusion state before entering traditional modes.
+- default Project Library navigation, an explicit Traditional Compatibility Mode boundary,
+  a return-to-library action that clears transfer state, and removal of stale Film Vision
+  Fusion state when another traditional script mode is selected;
+- deterministic newest-subtitle selection in both the standard and Jianying export paths
+  when multiple generated subtitle files share file-system timestamp precision.
 
-The post-review full discovery run completed **272 tests successfully** with one
+The post-review full discovery run completed **282 tests successfully** with one
 provider/environment test skipped. It additionally verifies that a source file
 replaced at the same path invalidates old evidence, concurrent project-task
 updates are serialized, complete Plan responses remain recoverable, legacy
@@ -65,8 +69,11 @@ by durable projection tests and their corresponding task/output gates.
 
 ## Real-media gate
 
-This repository does not contain the source movie, subtitle, provider logs, or
-finished sample required to truthfully complete a real-media usability run.
+The tracked repository does not contain a complete, reviewable project-workspace
+sample with source identity, provider diagnostics, stage artifacts, Render Preflight,
+and final human scorecard. Local ignored media and a legacy-flow render are present,
+but all currently stored Fusion Projects remain drafts and therefore cannot be used
+as evidence for a creation-to-render project-workspace acceptance run.
 Therefore Slice 7's code and visual acceptance are complete, but the release
 must remain **not real-media accepted** until at least one creation-to-render
 sample is completed, followed by the broader three-classes-by-two set in
