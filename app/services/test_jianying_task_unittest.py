@@ -322,6 +322,26 @@ class JianyingTaskTests(unittest.TestCase):
 
             self.assertEqual([str(newer_subtitle)], subtitle_paths)
 
+    def test_auto_matched_subtitle_keeps_empty_slot_for_an_earlier_video(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            first_video = temp_path / "first.mp4"
+            second_video = temp_path / "second_20260829010203.mp4"
+            second_subtitle = temp_path / "second_fun_asr_20260829010204.srt"
+            second_subtitle.write_text("second", encoding="utf-8")
+            params = VideoClipParams(
+                video_origin_paths=[str(first_video), str(second_video)],
+            )
+
+            with patch.object(
+                jianying_task.utils,
+                "subtitle_dir",
+                return_value=str(temp_path),
+            ):
+                subtitle_paths = jianying_task._get_original_subtitle_paths(params)
+
+        self.assertEqual(["", str(second_subtitle)], subtitle_paths)
+
     def test_create_jianying_subtitle_file_includes_original_audio_subtitles(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
