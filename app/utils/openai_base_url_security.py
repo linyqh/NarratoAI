@@ -98,6 +98,12 @@ def openai_compatible_base_url_warning(base_url: Optional[str]) -> str:
     return OPENAI_COMPATIBLE_BASE_URL_WARNING.format(host=host)
 
 
+def is_openai_compatible_base_url_confirmed_for_use(base_url: Optional[str], confirmed: bool) -> bool:
+    if not openai_compatible_base_url_warning(base_url):
+        return True
+    return bool(confirmed)
+
+
 def validate_openai_compatible_base_url(base_url: Optional[str]) -> Optional[str]:
     if not base_url:
         return None
