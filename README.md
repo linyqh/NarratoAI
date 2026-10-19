@@ -3,12 +3,12 @@
 <h3 align="center">一站式 AI 影视解说+自动化剪辑工具🎬🎞️ </h3>
 
 <p align="center">
-  📖 <a href="README-en.md">English</a> | 简体中文 | <a href="https://www.narratoai.co">☁️ <b>云端版入口 (NarratoAI.co)</b></a>
+  📖 <a href="README-en.md">English</a> | 简体中文 | <a href="https://narratoai.cn/">☁️ <b>云端版入口 (NarratoAI.cn)</b></a>
 </p>
 
 <br>
 
-NarratoAI 是一款自动化影视解说工具，基于 LLM 实现文案撰写、自动化视频剪辑、配音和字幕生成的一站式流程，助力高效内容创作。支持本地部署开源版及 [云端托管版](https://www.narratoai.co)。
+NarratoAI 是一款自动化影视解说工具，基于 LLM 实现文案撰写、自动化视频剪辑、配音和字幕生成的一站式流程，助力高效内容创作。支持本地部署开源版及 [云端托管版](https://narratoai.cn/)。
 
 <br>
 
@@ -196,6 +196,10 @@ uv run streamlit run webui.py --server.maxUploadSize=2048
 💬 2. [加入开源社区交流群](https://github.com/linyqh/NarratoAI/wiki)
 
 📷 3. 关注公众号【NarratoAI助手】，掌握最新资讯
+
+🎵 4. 关注抖音号【NarratoAI】（抖音号：**76958193368**），获取最新动态，也可以私信反馈问题和建议。打开抖音扫一扫，扫描下方二维码即可关注。
+
+<img src="docs/douyin-qr-code.jpg" alt="NarratoAI 抖音号二维码，抖音号：76958193368" width="300">
 
 ## 参考项目 📚
 - https://github.com/FujiwaraChoki/MoneyPrinter
