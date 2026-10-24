@@ -189,26 +189,11 @@ uv run streamlit run webui.py --server.maxUploadSize=2048
 
 📷 3. 关注公众号【NarratoAI助手】，掌握最新资讯
 
-🎵 4. 关注抖音号【NarratoAI】（抖音号：**76958193368**），获取最新动态，也可以私信反馈问题和建议。打开抖音扫一扫，扫描下方二维码即可关注。
-
-<img src="docs/douyin-qr-code.jpg" alt="NarratoAI 抖音号二维码，抖音号：76958193368" width="300">
-
 ## 参考项目 📚
 - https://github.com/FujiwaraChoki/MoneyPrinter
 - https://github.com/harry0703/MoneyPrinterTurbo
 
 该项目基于以上项目重构而来，增加了影视解说功能，感谢大佬的开源精神 🥳🥳🥳 
-
-## 请作者喝一杯咖啡 ☕️
-<div style="display: flex; justify-content: space-between;">
-  <img src="https://github.com/user-attachments/assets/5038ccfb-addf-4db1-9966-99415989fd0c" alt="Image 1" style="width: 350px; height: 350px; margin: auto;"/>
-  <img src="https://github.com/user-attachments/assets/07d4fd58-02f0-425c-8b59-2ab94b4f09f8" alt="Image 2" style="width: 350px; height: 350px; margin: auto;"/>
-</div>
-
-## 赞助
-<a href="https://dartnode.com">
-  <img src="https://dartnode.com/_branding/white_color_full.png" alt="Powered by DartNode" style="background-color: #333; padding: 10px; border-radius: 4px;">
-</a>
 
 ## 许可证 📝
 
