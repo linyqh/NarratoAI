@@ -38,14 +38,6 @@ NarratoAI 是一款自动化影视解说工具，基于 LLM 实现文案撰写�
   <img src="docs/volcengine.png" alt="火山引擎 Agent plan & Coding plan" style="width: 100%; max-width: 840px; height: auto;">
 </a>
 
-### APIMart
-
-感谢 APIMart 赞助了本项目！APIMart 是专注 AI 图片/视频生成的低价 API 平台，GPT-Image-2 低至 $0.006/张，1 美元可出图 160+ 张。图片、视频一套异步 API 通吃，提交任务拿 ID、回调取结果，跑批万张不超时、换模型不改代码。按量付费、无月费，通过[此注册链接](https://go.apimart.ai/gh-narratoai)注册即可开用。
-
-<a href="https://go.apimart.ai/gh-narratoai">
-  <img src="docs/apimart.png" alt="APIMart" style="width: 100%; max-width: 900px; height: auto;">
-</a>
-
 > 即日起全面支持硅基流动！注册即享2000万免费Token（价值16元平台配额），剪辑10分钟视频仅需0.1元！  
 > 
 > 🔥 快速领福利：  
