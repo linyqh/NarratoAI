@@ -187,6 +187,22 @@ class ScriptSubtitleTests(unittest.TestCase):
         self.assertIn("第二个视频的字幕应该出现", content)
         self.assertNotIn("第一个视频的字幕不应该出现", content)
 
+    def test_combined_original_subtitles_keep_explicit_positional_mapping(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            subtitle_file = Path(temp_dir) / "second.srt"
+            subtitle_file.write_text(
+                "1\n00:00:01,000 --> 00:00:03,000\n显式字幕。\n",
+                encoding="utf-8",
+            )
+
+            content = script_subtitle._build_combined_original_subtitle_content(
+                [str(subtitle_file)],
+                ["first.mp4", "second.mp4"],
+            )
+
+        self.assertIn("# 视频 1: first.mp4", content)
+        self.assertNotIn("# 视频 2: second.mp4", content)
+
 
 if __name__ == "__main__":
     unittest.main()

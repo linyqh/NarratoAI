@@ -147,6 +147,29 @@ def _normalize_paths(paths) -> List[str]:
     return normalized_paths
 
 
+def _normalize_path_slots(paths) -> List[str]:
+    """Keep auto-discovery's empty video slots while normalizing paths."""
+    if isinstance(paths, str):
+        paths = [paths]
+    if not paths:
+        return []
+
+    normalized_paths = []
+    seen = set()
+    for item in paths:
+        if not isinstance(item, str):
+            continue
+        item = item.strip()
+        if not item:
+            normalized_paths.append("")
+            continue
+        if item in seen:
+            continue
+        normalized_paths.append(item)
+        seen.add(item)
+    return normalized_paths
+
+
 def _resolve_script_video_id(item: dict, video_origin_paths: Sequence[str]) -> int:
     video_id = _coerce_positive_int(item.get("video_id") or item.get("video_index"))
     if video_id is not None:
@@ -175,11 +198,13 @@ def _build_combined_original_subtitle_content(
     original_subtitle_paths,
     video_origin_paths=None,
 ) -> str:
-    subtitle_paths = _normalize_paths(original_subtitle_paths)
+    subtitle_paths = _normalize_path_slots(original_subtitle_paths)
     video_paths = _normalize_paths(video_origin_paths)
     sections = []
 
     for index, subtitle_path in enumerate(subtitle_paths, start=1):
+        if not subtitle_path:
+            continue
         if not os.path.exists(subtitle_path):
             logger.warning(f"原片字幕文件不存在，跳过: {subtitle_path}")
             continue
