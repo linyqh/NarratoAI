@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 TRUSTED_OPENAI_COMPATIBLE_BASE_HOSTS = {
     "api.openai.com",
     "openrouter.ai",
+    "api.orcarouter.ai",
     "api.siliconflow.cn",
     "dashscope.aliyuncs.com",
     "api.deepseek.com",

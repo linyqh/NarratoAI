@@ -414,7 +414,7 @@
     "Vision model": "视觉分析模型",
     "Text model": "文案生成模型",
     "Model Name Input Help": "输入完整模型名称\n\n常用示例:",
-    "OpenAI compatible providers help": "这里不限定模型厂商；OpenAI、DeepSeek、OpenRouter、SiliconFlow 或自建网关均可，只需提供兼容 OpenAI 的接口地址和模型名称。",
+    "OpenAI compatible providers help": "这里不限定模型厂商；OpenAI、DeepSeek、OpenRouter、OrcaRouter、SiliconFlow 或自建网关均可，只需提供兼容 OpenAI 的接口地址和模型名称。",
     "OpenAI compatible protocol": "OpenAI 兼容",
     "OpenAI compatible protocol help": "不是限定 OpenAI 官方模型；只要模型服务支持 OpenAI Chat Completions 兼容接口即可。",
     "Provider API Key Help": "模型服务的 API 密钥\n\n常见获取地址:",
