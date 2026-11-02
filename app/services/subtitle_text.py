@@ -99,8 +99,11 @@ def decode_subtitle_bytes(
             DecodedSubtitle(text=normalize_subtitle_text(decoded_text), encoding=encoding)
         )
 
-        # Fast path: if we already see timecodes, keep the first such decode.
-        if has_timecodes(decoded_results[-1].text):
+        # Detect timecodes before NUL cleanup: UTF-16 bytes can also decode as
+        # UTF-8, but removing their interleaved NULs hides that wrong encoding.
+        # An explicit encoding list retains the caller's original precedence.
+        timecode_text = decoded_results[-1].text if encodings else decoded_text
+        if has_timecodes(timecode_text):
             return decoded_results[-1]
 
     if decoded_results:
