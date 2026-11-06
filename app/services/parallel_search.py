@@ -22,8 +22,9 @@ def _rpc_result(response: requests.Response, request_id: int) -> dict[str, Any]:
         if "text/event-stream" in response.headers.get("Content-Type", ""):
             messages = []
             # An SSE event may contain several data lines and unrelated notifications.
-            for event in response.text.replace("\r\n", "\n").split("\n\n"):
-                data = "\n".join(line[5:].lstrip() for line in event.splitlines() if line.startswith("data:"))
+            # Only CR/LF delimit SSE lines; Unicode separators belong to JSON strings.
+            for event in response.text.replace("\r\n", "\n").replace("\r", "\n").split("\n\n"):
+                data = "\n".join(line[5:].lstrip() for line in event.split("\n") if line.startswith("data:"))
                 if data:
                     messages.append(json.loads(data))
         else:

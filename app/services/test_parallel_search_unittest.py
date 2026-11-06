@@ -12,11 +12,14 @@ from app.services.tavily_search import (
 )
 
 
-def response(data, *, sse=False, status=200, headers=None):
+def response(data, *, sse=False, status=200, headers=None, line_ending="\r\n", multiline=False):
     r = requests.Response()
     r.status_code = status
     r.headers.update(headers or {})
-    r._content = ("event: message\r\ndata: " + json.dumps(data, ensure_ascii=False) + "\r\n\r\n" if sse else json.dumps(data)).encode()
+    text = json.dumps(data, ensure_ascii=False, indent=2 if multiline else None)
+    if sse:
+        text = line_ending.join(["event: message"] + ["data: " + line for line in text.split("\n")] + ["", ""])
+    r._content = text.encode("utf-8")
     r.headers['Content-Type'] = 'text/event-stream' if sse else 'application/json'
     return r
 
@@ -25,7 +28,7 @@ RESULT = {'results': [{'url': 'https://example.org/plot', 'title': '剧情', 'ex
 
 
 class ParallelSearchTests(unittest.TestCase):
-    def transport(self, *, result=None, tools=None, status=200, fail=None):
+    def transport(self, *, result=None, tools=None, status=200, fail=None, line_ending="\r\n", multiline=False):
         self.requests = []
 
         def send(adapter, request, **kwargs):
@@ -40,7 +43,7 @@ class ParallelSearchTests(unittest.TestCase):
                 return response({'id': 1, 'result': {'protocolVersion': parallel.PROTOCOL_VERSION}}, sse=True, headers={'Mcp-Session-Id': 'synthetic'})
             if method == 'tools/list':
                 return response({'id': 2, 'result': tools if tools is not None else {'tools': [{'name': 'web_search'}]}})
-            return response({'id': 3, 'result': result if result is not None else {'structuredContent': RESULT}}, sse=True, status=status)
+            return response({'id': 3, 'result': result if result is not None else {'structuredContent': RESULT}}, sse=True, status=status, line_ending=line_ending, multiline=multiline)
 
         return patch.object(requests.adapters.HTTPAdapter, 'send', send)
 
@@ -121,3 +124,74 @@ class ParallelSearchTests(unittest.TestCase):
         with self.transport(), patch('requests.post') as tavily:
             self.assertEqual('parallel', search_story_context('test', 'bad-key', provider='parallel')['provider'])
         tavily.assert_not_called()
+
+    def test_unicode_excerpts_reach_production_context_helpers(self):
+        from webui.tools import generate_short_summary as summary
+        excerpt = "Edmond\u0085escapes\u2028prison\u2029and returns."
+        result = {'structuredContent': {'results': [{
+            'url': 'https://example.org/plot', 'title': '剧情', 'excerpts': [excerpt],
+        }]}}
+        # Only HTTP transport is synthetic; parser, normalizer and context builders run.
+        with patch.dict(os.environ, {'TAVILY_API_KEY': ''}), patch.dict(
+            summary.config.app, {'web_search_provider': 'parallel', 'tavily_api_key': ''}
+        ), patch.object(summary.st, 'session_state', {}), patch.object(summary.st, 'error') as error:
+            for ending in ['\n', '\r\n', '\r']:
+                for keywords in [summary.SHORT_DRAMA_SEARCH_KEYWORDS, summary.FILM_TV_SEARCH_KEYWORDS]:
+                    with self.subTest(ending=repr(ending), keywords=keywords), self.transport(
+                        result=result, line_ending=ending, multiline=True
+                    ):
+                        text = summary._build_plot_analysis_input(
+                            'Original subtitles', short_name='Monte Cristo',
+                            enable_web_search=True, search_keywords=keywords,
+                        )
+                        self.assertIsNotNone(text)
+                        self.assertIn(excerpt, text)
+                        self.assertIn('# Parallel 联网检索结果', text)
+                        self.assertIn('Original subtitles', text)
+                        self.assertEqual('DELETE', self.requests[-1].method)
+            with self.transport(result=result):
+                self.assertIn(excerpt, summary._build_tavily_context('Monte Cristo'))
+            error.assert_not_called()
+
+
+class RpcProtocolLineTests(unittest.TestCase):
+    excerpt = "Edmond\u0085escapes\u2028prison\u2029and returns."
+
+    def test_literal_unicode_separators_in_single_and_multiline_sse(self):
+        payload = {'id': 7, 'result': {'excerpts': [self.excerpt]}}
+        for ending in ['\n', '\r\n', '\r']:
+            for multiline in [False, True]:
+                with self.subTest(ending=repr(ending), multiline=multiline):
+                    r = response(payload, sse=True, line_ending=ending, multiline=multiline)
+                    for char in ['\u0085', '\u2028', '\u2029']:
+                        self.assertIn(char.encode('utf-8'), r.content)
+                    self.assertEqual(payload['result'], parallel._rpc_result(r, 7))
+
+    def test_literal_unicode_separators_in_json_response(self):
+        payload = {'id': 7, 'result': {'excerpts': [self.excerpt]}}
+        self.assertEqual(payload['result'], parallel._rpc_result(response(payload), 7))
+
+    def test_mixed_protocol_endings_and_unrelated_notifications(self):
+        r = response({}, sse=True)
+        payload = json.dumps({'id': 7, 'result': {'excerpts': [self.excerpt]}}, ensure_ascii=False)
+        r._content = (
+            ': heartbeat\r\n\r\n'
+            'data: {"jsonrpc":"2.0","method":"notifications/message"}\r\r'
+            'data: {"id":8,"result":{}}\n\n'
+            'event: message\r\ndata: ' + payload + '\r\n\r\n'
+        ).encode('utf-8')
+        self.assertEqual({'excerpts': [self.excerpt]}, parallel._rpc_result(r, 7))
+
+    def test_sse_errors_and_invalid_json_keep_error_behavior(self):
+        for ending in ['\n', '\r\n', '\r']:
+            for body in [
+                {'id': 7, 'error': {'code': -1, 'message': self.excerpt}},
+                {'id': 8, 'result': {}},
+                {'id': 7, 'result': None},
+            ]:
+                with self.subTest(ending=repr(ending), body=body), self.assertRaises(TavilySearchError):
+                    parallel._rpc_result(response(body, sse=True, line_ending=ending), 7)
+            r = response({}, sse=True)
+            r._content = ('data: not json' + ending * 2).encode('utf-8')
+            with self.subTest(ending=repr(ending), invalid_json=True), self.assertRaises(TavilySearchError):
+                parallel._rpc_result(r, 7)
