@@ -15,20 +15,40 @@ USER_AGENT = "NarratoAI/0.8.7 (Parallel plot-context search)"
 PROTOCOL_VERSION = "2025-03-26"
 
 
+def _sse_messages(response: requests.Response):
+    """Yield complete SSE data events without waiting for the connection to end."""
+    line = []
+    data = []
+    previous_cr = False
+    # Read promptly even when a server flushes fewer bytes than a typical chunk.
+    # requests decodes UTF-8 incrementally, including characters spanning bytes.
+    for chunk in response.iter_content(chunk_size=1, decode_unicode=True):
+        for char in chunk:
+            if previous_cr:
+                previous_cr = False
+                if char == "\n":
+                    continue
+            if char not in "\r\n":
+                line.append(char)
+                continue
+            previous_cr = char == "\r"
+            text = "".join(line)
+            line.clear()
+            if not text:
+                if data:
+                    yield json.loads("\n".join(data))
+                    data.clear()
+            elif text.startswith("data:"):
+                value = text[5:]
+                data.append(value[1:] if value.startswith(" ") else value)
+
+
 def _rpc_result(response: requests.Response, request_id: int) -> dict[str, Any]:
-    """Read JSON or the matching JSON-RPC response from a finite SSE stream."""
+    """Read JSON or stop at the matching JSON-RPC event in an open SSE stream."""
     response.encoding = "utf-8"
     try:
-        if "text/event-stream" in response.headers.get("Content-Type", ""):
-            messages = []
-            # An SSE event may contain several data lines and unrelated notifications.
-            # Only CR/LF delimit SSE lines; Unicode separators belong to JSON strings.
-            for event in response.text.replace("\r\n", "\n").replace("\r", "\n").split("\n\n"):
-                data = "\n".join(line[5:].lstrip() for line in event.split("\n") if line.startswith("data:"))
-                if data:
-                    messages.append(json.loads(data))
-        else:
-            messages = [response.json()]
+        media_type = response.headers.get("Content-Type", "").partition(";")[0].strip().lower()
+        messages = _sse_messages(response) if media_type == "text/event-stream" else [response.json()]
         for message in messages:
             if not isinstance(message, dict) or message.get("id") != request_id:
                 continue
@@ -39,6 +59,8 @@ def _rpc_result(response: requests.Response, request_id: int) -> dict[str, Any]:
             return message["result"]
     except (ValueError, TypeError) as exc:
         raise TavilySearchError("Parallel MCP 返回内容不是有效 JSON-RPC") from exc
+    finally:
+        response.close()
     raise TavilySearchError("Parallel MCP 缺少匹配的响应")
 
 
@@ -80,7 +102,7 @@ def search_parallel_context(query: str, *, max_results: int = 5, timeout: int = 
         session.headers.update({"User-Agent": USER_AGENT, "Accept": "application/json, text/event-stream"})
 
         def request(method: str, payload=None):
-            response = session.request(method, MCP_URL, json=payload, timeout=timeout, allow_redirects=False)
+            response = session.request(method, MCP_URL, json=payload, timeout=timeout, allow_redirects=False, stream=True)
             # Do not follow redirects to another transport or origin.
             if not 200 <= response.status_code < 300:
                 response.close()
@@ -123,7 +145,7 @@ def search_parallel_context(query: str, *, max_results: int = 5, timeout: int = 
             if session.headers.get("Mcp-Session-Id"):
                 try:
                     # Some servers do not support client termination. It must not mask search errors.
-                    with session.delete(MCP_URL, timeout=timeout, allow_redirects=False):
+                    with session.delete(MCP_URL, timeout=timeout, allow_redirects=False, stream=True):
                         pass
                 except requests.RequestException:
                     logger.debug("Parallel MCP session cleanup failed")

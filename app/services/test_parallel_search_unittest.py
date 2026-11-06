@@ -20,6 +20,7 @@ def response(data, *, sse=False, status=200, headers=None, line_ending="\r\n", m
     if sse:
         text = line_ending.join(["event: message"] + ["data: " + line for line in text.split("\n")] + ["", ""])
     r._content = text.encode("utf-8")
+    r._content_consumed = True  # Synthetic, already-buffered response.
     r.headers['Content-Type'] = 'text/event-stream' if sse else 'application/json'
     return r
 
@@ -195,3 +196,9 @@ class RpcProtocolLineTests(unittest.TestCase):
             r._content = ('data: not json' + ending * 2).encode('utf-8')
             with self.subTest(ending=repr(ending), invalid_json=True), self.assertRaises(TavilySearchError):
                 parallel._rpc_result(r, 7)
+
+    def test_mixed_case_sse_base_media_type(self):
+        payload = {'id': 7, 'result': {'excerpts': [self.excerpt]}}
+        r = response(payload, sse=True)
+        r.headers['Content-Type'] = ' Text/Event-Stream ; charset=UTF-8 '
+        self.assertEqual(payload['result'], parallel._rpc_result(r, 7))
