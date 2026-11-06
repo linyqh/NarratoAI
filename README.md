@@ -202,3 +202,18 @@ uv run streamlit run webui.py --server.maxUploadSize=2048
 ## Star History
 
 [![Star History Chart](https://star-history.dera.page/svg?repos=linyqh/NarratoAI&type=Date)](https://star-history.dera.page/#linyqh/NarratoAI&Date)
+
+### 剧情背景联网搜索
+
+在「基础设置 > 联网搜索」选择 `auto`、`tavily`、`parallel` 或 `disabled`
+（`config.toml` 中的 `app.web_search_provider`）。在短剧或影视剧情理解中开启
+「联网搜索」，输入如「基督山伯爵」的作品名称，再分析字幕。检索来源会标注实际
+提供商，并与字幕合并；内容冲突时仍以字幕为准。
+
+`auto` 优先使用已在设置或 `TAVILY_API_KEY` 中配置密钥的 Tavily，无密钥时使用
+[Parallel Unified MCP](https://docs.parallel.ai/integrations/mcp) 匿名搜索
+（`https://mcp.parallel.ai/mcp`）。明确选择 `tavily` 时仍需要密钥；`parallel`
+即使已有 Tavily 密钥也使用匿名搜索。提供商报错（包括无效 Tavily 密钥）不会回退。
+关闭「联网搜索」不会发送搜索请求；`disabled` 在勾选联网搜索时也会阻止请求。
+匿名 Parallel 会将作品名称及搜索关键词发送给 Parallel，受服务可用性及限流影响。
+使用服务端默认 Fast 搜索，只返回检索摘要，不抓取来源网页，无需新增依赖。

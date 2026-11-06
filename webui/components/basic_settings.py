@@ -363,8 +363,25 @@ def render_proxy_settings(tr):
 
 
 def render_tavily_search_settings(tr):
-    """Render Tavily API key settings used by short drama web search."""
-    st.subheader(tr("Tavily Search Settings"))
+    """Render saved provider and Tavily credentials for plot-context search."""
+    st.subheader(tr("Web Search Settings"))
+    providers = ["auto", "tavily", "parallel", "disabled"]
+    saved_provider = config.app.get("web_search_provider", "auto")
+    if saved_provider not in providers:
+        providers.append(saved_provider)
+    provider = st.selectbox(
+        tr("Web Search Provider"),
+        providers,
+        index=providers.index(saved_provider),
+        format_func=lambda value: tr(f"Search provider {value}"),
+        help=tr("Web Search Provider Help"),
+        key="web_search_provider_input",
+    )
+    if update_app_config_if_changed("web_search_provider", provider):
+        try:
+            config.save_config()
+        except Exception as e:
+            st.error(f"{tr('Failed to save config')}: {str(e)}")
     st.markdown(
         f"{tr('API Key URL')}: "
         "[https://app.tavily.com](https://app.tavily.com)"

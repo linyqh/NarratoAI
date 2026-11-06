@@ -64,6 +64,8 @@
 
     # ===== Tavily 联网搜索配置 =====
     # 用于短剧剧情理解前，按短剧名称检索公开剧情/人物/分集信息
+    # auto: configured Tavily, otherwise anonymous Parallel MCP. Also: tavily / parallel / disabled
+    web_search_provider = "auto"
     tavily_api_key = ""  # 获取地址：https://app.tavily.com
     tavily_search_depth = "basic"  # basic / advanced / fast / ultra-fast
     tavily_max_results = 5

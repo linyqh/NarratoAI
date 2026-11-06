@@ -139,3 +139,21 @@ Click to view [`LICENSE`](LICENSE) file
 ## Star History
 
 [![Star History Chart](https://star-history.dera.page/svg?repos=linyqh/NarratoAI&type=Date)](https://star-history.dera.page/#linyqh/NarratoAI&Date)
+
+### Plot-context web search
+
+In **Basic Settings > Web Search**, choose `auto`, `tavily`, `parallel`, or
+`disabled` (`app.web_search_provider` in `config.toml`). Then enable **Web Search**
+in short-drama or film/TV plot analysis, enter a title such as **The Count of
+Monte Cristo**, and analyze your subtitles. Source excerpts are labelled with
+the actual provider and combined with the subtitles; subtitles remain authoritative.
+
+`auto` uses Tavily when a key is configured in settings or `TAVILY_API_KEY`,
+otherwise anonymous [Parallel Unified MCP](https://docs.parallel.ai/integrations/mcp)
+at `https://mcp.parallel.ai/mcp`. Explicit `tavily` still requires a key.
+`parallel` selects anonymous search even if a Tavily key exists. Provider errors,
+including invalid Tavily credentials, never trigger fallback. Turning off Web
+Search sends no search requests; `disabled` also blocks searches when the checkbox
+is on. Anonymous Parallel sends the title and search keywords to Parallel and
+is subject to its availability and rate limits. It uses the server's default Fast
+search, returns excerpts without fetching source pages, and needs no new dependency.

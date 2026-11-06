@@ -213,9 +213,6 @@ def _build_tavily_context(
         return None
 
     api_key = _get_tavily_api_key()
-    if not api_key:
-        st.error(tr("Please configure Tavily API Key in Basic Settings"))
-        return None
 
     try:
         search_data = search_story_context(
@@ -223,17 +220,18 @@ def _build_tavily_context(
             api_key,
             search_keywords=search_keywords,
             empty_name_message=tr(empty_title_message_key),
+            provider=config.app.get("web_search_provider", "auto"),
             search_depth=config.app.get("tavily_search_depth", "basic"),
             max_results=config.app.get("tavily_max_results", 5),
         )
         return format_search_context(search_data)
     except TavilySearchError as e:
-        logger.error(f"Tavily 短剧检索失败: {str(e)}")
-        st.error(f"{tr('Tavily search failed')}: {str(e)}")
+        logger.error(f"联网剧情检索失败: {str(e)}")
+        st.error(f"{tr('Web search failed')}: {str(e)}")
         return None
     except Exception as e:
-        logger.error(f"Tavily 短剧检索异常: {traceback.format_exc()}")
-        st.error(f"{tr('Tavily search failed')}: {str(e)}")
+        logger.error(f"联网剧情检索异常: {traceback.format_exc()}")
+        st.error(f"{tr('Web search failed')}: {str(e)}")
         return None
 
 
@@ -260,7 +258,7 @@ def _build_plot_analysis_input(
         return None
 
     return f"""# 分析补充说明
-请先参考 Tavily 联网检索结果理解{web_search_context_description}，再结合原始字幕完成剧情理解。
+请先参考联网检索结果理解{web_search_context_description}，再结合原始字幕完成剧情理解。
 如果联网检索结果与字幕内容冲突，请以字幕内容为准；时间戳必须只从字幕内容中提取。
 
 {tavily_context}
@@ -607,7 +605,7 @@ def generate_script_short_sunmmary(
             else:
                 plot_analysis_input = subtitle_content
                 if enable_web_search:
-                    update_waiting(tr("Searching short drama with Tavily..."))
+                    update_waiting(tr("Searching story context..."))
                     plot_analysis_input = _build_plot_analysis_input(
                         subtitle_content,
                         short_name=video_theme,
