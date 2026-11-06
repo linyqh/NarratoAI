@@ -1,4 +1,4 @@
-"""Tavily-powered web search helpers for plot analysis."""
+"""Web search helpers for plot analysis, with Tavily and anonymous Parallel MCP."""
 
 from __future__ import annotations
 
@@ -33,8 +33,9 @@ def search_short_drama(
     search_depth: str = DEFAULT_SEARCH_DEPTH,
     max_results: int = DEFAULT_MAX_RESULTS,
     timeout: int = DEFAULT_TIMEOUT,
+    provider: str = "auto",
 ) -> dict[str, Any]:
-    """Search web context for a short drama name with Tavily."""
+    """Search web context for a short drama using the selected provider."""
     return search_story_context(
         short_name,
         api_key,
@@ -43,6 +44,7 @@ def search_short_drama(
         search_depth=search_depth,
         max_results=max_results,
         timeout=timeout,
+        provider=provider,
     )
 
 
@@ -55,17 +57,31 @@ def search_story_context(
     search_depth: str = DEFAULT_SEARCH_DEPTH,
     max_results: int = DEFAULT_MAX_RESULTS,
     timeout: int = DEFAULT_TIMEOUT,
+    provider: str = "auto",
 ) -> dict[str, Any]:
-    """Search web context for a story title with Tavily."""
+    """Search a title; auto keeps configured Tavily and otherwise uses Parallel.
+
+    Explicit Tavily never falls back, including on missing or invalid credentials.
+    Callers must honor their online-search opt-in before invoking this function.
+    """
     title = str(title or "").strip()
     if not title:
         raise TavilySearchError(empty_name_message)
 
     api_key = (api_key or os.getenv("TAVILY_API_KEY") or "").strip()
+    provider = str(provider or "auto").strip().lower()
+    if provider not in {"auto", "tavily", "parallel", "disabled"}:
+        raise TavilySearchError(f"未知联网搜索提供商: {provider}")
+    if provider == "disabled":
+        raise TavilySearchError("联网搜索已禁用")
+    query = f"{title} {search_keywords}".strip()
+    if provider == "parallel" or (provider == "auto" and not api_key):
+        from app.services.parallel_search import search_parallel_context
+
+        return search_parallel_context(query, max_results=max_results, timeout=timeout)
     if not api_key:
         raise TavilySearchError("Tavily API Key 未配置")
 
-    query = f"{title} {search_keywords}".strip()
     payload = {
         "query": query,
         "search_depth": search_depth or DEFAULT_SEARCH_DEPTH,
@@ -106,12 +122,12 @@ def search_story_context(
     return data
 
 def format_search_context(search_data: dict[str, Any], *, max_chars: int = 6000) -> str:
-    """Format Tavily response into compact LLM context."""
+    """Format provider-labelled search results into compact LLM context."""
     if not search_data:
         return ""
 
     lines = [
-        "# Tavily 联网检索结果",
+        f"# {'Parallel' if search_data.get('provider') == 'parallel' else 'Tavily'} 联网检索结果",
         f"检索 query: {search_data.get('query', '')}",
     ]
 
